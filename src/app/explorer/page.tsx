@@ -7,7 +7,7 @@ import { SOLMIND_PAGES } from "@/lib/solmind/pages";
 const topics = [
   "Getting to know you",
   "Self-sabotage patterns",
-  "Today’s check-in",
+  "Today's check-in",
   "Goals and next steps",
   "Something difficult",
   "Just talk",
