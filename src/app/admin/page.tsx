@@ -3,6 +3,7 @@ import { DashboardCard } from "@/components/solmind/DashboardCard";
 import { PageShell } from "@/components/solmind/PageShell";
 import { Panel } from "@/components/solmind/Panel";
 import { SectionLabel } from "@/components/solmind/SectionLabel";
+import { RouteAccessPreview } from "@/components/solmind/RouteAccessPreview";
 import { SOLMIND_ADMIN_DASHBOARD_PANELS } from "@/lib/solmind/dashboardPanels";
 import { SOLMIND_PAGES } from "@/lib/solmind/pages";
 
@@ -29,6 +30,9 @@ export default function AdminPage() {
             <DashboardCard key={panel.title} title={panel.title} />
           ))}
         </div>
+
+        <RouteAccessPreview />
+
       </Panel>
     </PageShell>
   );
