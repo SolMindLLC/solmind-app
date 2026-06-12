@@ -2,6 +2,7 @@ import { BackLink } from "@/components/solmind/BackLink";
 import { PageShell } from "@/components/solmind/PageShell";
 import { Panel } from "@/components/solmind/Panel";
 import { SectionLabel } from "@/components/solmind/SectionLabel";
+import { SOLMIND_PAGES } from "@/lib/solmind/pages";
 
 const topics = [
   "Getting to know you",
@@ -13,17 +14,21 @@ const topics = [
 ];
 
 export default function ExplorerPage() {
+  const page = SOLMIND_PAGES.explorer;
+
   return (
     <PageShell>
       <BackLink />
 
       <div className="mt-10 grid gap-6 lg:grid-cols-[2fr_1fr]">
         <Panel>
-          <SectionLabel>Explorer</SectionLabel>
+          <SectionLabel>{page.title}</SectionLabel>
 
           <h1 className="mt-4 text-4xl font-semibold">
             Conversation with SolMind Virtual Guide
           </h1>
+
+          <p className="mt-4 text-slate-300">{page.description}</p>
 
           <div className="mt-8 space-y-4">
             <div className="rounded-2xl bg-slate-800 p-4">
