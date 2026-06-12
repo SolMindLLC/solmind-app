@@ -1,6 +1,7 @@
 import { ExplorerTopicList } from "@/components/solmind/ExplorerTopicList";
 import { OnboardingProgressCard } from "@/components/solmind/OnboardingProgressCard";
 import { MiniProfileCard } from "@/components/solmind/MiniProfileCard";
+import { ExplorerResponseComposer } from "@/components/solmind/ExplorerResponseComposer";
 import { BackLink } from "@/components/solmind/BackLink";
 import { PageShell } from "@/components/solmind/PageShell";
 import { Panel } from "@/components/solmind/Panel";
@@ -29,9 +30,8 @@ export default function ExplorerPage() {
               Welcome. What would feel most helpful to explore today?
             </div>
 
-            <div className="rounded-2xl border border-slate-700 p-4 text-slate-300">
-              Explorer response area placeholder
-            </div>
+            <ExplorerResponseComposer />
+
           </div>
         </Panel>
 
