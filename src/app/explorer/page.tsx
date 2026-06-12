@@ -1,9 +1,9 @@
+import { ExplorerTopicList } from "@/components/solmind/ExplorerTopicList";
 import { BackLink } from "@/components/solmind/BackLink";
 import { PageShell } from "@/components/solmind/PageShell";
 import { Panel } from "@/components/solmind/Panel";
 import { SectionLabel } from "@/components/solmind/SectionLabel";
 import { SOLMIND_PAGES } from "@/lib/solmind/pages";
-import { SOLMIND_EXPLORER_TOPICS } from "@/lib/solmind/topics";
 
 export default function ExplorerPage() {
   const page = SOLMIND_PAGES.explorer;
@@ -38,16 +38,7 @@ export default function ExplorerPage() {
             What we can talk about today
           </h2>
 
-          <div className="mt-5 space-y-3">
-            {SOLMIND_EXPLORER_TOPICS.map((topic) => (
-              <button
-                key={topic}
-                className="w-full rounded-2xl border border-slate-700 px-4 py-3 text-left"
-              >
-                {topic}
-              </button>
-            ))}
-          </div>
+        <ExplorerTopicList />
         </aside>
       </div>
     </PageShell>
