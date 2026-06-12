@@ -1,12 +1,15 @@
 import Link from "next/link";
 import { SOLMIND_PRIMARY_NAV } from "@/lib/solmind/navigation";
+import { SOLMIND_PAGES } from "@/lib/solmind/pages";
 
 export default function Home() {
+  const page = SOLMIND_PAGES.home;
+
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50">
       <section className="mx-auto flex min-h-screen max-w-5xl flex-col justify-center px-6 py-16">
         <p className="mb-4 text-sm uppercase tracking-[0.35em] text-cyan-300">
-          SolMind MVP0
+          {page.title}
         </p>
 
         <h1 className="max-w-3xl text-5xl font-semibold tracking-tight">
