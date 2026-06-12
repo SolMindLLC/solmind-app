@@ -2,23 +2,23 @@ import { BackLink } from "@/components/solmind/BackLink";
 import { PageShell } from "@/components/solmind/PageShell";
 import { Panel } from "@/components/solmind/Panel";
 import { SectionLabel } from "@/components/solmind/SectionLabel";
+import { SOLMIND_PAGES } from "@/lib/solmind/pages";
 
 export default function LoginPage() {
+  const page = SOLMIND_PAGES.login;
+
   return (
     <PageShell maxWidth="3xl">
       <BackLink />
 
       <Panel className="mt-12">
-        <SectionLabel>MVP0 Login</SectionLabel>
+        <SectionLabel>{page.title}</SectionLabel>
 
         <h1 className="mt-4 text-4xl font-semibold">
           Sign in with email or SMS
         </h1>
 
-        <p className="mt-4 text-slate-300">
-          MVP0 will support passwordless login for Guides and Explorers.
-          Admin users will use a password plus a verification code.
-        </p>
+        <p className="mt-4 text-slate-300">{page.description}</p>
 
         <div className="mt-8 space-y-4">
           <input
