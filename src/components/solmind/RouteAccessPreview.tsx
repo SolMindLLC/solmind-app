@@ -1,3 +1,4 @@
+import { RoleBadge } from "@/components/solmind/RoleBadge";
 import { SOLMIND_ROUTE_ACCESS_RULES } from "@/lib/solmind/routeAccess";
 
 export function RouteAccessPreview() {
@@ -20,10 +21,11 @@ export function RouteAccessPreview() {
                 <p className="font-semibold text-slate-50">{rule.label}</p>
                 <p className="mt-1 text-sm text-slate-300">{rule.route}</p>
               </div>
-
-              <p className="rounded-full bg-slate-800 px-3 py-1 text-sm text-cyan-300">
-                {rule.allowedRoles.join(", ")}
-              </p>
+              <div className="flex flex-wrap gap-2">
+                {rule.allowedRoles.map((role) => (
+                  <RoleBadge key={role} role={role} />
+                ))}
+              </div>
             </div>
           </div>
         ))}

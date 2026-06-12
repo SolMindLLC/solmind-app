@@ -1,3 +1,4 @@
+import { RoleBadge } from "@/components/solmind/RoleBadge";
 import { SOLMIND_LOGIN_OPTIONS } from "@/lib/solmind/loginOptions";
 
 export function LoginOptionList() {
@@ -8,9 +9,8 @@ export function LoginOptionList() {
           key={option.role}
           className="rounded-2xl border border-slate-700 p-5"
         >
-          <p className="text-sm uppercase tracking-[0.2em] text-cyan-300">
-            {option.role}
-          </p>
+
+          <RoleBadge role={option.role} />
 
           <h2 className="mt-3 text-xl font-semibold">{option.title}</h2>
 
