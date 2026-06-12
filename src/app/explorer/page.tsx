@@ -1,5 +1,6 @@
 import { ExplorerTopicList } from "@/components/solmind/ExplorerTopicList";
 import { OnboardingProgressCard } from "@/components/solmind/OnboardingProgressCard";
+import { MiniProfileCard } from "@/components/solmind/MiniProfileCard";
 import { BackLink } from "@/components/solmind/BackLink";
 import { PageShell } from "@/components/solmind/PageShell";
 import { Panel } from "@/components/solmind/Panel";
@@ -42,6 +43,8 @@ export default function ExplorerPage() {
           <ExplorerTopicList />
 
           <OnboardingProgressCard />
+
+          <MiniProfileCard />
 
         </aside>
       </div>
