@@ -3,9 +3,8 @@ import { DashboardCard } from "@/components/solmind/DashboardCard";
 import { PageShell } from "@/components/solmind/PageShell";
 import { Panel } from "@/components/solmind/Panel";
 import { SectionLabel } from "@/components/solmind/SectionLabel";
+import { SOLMIND_ADMIN_DASHBOARD_PANELS } from "@/lib/solmind/dashboardPanels";
 import { SOLMIND_PAGES } from "@/lib/solmind/pages";
-
-const guidePanels = ["Active Explorers", "Needs Review", "Safety Flags"];
 
 export default function GuidePage() {
   const page = SOLMIND_PAGES.guide;
@@ -26,8 +25,8 @@ export default function GuidePage() {
         </p>
 
         <div className="mt-8 grid gap-4 md:grid-cols-3">
-          {guidePanels.map((item) => (
-            <DashboardCard key={item} title={item} />
+          {SOLMIND_ADMIN_DASHBOARD_PANELS.map((panel) => (
+            <DashboardCard key={panel.title} title={panel.title} />
           ))}
         </div>
       </Panel>

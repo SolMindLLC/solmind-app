@@ -3,9 +3,8 @@ import { DashboardCard } from "@/components/solmind/DashboardCard";
 import { PageShell } from "@/components/solmind/PageShell";
 import { Panel } from "@/components/solmind/Panel";
 import { SectionLabel } from "@/components/solmind/SectionLabel";
+import { SOLMIND_ADMIN_DASHBOARD_PANELS } from "@/lib/solmind/dashboardPanels";
 import { SOLMIND_PAGES } from "@/lib/solmind/pages";
-
-const adminPanels = ["Guide Invites", "Methodology", "System QA"];
 
 export default function AdminPage() {
   const page = SOLMIND_PAGES.admin;
@@ -26,8 +25,8 @@ export default function AdminPage() {
         </p>
 
         <div className="mt-8 grid gap-4 md:grid-cols-3">
-          {adminPanels.map((item) => (
-            <DashboardCard key={item} title={item} />
+          {SOLMIND_ADMIN_DASHBOARD_PANELS.map((panel) => (
+            <DashboardCard key={panel.title} title={panel.title} />
           ))}
         </div>
       </Panel>
