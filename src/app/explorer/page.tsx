@@ -2,6 +2,7 @@ import { ExplorerTopicList } from "@/components/solmind/ExplorerTopicList";
 import { OnboardingProgressCard } from "@/components/solmind/OnboardingProgressCard";
 import { MiniProfileCard } from "@/components/solmind/MiniProfileCard";
 import { ExplorerResponseComposer } from "@/components/solmind/ExplorerResponseComposer";
+import { SOLMIND_EXPLORER_CONVERSATION_PREVIEW_MESSAGES } from "@/lib/solmind/conversation";
 import { BackLink } from "@/components/solmind/BackLink";
 import { PageShell } from "@/components/solmind/PageShell";
 import { Panel } from "@/components/solmind/Panel";
@@ -26,9 +27,11 @@ export default function ExplorerPage() {
           <p className="mt-4 text-slate-300">{page.description}</p>
 
           <div className="mt-8 space-y-4">
-            <div className="rounded-2xl bg-slate-800 p-4">
-              Welcome. What would feel most helpful to explore today?
-            </div>
+            {SOLMIND_EXPLORER_CONVERSATION_PREVIEW_MESSAGES.map((message) => (
+              <div key={message.id} className="rounded-2xl bg-slate-800 p-4">
+                {message.body}
+              </div>
+            ))}
 
             <ExplorerResponseComposer />
 
