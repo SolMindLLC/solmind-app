@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SOLMIND_PRIMARY_NAV } from "@/lib/solmind/navigation";
 
 export default function Home() {
   return (
@@ -18,33 +19,20 @@ export default function Home() {
         </p>
 
         <div className="mt-10 flex flex-wrap gap-4">
-          <Link
-            href="/login"
-            className="rounded-full bg-cyan-300 px-5 py-3 font-medium text-slate-950"
-          >
-            Start
-          </Link>
-
-          <Link
-            href="/explorer"
-            className="rounded-full border border-slate-600 px-5 py-3"
-          >
-            Explorer Preview
-          </Link>
-
-          <Link
-            href="/guide"
-            className="rounded-full border border-slate-600 px-5 py-3"
-          >
-            Guide Preview
-          </Link>
-
-          <Link
-            href="/admin"
-            className="rounded-full border border-slate-600 px-5 py-3"
-          >
-            Admin Preview
-          </Link>
+          {SOLMIND_PRIMARY_NAV.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={
+                item.href === "/login"
+                  ? "rounded-full bg-cyan-300 px-5 py-3 font-medium text-slate-950"
+                  : "rounded-full border border-slate-600 px-5 py-3"
+              }
+              title={item.description}
+            >
+              {item.label === "Login" ? "Start" : item.label}
+            </Link>
+          ))}
         </div>
       </section>
     </main>
