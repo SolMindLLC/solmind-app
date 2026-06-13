@@ -5,5 +5,5 @@ export const SOLMIND_TERMS = {
     guideRole: "Guide",
     explorerRole: "Explorer",
     virtualGuide: "SolMind Virtual Guide",
-    guideAssistant: "Guide Assistant",
+    guideAssistant: "SolMind Guide Assistant",
   } as const;

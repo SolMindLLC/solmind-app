@@ -16,7 +16,7 @@ export default function LoginPage() {
         <SectionLabel>{page.title}</SectionLabel>
 
         <h1 className="mt-4 text-4xl font-semibold">
-          Sign in with email or SMS
+          Sign in securely
         </h1>
 
         <p className="mt-4 text-slate-300">{page.description}</p>

@@ -16,9 +16,24 @@ Primary framework: Next.js 16 / React 19 / TypeScript
 
 Before making code changes, read:
 
-* `docs/AI_MAINTENANCE_MAP.md`
-* `docs/AGENT_TASK_RULES.md`
-* `docs/MODULE_BOUNDARIES.md`
+- `docs/AI_MAINTENANCE_MAP.md`
+- `docs/AGENT_TASK_RULES.md`
+- `docs/MODULE_BOUNDARIES.md`
+
+Also check the canonical product documentation in the sibling repository:
+
+```text
+../solmind-docs
+```
+
+Most binding product references before auth/database work:
+
+- `execution/01_SolMind_MVP0_Build_Spec_and_Execution_Plan_v1_0.md`
+- `execution/03_SolMind_Phase0_Data_Model_Spec_v1_1.md`
+- `execution/04_SolMind_AI_Orchestration_and_Prompting_Spec_v1_0.md`
+- `execution/05_SolMind_Privacy_Security_and_Safety_Baseline_v1_0.md`
+- `execution/07_SolMind_MVP0_Implementation_Task_Breakdown_v1_0.md`
+- `execution/08_SolMind_MVP0_Test_Plan_v1_0.md`
 
 ## Core Rules
 
@@ -36,14 +51,41 @@ Before making code changes, read:
 
 Use these role names consistently:
 
-* Admin
-* Guide
-* Explorer
+- Admin
+- Guide
+- Explorer
+
+Avoid deprecated generic terms such as "client" in product UI and documentation. Use "Explorer" when referring to the person receiving reflective support.
 
 Use these assistant names consistently:
 
-* SolMind Virtual Guide
-* Guide Assistant
+- SolMind Virtual Guide
+- SolMind Guide Assistant
+
+The `/guide` route is the human Guide dashboard. Do not label it as the SolMind Guide Assistant dashboard.
+
+## MVP0 Authentication Boundary
+
+The MVP0 authentication model is:
+
+- Explorer: passwordless email or SMS verification.
+- Guide: password plus email or SMS verification.
+- Admin: Admin password plus verification code.
+
+Do not describe Guide authentication as passwordless.
+
+## Secrets Boundary
+
+Never expose server secrets through `NEXT_PUBLIC_` variables.
+
+Do not expose:
+
+- Supabase service-role keys
+- Admin bootstrap tokens
+- provider secrets
+- server-only credentials
+
+Client-accessible variables must be intentionally public and safe to expose.
 
 ## Verification Commands
 

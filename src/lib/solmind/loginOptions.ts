@@ -22,7 +22,7 @@ export const SOLMIND_LOGIN_OPTIONS: SolMindLoginOption[] = [
     title: "Guide",
     description:
       "Review Explorer summaries, progress, flags, and suggested follow-ups.",
-    authenticationSummary: "Passwordless email or SMS verification code.",
+    authenticationSummary: "Guide password plus email or SMS verification code.",
     ctaLabel: "Continue as Guide",
   },
   {

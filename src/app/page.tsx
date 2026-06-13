@@ -13,11 +13,11 @@ export default function Home() {
         </p>
 
         <h1 className="max-w-3xl text-5xl font-semibold tracking-tight">
-          AI-assisted coaching support for Guides and Explorers
+          AI-assisted reflective support for Guides and Explorers
         </h1>
 
         <p className="mt-6 max-w-2xl text-lg text-slate-300">
-          SolMind helps human coaches support clients with structured intake,
+          SolMind helps human Guides support Explorers with structured intake,
           reflection, check-ins, summaries, and safety-aware escalation.
         </p>
 

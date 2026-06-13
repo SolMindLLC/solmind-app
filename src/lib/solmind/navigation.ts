@@ -27,7 +27,7 @@ import {
       label: `${SOLMIND_ROLE_LABELS.guide} Preview`,
       href: SOLMIND_ROLE_HOME_ROUTES.guide,
       role: "guide",
-      description: "Guide Assistant dashboard preview.",
+      description: "Guide dashboard preview.",
     },
     {
       label: `${SOLMIND_ROLE_LABELS.admin} Preview`,

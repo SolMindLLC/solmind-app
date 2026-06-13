@@ -18,7 +18,7 @@ export const SOLMIND_EXPLORER_ONBOARDING_STEPS: SolMindOnboardingStep[] = [
     key: "welcome",
     title: "Welcome",
     description:
-      "Introduce SolMind and orient the Explorer to AI-assisted coaching support.",
+      "Introduce SolMind and orient the Explorer to AI-assisted reflective support.",
     route: "/",
     requiredForMvp0: true,
   },
