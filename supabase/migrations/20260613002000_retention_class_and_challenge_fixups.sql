@@ -1,6 +1,6 @@
 -- SolMind MVP0 correction migration.
 -- Purpose:
---   - add retention_class columns required by Data Model Spec §4.10
+--   - add retention_class columns required by Data Model Spec Section 4.10
 --   - relax verification_challenge.failed_attempt_count so invalidation logic can be handled safely in application code
 --
 -- This migration intentionally creates no users, policies, grants, or real pilot data.
