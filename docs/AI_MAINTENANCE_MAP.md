@@ -28,12 +28,23 @@ The canonical SolMind product documentation lives in the sibling repository:
 
 Before implementing auth, database, consent, AI orchestration, safety, or role-based access, verify against the current docs there.
 
-Most binding references:
+When instructions conflict, prioritize instructions in order as shown below unless Paul explicitly changes it:
 
-- `execution/01_SolMind_MVP0_Build_Spec_and_Execution_Plan_v1_0.md`
+1. Explicit instructions from Paul in the current task.
+2. Approved canonical SolMind documents in `../solmind-docs/canonical`.
+3. Current relevant AI Assistant workflow documents in `../solmind-docs/ai-assistant`.
+4. Approved execution documents and implementation plans in `../solmind-docs/execution`.
+5. External AI recommendations after Paul approves them.
+6. Local app repo guidance such as `AGENTS.md`, `README.md`, and `docs/*.md`.
+
+If implementation requirements conflict, stop and request a documentation alignment decision. Do not silently choose one interpretation.
+
+Common references:
+
+- `execution/01_SolMind_Phase0_Build_Spec_v1_0.md`
 - `execution/03_SolMind_Phase0_Data_Model_Spec_v1_1.md`
-- `execution/04_SolMind_AI_Orchestration_and_Prompting_Spec_v1_0.md`
-- `execution/05_SolMind_Privacy_Security_and_Safety_Baseline_v1_0.md`
+- `execution/04_SolMind_AI_Orchestration_Spec_v1_0.md`
+- `execution/05_SolMind_Privacy_And_Security_Baseline_v1_0.md`
 - `execution/07_SolMind_MVP0_Implementation_Task_Breakdown_v1_0.md`
 - `execution/08_SolMind_MVP0_Test_Plan_v1_0.md`
 
@@ -153,7 +164,7 @@ npm.cmd run lint
 npm.cmd run build
 ```
 
-5. Commit with a narrow message.
+5. If Paul approves staging and committing, commit with a narrow message. Claude Code must stop before `git add`, `git commit`, and `git push` unless Paul explicitly approves those actions in the current task.
 
 ## Do Not Start Yet
 

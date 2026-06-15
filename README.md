@@ -135,10 +135,10 @@ The canonical product documentation lives in the sibling repository:
 Most binding references before auth/database work:
 
 - `00_SolMind_Repository_Index_v1_0.md`
-- `execution/01_SolMind_MVP0_Build_Spec_and_Execution_Plan_v1_0.md`
+- `execution/01_SolMind_Phase0_Build_Spec_v1_0.md`
 - `execution/03_SolMind_Phase0_Data_Model_Spec_v1_1.md`
-- `execution/04_SolMind_AI_Orchestration_and_Prompting_Spec_v1_0.md`
-- `execution/05_SolMind_Privacy_Security_and_Safety_Baseline_v1_0.md`
+- `execution/04_SolMind_AI_Orchestration_Spec_v1_0.md`
+- `execution/05_SolMind_Privacy_And_Security_Baseline_v1_0.md`
 - `execution/07_SolMind_MVP0_Implementation_Task_Breakdown_v1_0.md`
 - `execution/08_SolMind_MVP0_Test_Plan_v1_0.md`
 
@@ -186,16 +186,16 @@ On Windows PowerShell, use `npm.cmd` instead of `npm` if PowerShell blocks `npm.
 
 ## Git Workflow
 
-Use small, focused commits.
+Use small, focused commits. Prefer staging specific files over `git add .`.
 
-Recommended pattern:
+Recommended pattern when Paul is personally running Git commands:
 
 ```powershell
 git status
 ```
 
 ```powershell
-git add .
+git add [specific file/folder]
 ```
 
 ```powershell
@@ -209,6 +209,8 @@ git push
 ```powershell
 git status
 ```
+
+Claude Code local executor exception: Claude Code must stop before `git add`, `git commit`, and `git push` unless Paul explicitly approves those actions in the current task.
 
 ## Current Build Status
 

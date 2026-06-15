@@ -130,6 +130,8 @@ Agents must not:
 11. Modify Row Level Security policies without review.
 12. Expose server secrets through `NEXT_PUBLIC_` variables.
 13. Claim success without running verification commands.
+14. Run production, cloud, install, dependency, Vercel, or Supabase cloud changes without explicit approval.
+15. Run `npx.cmd supabase db reset` without Paul explicitly approving that local destructive validation step.
 
 ## SolMind Role Boundaries
 
@@ -203,6 +205,10 @@ npm.cmd run build
 ```
 
 If a task adds tests, also run the relevant test command.
+
+## Git and Commit Boundary
+
+Commit message suggestions are allowed, but Claude Code must stop before `git add`, `git commit`, and `git push` unless Paul explicitly approves those actions in the current task. Paul remains the default approval gate for staging, commits, pushes, merges, deploys, and production/cloud changes.
 
 ## Preferred Commit Style
 
