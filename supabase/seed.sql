@@ -1,0 +1,3 @@
+-- SolMind MVP0 seed file.
+-- Intentionally empty. No real users, pilot data, active consent documents,
+-- or production-like seed data are created in MVP0 local resets.

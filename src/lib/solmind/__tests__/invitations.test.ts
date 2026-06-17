@@ -17,24 +17,24 @@ describe("invitation lifecycle constants", () => {
     );
 
     expect(guideStatuses).toEqual([
-      "draft",
+      "created",
       "sent",
       "accepted",
       "expired",
       "revoked",
-      "declined",
+      "failed",
     ]);
 
     expect(explorerStatuses).toEqual(guideStatuses);
   });
 
   it("keeps active and terminal statuses separate", () => {
-    expect(SOLMIND_INVITATION_ACTIVE_STATUSES).toEqual(["draft", "sent"]);
+    expect(SOLMIND_INVITATION_ACTIVE_STATUSES).toEqual(["created", "sent"]);
     expect(SOLMIND_INVITATION_TERMINAL_STATUSES).toEqual([
       "accepted",
       "expired",
       "revoked",
-      "declined",
+      "failed",
     ]);
 
     for (const status of SOLMIND_INVITATION_ACTIVE_STATUSES) {

@@ -1,12 +1,12 @@
 export type SolMindInvitationRecipientRole = "guide" | "explorer";
 
 export type SolMindInvitationStatus =
-  | "draft"
+  | "created"
   | "sent"
   | "accepted"
   | "expired"
   | "revoked"
-  | "declined";
+  | "failed";
 
 export type SolMindInvitationLifecycleStep = {
   status: SolMindInvitationStatus;
@@ -18,10 +18,10 @@ export type SolMindInvitationLifecycleStep = {
 export const SOLMIND_GUIDE_INVITATION_LIFECYCLE: SolMindInvitationLifecycleStep[] =
   [
     {
-      status: "draft",
-      title: "Draft",
+      status: "created",
+      title: "Created",
       description:
-        "Admin has started a Guide invitation, but it has not been sent.",
+        "Admin has created a Guide invitation, but it has not been sent.",
       terminal: false,
     },
     {
@@ -53,10 +53,10 @@ export const SOLMIND_GUIDE_INVITATION_LIFECYCLE: SolMindInvitationLifecycleStep[
       terminal: true,
     },
     {
-      status: "declined",
-      title: "Declined",
+      status: "failed",
+      title: "Failed",
       description:
-        "Invitee declined the Guide invitation.",
+        "Guide invitation could not be sent or processed (for example a send, delivery, provider, or validation failure). This is a system failure, not an invitee decision.",
       terminal: true,
     },
   ];
@@ -64,10 +64,10 @@ export const SOLMIND_GUIDE_INVITATION_LIFECYCLE: SolMindInvitationLifecycleStep[
 export const SOLMIND_EXPLORER_INVITATION_LIFECYCLE: SolMindInvitationLifecycleStep[] =
   [
     {
-      status: "draft",
-      title: "Draft",
+      status: "created",
+      title: "Created",
       description:
-        "Guide has started an Explorer invitation, but it has not been sent.",
+        "Guide has created an Explorer invitation, but it has not been sent.",
       terminal: false,
     },
     {
@@ -99,16 +99,16 @@ export const SOLMIND_EXPLORER_INVITATION_LIFECYCLE: SolMindInvitationLifecycleSt
       terminal: true,
     },
     {
-      status: "declined",
-      title: "Declined",
+      status: "failed",
+      title: "Failed",
       description:
-        "Invitee declined the Explorer invitation.",
+        "Explorer invitation could not be sent or processed (for example a send, delivery, provider, or validation failure). This is a system failure, not an invitee decision.",
       terminal: true,
     },
   ];
 
 export const SOLMIND_INVITATION_ACTIVE_STATUSES: SolMindInvitationStatus[] = [
-  "draft",
+  "created",
   "sent",
 ];
 
@@ -116,5 +116,5 @@ export const SOLMIND_INVITATION_TERMINAL_STATUSES: SolMindInvitationStatus[] = [
   "accepted",
   "expired",
   "revoked",
-  "declined",
+  "failed",
 ];
