@@ -13,3 +13,4 @@ export * from "./accessBoundary";
 export * from "./serverAuthContext";
 export * from "./routeAccessDecision";
 export * from "./relationshipReadGuard";
+export * from "./authSource";
