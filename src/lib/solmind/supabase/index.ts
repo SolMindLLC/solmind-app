@@ -7,3 +7,5 @@
 // performs IO of its own.
 
 export * from "./serverAuthSourceAdapter";
+export * from "./principalMapping";
+export * from "./sessionSelection";
