@@ -14,3 +14,4 @@ export * from "./serverAuthContext";
 export * from "./routeAccessDecision";
 export * from "./relationshipReadGuard";
 export * from "./authSource";
+export * from "./requestAuthPrincipalSource";
