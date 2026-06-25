@@ -14,8 +14,8 @@
 //   - Server-only and OFF the shared src/lib/solmind/auth/index.ts barrel
 //     (AUTH-RLS-DEC-007, AUTH-RLS-DEC-013), mirroring composeRequestAuthContext,
 //     adminRouteAccess, serviceRoleClient, and requestAuthClient. Import it only from
-//     the explicit /admin server composition path. The runtime browser guard below
-//     is the interim boundary while the `server-only` package stays deferred
+//     the explicit /admin server composition path. The `import "server-only";`
+//     marker below is the import-time guard, backed by the runtime browser guard
 //     (AUTH-RLS-DEC-023, AUTH-RLS-DEF-001).
 //   - Identity (WHO) and record loading (WHAT) stay structurally separate
 //     (AUTH-RLS-DEC-015): the principal source proves identity; the Admin auth source
@@ -33,6 +33,8 @@
 //     Guide-private field is assembled into the response.
 //   - This slice does NOT thread the onServiceRoleRead audit seam and adds no audit
 //     behavior; that stays deferred (AUTH-RLS-DEF-003, AUTH-RLS-DEF-009).
+
+import "server-only";
 
 import { resolveAdminRouteAccess } from "./adminRouteAccess";
 import { type SolMindAuthSource } from "./authSource";

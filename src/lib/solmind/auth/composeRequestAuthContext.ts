@@ -26,12 +26,10 @@
 //     root, so this module never touches a Supabase client and is unit-testable
 //     with in-memory test doubles. No real service-role DB read is wired here; that
 //     wiring is a later, separately-approved step (AUTH-RLS-DEF-010).
-//   - server-only enforcement: the `server-only` package install is deferred
-//     (AUTH-RLS-DEC-023, AUTH-RLS-DEF-001) to the approved implementation slice that
-//     first installs it; until then this module uses the same runtime browser guard
-//     as serviceRoleClient.ts and requestAuthClient.ts. When the package is
-//     installed, an `import "server-only";` marker is added here as the import-time
-//     guard.
+//   - server-only enforcement: the `server-only` package is now installed
+//     (AUTH-RLS-DEC-023, AUTH-RLS-DEF-001), so this module carries the
+//     `import "server-only";` marker below as the import-time guard, backed by the
+//     same runtime browser guard as serviceRoleClient.ts and requestAuthClient.ts.
 //   - Audit seam placement (AUTH-RLS-DEC-024): the OPTIONAL onServiceRoleRead hook
 //     below is the dedicated audit seam, placed at THIS guarded boundary and nowhere
 //     else. It is deliberately NOT inside requestAuthClient.ts (which reads no
@@ -47,6 +45,8 @@
 //   - Role separation preserved: this boundary resolves identity and access only. It
 //     assembles no Explorer-private or Guide-private context and does not blend the
 //     SolMind Virtual Guide and SolMind Guide Assistant contexts.
+
+import "server-only";
 
 import { type SolMindRequestAuthPrincipalSource } from "./requestAuthPrincipalSource";
 import { type SolMindAuthSource } from "./authSource";

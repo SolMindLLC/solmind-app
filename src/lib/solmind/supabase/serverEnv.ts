@@ -5,13 +5,16 @@
 //     needs, without exposing secrets to the browser or logging them.
 //
 // Server-only boundary:
-//   - The `server-only` package is not a dependency in this slice (only
-//     @supabase/supabase-js was approved), so this module enforces the boundary
-//     with a runtime guard and by staying OFF the shared src/lib/solmind/supabase
-//     index barrel. Import it only from explicit server paths.
+//   - The `server-only` package is now a direct dependency, so this module
+//     enforces the boundary at IMPORT time via the `import "server-only";` marker
+//     below (AUTH-RLS-DEC-023), backed by the runtime guard and by staying OFF the
+//     shared src/lib/solmind/supabase index barrel. Import it only from explicit
+//     server paths.
 //   - The service-role key must come ONLY from SUPABASE_SERVICE_ROLE_KEY and must
 //     never be read from a NEXT_PUBLIC_ variable or sent to the client.
 //   - Never log the values read here.
+
+import "server-only";
 
 if (typeof window !== "undefined") {
   throw new Error(

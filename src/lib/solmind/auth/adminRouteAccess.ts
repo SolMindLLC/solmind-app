@@ -14,9 +14,10 @@
 //   - Server-only and OFF the shared src/lib/solmind/auth/index.ts barrel
 //     (AUTH-RLS-DEC-007, AUTH-RLS-DEC-013), mirroring composeRequestAuthContext,
 //     serviceRoleClient, and requestAuthClient. Import it only from explicit server
-//     composition paths. The `server-only` package install remains deferred
-//     (AUTH-RLS-DEC-023, AUTH-RLS-DEF-001); the runtime browser guard below is the
-//     interim, matching the existing server-only family.
+//     composition paths. The `server-only` package is now installed
+//     (AUTH-RLS-DEC-023, AUTH-RLS-DEF-001); the `import "server-only";` marker below
+//     is the import-time guard, backed by the runtime browser guard, matching the
+//     existing server-only family.
 //   - It introduces NO new record loading. The SolMind auth source (the WHAT/record
 //     side) is an injected seam. Real service-role record loading is NOT wired yet
 //     (AUTH-RLS-DEF-009, AUTH-RLS-DEF-010): when no auth source is injected, the
@@ -29,6 +30,8 @@
 //     route-access denial with no record detail.
 //   - Role separation preserved: this resolves identity and /admin access only. It
 //     assembles no Explorer-private or Guide-private context and blends no AI roles.
+
+import "server-only";
 
 import { type SolMindRequestAuthPrincipalSource } from "./requestAuthPrincipalSource";
 import { createInMemoryAuthSource, type SolMindAuthSource } from "./authSource";

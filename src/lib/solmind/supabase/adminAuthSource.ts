@@ -14,11 +14,11 @@
 //
 // Server-only boundary (critical):
 //   - The service-role key BYPASSES RLS, so this module must never run in the
-//     browser. The `server-only` package install remains deferred
-//     (AUTH-RLS-DEC-023, AUTH-RLS-DEF-001); the runtime browser guard below is the
-//     interim boundary, matching the existing server-only family
-//     (serviceRoleClient.ts, serverEnv.ts, requestAuthClient.ts,
-//     composeRequestAuthContext.ts, adminRouteAccess.ts).
+//     browser. The `server-only` package is now installed
+//     (AUTH-RLS-DEC-023, AUTH-RLS-DEF-001); the `import "server-only";` marker below
+//     is the import-time guard, backed by the runtime browser guard, matching the
+//     existing server-only family (serviceRoleClient.ts, serverEnv.ts,
+//     requestAuthClient.ts, composeRequestAuthContext.ts, adminRouteAccess.ts).
 //   - This module stays OFF the shared src/lib/solmind/supabase/index.ts and
 //     src/lib/solmind/auth/index.ts barrels (AUTH-RLS-DEC-007, AUTH-RLS-DEC-013).
 //     It is imported only from the explicit /admin server composition root.
@@ -35,6 +35,8 @@
 //   - Role separation preserved: it loads only the requester's own already-modeled
 //     identity/session/role records by the server-verified principal. It assembles
 //     no Explorer-private or Guide-private context and blends no AI roles.
+
+import "server-only";
 
 import {
   createServiceRoleClient,

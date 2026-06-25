@@ -9,8 +9,8 @@
 //   - This is the single seam where @supabase/ssr, cookies, and headers coupling
 //     enter the codebase (AUTH-RLS-DEC-012, AUTH-RLS-DEC-013). It stays OFF the
 //     shared src/lib/solmind/supabase/index.ts barrel, mirroring serviceRoleClient,
-//     and carries a runtime browser guard. Import it only from explicit server
-//     composition paths.
+//     and carries an import-time `server-only` guard plus a runtime browser guard
+//     (AUTH-RLS-DEC-023). Import it only from explicit server composition paths.
 //   - It resolves IDENTITY only (who). It loads NO SolMind records and creates or
 //     supersedes NO user_session; record loading stays on the separate service-role
 //     query-client path (AUTH-RLS-DEC-015). Identity and record loading are not
@@ -30,6 +30,8 @@
 //   - Cookie writes are a deliberate no-op for MVP0 (AUTH-RLS-DEC-018); the
 //     accessor setAll is passed through to @supabase/ssr but persists nothing
 //     (cookie write/refresh persistence is deferred, AUTH-RLS-DEF-015).
+
+import "server-only";
 
 import { createServerClient } from "@supabase/ssr";
 

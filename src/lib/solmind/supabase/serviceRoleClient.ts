@@ -7,13 +7,16 @@
 //
 // Server-only boundary (critical):
 //   - The service-role key BYPASSES RLS. This module must never run in the
-//     browser. The `server-only` package is not a dependency in this slice, so
-//     the boundary is enforced by a runtime guard and by keeping this module OFF
-//     the shared src/lib/solmind/supabase index barrel. Import it only from
-//     explicit server paths.
+//     browser. The `server-only` package is now a direct dependency, so the
+//     boundary is enforced at IMPORT time by the `import "server-only";` marker
+//     below (AUTH-RLS-DEC-023), backed by the runtime browser guard and by keeping
+//     this module OFF the shared src/lib/solmind/supabase index barrel. Import it
+//     only from explicit server paths.
 //   - Authorization is NOT done here. Every service-role read must run behind
 //     deriveTrustedServerAuthContext and the guard layer, which stay the
 //     authority. This module is a small factory/adapter only.
+
+import "server-only";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
