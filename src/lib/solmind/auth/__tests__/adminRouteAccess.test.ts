@@ -19,6 +19,11 @@ import {
   type SupabaseAuthenticatedUser,
 } from "../serverAuthContext";
 import * as authBarrel from "../index";
+import { createAdminAuthSourceFromExecutor } from "../../supabase/adminAuthSource";
+import {
+  type SupabaseQueryResult,
+  type SupabaseQuerySpec,
+} from "../../supabase/supabaseAuthQueryClient";
 
 const PROVIDER_NAME = "supabase";
 
@@ -169,6 +174,140 @@ describe("resolveAdminRouteAccess - deferred service-role seam", () => {
       guideProfile: null,
       explorerProfile: null,
     });
+  });
+});
+
+// --- Real-shaped Admin auth source (service-role chain over a mocked executor) ---
+//
+// These cases inject the REAL admin-access assembler (createAdminAuthSourceFromExecutor)
+// instead of the plain in-memory double, exercising the actual query client +
+// snake_case mapping + session selection over a deterministic mock executor (no
+// network, DB, or env). resolveAdminRouteAccess's signature is unchanged; only a
+// concrete real-shaped auth source is injected.
+const REAL_NOW = new Date("2026-06-25T12:00:00.000Z");
+const REAL_FUTURE = "2026-06-25T13:00:00.000Z";
+const REAL_ACCOUNT_ID = "user-admin-real-1";
+const REAL_PROVIDER_USER_ID = "auth-user-admin-real-1";
+
+function realNow(): Date {
+  return REAL_NOW;
+}
+
+function realAdminPrincipal(): SupabaseAuthenticatedUser {
+  return { providerName: PROVIDER_NAME, providerUserId: REAL_PROVIDER_USER_ID };
+}
+
+// Mock scoped-select executor: returns a canned result keyed by table.
+function realExecutor(resultByTable: Record<string, SupabaseQueryResult>) {
+  return {
+    select(spec: SupabaseQuerySpec): Promise<SupabaseQueryResult> {
+      return Promise.resolve(
+        resultByTable[spec.table] ?? { data: [], error: null },
+      );
+    },
+  };
+}
+
+function realAdminChainTables(
+  role: "admin" | "guide",
+): Record<string, SupabaseQueryResult> {
+  return {
+    auth_provider_identity: {
+      data: [
+        {
+          user_account_id: REAL_ACCOUNT_ID,
+          provider_name: PROVIDER_NAME,
+          provider_user_id: REAL_PROVIDER_USER_ID,
+          status: "active",
+        },
+      ],
+      error: null,
+    },
+    user_account: {
+      data: [{ user_account_id: REAL_ACCOUNT_ID, account_status: "active" }],
+      error: null,
+    },
+    user_session: {
+      data: [
+        {
+          user_account_id: REAL_ACCOUNT_ID,
+          active_role_context: role,
+          session_status: "active",
+          expires_at: REAL_FUTURE,
+        },
+      ],
+      error: null,
+    },
+    user_role_assignment: {
+      data: [
+        { user_account_id: REAL_ACCOUNT_ID, role_code: role, role_status: "active" },
+      ],
+      error: null,
+    },
+    guide_profile:
+      role === "guide"
+        ? {
+            data: [
+              {
+                guide_profile_id: "guide-profile-real-1",
+                user_account_id: REAL_ACCOUNT_ID,
+                status: "active",
+              },
+            ],
+            error: null,
+          }
+        : { data: [], error: null },
+    explorer_profile: { data: [], error: null },
+  };
+}
+
+describe("resolveAdminRouteAccess - real-shaped service-role auth source", () => {
+  it("allows /admin for a verified Admin loaded through the real assembler", async () => {
+    const authSource = createAdminAuthSourceFromExecutor({
+      executor: realExecutor(realAdminChainTables("admin")),
+      now: realNow,
+    });
+
+    const result = await resolveAdminRouteAccess({
+      principalSource: principalSource(realAdminPrincipal()),
+      authSource,
+    });
+
+    expect(result.allowed).toBe(true);
+    if (result.allowed) {
+      expect(result.context.activeRole).toBe("admin");
+      expect(result.context.identity.userAccountId).toBe(REAL_ACCOUNT_ID);
+    }
+  });
+
+  it("denies /admin for a verified non-Admin (Guide) loaded through the real assembler", async () => {
+    const authSource = createAdminAuthSourceFromExecutor({
+      executor: realExecutor(realAdminChainTables("guide")),
+      now: realNow,
+    });
+
+    const result = await resolveAdminRouteAccess({
+      principalSource: principalSource(realAdminPrincipal()),
+      authSource,
+    });
+
+    expect(result).toEqual({ allowed: false, reason: ROUTE_ACCESS_DENY_REASON });
+  });
+
+  it("denies a null principal WITHOUT reading any records through the real assembler", async () => {
+    const select = vi.fn();
+    const authSource = createAdminAuthSourceFromExecutor({
+      executor: { select },
+      now: realNow,
+    });
+
+    const result = await resolveAdminRouteAccess({
+      principalSource: principalSource(null),
+      authSource,
+    });
+
+    expect(result).toEqual({ allowed: false, reason: ROUTE_ACCESS_DENY_REASON });
+    expect(select).not.toHaveBeenCalled();
   });
 });
 

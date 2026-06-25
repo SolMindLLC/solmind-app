@@ -8,14 +8,16 @@
 //      no-op, AUTH-RLS-DEC-018);
 //   3. construct the @supabase/ssr request-auth principal source from those cookies
 //      (identity / WHO only -- public anon key, never the service-role key);
-//   4. delegate to resolveAdminRouteAccess, which composes the principal source with
-//      the deferred record-load seam (WHAT) and the fixed "/admin" selector.
+//   4. construct the REAL Admin auth source (record load / WHAT) which assembles the
+//      guarded service-role chain (AUTH-RLS-DEF-009, AUTH-RLS-DEF-010 now wired);
+//   5. delegate to resolveAdminRouteAccess, which composes the principal source with
+//      the injected record-load source and the fixed "/admin" selector.
 //
 // It is read-only: it performs no writes, creates/supersedes no user_session, adds no
-// RLS policy, runs no migration, and loads no real SolMind records (record loading is
-// the deferred in-memory seam in adminRouteAccess.ts). It returns only an opaque
-// { allowed } boolean: deny-by-default, fail-closed, and never leaking which record or
-// step failed.
+// RLS policy, and runs no migration. The records it loads are the requester's own
+// already-modeled identity/session/role records, read solely by the server-verified
+// principal; it returns only an opaque { allowed } boolean: deny-by-default,
+// fail-closed, and never leaking which record or step failed.
 //
 // Route Handlers are server-only (never bundled to the client), so the server-only
 // helpers it imports stay off the client. The shared barrels are not used.
@@ -28,6 +30,7 @@ import {
   type RequestCookieAccessor,
 } from "@/lib/solmind/auth/requestCookieAccessor";
 import { createSupabaseRequestAuthPrincipalSource } from "@/lib/solmind/supabase/requestAuthClient";
+import { createAdminAuthSource } from "@/lib/solmind/supabase/adminAuthSource";
 
 // Reading request cookies is a request-time API: this route is always dynamic and is
 // never prerendered at build time.
@@ -55,12 +58,20 @@ export async function GET(): Promise<Response> {
       cookies: requestCookies,
     });
 
-    const result = await resolveAdminRouteAccess({ principalSource });
+    // Records (WHAT): the real Admin auth source, built only here. It assembles the
+    // guarded service-role chain and reads the service-role env. A missing/blank
+    // service-role env throws here and is caught below, denying without detail
+    // (AUTH-RLS-DEC-015, AUTH-RLS-DEC-016). The clock stays explicit so the session
+    // expiration rule is deterministic.
+    const authSource = createAdminAuthSource({ now: () => new Date() });
+
+    const result = await resolveAdminRouteAccess({ principalSource, authSource });
     allowed = result.allowed;
   } catch {
     // Fail closed (AUTH-RLS-DEC-016): any construction or configuration error (for
-    // example missing public env) denies, leaking no detail. The error is swallowed
-    // so no cookie, token, or secret can escape through an error path.
+    // example missing public or service-role env) denies, leaking no detail. The
+    // error is swallowed so no cookie, token, or secret can escape through an error
+    // path.
     allowed = false;
   }
 
