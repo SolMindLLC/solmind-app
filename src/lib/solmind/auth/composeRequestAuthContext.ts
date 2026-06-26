@@ -79,6 +79,18 @@ export type ServiceRoleReadAuditEvent = {
 // seam is default-off until the audit implementation lands).
 export type ServiceRoleReadAuditSink = (event: ServiceRoleReadAuditEvent) => void;
 
+// --- Auth-resolution-failure seam (placement only; value-free) ---
+//
+// A minimal, value-FREE marker that auth resolution failed BY EXCEPTION at this
+// guarded boundary (a thrown/rejected principal source or record load that this
+// composer swallows into the opaque denial). Like onServiceRoleRead, it carries NO
+// principal, token, cookie, record, or raw error, so the seam cannot leak which
+// record or step failed (Doc 16 sections 5, 8). The composer only SIGNALS that a
+// resolution exception occurred; the bounded event model and the audit sink stay
+// one layer up (adminAccessRequest), keeping this module free of the rich event
+// model (AUTH-RLS-DEC-024). It is default-off: omit it and no call is made.
+export type AuthResolutionFailureAuditSink = () => void;
+
 // --- Injected dependencies (ports + the optional audit seam) ---
 //
 // principalSource proves WHO (identity only); authSource loads WHAT (records only).
@@ -89,6 +101,7 @@ export type ComposeRequestAuthContextDependencies = {
   principalSource: SolMindRequestAuthPrincipalSource;
   authSource: SolMindAuthSource;
   onServiceRoleRead?: ServiceRoleReadAuditSink;
+  onAuthResolutionFailure?: AuthResolutionFailureAuditSink;
 };
 
 // --- Request input (browser selectors only, NOT authority) ---
@@ -149,6 +162,16 @@ export async function composeRequestAuthContext(
     // path. The final audit-write-failure posture is decided in the audit
     // implementation slice (AUTH-RLS-DEF-003, AUTH-RLS-DEF-009); failing closed here
     // is the conservative MVP0 interim.
+    //
+    // Signal the value-free auth-resolution-failure seam (Doc 16 section 5) BEFORE
+    // returning. It is wrapped in its own guard so a throwing failure-audit hook can
+    // never re-break fail-closed or leak: any error from the hook is swallowed and
+    // the denial is returned unchanged.
+    try {
+      deps.onAuthResolutionFailure?.();
+    } catch {
+      // Intentionally empty: a throwing failure-audit hook must not propagate.
+    }
     return denyRouteAccess();
   }
 }

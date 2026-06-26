@@ -266,6 +266,105 @@ describe("composeRequestAuthContext - audit seam placement", () => {
   });
 });
 
+describe("composeRequestAuthContext - auth resolution failure seam", () => {
+  it("fires onAuthResolutionFailure exactly once when the principal source rejects, and still denies", async () => {
+    const onAuthResolutionFailure = vi.fn();
+    const throwingPrincipalSource: SolMindRequestAuthPrincipalSource = {
+      resolveAuthenticatedUser: () =>
+        Promise.reject(new Error("token-bearing failure that must not leak")),
+    };
+
+    const result = await composeRequestAuthContext(
+      {
+        principalSource: throwingPrincipalSource,
+        authSource: adminAuthSource(),
+        onAuthResolutionFailure,
+      },
+      { selectors: { requestedRoute: "/admin" } },
+    );
+
+    expect(result).toEqual({ allowed: false, reason: ROUTE_ACCESS_DENY_REASON });
+    expect(onAuthResolutionFailure).toHaveBeenCalledTimes(1);
+  });
+
+  it("fires onAuthResolutionFailure when the record load rejects, and still denies", async () => {
+    const onAuthResolutionFailure = vi.fn();
+    const throwingAuthSource = {
+      loadServerAuthContextInput: () =>
+        Promise.reject(new Error("record load failure that must not leak")),
+      loadGuideRelationship: vi.fn(),
+    } as unknown as SolMindAuthSource;
+
+    const result = await composeRequestAuthContext(
+      {
+        principalSource: principalSource(ADMIN_PRINCIPAL),
+        authSource: throwingAuthSource,
+        onAuthResolutionFailure,
+      },
+      { selectors: { requestedRoute: "/admin" } },
+    );
+
+    expect(result).toEqual({ allowed: false, reason: ROUTE_ACCESS_DENY_REASON });
+    expect(onAuthResolutionFailure).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT fire onAuthResolutionFailure on a clean deny (null principal)", async () => {
+    // A null principal is a clean deny that never throws, so it never reaches the
+    // catch where the failure seam fires (the failure category is exception-only).
+    const onAuthResolutionFailure = vi.fn();
+
+    const result = await composeRequestAuthContext(
+      {
+        principalSource: principalSource(null),
+        authSource: adminAuthSource(),
+        onAuthResolutionFailure,
+      },
+      { selectors: { requestedRoute: "/admin" } },
+    );
+
+    expect(result).toEqual({ allowed: false, reason: ROUTE_ACCESS_DENY_REASON });
+    expect(onAuthResolutionFailure).not.toHaveBeenCalled();
+  });
+
+  it("does NOT fire onAuthResolutionFailure on a clean deny (verified principal, no records)", async () => {
+    const onAuthResolutionFailure = vi.fn();
+
+    const result = await composeRequestAuthContext(
+      {
+        principalSource: principalSource(ADMIN_PRINCIPAL),
+        authSource: createInMemoryAuthSource(),
+        onAuthResolutionFailure,
+      },
+      { selectors: { requestedRoute: "/admin" } },
+    );
+
+    expect(result).toEqual({ allowed: false, reason: ROUTE_ACCESS_DENY_REASON });
+    expect(onAuthResolutionFailure).not.toHaveBeenCalled();
+  });
+
+  it("still denies (does not rethrow) when onAuthResolutionFailure itself throws", async () => {
+    // A throwing failure-audit hook must never re-break fail-closed: the composer's
+    // inner guard swallows it and returns the opaque denial unchanged.
+    const throwingPrincipalSource: SolMindRequestAuthPrincipalSource = {
+      resolveAuthenticatedUser: () =>
+        Promise.reject(new Error("resolution failure")),
+    };
+
+    const result = await composeRequestAuthContext(
+      {
+        principalSource: throwingPrincipalSource,
+        authSource: adminAuthSource(),
+        onAuthResolutionFailure: () => {
+          throw new Error("failure-audit hook throw that must not propagate");
+        },
+      },
+      { selectors: { requestedRoute: "/admin" } },
+    );
+
+    expect(result).toEqual({ allowed: false, reason: ROUTE_ACCESS_DENY_REASON });
+  });
+});
+
 describe("composeRequestAuthContext - barrel exposure", () => {
   it("is not exported from the shared auth index barrel", () => {
     // The server-only composer must stay off the shared barrel (AUTH-RLS-DEC-007,

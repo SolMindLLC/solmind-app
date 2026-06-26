@@ -311,6 +311,54 @@ describe("resolveAdminRouteAccess - real-shaped service-role auth source", () =>
   });
 });
 
+describe("resolveAdminRouteAccess - audit seam forwarding", () => {
+  it("forwards onServiceRoleRead to the guarded boundary (fires once on a service-role read)", async () => {
+    const onServiceRoleRead = vi.fn();
+
+    const result = await resolveAdminRouteAccess({
+      principalSource: principalSource(principalFor("admin")),
+      authSource: authSourceWith("admin"),
+      onServiceRoleRead,
+    });
+
+    expect(result.allowed).toBe(true);
+    expect(onServiceRoleRead).toHaveBeenCalledTimes(1);
+    expect(onServiceRoleRead).toHaveBeenCalledWith({
+      kind: "server_auth_context_read",
+    });
+  });
+
+  it("does not fire onServiceRoleRead for a null principal (deny before read)", async () => {
+    const onServiceRoleRead = vi.fn();
+
+    const result = await resolveAdminRouteAccess({
+      principalSource: principalSource(null),
+      authSource: authSourceWith("admin"),
+      onServiceRoleRead,
+    });
+
+    expect(result).toEqual({ allowed: false, reason: ROUTE_ACCESS_DENY_REASON });
+    expect(onServiceRoleRead).not.toHaveBeenCalled();
+  });
+
+  it("forwards onAuthResolutionFailure (fires once when the principal source rejects)", async () => {
+    const onAuthResolutionFailure = vi.fn();
+    const throwingPrincipalSource: SolMindRequestAuthPrincipalSource = {
+      resolveAuthenticatedUser: () =>
+        Promise.reject(new Error("resolution failure that must not leak")),
+    };
+
+    const result = await resolveAdminRouteAccess({
+      principalSource: throwingPrincipalSource,
+      authSource: authSourceWith("admin"),
+      onAuthResolutionFailure,
+    });
+
+    expect(result).toEqual({ allowed: false, reason: ROUTE_ACCESS_DENY_REASON });
+    expect(onAuthResolutionFailure).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("resolveAdminRouteAccess - barrel exposure", () => {
   it("is not exported from the shared auth index barrel", () => {
     // Server-only helper stays off the shared barrel (AUTH-RLS-DEC-007,

@@ -22,6 +22,7 @@ import {
   AUTH_RLS_AUDIT_ROLE_CONTEXTS,
   AUTH_RLS_AUDIT_TARGET_TYPES,
   type AuthRlsAuditEvent,
+  type AuthRlsAuditEventType,
   type AuthRlsAuditSink,
 } from "../authRlsAuditEvent";
 import { createAdminAuthSourceFromExecutor } from "../../supabase/adminAuthSource";
@@ -202,6 +203,23 @@ function expectBoundedEmittedEvent(event: AuthRlsAuditEvent): void {
   }
 }
 
+// Collect every event handed to a vi.fn() sink, and filter by event type. One sink
+// now receives several bounded categories per request (guarded read, decision, and
+// possibly a failure), so assertions filter by eventType rather than asserting a raw
+// call count.
+type SinkMock = ReturnType<typeof vi.fn>;
+
+function emittedEvents(sink: SinkMock): AuthRlsAuditEvent[] {
+  return sink.mock.calls.map((call) => call[0] as AuthRlsAuditEvent);
+}
+
+function eventsOfType(
+  sink: SinkMock,
+  eventType: AuthRlsAuditEventType,
+): AuthRlsAuditEvent[] {
+  return emittedEvents(sink).filter((event) => event.eventType === eventType);
+}
+
 describe("resolveAdminAccessForRequest - opaque allow", () => {
   it("returns only { allowed: true } for a verified Admin (no context/reason leakage)", async () => {
     const { result } = await callHelperWith({
@@ -307,8 +325,14 @@ describe("resolveAdminAccessForRequest - audit seam", () => {
     });
 
     expect(result).toEqual({ allowed: true });
-    expect(auditSink).toHaveBeenCalledTimes(1);
-    expect(auditSink).toHaveBeenCalledWith({
+    // Filter to the DECISION category: the same sink also receives a guarded-read
+    // event on this path, so a raw call count would be brittle.
+    const decisionEvents = eventsOfType(
+      auditSink,
+      AUTH_RLS_AUDIT_EVENT_TYPES.ADMIN_ROUTE_ACCESS_DECISION,
+    );
+    expect(decisionEvents).toHaveLength(1);
+    expect(decisionEvents[0]).toEqual({
       eventType: AUTH_RLS_AUDIT_EVENT_TYPES.ADMIN_ROUTE_ACCESS_DECISION,
       actorRoleContext: AUTH_RLS_AUDIT_ROLE_CONTEXTS.ADMIN,
       actorUserAccountId: ACCOUNT_ID,
@@ -320,7 +344,11 @@ describe("resolveAdminAccessForRequest - audit seam", () => {
         decision: AUTH_RLS_AUDIT_DECISIONS.ALLOW,
       },
     });
-    expectBoundedEmittedEvent(auditSink.mock.calls[0][0]);
+    expectBoundedEmittedEvent(decisionEvents[0]);
+    // No auth-resolution-failure event on a clean allow.
+    expect(
+      eventsOfType(auditSink, AUTH_RLS_AUDIT_EVENT_TYPES.AUTH_RESOLUTION_FAILURE),
+    ).toHaveLength(0);
   });
 
   it("emits an opaque deny event for a verified non-Admin: system role, no account id", async () => {
@@ -333,8 +361,14 @@ describe("resolveAdminAccessForRequest - audit seam", () => {
     });
 
     expect(result).toEqual({ allowed: false });
-    expect(auditSink).toHaveBeenCalledTimes(1);
-    const event = auditSink.mock.calls[0][0] as AuthRlsAuditEvent;
+    // A verified-but-non-admin request still performs a guarded read, so filter to
+    // the DECISION category rather than reading the first call.
+    const decisionEvents = eventsOfType(
+      auditSink,
+      AUTH_RLS_AUDIT_EVENT_TYPES.ADMIN_ROUTE_ACCESS_DECISION,
+    );
+    expect(decisionEvents).toHaveLength(1);
+    const event = decisionEvents[0];
     expect(event.actorRoleContext).toBe(AUTH_RLS_AUDIT_ROLE_CONTEXTS.SYSTEM);
     expect(event.actorUserAccountId).toBeNull();
     expect(event.reasonCode).toBe(AUTH_RLS_AUDIT_REASON_CODES.ACCESS_DENIED);
@@ -345,6 +379,10 @@ describe("resolveAdminAccessForRequest - audit seam", () => {
     expect(event.actorRoleContext).not.toBe("guide");
     expect(event.actorRoleContext).not.toBe("explorer");
     expectBoundedEmittedEvent(event);
+    // A clean (verified) deny is not a resolution failure: no failure event emitted.
+    expect(
+      eventsOfType(auditSink, AUTH_RLS_AUDIT_EVENT_TYPES.AUTH_RESOLUTION_FAILURE),
+    ).toHaveLength(0);
   });
 
   it("emits an opaque deny event for a null principal without loading records", async () => {
@@ -362,10 +400,22 @@ describe("resolveAdminAccessForRequest - audit seam", () => {
     });
 
     expect(result).toEqual({ allowed: false });
-    // No record load happened, and the emitted event is the opaque system deny.
+    // No record load happened, so no guarded-read event fires; the only event is the
+    // opaque system deny decision. A null principal is a clean deny, NOT a resolution
+    // failure (the failure category is scoped to exceptions).
     expect(select).not.toHaveBeenCalled();
-    expect(auditSink).toHaveBeenCalledTimes(1);
-    const event = auditSink.mock.calls[0][0] as AuthRlsAuditEvent;
+    expect(
+      eventsOfType(auditSink, AUTH_RLS_AUDIT_EVENT_TYPES.GUARDED_SERVICE_ROLE_READ),
+    ).toHaveLength(0);
+    expect(
+      eventsOfType(auditSink, AUTH_RLS_AUDIT_EVENT_TYPES.AUTH_RESOLUTION_FAILURE),
+    ).toHaveLength(0);
+    const decisionEvents = eventsOfType(
+      auditSink,
+      AUTH_RLS_AUDIT_EVENT_TYPES.ADMIN_ROUTE_ACCESS_DECISION,
+    );
+    expect(decisionEvents).toHaveLength(1);
+    const event = decisionEvents[0];
     expect(event.actorRoleContext).toBe(AUTH_RLS_AUDIT_ROLE_CONTEXTS.SYSTEM);
     expect(event.actorUserAccountId).toBeNull();
     expectBoundedEmittedEvent(event);
@@ -386,7 +436,9 @@ describe("resolveAdminAccessForRequest - audit seam", () => {
       auditSink: collect,
     });
 
-    expect(events).toHaveLength(2);
+    // Each request now emits two events (a guarded read and the access decision), so
+    // four across the allow and deny calls. Every one carries only admin/system.
+    expect(events).toHaveLength(4);
     for (const event of events) {
       expect(["admin", "system"]).toContain(event.actorRoleContext);
       expect(event.actorRoleContext).not.toBe("explorer");
@@ -410,5 +462,244 @@ describe("resolveAdminAccessForRequest - audit seam", () => {
     // caught and denies (the safe MVP0 interim posture).
     expect(result).toEqual({ allowed: false });
     expectOpaque(result);
+  });
+});
+
+describe("resolveAdminAccessForRequest - guarded service-role read seam", () => {
+  it("emits exactly one bounded guarded-read event when a service-role read happens (admin allow)", async () => {
+    const auditSink = vi.fn();
+
+    const { result } = await callHelperWith({
+      principal: ADMIN_PRINCIPAL,
+      resultByTable: chainTables("admin"),
+      auditSink,
+    });
+
+    expect(result).toEqual({ allowed: true });
+    const reads = eventsOfType(
+      auditSink,
+      AUTH_RLS_AUDIT_EVENT_TYPES.GUARDED_SERVICE_ROLE_READ,
+    );
+    expect(reads).toHaveLength(1);
+    const read = reads[0];
+    // Admin boundary context, and no account id yet (the read precedes record load),
+    // per the createGuardedServiceRoleReadEvent contract.
+    expect(read.actorRoleContext).toBe(AUTH_RLS_AUDIT_ROLE_CONTEXTS.ADMIN);
+    expect(read.actorUserAccountId).toBeNull();
+    expect(read.reasonCode).toBe(AUTH_RLS_AUDIT_REASON_CODES.GUARDED_READ);
+    expect(read.eventSummary).toBe(
+      AUTH_RLS_AUDIT_EVENT_SUMMARIES.GUARDED_SERVICE_ROLE_READ,
+    );
+    expect(read.targetEntityType).toBe(AUTH_RLS_AUDIT_TARGET_TYPES.ADMIN_ROUTE);
+    expectBoundedEmittedEvent(read);
+  });
+
+  it("emits the guarded-read with admin/system context only for a verified non-Admin (never guide/explorer)", async () => {
+    // The read fires before the active role is known, so a guide principal still
+    // yields a guarded-read carrying only the admin boundary context and a null
+    // account id; no guide/explorer identity is ever attributed (req 5).
+    const auditSink = vi.fn();
+
+    const { result } = await callHelperWith({
+      principal: ADMIN_PRINCIPAL,
+      resultByTable: chainTables("guide"),
+      auditSink,
+    });
+
+    expect(result).toEqual({ allowed: false });
+    const reads = eventsOfType(
+      auditSink,
+      AUTH_RLS_AUDIT_EVENT_TYPES.GUARDED_SERVICE_ROLE_READ,
+    );
+    expect(reads).toHaveLength(1);
+    expect(["admin", "system"]).toContain(reads[0].actorRoleContext);
+    expect(reads[0].actorRoleContext).not.toBe("guide");
+    expect(reads[0].actorRoleContext).not.toBe("explorer");
+    expect(reads[0].actorUserAccountId).toBeNull();
+    expectBoundedEmittedEvent(reads[0]);
+  });
+
+  it("emits NO guarded-read event when the principal is null (no service-role read happens)", async () => {
+    const auditSink = vi.fn();
+    const select = vi.fn();
+
+    const result = await resolveAdminAccessForRequest({
+      cookies: cookies(),
+      createPrincipalSource: () =>
+        createInMemoryRequestAuthPrincipalSource(null),
+      createAuthSource: ({ now }) =>
+        createAdminAuthSourceFromExecutor({ executor: { select }, now }),
+      now: nowProvider,
+      auditSink,
+    });
+
+    expect(result).toEqual({ allowed: false });
+    expect(select).not.toHaveBeenCalled();
+    expect(
+      eventsOfType(auditSink, AUTH_RLS_AUDIT_EVENT_TYPES.GUARDED_SERVICE_ROLE_READ),
+    ).toHaveLength(0);
+  });
+
+  it("fails closed (deny, opaque, no rethrow) when the sink throws on the guarded-read event", async () => {
+    // A sink that throws only on the guarded-read event. The read seam fires inside
+    // composeRequestAuthContext, so the throw is swallowed into the opaque denial and
+    // the outward result is still exactly { allowed: false }.
+    const auditSink = vi.fn((event: AuthRlsAuditEvent) => {
+      if (
+        event.eventType === AUTH_RLS_AUDIT_EVENT_TYPES.GUARDED_SERVICE_ROLE_READ
+      ) {
+        throw new Error("guarded-read sink failure that must not leak or allow");
+      }
+    });
+
+    const { result } = await callHelperWith({
+      principal: ADMIN_PRINCIPAL,
+      resultByTable: chainTables("admin"),
+      auditSink,
+    });
+
+    expect(result).toEqual({ allowed: false });
+    expectOpaque(result);
+  });
+});
+
+describe("resolveAdminAccessForRequest - auth resolution failure seam", () => {
+  it("emits exactly one bounded auth-resolution-failure event when the principal source throws, then denies", async () => {
+    // A principal source that REJECTS (a resolution exception) is swallowed inside
+    // composeRequestAuthContext, which signals the value-free onAuthResolutionFailure
+    // seam; this boundary bridges it to a bounded failure event.
+    const auditSink = vi.fn();
+
+    const { result } = await callHelperWith({
+      principal: ADMIN_PRINCIPAL,
+      auditSink,
+      principalSourceFactory: () => ({
+        resolveAuthenticatedUser: () =>
+          Promise.reject(
+            new Error("token-bearing resolution failure that must not leak"),
+          ),
+      }),
+    });
+
+    expect(result).toEqual({ allowed: false });
+    expectOpaque(result);
+    const failures = eventsOfType(
+      auditSink,
+      AUTH_RLS_AUDIT_EVENT_TYPES.AUTH_RESOLUTION_FAILURE,
+    );
+    expect(failures).toHaveLength(1);
+    const failure = failures[0];
+    expect(failure.actorRoleContext).toBe(AUTH_RLS_AUDIT_ROLE_CONTEXTS.SYSTEM);
+    expect(failure.actorUserAccountId).toBeNull();
+    expect(failure.reasonCode).toBe(AUTH_RLS_AUDIT_REASON_CODES.AUTH_UNRESOLVED);
+    expect(failure.eventSummary).toBe(
+      AUTH_RLS_AUDIT_EVENT_SUMMARIES.AUTH_RESOLUTION_FAILED,
+    );
+    expect(failure.actorRoleContext).not.toBe("guide");
+    expect(failure.actorRoleContext).not.toBe("explorer");
+    expectBoundedEmittedEvent(failure);
+    // No service-role read happened: resolution threw before the read seam.
+    expect(
+      eventsOfType(auditSink, AUTH_RLS_AUDIT_EVENT_TYPES.GUARDED_SERVICE_ROLE_READ),
+    ).toHaveLength(0);
+  });
+
+  it("emits exactly one auth-resolution-failure event when a construction factory throws, then denies", async () => {
+    // A missing service-role env throws at auth-source construction in the request
+    // path; this module's own fail-closed catch records the failure and denies.
+    const auditSink = vi.fn();
+
+    const { result } = await callHelperWith({
+      principal: ADMIN_PRINCIPAL,
+      auditSink,
+      authSourceFactory: () => {
+        throw new Error(
+          "SolMind server configuration error: missing service-role env",
+        );
+      },
+    });
+
+    expect(result).toEqual({ allowed: false });
+    expectOpaque(result);
+    expect(
+      eventsOfType(auditSink, AUTH_RLS_AUDIT_EVENT_TYPES.AUTH_RESOLUTION_FAILURE),
+    ).toHaveLength(1);
+  });
+
+  it("fails closed (deny, opaque, no rethrow) when the sink itself throws on the failure event", async () => {
+    // The construction factory throws AND the sink throws on every event: the inner
+    // guard in the fail-closed catch swallows the sink throw, so the request still
+    // returns exactly { allowed: false } and never rethrows.
+    const throwingSink: AuthRlsAuditSink = () => {
+      throw new Error("audit sink failure that must not leak or allow");
+    };
+
+    const { result } = await callHelperWith({
+      principal: ADMIN_PRINCIPAL,
+      auditSink: throwingSink,
+      authSourceFactory: () => {
+        throw new Error(
+          "SolMind server configuration error: missing service-role env",
+        );
+      },
+    });
+
+    expect(result).toEqual({ allowed: false });
+    expectOpaque(result);
+  });
+
+  it("still fails closed and emits only bounded events when an inner failure was emitted and the later decision sink throws", async () => {
+    // Edge case (documented, not de-duplicated): the principal source REJECTS, so the
+    // inner onAuthResolutionFailure bridge emits a bounded failure event; the DECISION
+    // sink then throws, routing into this module's own fail-closed catch, which emits a
+    // second bounded failure event. The request must still return exactly
+    // { allowed: false } and never rethrow. De-duplication is intentionally NOT
+    // required here (the future audit-writer slice decides duplicate-failure policy);
+    // only bounded, no-leak, fail-closed behavior is asserted.
+    const DECISION_SINK_SECRET = "decision-sink failure that must not leak";
+    const INNER_RESOLUTION_SECRET = "inner resolution failure that must not leak";
+    const auditSink = vi.fn((event: AuthRlsAuditEvent) => {
+      if (
+        event.eventType === AUTH_RLS_AUDIT_EVENT_TYPES.ADMIN_ROUTE_ACCESS_DECISION
+      ) {
+        throw new Error(DECISION_SINK_SECRET);
+      }
+    });
+
+    const { result } = await callHelperWith({
+      principal: ADMIN_PRINCIPAL,
+      auditSink,
+      principalSourceFactory: () => ({
+        resolveAuthenticatedUser: () =>
+          Promise.reject(new Error(INNER_RESOLUTION_SECRET)),
+      }),
+    });
+
+    // Fails closed and opaque despite the inner failure plus the throwing decision sink.
+    expect(result).toEqual({ allowed: false });
+    expectOpaque(result);
+
+    // At least one bounded auth-resolution-failure event was emitted. Current behavior
+    // emits two (the inner bridge and this module's catch); the assertion does not
+    // require de-duplication so a future writer-slice refinement stays compatible.
+    const failures = eventsOfType(
+      auditSink,
+      AUTH_RLS_AUDIT_EVENT_TYPES.AUTH_RESOLUTION_FAILURE,
+    );
+    expect(failures.length).toBeGreaterThanOrEqual(1);
+
+    // Every emitted event stays bounded (closed key set, admin/system role only, no
+    // free-form content), and no raw error, role, account, or relationship detail
+    // leaks into any event.
+    const all = emittedEvents(auditSink);
+    for (const event of all) {
+      expectBoundedEmittedEvent(event);
+      expect(["admin", "system"]).toContain(event.actorRoleContext);
+      expect(event.actorRoleContext).not.toBe("guide");
+      expect(event.actorRoleContext).not.toBe("explorer");
+    }
+    const serialized = JSON.stringify(all);
+    expect(serialized).not.toContain(DECISION_SINK_SECRET);
+    expect(serialized).not.toContain(INNER_RESOLUTION_SECRET);
   });
 });

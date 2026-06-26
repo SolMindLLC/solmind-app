@@ -35,7 +35,11 @@ import "server-only";
 
 import { type SolMindRequestAuthPrincipalSource } from "./requestAuthPrincipalSource";
 import { createInMemoryAuthSource, type SolMindAuthSource } from "./authSource";
-import { composeRequestAuthContext } from "./composeRequestAuthContext";
+import {
+  composeRequestAuthContext,
+  type AuthResolutionFailureAuditSink,
+  type ServiceRoleReadAuditSink,
+} from "./composeRequestAuthContext";
 import { type AuthorizeRouteAccessResult } from "./routeAccessDecision";
 
 if (typeof window !== "undefined") {
@@ -67,16 +71,28 @@ export function createDeferredAdminAuthSource(): SolMindAuthSource {
 //   - authSource (optional): the record-load seam (WHAT). Defaults to the deferred
 //     deny-by-default in-memory seam above. A future slice injects the real
 //     service-role-backed source here, with no change to this signature.
+//   - onServiceRoleRead / onAuthResolutionFailure (optional): the two value-free,
+//     default-off audit seams of composeRequestAuthContext, forwarded verbatim. This
+//     helper only THREADS them through; it builds no audit event and imports no event
+//     model, so the rich Auth/RLS event model stays in the request composition root
+//     (adminAccessRequest). Omit them and the seams stay no-op.
 //
 // Returns the existing AuthorizeRouteAccessResult unchanged: deny-by-default,
 // fail-closed, and opaque on denial.
 export async function resolveAdminRouteAccess(args: {
   principalSource: SolMindRequestAuthPrincipalSource;
   authSource?: SolMindAuthSource;
+  onServiceRoleRead?: ServiceRoleReadAuditSink;
+  onAuthResolutionFailure?: AuthResolutionFailureAuditSink;
 }): Promise<AuthorizeRouteAccessResult> {
   const authSource = args.authSource ?? createDeferredAdminAuthSource();
   return composeRequestAuthContext(
-    { principalSource: args.principalSource, authSource },
+    {
+      principalSource: args.principalSource,
+      authSource,
+      onServiceRoleRead: args.onServiceRoleRead,
+      onAuthResolutionFailure: args.onAuthResolutionFailure,
+    },
     { selectors: { requestedRoute: ADMIN_ACCESS_ROUTE } },
   );
 }

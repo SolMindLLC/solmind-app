@@ -32,18 +32,30 @@
 //     detail from resolveAdminRouteAccess are intentionally dropped here, so the
 //     outward /admin/access surface can never leak them and no Explorer-private or
 //     Guide-private field is assembled into the response.
-//   - Audit seam wiring (AUTH-RLS-DEC-024; Doc 16 sections 5-7, 9). This boundary
-//     emits exactly ONE bounded Admin route access decision event per request,
-//     through the banked authRlsAuditEvent seam, at the access-decision point. The
-//     seam is DEFAULT-OFF: when no sink is injected, the no-op sink is used and
-//     NOTHING is persisted, so this adds no persistence and no runtime behavior
-//     change. A deny is recorded opaquely (system role context, no account id), so a
-//     denied or unauthenticated Explorer/Guide identity is never attributed; only an
-//     allow carries the server-derived admin account id. No real writer, database
-//     access, RLS policy, or audit.audit_event insert is added here; the writer and
-//     its fail-open-vs-closed posture remain deferred (AUTH-RLS-DEF-003,
-//     AUTH-RLS-DEF-009). The lower-level onServiceRoleRead seam and the
-//     auth-resolution-failure category are intentionally NOT wired in this slice.
+//   - Audit seam wiring (AUTH-RLS-DEC-024; Doc 16 sections 5-7, 9). This boundary is
+//     the single place the bounded authRlsAuditEvent model is constructed, and it now
+//     emits all three MVP0 Auth/RLS categories through ONE default-off sink:
+//       1. the Admin route access DECISION event, at the access-decision point;
+//       2. the GUARDED SERVICE-ROLE READ event, bridged from composeRequestAuthContext's
+//          value-free onServiceRoleRead seam (fired exactly where the read happens, so
+//          the server-derived account id is not yet known and is null);
+//       3. the AUTH-RESOLUTION-FAILURE event (by exception), bridged from the value-free
+//          onAuthResolutionFailure seam for an exception swallowed inside
+//          composeRequestAuthContext, AND emitted from this module's own fail-closed
+//          catch for a request-path exception (a factory construction error, or a
+//          throwing decision sink).
+//     The seam is DEFAULT-OFF: when no sink is injected, the no-op sink is used and
+//     NOTHING is persisted, so this adds no persistence and no runtime behavior change.
+//     A deny is recorded opaquely (system role context, no account id), so a denied or
+//     unauthenticated Explorer/Guide identity is never attributed; only an allow
+//     carries the server-derived admin account id; the guarded-read event carries only
+//     the admin boundary role context (never guide/explorer) with a null account id. No
+//     real writer, database access, RLS policy, or audit.audit_event insert is added
+//     here; the writer and its fail-open-vs-closed posture remain deferred
+//     (AUTH-RLS-DEF-003, AUTH-RLS-DEF-009). A null-principal denial stays the existing
+//     opaque decision(deny) event and is NOT additionally recorded as a failure: the
+//     failure category is scoped to exceptions (Doc 16 section 5 lists the null case
+//     under the category, but task scope records it by exception only).
 
 import "server-only";
 
@@ -55,6 +67,8 @@ import { type AuthorizeRouteAccessResult } from "./routeAccessDecision";
 import {
   AUTH_RLS_AUDIT_DECISIONS,
   createAdminAccessDecisionEvent,
+  createAuthResolutionFailureEvent,
+  createGuardedServiceRoleReadEvent,
   NOOP_AUTH_RLS_AUDIT_SINK,
   type AuthRlsAuditEvent,
   type AuthRlsAuditSink,
@@ -123,6 +137,11 @@ function toAdminAccessDecisionEvent(
 export async function resolveAdminAccessForRequest(
   deps: AdminAccessRequestDependencies,
 ): Promise<AdminAccessResult> {
+  // Resolve the audit sink ONCE, before the try, so the fail-closed catch below can
+  // also emit through it. Default-off: when no sink is injected the no-op sink is
+  // used and NOTHING is persisted (Doc 16 sections 2, 9).
+  const auditSink = deps.auditSink ?? NOOP_AUTH_RLS_AUDIT_SINK;
+
   try {
     const now = deps.now ?? (() => new Date());
     const createPrincipalSource =
@@ -136,7 +155,25 @@ export async function resolveAdminAccessForRequest(
     // missing/blank service-role env throws here and is caught below, denying.
     const authSource = createAuthSource({ now });
 
-    const result = await resolveAdminRouteAccess({ principalSource, authSource });
+    // Bridge the two value-free composition seams (composeRequestAuthContext) to the
+    // bounded Auth/RLS event model, both through the same default-off sink:
+    //   - onServiceRoleRead fires exactly where the guarded service-role read happens
+    //     (before records load), so the server-derived account id is not yet known and
+    //     is null, per the createGuardedServiceRoleReadEvent contract. The event
+    //     carries only the admin boundary role context, never guide/explorer.
+    //   - onAuthResolutionFailure fires when composeRequestAuthContext swallows a
+    //     resolution exception (a thrown principal source or record load) into the
+    //     opaque denial. The event is a generic system security event with no
+    //     principal and no failure detail.
+    // This is the only place the rich event model is constructed.
+    const result = await resolveAdminRouteAccess({
+      principalSource,
+      authSource,
+      onServiceRoleRead: () =>
+        auditSink(createGuardedServiceRoleReadEvent({ actorUserAccountId: null })),
+      onAuthResolutionFailure: () =>
+        auditSink(createAuthResolutionFailureEvent()),
+    });
 
     // Emit exactly one bounded Admin route access decision event at this boundary
     // (Doc 16 sections 5-7, 9). Default-off: the sink is the no-op unless a real
@@ -144,14 +181,35 @@ export async function resolveAdminAccessForRequest(
     // A throwing injected sink is caught below and fails closed (denies), the safe
     // MVP0 interim until the writer slice fixes the failure posture
     // (AUTH-RLS-DEF-003, AUTH-RLS-DEF-009).
-    const auditSink = deps.auditSink ?? NOOP_AUTH_RLS_AUDIT_SINK;
     auditSink(toAdminAccessDecisionEvent(result));
 
     // Reduce to the opaque boolean: drop reason/context so nothing leaks outward.
     return { allowed: result.allowed };
   } catch {
-    // Fail closed: swallow any construction/configuration error (or a throwing
-    // injected audit sink) and deny.
+    // Fail closed: swallow any REQUEST-PATH exception and deny. This catch covers
+    // exceptions raised in this composition root rather than inside
+    // composeRequestAuthContext (whose own resolution exceptions already fire the
+    // onAuthResolutionFailure bridge above): a principal/auth-source FACTORY or
+    // CONSTRUCTION error (for example a missing service-role env), or a throwing
+    // DECISION sink. It records the request-path exception as a bounded
+    // auth-resolution-failure event (Doc 16 section 5), itself guarded so a throwing
+    // sink can never re-break fail-closed or leak.
+    //
+    // Duplicate-failure note: on the rare path where an inner resolution exception
+    // already emitted a failure event and the later decision sink then throws, this
+    // catch emits a SECOND bounded failure event (no de-duplication). That is
+    // acceptable for the MVP0 default-off seam -- every event stays bounded and the
+    // outcome is unchanged -- and the future real audit-writer slice may refine
+    // duplicate-failure behavior once the audit-write failure policy is decided
+    // (AUTH-RLS-DEF-003, AUTH-RLS-DEF-009).
+    //
+    // The outward result is always exactly { allowed: false } with no reason or
+    // error detail.
+    try {
+      auditSink(createAuthResolutionFailureEvent());
+    } catch {
+      // Intentionally empty: a throwing sink must not flip the deny or leak.
+    }
     return { allowed: false };
   }
 }
