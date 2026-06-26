@@ -6,7 +6,9 @@ This repository contains the SolMind MVP0 application shell built with Next.js, 
 
 ## Current MVP0 App Scope
 
-The current app is a static MVP0 preview shell with these routes:
+The current app pairs a static MVP0 preview UI with several banked, foundation-first backend modules. The user-facing pages remain preview and foundation surfaces, not complete runtime workflows.
+
+User-facing routes (preview):
 
 ```text
 /
@@ -16,17 +18,37 @@ The current app is a static MVP0 preview shell with these routes:
  /explorer
 ```
 
+Server route handlers:
+
+```text
+/admin/access
+```
+
 Current route purpose:
 
 | Route | Purpose |
 |---|---|
-| `/` | Public landing page |
+| `/` | Public landing page (preview) |
 | `/login` | Login preview |
 | `/admin` | Admin dashboard preview |
 | `/guide` | Guide dashboard preview |
 | `/explorer` | Explorer conversation preview |
+| `/admin/access` | Opaque server-side Admin access probe returning only `{ allowed }` |
 
-Authentication, Supabase persistence, invitations, onboarding workflows, conversation storage, safety escalation, and role-based access control are not yet implemented.
+Banked backend foundations (high level):
+
+- Supabase schema foundations: MVP0 schemas and tables exist through migrations under `supabase/migrations`, with Row Level Security enabled deny-by-default on application tables.
+- Auth/RLS request-auth boundary, real Admin auth-source loading, and server-only hardening under `src/lib/solmind/auth` and `src/lib/solmind/supabase`.
+- An Auth/RLS audit event seam and the `/admin/access` audit-seam wiring (default-off / no-op).
+
+What "banked" does and does not mean:
+
+- `/admin/access` is an opaque JSON probe that returns only `{ allowed }`. It does not yet mean the `/admin`, `/guide`, or `/explorer` pages are fully protected runtime workflows.
+- Permissive or role-aware RLS policies, grants, and runtime access enforcement remain deferred; RLS stays deny-by-default.
+- The audit seam is default-off / no-op: there is no real sink or store, no `audit.audit_event` writer, no runtime database audit writes, and no audit-persistence migrations or grants.
+- Login/provisioning write paths, invitations, onboarding workflows, conversation storage, and the safety escalation runtime workflow are not yet implemented.
+
+The authoritative banked-vs-deferred Auth/RLS status is tracked in `../solmind-docs/execution/12_SolMind_MVP0_Auth_RLS_Decision_Deferral_Register_v0_1.md` (Section 11).
 
 ## Canonical SolMind Roles
 
@@ -57,16 +79,19 @@ The MVP0 authentication model is:
 | Guide | Password plus email or SMS verification |
 | Admin | Admin password plus verification code |
 
-Do not describe Guide login as passwordless. Guide authentication must remain aligned with the SolMind documentation repository before Supabase/auth implementation begins.
+Do not describe Guide login as passwordless. Guide authentication copy must remain aligned with the SolMind documentation repository.
 
 ## Source Layout
 
 ```text
 src/
   app/
+    layout.tsx
     page.tsx
+    globals.css
     login/page.tsx
     admin/page.tsx
+    admin/access/route.ts
     guide/page.tsx
     explorer/page.tsx
 
@@ -90,6 +115,7 @@ src/
     solmind/
       conversation.ts
       dashboardPanels.ts
+      invitations.ts
       loginOptions.ts
       navigation.ts
       onboarding.ts
@@ -99,7 +125,17 @@ src/
       routeAccess.ts
       terms.ts
       topics.ts
+      auth/        server-side deny-by-default authorization and the request-auth boundary
+      context/     Explorer-facing and AI-role context assembly helpers
+      supabase/    server-side Supabase integration (request-auth client, service-role loader, mapping)
+
+supabase/
+  config.toml
+  migrations/    MVP0 schema foundations with Row Level Security enabled deny-by-default
+  seed.sql
 ```
+
+Server-only modules under `src/lib/solmind/auth` and `src/lib/solmind/supabase` are kept off the shared client barrels, and each module area has co-located `__tests__` unit tests.
 
 ## Module Boundary Pattern
 
@@ -151,7 +187,7 @@ In particular:
 - Do not put Supabase service-role keys in `NEXT_PUBLIC_*`.
 - Do not expose bootstrap tokens in client components.
 - Keep Admin bootstrap credentials and server-only tokens on the server side only.
-- Add `.env.example` before introducing real environment-dependent code.
+- `.env.example` exists at the repo root; keep it current as environment-dependent code grows, and never place real secrets in it.
 
 ## Local Development
 
@@ -214,7 +250,7 @@ Claude Code local executor exception: Claude Code must stop before `git add`, `g
 
 ## Current Build Status
 
-As of the current MVP0 shell checkpoint:
+As of the current MVP0 checkpoint:
 
 - `npm.cmd run lint` passes.
 - `npm.cmd run build` passes.
@@ -224,8 +260,11 @@ As of the current MVP0 shell checkpoint:
   - `/admin`
   - `/guide`
   - `/explorer`
+  - `/admin/access` (server route handler)
 
 ## Next Implementation Direction
+
+Several backend foundations below are already banked (see Current MVP0 App Scope): Supabase schema foundations through migrations, and the read-only Auth/RLS request-auth boundary with the `/admin/access` probe. The remaining items, plus the deferred runtime work (RLS policy/grant enforcement, a real audit sink/store and `audit.audit_event` writer, and login/provisioning write paths), are the next areas.
 
 Recommended next build areas:
 

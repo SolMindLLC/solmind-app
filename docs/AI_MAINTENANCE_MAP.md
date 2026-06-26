@@ -6,9 +6,9 @@ Purpose: Help AI coding assistants safely understand, maintain, and extend the S
 
 ## Current Application Scope
 
-This repository contains the SolMind MVP0 application shell.
+This repository pairs the SolMind MVP0 preview UI with several banked, foundation-first backend modules. The user-facing pages remain preview and foundation surfaces, not complete runtime workflows.
 
-Current routes:
+User-facing routes (preview):
 
 - `/` — public landing page
 - `/login` — login preview
@@ -16,7 +16,11 @@ Current routes:
 - `/guide` — human Guide dashboard preview
 - `/explorer` — Explorer conversation preview
 
-The app currently uses static preview pages only. Authentication, Supabase persistence, invitations, role enforcement, intake workflows, conversation storage, safety flags, and Guide/Admin workflows are not yet implemented.
+Server route handlers:
+
+- `/admin/access` — opaque server-side Admin access probe returning only `{ allowed }`
+
+The user-facing pages are still static preview surfaces. Backend foundations are banked at a high level: Supabase schema foundations (migrations, with Row Level Security enabled deny-by-default), the Auth/RLS request-auth boundary, real Admin auth-source loading, server-only hardening, and the Auth/RLS audit event seam wired at `/admin/access` (default-off / no-op). Still not implemented: permissive or role-aware RLS policies, grants, and runtime enforcement; a real audit sink/store and `audit.audit_event` writer; login/provisioning writes; invitations; intake workflows; conversation storage; safety-flag runtime handling; and Guide/Admin runtime workflows. See the "Banked Foundations vs Still Deferred" section below and the authoritative register in `../solmind-docs/execution/12_SolMind_MVP0_Auth_RLS_Decision_Deferral_Register_v0_1.md`.
 
 ## Canonical Product Documentation
 
@@ -48,6 +52,14 @@ Common references:
 - `execution/07_SolMind_MVP0_Implementation_Task_Breakdown_v1_0.md`
 - `execution/08_SolMind_MVP0_Test_Plan_v1_0.md`
 
+Auth/RLS tracking and plans (authoritative banked-vs-deferred status):
+
+- `execution/12_SolMind_MVP0_Auth_RLS_Decision_Deferral_Register_v0_1.md` (Section 11 is the current implementation-status register)
+- `execution/13_SolMind_MVP0_Auth_RLS_Request_Auth_Client_Boundary_Plan_v0_1.md`
+- `execution/14_SolMind_MVP0_Auth_RLS_First_Server_Only_Route_Integration_Plan_v0_1.md`
+- `execution/15_SolMind_MVP0_Auth_RLS_Real_Admin_Auth_Source_Loading_Plan_v0_1.md`
+- `execution/16_SolMind_MVP0_Auth_RLS_Audit_Seam_Plan_v0_1.md`
+
 ## Canonical Role Names
 
 Use these SolMind role names consistently:
@@ -76,6 +88,7 @@ src/
     layout.tsx
     globals.css
     admin/page.tsx
+    admin/access/route.ts
     explorer/page.tsx
     guide/page.tsx
     login/page.tsx
@@ -100,6 +113,7 @@ src/
     solmind/
       conversation.ts
       dashboardPanels.ts
+      invitations.ts
       loginOptions.ts
       navigation.ts
       onboarding.ts
@@ -109,7 +123,17 @@ src/
       routeAccess.ts
       terms.ts
       topics.ts
+      auth/        server-side deny-by-default authorization and request-auth boundary
+      context/     Explorer-facing and AI-role context assembly helpers
+      supabase/    server-side Supabase integration (request-auth client, service-role loader, mapping)
+
+supabase/
+  config.toml
+  migrations/    MVP0 schema foundations with Row Level Security enabled deny-by-default
+  seed.sql
 ```
+
+The `auth/`, `context/`, and `supabase/` directories hold server-only modules kept off the shared client barrels, each with co-located `__tests__` unit tests.
 
 ## File Responsibility Map
 
@@ -126,6 +150,11 @@ src/
 | Onboarding preview | `src/lib/solmind/onboarding.ts` | Static Explorer onboarding/checkpoint definitions |
 | Terms | `src/lib/solmind/terms.ts` | Canonical product and assistant terms |
 | Conversation/profile/topics | `src/lib/solmind/*.ts` | Static Explorer preview content |
+| Admin access probe | `src/app/admin/access/route.ts` | Opaque read-only Admin access probe returning `{ allowed }`; does not protect pages |
+| Server authorization | `src/lib/solmind/auth/*.ts` | Deny-by-default request-auth boundary, role context, route-access decisions, relationship guards, and the default-off audit event seam |
+| Role/AI context | `src/lib/solmind/context/*.ts` | Explorer-facing and AI-role context assembly; keeps Explorer-private and Guide-private context separate |
+| Supabase integration | `src/lib/solmind/supabase/*.ts` | Server-side request-auth client (who), guarded service-role loader (what), principal mapping, session selection |
+| Schema foundations | `supabase/migrations/*.sql` | MVP0 schemas and tables; Row Level Security enabled deny-by-default; no permissive policies or grants yet |
 
 ## MVP0 Authentication Model
 
@@ -150,7 +179,7 @@ Do not expose:
 - provider secrets
 - server-only credentials
 
-Add `.env.example` before implementing environment-dependent code.
+`.env.example` exists at the repo root; keep it current as environment-dependent code grows, and never place real secrets in it.
 
 ## Safe Change Pattern
 
@@ -166,15 +195,28 @@ npm.cmd run build
 
 5. If Paul approves staging and committing, commit with a narrow message. Claude Code must stop before `git add`, `git commit`, and `git push` unless Paul explicitly approves those actions in the current task.
 
-## Do Not Start Yet
+## Banked Foundations vs Still Deferred
 
-Do not implement these areas until the prerequisite docs and tests exist:
+Earlier guidance told agents not to start Supabase, auth, or RLS. That is no longer accurate. Several foundation-first backend modules are now banked in this repo. Treat the items below accordingly, and verify current status against `../solmind-docs/execution/12_SolMind_MVP0_Auth_RLS_Decision_Deferral_Register_v0_1.md` (Section 11), which is the authoritative Auth/RLS banked-vs-deferred register.
 
-- Supabase schema or RLS
-- authentication middleware
+### Banked foundations (do not re-create or duplicate)
+
+- Supabase schema foundations: MVP0 schemas and tables exist through migrations under `supabase/migrations`, with Row Level Security enabled deny-by-default on application tables.
+- The Auth/RLS request-auth boundary, real Admin auth-source loading, and server-only hardening under `src/lib/solmind/auth` and `src/lib/solmind/supabase`.
+- The `/admin/access` server route handler: an opaque probe returning only `{ allowed }`. It is read-only and does not protect the `/admin`, `/guide`, or `/explorer` pages.
+- The Auth/RLS audit event seam (`src/lib/solmind/auth/authRlsAuditEvent.ts`) and the `/admin/access` audit-seam wiring. The seam is default-off / no-op.
+
+Extend these modules deliberately and in small slices. Keep server-only modules off the shared client barrels, as the existing code does.
+
+### Still deferred (do not start without prerequisite docs, tests, and approval)
+
+- Permissive or role-aware RLS policies, grants, and runtime access enforcement. RLS stays deny-by-default.
+- A real audit sink or store, an `audit.audit_event` writer, runtime database audit writes, and any audit-persistence migrations or grants. The audit seam stays default-off / no-op until a separately approved slice.
+- Authentication middleware. MVP0 deliberately prefers explicit per-route and server-action composition over middleware (register decision AUTH-RLS-DEC-017); do not introduce middleware without a specific approved justification.
+- The login/provisioning write path (creating or superseding sessions and provider identities).
 - AI chat persistence
 - Reflection storage
-- escalation logic
+- runtime escalation logic
 - summaries
 - vector retrieval
 - billing

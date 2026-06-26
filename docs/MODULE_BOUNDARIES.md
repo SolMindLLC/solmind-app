@@ -19,6 +19,7 @@ src/
     layout.tsx
     globals.css
     admin/page.tsx
+    admin/access/route.ts
     explorer/page.tsx
     guide/page.tsx
     login/page.tsx
@@ -43,6 +44,7 @@ src/
     solmind/
       conversation.ts
       dashboardPanels.ts
+      invitations.ts
       loginOptions.ts
       navigation.ts
       onboarding.ts
@@ -52,6 +54,14 @@ src/
       routeAccess.ts
       terms.ts
       topics.ts
+      auth/        server-side deny-by-default authorization and the request-auth boundary
+      context/     Explorer-facing and AI-role context assembly helpers
+      supabase/    server-side Supabase integration (request-auth client, service-role loader, mapping)
+
+supabase/
+  config.toml
+  migrations/    MVP0 schema foundations with Row Level Security enabled deny-by-default
+  seed.sql
 ```
 
 ## Route Files
@@ -178,15 +188,19 @@ src/lib/solmind/supabase/
 
 Do not create all folders before they are needed. Add them when a real feature requires them.
 
+Some of these areas are already present and banked: `src/lib/solmind/auth/`, `src/lib/solmind/context/`, and `src/lib/solmind/supabase/`. See the Authentication, Context, Supabase, Admin Access Route, and Schema Foundation boundaries below.
+
 ## Authentication Boundary
 
-Authentication code should be isolated.
+Authentication and server-side authorization code should be isolated.
 
-Expected future home:
+Current home (banked):
 
 ```text
 src/lib/solmind/auth/
 ```
+
+This directory now holds the banked, deny-by-default request-auth boundary, role-context resolution, route-access decisions, relationship read guards, the real Admin auth-source port, and the default-off Auth/RLS audit event seam. Server-only modules are kept off the shared client barrel. Extend it in small slices; the login/provisioning write path remains deferred.
 
 Authentication code should handle:
 
@@ -310,15 +324,51 @@ Safety code must not be scattered across UI components.
 
 ## Supabase Boundary
 
-Expected future home:
+Current home (banked):
 
 ```text
 src/lib/solmind/supabase/
 ```
 
+This directory now holds the banked server-side Supabase integration: the request-auth client (identity, who), the guarded service-role loader (record loads, what), principal mapping, and session selection. The request-auth client and the service-role factory are server-only and kept off the shared barrel.
+
 Supabase code should not expose service-role credentials through client-accessible variables.
 
 Never put service-role keys or bootstrap tokens in `NEXT_PUBLIC_*`.
+
+## Admin Access Route Boundary
+
+The `/admin/access` server route handler is the first banked request-auth boundary.
+
+```text
+src/app/admin/access/route.ts
+```
+
+It is a thin, read-only composition root: it reads request cookies, builds the request-auth principal source, loads the real Admin auth source through the guarded server-only path, and returns only an opaque `{ allowed }` boolean. It is deny-by-default and fail-closed.
+
+This route is an opaque probe. It does not protect the `/admin`, `/guide`, or `/explorer` pages, and it performs no writes, creates no session, adds no RLS policy, and runs no migration. Keep it thin; put composition and decision logic in `src/lib/solmind/auth`.
+
+## Context Boundary
+
+AI-role and Explorer-facing context assembly is isolated.
+
+```text
+src/lib/solmind/context/
+```
+
+Context code must preserve SolMind role separation. The SolMind Virtual Guide is Explorer-facing and must receive only Explorer-safe context. The SolMind Guide Assistant is Guide-facing and must receive only Guide-authorized context. Do not blend Explorer-private and Guide-private context in a single path.
+
+The human Guide remains the human Guide; the SolMind Guide Assistant is the AI that supports the human Guide. Do not conflate them.
+
+## Schema Foundation Boundary
+
+Database schema foundations live under:
+
+```text
+supabase/migrations/
+```
+
+The MVP0 schemas and tables are banked through migrations, with Row Level Security enabled deny-by-default on application tables. Permissive or role-aware RLS policies, grants, and runtime access enforcement remain deferred. Do not add policies, grants, or schema changes without a Database/Supabase workflow slice and approval. The authoritative Auth/RLS banked-vs-deferred status is `../solmind-docs/execution/12_SolMind_MVP0_Auth_RLS_Decision_Deferral_Register_v0_1.md`.
 
 ## Documentation Boundary
 
