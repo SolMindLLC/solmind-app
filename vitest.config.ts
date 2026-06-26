@@ -25,6 +25,13 @@ export default defineConfig({
       "server-only": fileURLToPath(
         new URL("./test/stubs/server-only.ts", import.meta.url),
       ),
+      // Mirror the tsconfig "@/*" -> "./src/*" path alias for the test runner only,
+      // so server-only Route Handlers (which import their composition helpers via the
+      // "@/..." alias) can be imported and exercised in unit tests. Vite matches this
+      // string alias for an import that equals "@" or starts with "@/", which covers
+      // every "@/..." specifier. This is test-runner-only: it does not affect the
+      // Next.js production build or the real server-only import-time guard.
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
 });
