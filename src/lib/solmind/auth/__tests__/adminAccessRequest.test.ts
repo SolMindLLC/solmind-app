@@ -14,6 +14,16 @@ import {
   type RequestCookieAccessor,
 } from "../requestCookieAccessor";
 import { type SupabaseAuthenticatedUser } from "../serverAuthContext";
+import {
+  AUTH_RLS_AUDIT_DECISIONS,
+  AUTH_RLS_AUDIT_EVENT_SUMMARIES,
+  AUTH_RLS_AUDIT_EVENT_TYPES,
+  AUTH_RLS_AUDIT_REASON_CODES,
+  AUTH_RLS_AUDIT_ROLE_CONTEXTS,
+  AUTH_RLS_AUDIT_TARGET_TYPES,
+  type AuthRlsAuditEvent,
+  type AuthRlsAuditSink,
+} from "../authRlsAuditEvent";
 import { createAdminAuthSourceFromExecutor } from "../../supabase/adminAuthSource";
 import {
   type SupabaseQueryResult,
@@ -120,6 +130,7 @@ function callHelperWith(args: {
   resultByTable?: Record<string, SupabaseQueryResult>;
   principalSourceFactory?: () => SolMindRequestAuthPrincipalSource;
   authSourceFactory?: (args: { now: () => Date }) => SolMindAuthSource;
+  auditSink?: AuthRlsAuditSink;
 }): Promise<{ result: AdminAccessResult; calls: SupabaseQuerySpec[] }> {
   const { executor, calls } = mockExecutor(args.resultByTable ?? chainTables("admin"));
 
@@ -137,6 +148,7 @@ function callHelperWith(args: {
     createPrincipalSource,
     createAuthSource,
     now: nowProvider,
+    auditSink: args.auditSink,
   }).then((result) => ({ result, calls }));
 }
 
@@ -150,6 +162,44 @@ function expectOpaque(result: AdminAccessResult): void {
   expect(result).not.toHaveProperty("identity");
   expect(result).not.toHaveProperty("guideProfileId");
   expect(result).not.toHaveProperty("explorerProfileId");
+}
+
+// The complete, closed set of keys a bounded audit event may carry. Asserting the
+// key set is closed proves the emitted event carries no stray field that could
+// smuggle a reason, cookie, token, or any sensitive content (Doc 16 sections 7-8).
+const ALLOWED_AUDIT_EVENT_KEYS = [
+  "actorRoleContext",
+  "actorUserAccountId",
+  "eventSummary",
+  "eventType",
+  "metadata",
+  "reasonCode",
+  "targetEntityType",
+].sort();
+
+const ALLOWED_AUDIT_METADATA_KEYS = ["decision", "routeId"];
+
+// Assert an emitted event uses only the permitted keys and bounded, non-sensitive
+// values, and never attributes an Explorer/Guide role context.
+function expectBoundedEmittedEvent(event: AuthRlsAuditEvent): void {
+  const keys = Object.keys(event)
+    .filter((key) => key !== "metadata" || event.metadata !== undefined)
+    .sort();
+  for (const key of keys) {
+    expect(ALLOWED_AUDIT_EVENT_KEYS).toContain(key);
+  }
+  expect(["admin", "system"]).toContain(event.actorRoleContext);
+  expect(event.actorRoleContext).not.toBe("explorer");
+  expect(event.actorRoleContext).not.toBe("guide");
+  expect(event.targetEntityType).toBe(AUTH_RLS_AUDIT_TARGET_TYPES.ADMIN_ROUTE);
+  if (event.actorUserAccountId !== null) {
+    expect(typeof event.actorUserAccountId).toBe("string");
+  }
+  if (event.metadata !== undefined) {
+    for (const key of Object.keys(event.metadata)) {
+      expect(ALLOWED_AUDIT_METADATA_KEYS).toContain(key);
+    }
+  }
 }
 
 describe("resolveAdminAccessForRequest - opaque allow", () => {
@@ -227,5 +277,138 @@ describe("resolveAdminAccessForRequest - null principal", () => {
 
     expect(result).toEqual({ allowed: false });
     expect(select).not.toHaveBeenCalled();
+  });
+});
+
+describe("resolveAdminAccessForRequest - audit seam", () => {
+  it("is default-off: omitting the sink leaves the allow/deny result unchanged and never throws", async () => {
+    // No sink injected -> the no-op default sink is used, persisting nothing. The
+    // decision is unchanged for both an allow and a deny.
+    const allow = await callHelperWith({
+      principal: ADMIN_PRINCIPAL,
+      resultByTable: chainTables("admin"),
+    });
+    expect(allow.result).toEqual({ allowed: true });
+
+    const deny = await callHelperWith({
+      principal: ADMIN_PRINCIPAL,
+      resultByTable: chainTables("guide"),
+    });
+    expect(deny.result).toEqual({ allowed: false });
+  });
+
+  it("emits exactly one bounded allow decision event attributing the admin account", async () => {
+    const auditSink = vi.fn();
+
+    const { result } = await callHelperWith({
+      principal: ADMIN_PRINCIPAL,
+      resultByTable: chainTables("admin"),
+      auditSink,
+    });
+
+    expect(result).toEqual({ allowed: true });
+    expect(auditSink).toHaveBeenCalledTimes(1);
+    expect(auditSink).toHaveBeenCalledWith({
+      eventType: AUTH_RLS_AUDIT_EVENT_TYPES.ADMIN_ROUTE_ACCESS_DECISION,
+      actorRoleContext: AUTH_RLS_AUDIT_ROLE_CONTEXTS.ADMIN,
+      actorUserAccountId: ACCOUNT_ID,
+      targetEntityType: AUTH_RLS_AUDIT_TARGET_TYPES.ADMIN_ROUTE,
+      reasonCode: AUTH_RLS_AUDIT_REASON_CODES.ACCESS_GRANTED,
+      eventSummary: AUTH_RLS_AUDIT_EVENT_SUMMARIES.ADMIN_ACCESS_ALLOWED,
+      metadata: {
+        routeId: AUTH_RLS_AUDIT_TARGET_TYPES.ADMIN_ROUTE,
+        decision: AUTH_RLS_AUDIT_DECISIONS.ALLOW,
+      },
+    });
+    expectBoundedEmittedEvent(auditSink.mock.calls[0][0]);
+  });
+
+  it("emits an opaque deny event for a verified non-Admin: system role, no account id", async () => {
+    const auditSink = vi.fn();
+
+    const { result } = await callHelperWith({
+      principal: ADMIN_PRINCIPAL,
+      resultByTable: chainTables("guide"),
+      auditSink,
+    });
+
+    expect(result).toEqual({ allowed: false });
+    expect(auditSink).toHaveBeenCalledTimes(1);
+    const event = auditSink.mock.calls[0][0] as AuthRlsAuditEvent;
+    expect(event.actorRoleContext).toBe(AUTH_RLS_AUDIT_ROLE_CONTEXTS.SYSTEM);
+    expect(event.actorUserAccountId).toBeNull();
+    expect(event.reasonCode).toBe(AUTH_RLS_AUDIT_REASON_CODES.ACCESS_DENIED);
+    expect(event.eventSummary).toBe(
+      AUTH_RLS_AUDIT_EVENT_SUMMARIES.ADMIN_ACCESS_DENIED,
+    );
+    // A denied Guide is never attributed: no admin/guide/explorer identity leaks.
+    expect(event.actorRoleContext).not.toBe("guide");
+    expect(event.actorRoleContext).not.toBe("explorer");
+    expectBoundedEmittedEvent(event);
+  });
+
+  it("emits an opaque deny event for a null principal without loading records", async () => {
+    const auditSink = vi.fn();
+    const select = vi.fn();
+
+    const result = await resolveAdminAccessForRequest({
+      cookies: cookies(),
+      createPrincipalSource: () =>
+        createInMemoryRequestAuthPrincipalSource(null),
+      createAuthSource: ({ now }) =>
+        createAdminAuthSourceFromExecutor({ executor: { select }, now }),
+      now: nowProvider,
+      auditSink,
+    });
+
+    expect(result).toEqual({ allowed: false });
+    // No record load happened, and the emitted event is the opaque system deny.
+    expect(select).not.toHaveBeenCalled();
+    expect(auditSink).toHaveBeenCalledTimes(1);
+    const event = auditSink.mock.calls[0][0] as AuthRlsAuditEvent;
+    expect(event.actorRoleContext).toBe(AUTH_RLS_AUDIT_ROLE_CONTEXTS.SYSTEM);
+    expect(event.actorUserAccountId).toBeNull();
+    expectBoundedEmittedEvent(event);
+  });
+
+  it("never emits an Explorer or Guide role context across allow and deny paths", async () => {
+    const events: AuthRlsAuditEvent[] = [];
+    const collect: AuthRlsAuditSink = (event) => events.push(event);
+
+    await callHelperWith({
+      principal: ADMIN_PRINCIPAL,
+      resultByTable: chainTables("admin"),
+      auditSink: collect,
+    });
+    await callHelperWith({
+      principal: ADMIN_PRINCIPAL,
+      resultByTable: chainTables("guide"),
+      auditSink: collect,
+    });
+
+    expect(events).toHaveLength(2);
+    for (const event of events) {
+      expect(["admin", "system"]).toContain(event.actorRoleContext);
+      expect(event.actorRoleContext).not.toBe("explorer");
+      expect(event.actorRoleContext).not.toBe("guide");
+      expectBoundedEmittedEvent(event);
+    }
+  });
+
+  it("fails closed (deny, opaque) when an injected sink throws", async () => {
+    const throwingSink: AuthRlsAuditSink = () => {
+      throw new Error("audit sink failure that must not leak or allow");
+    };
+
+    const { result } = await callHelperWith({
+      principal: ADMIN_PRINCIPAL,
+      resultByTable: chainTables("admin"),
+      auditSink: throwingSink,
+    });
+
+    // A throwing sink must never flip a deny into an allow or leak detail: it is
+    // caught and denies (the safe MVP0 interim posture).
+    expect(result).toEqual({ allowed: false });
+    expectOpaque(result);
   });
 });

@@ -22,17 +22,28 @@
 //     loads records. A null principal denies before any service-role read (enforced
 //     by resolveAdminRouteAccess -> composeRequestAuthContext).
 //   - Fail closed (AUTH-RLS-DEC-016): any construction or configuration error (for
-//     example missing public or service-role env) is swallowed and denies, so no
-//     cookie, token, record, or secret can escape through an error path. This is the
-//     same posture the route enforced inline; keeping it here makes it testable and
-//     keeps it as defense in depth alongside the route's own outer guard.
+//     example missing public or service-role env), or a throwing injected audit
+//     sink, is swallowed and denies, so no cookie, token, record, or secret can
+//     escape through an error path. This is the same posture the route enforced
+//     inline; keeping it here makes it testable and keeps it as defense in depth
+//     alongside the route's own outer guard.
 //   - Opaque outcome only. The return value is exactly { allowed: boolean }. The
 //     reason, the derived context, the active role, and any profile/session/identity
 //     detail from resolveAdminRouteAccess are intentionally dropped here, so the
 //     outward /admin/access surface can never leak them and no Explorer-private or
 //     Guide-private field is assembled into the response.
-//   - This slice does NOT thread the onServiceRoleRead audit seam and adds no audit
-//     behavior; that stays deferred (AUTH-RLS-DEF-003, AUTH-RLS-DEF-009).
+//   - Audit seam wiring (AUTH-RLS-DEC-024; Doc 16 sections 5-7, 9). This boundary
+//     emits exactly ONE bounded Admin route access decision event per request,
+//     through the banked authRlsAuditEvent seam, at the access-decision point. The
+//     seam is DEFAULT-OFF: when no sink is injected, the no-op sink is used and
+//     NOTHING is persisted, so this adds no persistence and no runtime behavior
+//     change. A deny is recorded opaquely (system role context, no account id), so a
+//     denied or unauthenticated Explorer/Guide identity is never attributed; only an
+//     allow carries the server-derived admin account id. No real writer, database
+//     access, RLS policy, or audit.audit_event insert is added here; the writer and
+//     its fail-open-vs-closed posture remain deferred (AUTH-RLS-DEF-003,
+//     AUTH-RLS-DEF-009). The lower-level onServiceRoleRead seam and the
+//     auth-resolution-failure category are intentionally NOT wired in this slice.
 
 import "server-only";
 
@@ -40,6 +51,14 @@ import { resolveAdminRouteAccess } from "./adminRouteAccess";
 import { type SolMindAuthSource } from "./authSource";
 import { type SolMindRequestAuthPrincipalSource } from "./requestAuthPrincipalSource";
 import { type RequestCookieAccessor } from "./requestCookieAccessor";
+import { type AuthorizeRouteAccessResult } from "./routeAccessDecision";
+import {
+  AUTH_RLS_AUDIT_DECISIONS,
+  createAdminAccessDecisionEvent,
+  NOOP_AUTH_RLS_AUDIT_SINK,
+  type AuthRlsAuditEvent,
+  type AuthRlsAuditSink,
+} from "./authRlsAuditEvent";
 import { createAdminAuthSource } from "../supabase/adminAuthSource";
 import { createSupabaseRequestAuthPrincipalSource } from "../supabase/requestAuthClient";
 
@@ -60,6 +79,9 @@ export type AdminAccessResult = {
 //     injected cookie accessor. Defaults to the real @supabase/ssr-backed adapter.
 //   - createAuthSource: builds the record-load port (WHAT). Defaults to the real
 //     service-role-backed Admin auth source.
+//   - auditSink: the Auth/RLS audit sink. Default-off: when omitted, the no-op sink
+//     is used and nothing is persisted (Doc 16 sections 2, 9). A future writer slice
+//     injects a real sink here with no change to this signature.
 // Tests inject in-memory / mock-executor-backed doubles, so no Next.js request API,
 // network, DB, or env is touched.
 export type AdminAccessRequestDependencies = {
@@ -69,15 +91,35 @@ export type AdminAccessRequestDependencies = {
   }) => SolMindRequestAuthPrincipalSource;
   createAuthSource?: (args: { now: () => Date }) => SolMindAuthSource;
   now?: () => Date;
+  auditSink?: AuthRlsAuditSink;
 };
+
+// Map the internal route-access result to a bounded Admin route access decision
+// event. On allow, the server-derived account id is attributed under the admin
+// role context. On deny, the event is opaque (system role context, no account id),
+// so no Explorer/Guide identity is ever carried into the audit trail (Doc 16
+// sections 7-8). This shapes the event only; it performs no IO and no persistence.
+function toAdminAccessDecisionEvent(
+  result: AuthorizeRouteAccessResult,
+): AuthRlsAuditEvent {
+  if (result.allowed) {
+    return createAdminAccessDecisionEvent({
+      decision: AUTH_RLS_AUDIT_DECISIONS.ALLOW,
+      actorUserAccountId: result.context.identity.userAccountId,
+    });
+  }
+  return createAdminAccessDecisionEvent({
+    decision: AUTH_RLS_AUDIT_DECISIONS.DENY,
+  });
+}
 
 // Compose the /admin access decision for one request and return only { allowed }.
 //
 // Deny-by-default and fail-closed: returns { allowed: true } ONLY when a verified
 // principal resolves, its real-loaded records derive a trusted context, and the
 // server-derived active role is permitted on /admin. Every other outcome -- including
-// any thrown principal-source/auth-source construction or load error -- returns
-// { allowed: false } with no detail.
+// any thrown principal-source/auth-source construction or load error, or a throwing
+// injected audit sink -- returns { allowed: false } with no detail.
 export async function resolveAdminAccessForRequest(
   deps: AdminAccessRequestDependencies,
 ): Promise<AdminAccessResult> {
@@ -96,10 +138,20 @@ export async function resolveAdminAccessForRequest(
 
     const result = await resolveAdminRouteAccess({ principalSource, authSource });
 
+    // Emit exactly one bounded Admin route access decision event at this boundary
+    // (Doc 16 sections 5-7, 9). Default-off: the sink is the no-op unless a real
+    // sink is injected, so this adds no persistence and no runtime behavior change.
+    // A throwing injected sink is caught below and fails closed (denies), the safe
+    // MVP0 interim until the writer slice fixes the failure posture
+    // (AUTH-RLS-DEF-003, AUTH-RLS-DEF-009).
+    const auditSink = deps.auditSink ?? NOOP_AUTH_RLS_AUDIT_SINK;
+    auditSink(toAdminAccessDecisionEvent(result));
+
     // Reduce to the opaque boolean: drop reason/context so nothing leaks outward.
     return { allowed: result.allowed };
   } catch {
-    // Fail closed: swallow any construction/configuration error and deny.
+    // Fail closed: swallow any construction/configuration error (or a throwing
+    // injected audit sink) and deny.
     return { allowed: false };
   }
 }
