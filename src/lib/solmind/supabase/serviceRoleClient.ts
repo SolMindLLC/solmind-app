@@ -1,9 +1,11 @@
 // SolMind MVP0 server-only Supabase service-role client factory.
 //
 // Purpose:
-//   - construct the server-only Supabase client that uses the service-role key,
-//     and adapt it to the narrow SupabaseQueryExecutor the auth query client
-//     consumes.
+//   - construct the server-only Supabase client that uses the service-role key. The
+//     /admin-access transport adapts this client to the narrow SupabaseQueryExecutor via the
+//     enumerated RPC executor (serviceRoleRpcExecutor.ts). This module holds only the client
+//     factory; the generic scoped-select executor has been retired (Option B, AUTH-RLS-DEC-026)
+//     so no dormant broad-query capability remains.
 //
 // Server-only boundary (critical):
 //   - The service-role key BYPASSES RLS. This module must never run in the
@@ -14,17 +16,13 @@
 //     only from explicit server paths.
 //   - Authorization is NOT done here. Every service-role read must run behind
 //     deriveTrustedServerAuthContext and the guard layer, which stay the
-//     authority. This module is a small factory/adapter only.
+//     authority. This module is a small factory only.
 
 import "server-only";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { readSupabaseServiceRoleEnv } from "./serverEnv";
-import {
-  type SupabaseQueryExecutor,
-  type SupabaseQueryResult,
-} from "./supabaseAuthQueryClient";
 
 if (typeof window !== "undefined") {
   throw new Error(
@@ -42,21 +40,4 @@ export function createServiceRoleClient(): SupabaseClient {
       persistSession: false,
     },
   });
-}
-
-// Adapt a Supabase client to the narrow scoped-select executor. Each call runs a
-// schema-qualified select with equality filters and returns rows or an error.
-export function createServiceRoleQueryExecutor(
-  client: SupabaseClient,
-): SupabaseQueryExecutor {
-  return {
-    async select({ schema, table, columns, filters }): Promise<SupabaseQueryResult> {
-      let query = client.schema(schema).from(table).select(columns.join(", "));
-      for (const filter of filters) {
-        query = query.eq(filter.column, filter.value);
-      }
-      const { data, error } = await query;
-      return { data: (data as unknown[] | null) ?? null, error: error ?? null };
-    },
-  };
 }
