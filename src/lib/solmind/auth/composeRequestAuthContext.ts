@@ -76,8 +76,14 @@ export type ServiceRoleReadAuditEvent = {
 };
 
 // The injected audit sink. Optional: when omitted, no audit call is made (the
-// seam is default-off until the audit implementation lands).
-export type ServiceRoleReadAuditSink = (event: ServiceRoleReadAuditEvent) => void;
+// seam is default-off until the audit implementation lands). As of AUD-2 the sink
+// may be asynchronous (void | Promise<void>, the awaited-sink contract of Doc 22
+// Section 11) and is AWAITED at its single call site inside the guarded try, so an
+// asynchronous rejection fails closed (denies) exactly like a synchronous throw
+// and can never float as an unhandled rejection.
+export type ServiceRoleReadAuditSink = (
+  event: ServiceRoleReadAuditEvent,
+) => void | Promise<void>;
 
 // --- Auth-resolution-failure seam (placement only; value-free) ---
 //
@@ -88,8 +94,12 @@ export type ServiceRoleReadAuditSink = (event: ServiceRoleReadAuditEvent) => voi
 // record or step failed (Doc 16 sections 5, 8). The composer only SIGNALS that a
 // resolution exception occurred; the bounded event model and the audit sink stay
 // one layer up (adminAccessRequest), keeping this module free of the rich event
-// model (AUTH-RLS-DEC-024). It is default-off: omit it and no call is made.
-export type AuthResolutionFailureAuditSink = () => void;
+// model (AUTH-RLS-DEC-024). It is default-off: omit it and no call is made. As of
+// AUD-2 the hook may be asynchronous (void | Promise<void>) and is AWAITED inside
+// its own guard in the catch below: this failure category is best-effort, so a
+// throwing OR rejecting hook is swallowed and the opaque denial is returned
+// unchanged, with no unhandled rejection.
+export type AuthResolutionFailureAuditSink = () => void | Promise<void>;
 
 // --- Injected dependencies (ports + the optional audit seam) ---
 //
@@ -143,7 +153,11 @@ export async function composeRequestAuthContext(
     //    read; the seam is default-off when no sink is injected. The principal flows
     //    in only as a lookup key (AUTH-RLS-DEC-015); the server-loaded records remain
     //    the source of truth.
-    deps.onServiceRoleRead?.({ kind: "server_auth_context_read" });
+    //    The marker sink may be asynchronous (AUD-2 awaited-sink contract), so it
+    //    is AWAITED: a synchronous throw and an asynchronous rejection are handled
+    //    identically by the fail-closed catch below (deny), and no floating promise
+    //    can escape this boundary as an unhandled rejection.
+    await deps.onServiceRoleRead?.({ kind: "server_auth_context_read" });
     const serverAuthContext = await deps.authSource.loadServerAuthContextInput({
       authenticatedUser: principal,
     });
@@ -168,9 +182,13 @@ export async function composeRequestAuthContext(
     // never re-break fail-closed or leak: any error from the hook is swallowed and
     // the denial is returned unchanged.
     try {
-      deps.onAuthResolutionFailure?.();
+      // Awaited (AUD-2): an asynchronous rejection from the hook is swallowed
+      // here exactly like a synchronous throw (best-effort class), so the denial
+      // below is returned unchanged and no unhandled rejection can escape.
+      await deps.onAuthResolutionFailure?.();
     } catch {
-      // Intentionally empty: a throwing failure-audit hook must not propagate.
+      // Intentionally empty: a throwing or rejecting failure-audit hook must not
+      // propagate.
     }
     return denyRouteAccess();
   }

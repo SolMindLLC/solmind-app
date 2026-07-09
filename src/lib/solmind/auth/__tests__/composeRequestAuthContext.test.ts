@@ -244,7 +244,11 @@ describe("composeRequestAuthContext - audit seam placement", () => {
       {
         principalSource: principalSource(ADMIN_PRINCIPAL),
         authSource: adminAuthSource(),
-        onServiceRoleRead: (event) => events.push(event),
+        // Block body: the AUD-2 async-capable sink type (void | Promise<void>)
+        // does not accept push()'s number return the way the plain void type did.
+        onServiceRoleRead: (event) => {
+          events.push(event);
+        },
       },
       { selectors: { requestedRoute: "/admin" } },
     );

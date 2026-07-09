@@ -51,11 +51,26 @@
 //     carries the server-derived admin account id; the guarded-read event carries only
 //     the admin boundary role context (never guide/explorer) with a null account id. No
 //     real writer, database access, RLS policy, or audit.audit_event insert is added
-//     here; the writer and its fail-open-vs-closed posture remain deferred
-//     (AUTH-RLS-DEF-003, AUTH-RLS-DEF-009). A null-principal denial stays the existing
+//     here; the writer chain now exists (AUD-2: auditEventWriter.ts over
+//     auditEventWriteExecutor.ts) but is NOT injected here or anywhere in production
+//     until the separately-approved AUD-3 wiring slice (AUTH-RLS-DEF-003,
+//     AUTH-RLS-DEF-009). A null-principal denial stays the existing
 //     opaque decision(deny) event and is NOT additionally recorded as a failure: the
 //     failure category is scoped to exceptions (Doc 16 section 5 lists the null case
 //     under the category, but task scope records it by exception only).
+//   - Async awaited sink (AUD-2; Doc 22 Section 11). The sink type is now
+//     void | Promise<void> and every emission is awaited -- the bridged seam
+//     emissions inside composeRequestAuthContext and the decision emission below --
+//     so a rejecting asynchronous sink is handled exactly like a throwing
+//     synchronous sink (fail closed here, the safe MVP0 interim) and the outward
+//     result never resolves before an awaited emission settles. Per
+//     AUTH-RLS-DEC-029 the pre-read guarded-read bridge below remains a null-actor,
+//     value-carrying LEGACY bridge for the default-off seam only: a null-actor
+//     guarded-read event is unpersistable by design (the AUD-2 writer fails it
+//     closed with no RPC call), the PERSISTED guarded-read row is emitted
+//     post-resolution by the AUD-3 wiring (guarded-read row first, then the allow
+//     decision row, both required before an outward allow, AUTH-RLS-DEC-030), and
+//     AUD-3 must remove or neuter this pre-read bridge and update its tests.
 
 import "server-only";
 
@@ -178,10 +193,12 @@ export async function resolveAdminAccessForRequest(
     // Emit exactly one bounded Admin route access decision event at this boundary
     // (Doc 16 sections 5-7, 9). Default-off: the sink is the no-op unless a real
     // sink is injected, so this adds no persistence and no runtime behavior change.
-    // A throwing injected sink is caught below and fails closed (denies), the safe
-    // MVP0 interim until the writer slice fixes the failure posture
-    // (AUTH-RLS-DEF-003, AUTH-RLS-DEF-009).
-    auditSink(toAdminAccessDecisionEvent(result));
+    // AWAITED (AUD-2, Doc 22 Section 11): the outward result -- including an allow
+    // -- never resolves before this emission settles, so an allow can never outrun
+    // an awaited audit write. A throwing OR rejecting injected sink is caught below
+    // and fails closed (denies), the safe MVP0 interim until the AUD-3 wiring slice
+    // applies the per-class posture (AUTH-RLS-DEF-003, AUTH-RLS-DEF-009).
+    await auditSink(toAdminAccessDecisionEvent(result));
 
     // Reduce to the opaque boolean: drop reason/context so nothing leaks outward.
     return { allowed: result.allowed };
@@ -206,9 +223,13 @@ export async function resolveAdminAccessForRequest(
     // The outward result is always exactly { allowed: false } with no reason or
     // error detail.
     try {
-      auditSink(createAuthResolutionFailureEvent());
+      // Awaited (AUD-2): a rejecting asynchronous sink is swallowed here exactly
+      // like a throwing synchronous one, so this best-effort failure emission can
+      // never flip the deny, leak, or float as an unhandled rejection.
+      await auditSink(createAuthResolutionFailureEvent());
     } catch {
-      // Intentionally empty: a throwing sink must not flip the deny or leak.
+      // Intentionally empty: a throwing or rejecting sink must not flip the deny
+      // or leak.
     }
     return { allowed: false };
   }

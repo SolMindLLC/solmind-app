@@ -239,13 +239,24 @@ export function createAuthResolutionFailureEvent(): AuthRlsAuditEvent {
   };
 }
 
-// --- The audit sink (default-off / no-op) ---
+// --- The audit sink (default-off / no-op; async awaited as of AUD-2) ---
 //
 // A sink receives a bounded event. The seam is SAFE BY DEFAULT: the only sink
-// provided here is a no-op that persists NOTHING. A real writer (mapping an event
-// to an audit.audit_event insert, plus its fail-open-vs-closed posture) is a
-// separately-approved slice and is intentionally absent (Doc 16 sections 2, 9, 12).
-export type AuthRlsAuditSink = (event: AuthRlsAuditEvent) => void;
+// provided here is a no-op that persists NOTHING. The real writer chain (the AUD-2
+// auditEventWriter / auditEventWriteExecutor modules) now exists but is NOT wired
+// here or into any production composition; nothing is persisted until the
+// separately-approved AUD-3 wiring slice (AUTH-RLS-DEF-003, AUTH-RLS-DEF-009).
+//
+// Async awaited sink contract (Doc 22 Section 11, approved at Gate 1 with
+// AUTH-RLS-DEC-028): a real writer-backed sink is asynchronous, so the sink type
+// admits a Promise-returning sink and EVERY emission site awaits the sink before
+// proceeding. A synchronous throw and an asynchronous rejection are then handled
+// identically at the awaited call sites (fail-closed classes deny; best-effort
+// classes swallow without an unhandled rejection), and an allow can never resolve
+// before an awaited audit write settles. Synchronous sinks -- the no-op below and
+// existing test doubles -- remain valid: a void return is awaited as an
+// already-settled value.
+export type AuthRlsAuditSink = (event: AuthRlsAuditEvent) => void | Promise<void>;
 
 // The default-off no-op sink. It persists nothing, returns nothing, and never
 // throws. It declares no parameter because it discards every event; it stays

@@ -423,7 +423,11 @@ describe("resolveAdminAccessForRequest - audit seam", () => {
 
   it("never emits an Explorer or Guide role context across allow and deny paths", async () => {
     const events: AuthRlsAuditEvent[] = [];
-    const collect: AuthRlsAuditSink = (event) => events.push(event);
+    // Block body: the AUD-2 async-capable sink type (void | Promise<void>) does
+    // not accept push()'s number return the way the plain void type did.
+    const collect: AuthRlsAuditSink = (event) => {
+      events.push(event);
+    };
 
     await callHelperWith({
       principal: ADMIN_PRINCIPAL,
