@@ -17,14 +17,15 @@
 //     `import "server-only";` marker is the import-time guard (AUTH-RLS-DEC-023),
 //     backed by the runtime browser guard below, and this module stays OFF the shared
 //     src/lib/solmind/supabase/index.ts barrel (AUTH-RLS-DEC-007). It is imported only
-//     from explicit server composition paths (the AUD-2 writer; the AUD-3 slice later
-//     assembles createServiceRoleClient() -> this executor -> the writer at the
-//     production composition root).
+//     from explicit server composition paths (the AUD-2 writer; the AUD-3 chain
+//     assembly createServiceRoleClient() -> this executor -> the writer lives in
+//     adminAuditEventWriter.ts for the /admin/access composition root).
 //
-// Scope discipline (AUD-2; no production wiring):
-//   - This module is NOT wired into any route or production composition. Nothing
-//     constructs it at runtime, the audit seam stays default-off / no-op, and nothing
-//     is persisted until the separately Paul-gated AUD-3 wiring slice.
+// Scope discipline (wired at AUD-3 for /admin/access only):
+//   - This module is constructed at runtime only through the /admin/access audit
+//     chain assembly (adminAuditEventWriter.ts, consumed by adminAccessRequest.ts;
+//     the AUD-3 wiring slice). No other route or production composition constructs
+//     it, and no broader audit/store wiring exists.
 //   - This executor WRITES exactly one validated audit row per call and decides
 //     nothing. The event vocabulary is validated by the writer (auditEventWriter.ts)
 //     and re-validated independently inside the database function (two-layer

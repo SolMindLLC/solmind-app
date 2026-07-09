@@ -200,7 +200,7 @@ Current home (banked):
 src/lib/solmind/auth/
 ```
 
-This directory now holds the banked, deny-by-default request-auth boundary, role-context resolution, route-access decisions, relationship read guards, the real Admin auth-source port, and the default-off Auth/RLS audit event seam. Server-only modules are kept off the shared client barrel. Extend it in small slices; the login/provisioning write path remains deferred.
+This directory now holds the banked, deny-by-default request-auth boundary, role-context resolution, route-access decisions, relationship read guards, the real Admin auth-source port, the bounded Auth/RLS audit event model, and the audit event writer. As of AUD-3 the `/admin/access` composition (`adminAccessRequest.ts`) persists those audit events at runtime through the closed-allowlist writer chain. Server-only modules are kept off the shared client barrel. Extend it in small slices; the login/provisioning write path remains deferred.
 
 Authentication code should handle:
 
@@ -330,7 +330,7 @@ Current home (banked):
 src/lib/solmind/supabase/
 ```
 
-This directory now holds the banked server-side Supabase integration: the request-auth client (identity, who), the guarded service-role loader (record loads, what), principal mapping, and session selection. The request-auth client and the service-role factory are server-only and kept off the shared barrel.
+This directory now holds the banked server-side Supabase integration: the request-auth client (identity, who), the guarded service-role loader (record loads, what), principal mapping, session selection, and the audit write path (the closed-allowlist `auditEventWriteExecutor.ts` over the single enumerated `public.solmind_record_audit_event` function, assembled by `adminAuditEventWriter.ts` for the `/admin/access` composition). The request-auth client, the service-role factory, and the audit write modules are server-only and kept off the shared barrel.
 
 Supabase code should not expose service-role credentials through client-accessible variables.
 
@@ -344,9 +344,9 @@ The `/admin/access` server route handler is the first banked request-auth bounda
 src/app/admin/access/route.ts
 ```
 
-It is a thin, read-only composition root: it reads request cookies, builds the request-auth principal source, loads the real Admin auth source through the guarded server-only path, and returns only an opaque `{ allowed }` boolean. It is deny-by-default and fail-closed.
+It is a thin composition root: it reads request cookies, builds the request-auth principal source, and delegates to the server-only composition, which loads the real Admin auth source through the guarded path and returns only an opaque `{ allowed }` boolean. It is deny-by-default and fail-closed.
 
-This route is an opaque probe. It does not protect the `/admin`, `/guide`, or `/explorer` pages, and it performs no writes, creates no session, adds no RLS policy, and runs no migration. Keep it thin; put composition and decision logic in `src/lib/solmind/auth`.
+This route is an opaque probe. It does not protect the `/admin`, `/guide`, or `/explorer` pages, and it performs no product-record writes, creates no session, adds no RLS policy, and runs no migration. The only persistence on this path is the bounded Auth/RLS audit rows the delegated composition writes (AUD-3): on an allow, the guarded-read row and the allow decision row must both persist before the outward allow. Keep the route thin; composition, decision, and audit wiring live in `src/lib/solmind/auth`.
 
 ## Context Boundary
 

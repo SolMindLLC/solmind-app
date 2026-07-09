@@ -4,23 +4,34 @@
 //   - route.test.ts drives GET but REPLACES resolveAdminAccessForRequest, so it never
 //     runs the real composition.
 //   - adminAccessRequest.test.ts runs the real composition but injects a mock at the
-//     SupabaseQueryExecutor seam, so it never exercises the real serviceRoleRpcExecutor
-//     (the B-3 transport swap) and never runs through the HTTP GET handler.
+//     SupabaseQueryExecutor seam and an audit-writer double, so it never exercises the
+//     real serviceRoleRpcExecutor (the B-3 transport swap) or the real AUD-3 audit
+//     writer chain, and never runs through the HTTP GET handler.
 //   - This file closes that gap: it drives the ACTUAL route.ts GET() through the REAL
 //     resolveAdminAccessForRequest -> real createSupabaseRequestAuthPrincipalSource ->
 //     real createAdminAuthSource -> real createServiceRoleRpcExecutor -> real
-//     supabaseAuthQueryClient -> real serverAuthSourceAdapter -> real derivation, faking
-//     ONLY the two true IO edges:
+//     supabaseAuthQueryClient -> real serverAuthSourceAdapter -> real derivation, AND
+//     (as of AUD-3) the REAL default audit writer chain (createAdminAuditEventWriter ->
+//     createAuditEventWriteExecutor -> createAuthRlsAuditEventWriter), faking ONLY the
+//     two true IO edges:
 //       1. the @supabase/ssr request-auth edge (auth.getUser), which proves WHO; and
-//       2. the service-role Supabase client, whose .rpc(fn, args) is the RPC transport.
+//       2. the service-role Supabase client, whose .rpc(fn, args) is the RPC transport
+//          for BOTH the six enumerated read lookups and the single enumerated audit
+//          write function.
 //     Everything between those two edges is the real banked code.
 //
 // This is the mock-achievable half of the B-4 contract (execution/19_SolMind_MVP0_Auth_RLS_RPC_Function_Contract_v0_1.md Section 13, the "real
 // /admin/access allow/deny" and "uses the RPC transport, not the retired broad
-// PostgREST executor" assertions). The DB-level half of execution/19_SolMind_MVP0_Auth_RLS_RPC_Function_Contract_v0_1.md Section 13 (anon/authenticated
-// .rpc() denial, identity/core still blocked, OpenAPI-surface absence, column contract,
-// dropped-function, pg_catalog hygiene) cannot be proven with mocks and is covered by
-// the separate local-stack suite; see SLICE_MANIFEST.md.
+// PostgREST executor" assertions), extended at AUD-3 with the Doc 22 Section 12
+// family 4/6 route real-path assertions (execution/22_SolMind_MVP0_Auth_RLS_Audit_Persistence_Contract_v0_1.md):
+// the production composition injects the REAL audit writer by default; an allow
+// persists the guarded-read row FIRST and the allow decision row SECOND, both
+// required before the outward allow (AUTH-RLS-DEC-029/030); a deny persists exactly
+// one opaque decision row and no guarded-read row; induced audit-write failures deny
+// without leaking and without false rows. The DB-level half (anon/authenticated
+// .rpc() denial, identity/core still blocked, OpenAPI-surface absence, column
+// contract, dropped-function, pg_catalog hygiene) cannot be proven with mocks and is
+// covered by the separate pgTAP and local-stack suites; see SLICE_MANIFEST.md.
 //
 // No network, DB, env secret, or real Supabase client is touched: the service-role
 // client factory and the @supabase/ssr edge are the only mocked modules, plus the
@@ -32,12 +43,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Hoisted doubles shared with the (hoisted) vi.mock factories below.
 //   - cookiesMock: the next/headers cookies() request API.
 //   - getUserMock: the @supabase/ssr client's auth.getUser() (the WHO edge).
-//   - rpcMock: the service-role client's .rpc(fn, args) (the RPC transport edge).
+//   - rpcMock: the service-role client's .rpc(fn, args) (the RPC transport edge for
+//     both the read lookups and the audit write).
 //   - fromSpy / schemaSpy: never-called spies. The RETIRED broad PostgREST scoped-select
 //     executor would have reached for client.from()/client.schema(); asserting they are
 //     never called proves the enumerated RPC transport is the only path used.
 //   - createServiceRoleClientMock: the service-role client factory, reconfigurable per
-//     test (returns the fake client, or throws to simulate a construction failure).
+//     test (returns the fake client, or throws to simulate a construction failure). The
+//     real composition constructs it for BOTH the read chain and the audit writer chain.
 const {
   cookiesMock,
   getUserMock,
@@ -71,8 +84,9 @@ vi.mock("@supabase/ssr", () => ({
 }));
 
 // Mock ONLY the service-role CLIENT factory (WHAT transport edge). createAdminAuthSource
-// still runs the REAL createServiceRoleRpcExecutor over this fake client, so the executor
-// dispatches each scoped-select spec to client.rpc("solmind_find_*", namedArgs).
+// still runs the REAL createServiceRoleRpcExecutor over this fake client, and
+// createAdminAuditEventWriter (the AUD-3 default) still runs the REAL
+// createAuditEventWriteExecutor over it, so every dispatch is observable on rpcMock.
 vi.mock("@/lib/solmind/supabase/serviceRoleClient", () => ({
   createServiceRoleClient: createServiceRoleClientMock,
 }));
@@ -92,7 +106,7 @@ const ACCOUNT_ID = "user-admin-1";
 const FAR_FUTURE = "2999-12-31T23:59:59.000Z";
 const FAR_PAST = "2000-01-01T00:00:00.000Z";
 
-// The six enumerated function names the executor must dispatch to (execution/19_SolMind_MVP0_Auth_RLS_RPC_Function_Contract_v0_1.md Section 8).
+// The six enumerated read functions the executor must dispatch to (execution/19_SolMind_MVP0_Auth_RLS_RPC_Function_Contract_v0_1.md Section 8).
 const FN = {
   identity: "solmind_find_auth_provider_identity",
   account: "solmind_find_user_account",
@@ -104,14 +118,22 @@ const FN = {
 
 const SOLMIND_FIND_PREFIX = "solmind_find_";
 
+// The single enumerated audit write function (AUD-1 migration
+// 20260708000000_audit_event_writer_function.sql), dispatched by the AUD-3 default
+// audit writer chain through the same mocked service-role client.
+const AUDIT_FN = "solmind_record_audit_event";
+
+const AUDIT_EVENT_ID = "0f9be9a6-2f7e-4e64-9f0a-5a1b2c3d4e5f";
+
 // A secret-looking request cookie value, so leak assertions can prove it never reaches
-// the response body.
+// the response body or any audit write argument.
 const SECRET_COOKIE_VALUE = "sb-access-token-SECRET-do-not-leak";
 
 type RpcResponse = { data: unknown; error: unknown };
 
 // Build the canned .rpc() responses keyed by function name for a full, valid chain in
 // the given active role. The rows mirror each function's contracted RETURNS TABLE shape.
+// The audit write function answers with its contracted single-row success shape.
 function rpcChain(role: "admin" | "guide"): Record<string, RpcResponse> {
   return {
     [FN.identity]: {
@@ -158,14 +180,32 @@ function rpcChain(role: "admin" | "guide"): Record<string, RpcResponse> {
           }
         : { data: [], error: null },
     [FN.explorer]: { data: [], error: null },
+    [AUDIT_FN]: { data: [{ audit_event_id: AUDIT_EVENT_ID }], error: null },
   };
 }
 
-// Drive the RPC transport edge from a function-name -> response map. An unlisted function
-// returns an empty reachable result (error null), matching an empty table.
-function setRpcChain(chain: Record<string, RpcResponse>): void {
-  rpcMock.mockImplementation((functionName: string) =>
-    Promise.resolve(chain[functionName] ?? { data: [], error: null }),
+// Drive the RPC transport edge from a function-name -> response map. An unlisted
+// function returns an empty reachable result (error null), matching an empty table.
+// failAuditWhen lets a test induce an audit-write failure for a specific audit call
+// (matched on its named arguments), mirroring a forced .rpc() error (Doc 22 family 6).
+function setRpcChain(
+  chain: Record<string, RpcResponse>,
+  failAuditWhen?: (args: Record<string, unknown>) => boolean,
+): void {
+  rpcMock.mockImplementation(
+    (functionName: string, args: Record<string, unknown>) => {
+      if (
+        functionName === AUDIT_FN &&
+        failAuditWhen !== undefined &&
+        failAuditWhen(args)
+      ) {
+        return Promise.resolve({
+          data: null,
+          error: { message: "induced audit write failure", code: "P0001" },
+        });
+      }
+      return Promise.resolve(chain[functionName] ?? { data: [], error: null });
+    },
   );
 }
 
@@ -217,8 +257,58 @@ function calledFunctionNames(): string[] {
   return rpcMock.mock.calls.map((call) => call[0] as string);
 }
 
+// Only the read-lookup calls (solmind_find_*), in call order.
+function calledFindNames(): string[] {
+  return calledFunctionNames().filter((name) =>
+    name.startsWith(SOLMIND_FIND_PREFIX),
+  );
+}
+
+// The named-argument objects of every audit write call, in call order.
+function auditCallArgs(): Array<Record<string, unknown>> {
+  return rpcMock.mock.calls
+    .filter((call) => call[0] === AUDIT_FN)
+    .map((call) => call[1] as Record<string, unknown>);
+}
+
+// The exact named arguments the AUD-3 wiring must send for each Family A row on this
+// route (execution/22_SolMind_MVP0_Auth_RLS_Audit_Persistence_Contract_v0_1.md Section 8; AUD-1 baked pairs).
+const EXPECTED_GUARDED_READ_ARGS = {
+  p_event_type: "guarded_service_role_read",
+  p_action: "read",
+  p_actor_role_context: "admin",
+  p_actor_user_account_id: ACCOUNT_ID,
+  p_target_entity_type: "admin_route",
+  p_target_entity_id: null,
+  p_reason_code: "guarded_read",
+  p_metadata: { routeId: "admin_route" },
+};
+
+const EXPECTED_ALLOW_DECISION_ARGS = {
+  p_event_type: "admin_route_access_decision",
+  p_action: "allow",
+  p_actor_role_context: "admin",
+  p_actor_user_account_id: ACCOUNT_ID,
+  p_target_entity_type: "admin_route",
+  p_target_entity_id: null,
+  p_reason_code: "access_granted",
+  p_metadata: { routeId: "admin_route", decision: "allow" },
+};
+
+const EXPECTED_DENY_DECISION_ARGS = {
+  p_event_type: "admin_route_access_decision",
+  p_action: "deny",
+  p_actor_role_context: "system",
+  p_actor_user_account_id: null,
+  p_target_entity_type: "admin_route",
+  p_target_entity_id: null,
+  p_reason_code: "access_denied",
+  p_metadata: { routeId: "admin_route", decision: "deny" },
+};
+
 let savedUrlEnv: string | undefined;
 let savedAnonEnv: string | undefined;
+let savedServiceRoleEnv: string | undefined;
 
 beforeEach(() => {
   cookiesMock.mockReset();
@@ -229,14 +319,19 @@ beforeEach(() => {
   createServiceRoleClientMock.mockReset();
 
   // The real request-auth adapter validates these public (non-secret) vars eagerly.
+  // The service-role KEY env is read only by the mocked client factory in production;
+  // it is saved/cleared here so the mocked factory is the single service-role edge
+  // and no ambient local value can bleed into the suite.
   savedUrlEnv = process.env.NEXT_PUBLIC_SUPABASE_URL;
   savedAnonEnv = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  savedServiceRoleEnv = process.env.SUPABASE_SERVICE_ROLE_KEY;
   process.env.NEXT_PUBLIC_SUPABASE_URL = "http://127.0.0.1:54321";
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-test-key-not-a-secret";
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   // Default: present request cookies, a verified admin user, the fake service-role client
-  // (rpc + never-to-be-called from/schema spies), and a valid admin RPC chain. Individual
-  // tests override what they exercise.
+  // (rpc + never-to-be-called from/schema spies), and a valid admin RPC chain including
+  // the audit write function. Individual tests override what they exercise.
   cookiesMock.mockResolvedValue(cookieStore());
   setVerifiedUser();
   createServiceRoleClientMock.mockReturnValue({
@@ -260,11 +355,16 @@ afterEach(() => {
   } else {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = savedAnonEnv;
   }
+  if (savedServiceRoleEnv === undefined) {
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  } else {
+    process.env.SUPABASE_SERVICE_ROLE_KEY = savedServiceRoleEnv;
+  }
   vi.restoreAllMocks();
 });
 
 describe("GET /admin/access real path - valid Admin allow", () => {
-  it("returns exactly { allowed: true } when the full chain resolves through the RPC path", async () => {
+  it("returns exactly { allowed: true } when the full chain and both audit writes resolve", async () => {
     const { status, contentType, body } = await invokeRoute();
 
     expect(status).toBe(200);
@@ -273,18 +373,22 @@ describe("GET /admin/access real path - valid Admin allow", () => {
     expect(Object.keys(body as object)).toEqual(["allowed"]);
   });
 
-  it("resolves the allow through the enumerated RPC transport, never a broad PostgREST select", async () => {
+  it("resolves the allow through the enumerated RPC transport only, never a broad PostgREST select", async () => {
     const { body } = await invokeRoute();
     expect(body).toEqual({ allowed: true });
 
-    // The transport is the six enumerated functions. Every .rpc() call names a
-    // solmind_find_* function with a named-parameter args object (no schema/table/columns
-    // /filters leak through), and the identity lookup that starts the chain ran.
+    // The transport is the closed enumerated set: the six solmind_find_* read
+    // lookups plus the single solmind_record_audit_event write (AUD-3). Every
+    // .rpc() call uses a named-parameter args object (no schema/table/columns/
+    // filters leak through), and the identity lookup that starts the chain ran.
     const names = calledFunctionNames();
     expect(names.length).toBeGreaterThan(0);
     expect(names).toContain(FN.identity);
     for (const [functionName, args] of rpcMock.mock.calls) {
-      expect(functionName as string).toMatch(new RegExp(`^${SOLMIND_FIND_PREFIX}`));
+      expect(
+        (functionName as string).startsWith(SOLMIND_FIND_PREFIX) ||
+          functionName === AUDIT_FN,
+      ).toBe(true);
       expect(args).toBeTypeOf("object");
       // Named RPC params only; no raw query shape from the retired executor.
       for (const key of Object.keys(args as Record<string, unknown>)) {
@@ -301,27 +405,106 @@ describe("GET /admin/access real path - valid Admin allow", () => {
     expect(fromSpy).not.toHaveBeenCalled();
     expect(schemaSpy).not.toHaveBeenCalled();
   });
+
+  it("persists exactly two audit rows on an allow -- guarded-read FIRST, then the allow decision, as the final RPC calls (AUTH-RLS-DEC-029/030)", async () => {
+    const { body } = await invokeRoute();
+    expect(body).toEqual({ allowed: true });
+
+    // Exactly one guarded-read write and one allow-decision write, in that order,
+    // both attributed to the server-derived admin account id.
+    const audits = auditCallArgs();
+    expect(audits).toHaveLength(2);
+    expect(audits[0]).toEqual(EXPECTED_GUARDED_READ_ARGS);
+    expect(audits[1]).toEqual(EXPECTED_ALLOW_DECISION_ARGS);
+
+    // Ordering against the read chain: both audit writes happen AFTER the record
+    // lookups (post-resolution, AUTH-RLS-DEC-029) -- they are the last two calls.
+    const names = calledFunctionNames();
+    expect(names.slice(-2)).toEqual([AUDIT_FN, AUDIT_FN]);
+  });
+});
+
+describe("GET /admin/access real path - induced audit-write failures (Doc 22 family 6)", () => {
+  it("denies (opaque 200) when the guarded-read audit write fails, writing NO allow decision row", async () => {
+    setRpcChain(
+      rpcChain("admin"),
+      (args) => args.p_event_type === "guarded_service_role_read",
+    );
+
+    const { status, body, rawText } = await invokeRoute();
+
+    expect(status).toBe(200);
+    expect(body).toEqual({ allowed: false });
+    // Exactly ONE audit attempt (the failed guarded read): no allow row, no
+    // substitute deny row, and no auth_resolution_failure row for a write failure.
+    const audits = auditCallArgs();
+    expect(audits).toHaveLength(1);
+    expect(audits[0].p_event_type).toBe("guarded_service_role_read");
+    expect(rawText).not.toContain("induced audit write failure");
+  });
+
+  it("denies (opaque 200) when the allow-decision write fails after the guarded-read persisted, leaving exactly one truthful residual guarded-read write", async () => {
+    setRpcChain(rpcChain("admin"), (args) => args.p_action === "allow");
+
+    const { status, body, rawText } = await invokeRoute();
+
+    expect(status).toBe(200);
+    expect(body).toEqual({ allowed: false });
+    // Exactly TWO audit attempts: the successful guarded read (the accepted
+    // truthful residual row, AUTH-RLS-DEC-030) and the failed allow decision. No
+    // third row of any kind is written for the induced deny.
+    const audits = auditCallArgs();
+    expect(audits).toHaveLength(2);
+    expect(audits[0]).toEqual(EXPECTED_GUARDED_READ_ARGS);
+    expect(audits[1].p_action).toBe("allow");
+    expect(rawText).not.toContain("induced audit write failure");
+  });
+
+  it("keeps a deny denied (opaque 200) when the deny-decision audit write fails (best-effort)", async () => {
+    setRpcChain(rpcChain("guide"), (args) => args.p_action === "deny");
+
+    const { status, body, rawText } = await invokeRoute();
+
+    expect(status).toBe(200);
+    expect(body).toEqual({ allowed: false });
+    // The failed best-effort deny write never changes the outcome and is not
+    // replaced by any other row.
+    const audits = auditCallArgs();
+    expect(audits).toHaveLength(1);
+    expect(audits[0].p_action).toBe("deny");
+    expect(rawText).not.toContain("induced audit write failure");
+  });
 });
 
 describe("GET /admin/access real path - fail-closed denies", () => {
-  it("denies an unauthenticated request WITHOUT any service-role RPC read", async () => {
+  it("denies an unauthenticated request WITHOUT any service-role record read, persisting one opaque deny row", async () => {
     setNoUser();
 
     const { status, body } = await invokeRoute();
 
     expect(status).toBe(200);
     expect(body).toEqual({ allowed: false });
-    // A null principal denies before any record load: the RPC transport is never touched.
-    expect(rpcMock).not.toHaveBeenCalled();
+    // A null principal denies before any record load: no solmind_find_* lookup runs.
+    // The only RPC traffic is the single best-effort opaque deny decision write
+    // (system context, null actor; no guarded-read row per AUTH-RLS-DEC-029).
+    expect(calledFindNames()).toHaveLength(0);
+    const audits = auditCallArgs();
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toEqual(EXPECTED_DENY_DECISION_ARGS);
   });
 
-  it("denies when the identity edge (getUser) errors, leaking no detail", async () => {
+  it("denies when the identity edge (getUser) errors, leaking no detail and persisting one opaque deny row", async () => {
     setGetUserError();
 
     const { body, rawText } = await invokeRoute();
 
     expect(body).toEqual({ allowed: false });
-    expect(rpcMock).not.toHaveBeenCalled();
+    // The fail-closed principal wrapper maps the getUser error to a null principal
+    // (a clean deny, not a resolution failure): no record read, one opaque deny row.
+    expect(calledFindNames()).toHaveLength(0);
+    const audits = auditCallArgs();
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toEqual(EXPECTED_DENY_DECISION_ARGS);
     expect(rawText).not.toContain("token-bearing");
     expect(rawText).not.toContain("getUser");
   });
@@ -379,14 +562,19 @@ describe("GET /admin/access real path - fail-closed denies", () => {
     expect(body).toEqual({ allowed: false });
   });
 
-  it("denies a verified non-Admin (server-derived role decides; a browser cannot claim admin)", async () => {
+  it("denies a verified non-Admin with exactly one opaque deny row and NO guarded-read row (server-derived role decides)", async () => {
     // /admin authorizes on the SERVER-derived active role only (routeAccessDecision.ts:
     // requestedRole is a non-authoritative selector, and this route exposes no role
-    // channel to the browser at all). A verified Guide session therefore denies.
+    // channel to the browser at all). A verified Guide session therefore denies, and
+    // per AUTH-RLS-DEC-029 the deny persists no guarded-read row -- the opaque deny
+    // decision row (system context, null actor) is the audit record.
     setRpcChain(rpcChain("guide"));
 
     const { body } = await invokeRoute();
     expect(body).toEqual({ allowed: false });
+    const audits = auditCallArgs();
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toEqual(EXPECTED_DENY_DECISION_ARGS);
   });
 
   it("denies when a required lookup returns an RPC error, leaking no error detail", async () => {
@@ -428,9 +616,11 @@ describe("GET /admin/access real path - fail-closed denies", () => {
     expect(body).toEqual({ allowed: false });
   });
 
-  it("denies when the service-role client cannot be constructed (missing-config fail-closed)", async () => {
-    // A missing/blank service-role env throws at createServiceRoleClient() inside the real
-    // createAdminAuthSource; the route composition catches it and denies opaquely.
+  it("denies when the service-role client cannot be constructed (missing-config fail-closed), with no RPC traffic at all", async () => {
+    // A missing/blank service-role env throws at createServiceRoleClient() inside BOTH
+    // the real createAdminAuthSource and the real createAdminAuditEventWriter; the
+    // composition catches both and denies opaquely. Audit persistence is unavailable,
+    // so no audit call is attempted and no false failure row can exist.
     createServiceRoleClientMock.mockImplementation(() => {
       throw new Error(
         "SolMind server configuration error: required server environment variable SUPABASE_SERVICE_ROLE_KEY is missing or blank.",
@@ -441,16 +631,48 @@ describe("GET /admin/access real path - fail-closed denies", () => {
 
     expect(status).toBe(200);
     expect(body).toEqual({ allowed: false });
+    expect(rpcMock).not.toHaveBeenCalled();
     expect(rawText).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
   });
 });
 
-describe("GET /admin/access real path - opaque outward projection", () => {
+describe("GET /admin/access real path - opaque outward projection and audit privacy", () => {
   it("never serializes a request cookie value into the response body", async () => {
     const { rawText } = await invokeRoute();
 
     expect(rawText).not.toContain(SECRET_COOKIE_VALUE);
     expect(rawText).not.toContain("sb-access-token");
+  });
+
+  it("never carries the request cookie value or free-form detail into any audit write argument", async () => {
+    await invokeRoute();
+
+    setNoUser();
+    await invokeRoute();
+
+    // Every audit write across the allow and deny requests carries only the bounded
+    // Family A named arguments: no cookie value, no token, no free-form field.
+    const serialized = JSON.stringify(
+      rpcMock.mock.calls
+        .filter((call) => call[0] === AUDIT_FN)
+        .map((call) => call[1]),
+    );
+    expect(serialized).not.toContain(SECRET_COOKIE_VALUE);
+    expect(serialized).not.toContain("sb-access-token");
+    for (const args of auditCallArgs()) {
+      expect(Object.keys(args).sort()).toEqual(
+        [
+          "p_event_type",
+          "p_action",
+          "p_actor_role_context",
+          "p_actor_user_account_id",
+          "p_target_entity_type",
+          "p_target_entity_id",
+          "p_reason_code",
+          "p_metadata",
+        ].sort(),
+      );
+    }
   });
 
   it("returns the identical opaque shape { allowed } for allow and deny (status signals nothing)", async () => {

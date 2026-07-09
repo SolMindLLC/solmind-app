@@ -20,7 +20,7 @@ Server route handlers:
 
 - `/admin/access` — opaque server-side Admin access probe returning only `{ allowed }`
 
-The user-facing pages are still static preview surfaces. Backend foundations are banked at a high level: Supabase schema foundations (migrations, with Row Level Security enabled deny-by-default), the Auth/RLS request-auth boundary, real Admin auth-source loading, server-only hardening, and the Auth/RLS audit event seam wired at `/admin/access` (default-off / no-op). Still not implemented: permissive or role-aware RLS policies, grants, and runtime enforcement; a real audit sink/store and `audit.audit_event` writer; login/provisioning writes; invitations; intake workflows; conversation storage; safety-flag runtime handling; and Guide/Admin runtime workflows. See the "Banked Foundations vs Still Deferred" section below and the authoritative register in `../solmind-docs/execution/12_SolMind_MVP0_Auth_RLS_Decision_Deferral_Register_v0_1.md`.
+The user-facing pages are still static preview surfaces. Backend foundations are banked at a high level: Supabase schema foundations (migrations, with Row Level Security enabled deny-by-default), the Auth/RLS request-auth boundary, real Admin auth-source loading, server-only hardening, and runtime Auth/RLS audit persistence at `/admin/access` (the `audit.audit_event` writer function plus the app writer chain, wired at AUD-3). Still not implemented: permissive or role-aware RLS policies, grants, and runtime enforcement; audit persistence beyond the `/admin/access` boundary (the login/provisioning, sensitive-access, safety, and AI-lifecycle audit families); login/provisioning writes; invitations; intake workflows; conversation storage; safety-flag runtime handling; and Guide/Admin runtime workflows. See the "Banked Foundations vs Still Deferred" section below and the authoritative register in `../solmind-docs/execution/12_SolMind_MVP0_Auth_RLS_Decision_Deferral_Register_v0_1.md`.
 
 ## Canonical Product Documentation
 
@@ -150,10 +150,10 @@ The `auth/`, `context/`, and `supabase/` directories hold server-only modules ke
 | Onboarding preview | `src/lib/solmind/onboarding.ts` | Static Explorer onboarding/checkpoint definitions |
 | Terms | `src/lib/solmind/terms.ts` | Canonical product and assistant terms |
 | Conversation/profile/topics | `src/lib/solmind/*.ts` | Static Explorer preview content |
-| Admin access probe | `src/app/admin/access/route.ts` | Opaque read-only Admin access probe returning `{ allowed }`; does not protect pages |
-| Server authorization | `src/lib/solmind/auth/*.ts` | Deny-by-default request-auth boundary, role context, route-access decisions, relationship guards, and the default-off audit event seam |
+| Admin access probe | `src/app/admin/access/route.ts` | Opaque Admin access probe returning `{ allowed }`; does not protect pages; its composition persists bounded Auth/RLS audit rows (AUD-3) |
+| Server authorization | `src/lib/solmind/auth/*.ts` | Deny-by-default request-auth boundary, role context, route-access decisions, relationship guards, the bounded audit event model, and the audit event writer |
 | Role/AI context | `src/lib/solmind/context/*.ts` | Explorer-facing and AI-role context assembly; keeps Explorer-private and Guide-private context separate |
-| Supabase integration | `src/lib/solmind/supabase/*.ts` | Server-side request-auth client (who), guarded service-role loader (what), principal mapping, session selection |
+| Supabase integration | `src/lib/solmind/supabase/*.ts` | Server-side request-auth client (who), guarded service-role loader (what), principal mapping, session selection, and the closed-allowlist audit write executor with its admin audit-writer factory |
 | Schema foundations | `supabase/migrations/*.sql` | MVP0 schemas and tables; Row Level Security enabled deny-by-default; no permissive policies or grants yet |
 
 ## MVP0 Authentication Model
@@ -204,14 +204,14 @@ Earlier guidance told agents not to start Supabase, auth, or RLS. That is no lon
 - Supabase schema foundations: MVP0 schemas and tables exist through migrations under `supabase/migrations`, with Row Level Security enabled deny-by-default on application tables.
 - The Auth/RLS request-auth boundary, real Admin auth-source loading, and server-only hardening under `src/lib/solmind/auth` and `src/lib/solmind/supabase`.
 - The `/admin/access` server route handler: an opaque probe returning only `{ allowed }`. It is read-only and does not protect the `/admin`, `/guide`, or `/explorer` pages.
-- The Auth/RLS audit event seam (`src/lib/solmind/auth/authRlsAuditEvent.ts`) and the `/admin/access` audit-seam wiring. The seam is default-off / no-op.
+- Auth/RLS audit persistence for `/admin/access`: the bounded event model (`src/lib/solmind/auth/authRlsAuditEvent.ts`), the enumerated `public.solmind_record_audit_event` writer function (migration `20260708000000_audit_event_writer_function.sql`), the closed-allowlist app writer chain (`auditEventWriter.ts`, `auditEventWriteExecutor.ts`, `adminAuditEventWriter.ts`), and the runtime wiring in `adminAccessRequest.ts` (AUD-1/AUD-2/AUD-3). On an allow the guarded-read row is written first, then the allow decision row, and both must persist before the outward allow (fail-closed); deny and resolution-failure rows are best-effort.
 
 Extend these modules deliberately and in small slices. Keep server-only modules off the shared client barrels, as the existing code does.
 
 ### Still deferred (do not start without prerequisite docs, tests, and approval)
 
 - Permissive or role-aware RLS policies, grants, and runtime access enforcement. RLS stays deny-by-default.
-- A real audit sink or store, an `audit.audit_event` writer, runtime database audit writes, and any audit-persistence migrations or grants. The audit seam stays default-off / no-op until a separately approved slice.
+- Audit persistence beyond the `/admin/access` boundary: the login/provisioning (Family B), Admin sensitive-access (Family C), safety/escalation (Family D), and content/AI-lifecycle (Family E) audit vocabularies and wiring; a real operational logging/alarm mechanism (the AUD-3 operational signal is an injectable no-op seam); the deferred system-context/null-actor guarded-read vocabulary (AUTH-RLS-DEF-019); and any audit retention/review tooling. No new audit grants, policies, or Data API exposure exist.
 - Authentication middleware. MVP0 deliberately prefers explicit per-route and server-action composition over middleware (register decision AUTH-RLS-DEC-017); do not introduce middleware without a specific approved justification.
 - The login/provisioning write path (creating or superseding sessions and provider identities).
 - AI chat persistence

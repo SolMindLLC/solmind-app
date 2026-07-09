@@ -1,4 +1,4 @@
-// SolMind MVP0 server-only Auth/RLS audit event seam (default-off / no-op).
+// SolMind MVP0 server-only Auth/RLS audit event seam (bounded event model).
 //
 // Purpose:
 //   - define a small, typed, BOUNDED audit event shape for the MVP0 Auth/RLS
@@ -7,20 +7,19 @@
 //     reads, and bounded auth resolution failures;
 //   - provide deterministic, side-effect-free factory helpers that shape those
 //     events from only non-sensitive, server-derived values;
-//   - provide a default-off / no-op sink so the seam is SAFE BY DEFAULT: nothing
-//     is persisted until a separately-approved slice intentionally wires a real
-//     writer (AUTH-RLS-DEF-003, AUTH-RLS-DEF-009).
+//   - provide a no-op sink for tests and default-off marker callers. As of the
+//     AUD-3 wiring slice the production /admin/access boundary persists these
+//     events through the real AUD-2 writer chain (AUTH-RLS-DEF-003,
+//     AUTH-RLS-DEF-009 implemented for that boundary); the no-op sink is demoted
+//     to test-only use there.
 //
 // What this module is NOT (scope guard):
-//   - It performs NO persistence. There is no database, Supabase, network,
+//   - It performs NO persistence itself. There is no database, Supabase, network,
 //     filesystem, cookie, header, env, or service-role access here. It does not
 //     write to audit.audit_event and proposes no schema, migration, RLS policy,
-//     or grant. The runtime SINK that writes events is deferred (Doc 16
-//     sections 2, 10, 12).
-//   - It is NOT yet threaded into composeRequestAuthContext or the /admin/access
-//     boundary. Wiring the existing onServiceRoleRead seam and the route decision
-//     to this model is a later, separately-approved step (Doc 16 section 12,
-//     steps 3-4). This module only makes a usable, bounded event model available.
+//     or grant. The runtime writer chain lives in auditEventWriter.ts /
+//     auditEventWriteExecutor.ts and is composed at the /admin/access boundary
+//     (adminAccessRequest.ts) as of AUD-3; this module only shapes events.
 //
 // Architecture notes (MVP0):
 //   - Server-only and OFF the shared src/lib/solmind/auth/index.ts barrel,
@@ -135,10 +134,11 @@ export type AuthRlsAuditMetadata = {
 //
 // Every field is a bounded literal or a coarse server-derived id. There is no
 // free-form content field by design (Doc 16 section 8). actorUserAccountId is
-// null when there is no verified principal available (for example the
-// deny-before-read case, or the pre-read service-role seam where the account id
-// is not yet known). These fields reuse the existing audit.audit_event columns
-// (Doc 16 sections 2, 7); this module shapes the event only and writes nothing.
+// null when there is no verified principal to attribute (the opaque deny and
+// auth-resolution-failure events; a persisted guarded read carries a non-null
+// post-resolution actor per AUTH-RLS-DEC-029). These fields reuse the existing
+// audit.audit_event columns (Doc 16 sections 2, 7); this module shapes the event
+// only and writes nothing.
 export type AuthRlsAuditEvent = {
   eventType: AuthRlsAuditEventType;
   actorRoleContext: AuthRlsAuditRoleContext;
@@ -206,8 +206,10 @@ export function createAdminAccessDecisionEvent(
 
 // Shape a guarded service-role read event for the admin boundary. The guarded
 // read occurs only after a principal has resolved, so the role context is
-// `admin`; the server-resolved account id may not yet be known at the read seam
-// (records load after the read), so it is passed explicitly and may be null.
+// `admin`. Per AUTH-RLS-DEC-029 the PERSISTED guarded-read event is constructed
+// post-resolution with the non-null server-derived account id; the nullable input
+// is retained for the banked event-model shape and its tests, and a null-actor
+// event is unpersistable by design (the AUD-2 writer fails it closed, no RPC).
 export function createGuardedServiceRoleReadEvent(args: {
   actorUserAccountId: string | null;
 }): AuthRlsAuditEvent {
@@ -239,13 +241,14 @@ export function createAuthResolutionFailureEvent(): AuthRlsAuditEvent {
   };
 }
 
-// --- The audit sink (default-off / no-op; async awaited as of AUD-2) ---
+// --- The audit sink (async awaited as of AUD-2; no-op test-only as of AUD-3) ---
 //
-// A sink receives a bounded event. The seam is SAFE BY DEFAULT: the only sink
-// provided here is a no-op that persists NOTHING. The real writer chain (the AUD-2
-// auditEventWriter / auditEventWriteExecutor modules) now exists but is NOT wired
-// here or into any production composition; nothing is persisted until the
-// separately-approved AUD-3 wiring slice (AUTH-RLS-DEF-003, AUTH-RLS-DEF-009).
+// A sink receives a bounded event. The only sink provided here is a no-op that
+// persists NOTHING. As of the AUD-3 wiring slice the production /admin/access
+// boundary persists events through the real AUD-2 writer chain directly
+// (adminAccessRequest.ts over auditEventWriter.ts), so the no-op sink is demoted
+// to test-only / default-off-marker use (AUTH-RLS-DEF-003, AUTH-RLS-DEF-009
+// implemented for that boundary).
 //
 // Async awaited sink contract (Doc 22 Section 11, approved at Gate 1 with
 // AUTH-RLS-DEC-028): a real writer-backed sink is asynchronous, so the sink type
@@ -258,16 +261,15 @@ export function createAuthResolutionFailureEvent(): AuthRlsAuditEvent {
 // already-settled value.
 export type AuthRlsAuditSink = (event: AuthRlsAuditEvent) => void | Promise<void>;
 
-// The default-off no-op sink. It persists nothing, returns nothing, and never
-// throws. It declares no parameter because it discards every event; it stays
-// assignable to AuthRlsAuditSink, whose typed parameter documents the bounded
-// event shape a future real writer will consume. This mirrors the existing
+// The no-op sink (test-only / default-off-marker use as of AUD-3). It persists
+// nothing, returns nothing, and never throws. It declares no parameter because it
+// discards every event; it stays assignable to AuthRlsAuditSink, whose typed
+// parameter documents the bounded event shape. This mirrors the existing
 // noopCookieSetAll no-op pattern.
 export function noopAuthRlsAuditSink(): void {
-  // Intentionally empty: the audit seam is default-off until a real writer is
-  // intentionally wired in a separately-approved slice.
+  // Intentionally empty: the no-op sink persists nothing by design.
 }
 
-// A shared default-off sink instance for callers that just need the safe-by-
-// default seam without constructing their own.
+// A shared no-op sink instance for tests and default-off marker callers. The
+// production /admin/access boundary no longer uses it as of AUD-3.
 export const NOOP_AUTH_RLS_AUDIT_SINK: AuthRlsAuditSink = noopAuthRlsAuditSink;

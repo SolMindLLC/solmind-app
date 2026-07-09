@@ -14,8 +14,11 @@
 // adminAccessRequest helper; this file holds only the Next.js request-surface glue,
 // which is why the composition behavior is unit-tested there rather than here.
 //
-// It is read-only: it performs no writes, creates/supersedes no user_session, adds no
-// RLS policy, and runs no migration. It returns only an opaque { allowed } boolean:
+// It performs no product-record writes, creates/supersedes no user_session, adds no
+// RLS policy, and runs no migration. The only persistence on this path is the bounded
+// Auth/RLS audit-event writes made inside the delegated composition (AUD-3;
+// AUTH-RLS-DEC-029/030) -- the route itself injects nothing and stays a thin shell.
+// It returns only an opaque { allowed } boolean:
 // deny-by-default, fail-closed, and never leaking which record or step failed (no
 // reason, context, role, profile, session, or identity detail is carried out).
 //

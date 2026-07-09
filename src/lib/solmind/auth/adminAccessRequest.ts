@@ -7,8 +7,8 @@
 //     outcome to a single opaque { allowed } shape;
 //   - make that composition deterministically testable WITHOUT Next.js request APIs
 //     or real env, by accepting an injected RequestCookieAccessor and injectable
-//     principal-source / auth-source factories. The route stays a thin shell that
-//     only reads cookies() and serializes the result.
+//     principal-source / auth-source / audit-writer factories. The route stays a thin
+//     shell that only reads cookies() and serializes the result.
 //
 // Architecture notes (MVP0):
 //   - Server-only and OFF the shared src/lib/solmind/auth/index.ts barrel
@@ -22,55 +22,57 @@
 //     loads records. A null principal denies before any service-role read (enforced
 //     by resolveAdminRouteAccess -> composeRequestAuthContext).
 //   - Fail closed (AUTH-RLS-DEC-016): any construction or configuration error (for
-//     example missing public or service-role env), or a throwing injected audit
-//     sink, is swallowed and denies, so no cookie, token, record, or secret can
-//     escape through an error path. This is the same posture the route enforced
-//     inline; keeping it here makes it testable and keeps it as defense in depth
-//     alongside the route's own outer guard.
+//     example missing public or service-role env) is swallowed and denies, so no
+//     cookie, token, record, or secret can escape through an error path. This is the
+//     same posture the route enforced inline; keeping it here makes it testable and
+//     keeps it as defense in depth alongside the route's own outer guard.
 //   - Opaque outcome only. The return value is exactly { allowed: boolean }. The
 //     reason, the derived context, the active role, and any profile/session/identity
 //     detail from resolveAdminRouteAccess are intentionally dropped here, so the
 //     outward /admin/access surface can never leak them and no Explorer-private or
 //     Guide-private field is assembled into the response.
-//   - Audit seam wiring (AUTH-RLS-DEC-024; Doc 16 sections 5-7, 9). This boundary is
-//     the single place the bounded authRlsAuditEvent model is constructed, and it now
-//     emits all three MVP0 Auth/RLS categories through ONE default-off sink:
-//       1. the Admin route access DECISION event, at the access-decision point;
-//       2. the GUARDED SERVICE-ROLE READ event, bridged from composeRequestAuthContext's
-//          value-free onServiceRoleRead seam (fired exactly where the read happens, so
-//          the server-derived account id is not yet known and is null);
-//       3. the AUTH-RESOLUTION-FAILURE event (by exception), bridged from the value-free
-//          onAuthResolutionFailure seam for an exception swallowed inside
-//          composeRequestAuthContext, AND emitted from this module's own fail-closed
-//          catch for a request-path exception (a factory construction error, or a
-//          throwing decision sink).
-//     The seam is DEFAULT-OFF: when no sink is injected, the no-op sink is used and
-//     NOTHING is persisted, so this adds no persistence and no runtime behavior change.
-//     A deny is recorded opaquely (system role context, no account id), so a denied or
-//     unauthenticated Explorer/Guide identity is never attributed; only an allow
-//     carries the server-derived admin account id; the guarded-read event carries only
-//     the admin boundary role context (never guide/explorer) with a null account id. No
-//     real writer, database access, RLS policy, or audit.audit_event insert is added
-//     here; the writer chain now exists (AUD-2: auditEventWriter.ts over
-//     auditEventWriteExecutor.ts) but is NOT injected here or anywhere in production
-//     until the separately-approved AUD-3 wiring slice (AUTH-RLS-DEF-003,
-//     AUTH-RLS-DEF-009). A null-principal denial stays the existing
-//     opaque decision(deny) event and is NOT additionally recorded as a failure: the
-//     failure category is scoped to exceptions (Doc 16 section 5 lists the null case
-//     under the category, but task scope records it by exception only).
-//   - Async awaited sink (AUD-2; Doc 22 Section 11). The sink type is now
-//     void | Promise<void> and every emission is awaited -- the bridged seam
-//     emissions inside composeRequestAuthContext and the decision emission below --
-//     so a rejecting asynchronous sink is handled exactly like a throwing
-//     synchronous sink (fail closed here, the safe MVP0 interim) and the outward
-//     result never resolves before an awaited emission settles. Per
-//     AUTH-RLS-DEC-029 the pre-read guarded-read bridge below remains a null-actor,
-//     value-carrying LEGACY bridge for the default-off seam only: a null-actor
-//     guarded-read event is unpersistable by design (the AUD-2 writer fails it
-//     closed with no RPC call), the PERSISTED guarded-read row is emitted
-//     post-resolution by the AUD-3 wiring (guarded-read row first, then the allow
-//     decision row, both required before an outward allow, AUTH-RLS-DEC-030), and
-//     AUD-3 must remove or neuter this pre-read bridge and update its tests.
+//
+// Runtime audit persistence (AUD-3; Doc 22 Sections 10-11; AUTH-RLS-DEC-028/029/030):
+//   - This boundary is the single place the bounded authRlsAuditEvent model is
+//     constructed, and as of AUD-3 it PERSISTS the Family A events through the real
+//     AUD-2 result-based writer chain (auditEventWriter.ts over
+//     auditEventWriteExecutor.ts over the service-role client), resolved by default
+//     from createAdminAuditEventWriter. The default-off / no-op posture is RETIRED
+//     for the production /admin/access path; tests inject deterministic writer
+//     doubles through the same factory seam.
+//   - Per-class write-failure posture (Doc 22 Section 10, approved at Gate 1):
+//       * Would-be ALLOW (fail-closed, AUTH-RLS-DEC-029/030): after the boundary
+//         resolves the admin actor, the guarded_service_role_read row is persisted
+//         FIRST, then the admin_route_access_decision / allow row, and BOTH must
+//         succeed before the outward { allowed: true }. A guarded-read write failure
+//         denies with no allow row written; an allow-decision write failure after
+//         the guarded-read row persisted denies, and the truthful residual
+//         guarded-read row is accepted for MVP0 (AUTH-RLS-DEC-030 carve-out). An
+//         audit-write-failure-induced deny persists NO additional decision or
+//         failure row (not approved; the bounded operational signal below is the
+//         only side channel).
+//       * DENY decision and AUTH-RESOLUTION FAILURE (best-effort): the outcome is
+//         already a deny and never changes; a persist failure raises only the
+//         bounded, value-free operational signal.
+//   - The persisted guarded-read event is constructed POST-RESOLUTION with the
+//     server-derived admin account id (AUTH-RLS-DEC-029). The legacy pre-read
+//     guarded-read bridge is REMOVED: this module no longer passes onServiceRoleRead,
+//     so the pre-read hook stays a value-free, default-off marker inside
+//     composeRequestAuthContext (placement unchanged, AUTH-RLS-DEC-024) and no
+//     double emission is possible. Deny outcomes persist no guarded-read row for
+//     MVP0 (AUTH-RLS-DEF-019 tracks the deferred vocabulary expansion).
+//   - No false attribution and no false failure rows: the writer is result-based and
+//     NEVER throws, so an audit-write failure can never route through the generic
+//     fail-closed catch below and mint a false auth_resolution_failure row. The
+//     auth_resolution_failure event is persisted (best-effort) only for genuine
+//     resolution exceptions: the bridged onAuthResolutionFailure seam inside
+//     composeRequestAuthContext, and this module's own catch for a request-path
+//     construction/factory exception.
+//   - Operational signal: onAuditWriteFailure is a bounded, VALUE-FREE injectable
+//     seam (no arguments, no payload, default no-op) fired once per failed persist
+//     attempt. A real operational logging/alarm mechanism is deferred to its own
+//     approved slice; the signal itself is guarded so a throwing implementation can
+//     never flip an outcome, leak, or reach the fail-closed catch.
 
 import "server-only";
 
@@ -84,10 +86,13 @@ import {
   createAdminAccessDecisionEvent,
   createAuthResolutionFailureEvent,
   createGuardedServiceRoleReadEvent,
-  NOOP_AUTH_RLS_AUDIT_SINK,
   type AuthRlsAuditEvent,
-  type AuthRlsAuditSink,
 } from "./authRlsAuditEvent";
+import {
+  toPersistableAuthRlsAuditEvent,
+  type AuthRlsAuditEventWriter,
+} from "./auditEventWriter";
+import { createAdminAuditEventWriter } from "../supabase/adminAuditEventWriter";
 import { createAdminAuthSource } from "../supabase/adminAuthSource";
 import { createSupabaseRequestAuthPrincipalSource } from "../supabase/requestAuthClient";
 
@@ -108,9 +113,14 @@ export type AdminAccessResult = {
 //     injected cookie accessor. Defaults to the real @supabase/ssr-backed adapter.
 //   - createAuthSource: builds the record-load port (WHAT). Defaults to the real
 //     service-role-backed Admin auth source.
-//   - auditSink: the Auth/RLS audit sink. Default-off: when omitted, the no-op sink
-//     is used and nothing is persisted (Doc 16 sections 2, 9). A future writer slice
-//     injects a real sink here with no change to this signature.
+//   - createAuditEventWriter: builds the audit persistence port. Defaults to the
+//     REAL writer chain (createAdminAuditEventWriter: service-role client -> write
+//     executor -> writer), so production /admin/access persists audit rows with no
+//     route change (AUD-3). Construction is guarded below: a throwing factory (for
+//     example missing service-role env) resolves to an unavailable writer, which
+//     fails the allow path closed and leaves best-effort paths unchanged.
+//   - onAuditWriteFailure: the bounded, value-free operational signal for a failed
+//     audit persist attempt. Default no-op; carries no arguments and no payload.
 // Tests inject in-memory / mock-executor-backed doubles, so no Next.js request API,
 // network, DB, or env is touched.
 export type AdminAccessRequestDependencies = {
@@ -120,7 +130,8 @@ export type AdminAccessRequestDependencies = {
   }) => SolMindRequestAuthPrincipalSource;
   createAuthSource?: (args: { now: () => Date }) => SolMindAuthSource;
   now?: () => Date;
-  auditSink?: AuthRlsAuditSink;
+  createAuditEventWriter?: () => AuthRlsAuditEventWriter;
+  onAuditWriteFailure?: () => void;
 };
 
 // Map the internal route-access result to a bounded Admin route access decision
@@ -145,17 +156,76 @@ function toAdminAccessDecisionEvent(
 // Compose the /admin access decision for one request and return only { allowed }.
 //
 // Deny-by-default and fail-closed: returns { allowed: true } ONLY when a verified
-// principal resolves, its real-loaded records derive a trusted context, and the
-// server-derived active role is permitted on /admin. Every other outcome -- including
-// any thrown principal-source/auth-source construction or load error, or a throwing
-// injected audit sink -- returns { allowed: false } with no detail.
+// principal resolves, its real-loaded records derive a trusted context, the
+// server-derived active role is permitted on /admin, AND both required audit rows
+// (guarded-read first, then the allow decision; AUTH-RLS-DEC-029/030) have
+// persisted. Every other outcome -- including any thrown principal-source /
+// auth-source construction or load error, an unavailable audit writer, or a failed
+// required audit write -- returns { allowed: false } with no detail.
 export async function resolveAdminAccessForRequest(
   deps: AdminAccessRequestDependencies,
 ): Promise<AdminAccessResult> {
-  // Resolve the audit sink ONCE, before the try, so the fail-closed catch below can
-  // also emit through it. Default-off: when no sink is injected the no-op sink is
-  // used and NOTHING is persisted (Doc 16 sections 2, 9).
-  const auditSink = deps.auditSink ?? NOOP_AUTH_RLS_AUDIT_SINK;
+  // The bounded, value-free operational signal (default no-op). Guarded so a
+  // throwing injected signal can never flip an outcome, leak, or route into the
+  // fail-closed catch below (which would mint a false failure row).
+  const signalAuditWriteFailure = (): void => {
+    try {
+      deps.onAuditWriteFailure?.();
+    } catch {
+      // Intentionally empty: the operational signal must never affect the outcome.
+    }
+  };
+
+  // Resolve the audit writer ONCE, before the try, inside its own guard. A throwing
+  // writer factory (for example missing service-role env on the default real chain)
+  // resolves to null -- audit persistence is then UNAVAILABLE: every persist attempt
+  // below reports failure, so the allow path fails closed and best-effort paths
+  // proceed unchanged. The construction failure deliberately does NOT flow into the
+  // fail-closed catch, so audit unavailability alone can never mint a false
+  // auth_resolution_failure row.
+  let auditWriter: AuthRlsAuditEventWriter | null = null;
+  try {
+    auditWriter = (deps.createAuditEventWriter ?? createAdminAuditEventWriter)();
+  } catch {
+    auditWriter = null;
+  }
+
+  // Persist one banked bounded event through the result-based writer. Returns true
+  // ONLY when the row is confirmed persisted. Never throws: an unavailable writer,
+  // an unmappable event, a failure result, and even a (contract-violating) throwing
+  // or rejecting injected writer all resolve to false, so an audit-write failure is
+  // always handled as a RESULT at the call site and can never reach the generic
+  // catch as an exception (no false auth_resolution_failure rows).
+  const persistBankedAuditEvent = async (
+    event: AuthRlsAuditEvent,
+  ): Promise<boolean> => {
+    if (auditWriter === null) {
+      return false;
+    }
+    const persistable = toPersistableAuthRlsAuditEvent(event);
+    if (persistable === null) {
+      return false;
+    }
+    try {
+      const result = await auditWriter.persistAuthRlsAuditEvent(persistable);
+      return result.persisted === true;
+    } catch {
+      return false;
+    }
+  };
+
+  // Best-effort persistence for the deny-decision and auth-resolution-failure
+  // classes (Doc 22 Section 10): the already-denied outcome never changes; a persist
+  // failure raises only the bounded operational signal. Never throws/rejects, so the
+  // bridged onAuthResolutionFailure seam below can never re-break fail-closed.
+  const persistBestEffortAuditEvent = async (
+    event: AuthRlsAuditEvent,
+  ): Promise<void> => {
+    const persisted = await persistBankedAuditEvent(event);
+    if (!persisted) {
+      signalAuditWriteFailure();
+    }
+  };
 
   try {
     const now = deps.now ?? (() => new Date());
@@ -170,67 +240,72 @@ export async function resolveAdminAccessForRequest(
     // missing/blank service-role env throws here and is caught below, denying.
     const authSource = createAuthSource({ now });
 
-    // Bridge the two value-free composition seams (composeRequestAuthContext) to the
-    // bounded Auth/RLS event model, both through the same default-off sink:
-    //   - onServiceRoleRead fires exactly where the guarded service-role read happens
-    //     (before records load), so the server-derived account id is not yet known and
-    //     is null, per the createGuardedServiceRoleReadEvent contract. The event
-    //     carries only the admin boundary role context, never guide/explorer.
-    //   - onAuthResolutionFailure fires when composeRequestAuthContext swallows a
-    //     resolution exception (a thrown principal source or record load) into the
-    //     opaque denial. The event is a generic system security event with no
-    //     principal and no failure detail.
-    // This is the only place the rich event model is constructed.
+    // Delegate the decision. The legacy pre-read guarded-read bridge is REMOVED
+    // (AUTH-RLS-DEC-029): onServiceRoleRead is not passed, so the pre-read hook
+    // stays a value-free, default-off marker inside composeRequestAuthContext and
+    // the persisted guarded-read row is written post-resolution below -- exactly
+    // once per allowed request, with no double emission. Only the genuine
+    // auth-resolution-failure seam is bridged, best-effort, through the writer.
     const result = await resolveAdminRouteAccess({
       principalSource,
       authSource,
-      onServiceRoleRead: () =>
-        auditSink(createGuardedServiceRoleReadEvent({ actorUserAccountId: null })),
       onAuthResolutionFailure: () =>
-        auditSink(createAuthResolutionFailureEvent()),
+        persistBestEffortAuditEvent(createAuthResolutionFailureEvent()),
     });
 
-    // Emit exactly one bounded Admin route access decision event at this boundary
-    // (Doc 16 sections 5-7, 9). Default-off: the sink is the no-op unless a real
-    // sink is injected, so this adds no persistence and no runtime behavior change.
-    // AWAITED (AUD-2, Doc 22 Section 11): the outward result -- including an allow
-    // -- never resolves before this emission settles, so an allow can never outrun
-    // an awaited audit write. A throwing OR rejecting injected sink is caught below
-    // and fails closed (denies), the safe MVP0 interim until the AUD-3 wiring slice
-    // applies the per-class posture (AUTH-RLS-DEF-003, AUTH-RLS-DEF-009).
-    await auditSink(toAdminAccessDecisionEvent(result));
+    if (result.allowed) {
+      // Would-be ALLOW: two fail-closed writes in the AUTH-RLS-DEC-030 order --
+      // the post-resolution guarded-read row FIRST, then the allow decision row.
+      // Both must persist before the outward { allowed: true }, so an allow can
+      // never outrun either of its audit rows (Doc 22 Section 10).
+      const actorUserAccountId = result.context.identity.userAccountId;
 
-    // Reduce to the opaque boolean: drop reason/context so nothing leaks outward.
-    return { allowed: result.allowed };
+      const guardedReadPersisted = await persistBankedAuditEvent(
+        createGuardedServiceRoleReadEvent({ actorUserAccountId }),
+      );
+      if (!guardedReadPersisted) {
+        // Fail closed with NO allow row written and NO additional deny/failure
+        // row (an audit-write-failure-induced deny stays row-free by design);
+        // the bounded signal is the only side channel.
+        signalAuditWriteFailure();
+        return { allowed: false };
+      }
+
+      const allowDecisionPersisted = await persistBankedAuditEvent(
+        toAdminAccessDecisionEvent(result),
+      );
+      if (!allowDecisionPersisted) {
+        // Fail closed. The already-persisted guarded-read row remains as the
+        // truthful residual record (AUTH-RLS-DEC-030: the actor was resolved and
+        // the guarded read occurred -- not false attribution). No additional
+        // deny/failure row is written.
+        signalAuditWriteFailure();
+        return { allowed: false };
+      }
+
+      return { allowed: true };
+    }
+
+    // Genuine DENY (verified non-Admin, null principal, or an inner resolution
+    // failure already collapsed to the opaque denial): best-effort persist the
+    // opaque deny decision row (system context, null actor). The outcome never
+    // changes and no guarded-read row is attempted (AUTH-RLS-DEC-029 deny path).
+    await persistBestEffortAuditEvent(toAdminAccessDecisionEvent(result));
+    return { allowed: false };
   } catch {
     // Fail closed: swallow any REQUEST-PATH exception and deny. This catch covers
-    // exceptions raised in this composition root rather than inside
-    // composeRequestAuthContext (whose own resolution exceptions already fire the
-    // onAuthResolutionFailure bridge above): a principal/auth-source FACTORY or
-    // CONSTRUCTION error (for example a missing service-role env), or a throwing
-    // DECISION sink. It records the request-path exception as a bounded
-    // auth-resolution-failure event (Doc 16 section 5), itself guarded so a throwing
-    // sink can never re-break fail-closed or leak.
+    // genuine construction/factory exceptions raised in this composition root (for
+    // example a missing service-role env thrown by the auth-source factory) rather
+    // than inside composeRequestAuthContext, whose own resolution exceptions
+    // already fire the bridged onAuthResolutionFailure seam above. Audit-write
+    // failures can NOT land here: the writer path is result-based and guarded, so
+    // this catch never records a false failure row for a failed audit write.
     //
-    // Duplicate-failure note: on the rare path where an inner resolution exception
-    // already emitted a failure event and the later decision sink then throws, this
-    // catch emits a SECOND bounded failure event (no de-duplication). That is
-    // acceptable for the MVP0 default-off seam -- every event stays bounded and the
-    // outcome is unchanged -- and the future real audit-writer slice may refine
-    // duplicate-failure behavior once the audit-write failure policy is decided
-    // (AUTH-RLS-DEF-003, AUTH-RLS-DEF-009).
-    //
-    // The outward result is always exactly { allowed: false } with no reason or
-    // error detail.
-    try {
-      // Awaited (AUD-2): a rejecting asynchronous sink is swallowed here exactly
-      // like a throwing synchronous one, so this best-effort failure emission can
-      // never flip the deny, leak, or float as an unhandled rejection.
-      await auditSink(createAuthResolutionFailureEvent());
-    } catch {
-      // Intentionally empty: a throwing or rejecting sink must not flip the deny
-      // or leak.
-    }
+    // The genuine failure is recorded best-effort as a bounded
+    // auth-resolution-failure event; the helper never throws, so this catch cannot
+    // re-break fail-closed or leak. The outward result is always exactly
+    // { allowed: false } with no reason or error detail.
+    await persistBestEffortAuditEvent(createAuthResolutionFailureEvent());
     return { allowed: false };
   }
 }

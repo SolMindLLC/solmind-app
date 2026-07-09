@@ -11,8 +11,9 @@
 //      glue (cookies()) throws, leaking no error/reason detail;
 //   4. keeps the outward body opaque even if an upstream resolver were to return
 //      extra fields or a request cookie carried a secret value;
-//   5. stays read-only: it delegates with only a cookie accessor and injects no
-//      audit sink / writer / auth-source, so it adds no persistence behavior.
+//   5. stays thin: it delegates with only a cookie accessor and injects no audit
+//      writer / auth-source wiring of its own (the AUD-3 audit persistence is the
+//      helper's production default, not the route's).
 //
 // The Next.js request surface is the only thing mocked: next/headers cookies() is
 // replaced with a deterministic in-memory store, and resolveAdminAccessForRequest is
@@ -208,7 +209,7 @@ describe("GET /admin/access - opaque projection", () => {
   });
 });
 
-describe("GET /admin/access - read-only delegation", () => {
+describe("GET /admin/access - thin delegation (no route-level wiring)", () => {
   it("delegates exactly once with only a cookie accessor and no writer/audit/auth-source wiring", async () => {
     resolveAdminAccessForRequest.mockResolvedValue({ allowed: true });
 
@@ -218,11 +219,13 @@ describe("GET /admin/access - read-only delegation", () => {
     expect(resolveAdminAccessForRequest).toHaveBeenCalledTimes(1);
 
     const deps = resolveAdminAccessForRequest.mock.calls[0][0] as Record<string, unknown>;
-    // The route injects ONLY the cookie accessor. It wires no audit sink, no auth
-    // source, and no principal-source override, so it adds no persistence / writer /
-    // record-load behavior at this boundary (audit stays default-off in the helper).
+    // The route injects ONLY the cookie accessor. It wires no audit writer, no auth
+    // source, and no principal-source override: the AUD-3 audit persistence is the
+    // HELPER's default (createAdminAuditEventWriter inside adminAccessRequest), so
+    // the route shell stays thin and adds no wiring of its own.
     expect(Object.keys(deps)).toEqual(["cookies"]);
-    expect(deps).not.toHaveProperty("auditSink");
+    expect(deps).not.toHaveProperty("createAuditEventWriter");
+    expect(deps).not.toHaveProperty("onAuditWriteFailure");
     expect(deps).not.toHaveProperty("createAuthSource");
     expect(deps).not.toHaveProperty("createPrincipalSource");
   });

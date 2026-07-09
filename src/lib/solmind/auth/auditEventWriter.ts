@@ -25,15 +25,14 @@
 //     below, and this module stays OFF the shared src/lib/solmind/auth/index.ts
 //     barrel (AUTH-RLS-DEC-007), mirroring the existing server-only family.
 //
-// Scope discipline (AUD-2; no production wiring):
-//   - Nothing constructs this writer in production. The audit seam stays default-off
-//     / no-op (NOOP_AUTH_RLS_AUDIT_SINK), and nothing is persisted at runtime until
-//     the separately Paul-gated AUD-3 wiring slice injects the real chain
-//     (createServiceRoleClient() -> createAuditEventWriteExecutor ->
-//     createAuthRlsAuditEventWriter) at the /admin/access composition root and
-//     applies the per-class write-failure posture (Doc 22 Sections 10-11;
-//     AUTH-RLS-DEC-029 post-resolution guarded-read timing; AUTH-RLS-DEC-030
-//     guarded-read-row-first two-write ordering).
+// Scope discipline (wired at AUD-3 for /admin/access only):
+//   - The AUD-3 wiring slice composes the real chain (createServiceRoleClient() ->
+//     createAuditEventWriteExecutor -> createAuthRlsAuditEventWriter; assembled in
+//     ../supabase/adminAuditEventWriter.ts) as the default audit persistence port
+//     of the /admin/access composition root (adminAccessRequest.ts), which applies
+//     the per-class write-failure posture (Doc 22 Sections 10-11; AUTH-RLS-DEC-029
+//     post-resolution guarded-read timing; AUTH-RLS-DEC-030 guarded-read-row-first
+//     two-write ordering). No broader audit/store wiring exists.
 //   - Privacy is structural and two-layer (Doc 22 Section 9.3): the bounded event
 //     model cannot represent content or secrets, this mapping refuses anything that
 //     does not exactly match one approved row, and the database function
@@ -426,9 +425,10 @@ export type AuthRlsAuditEventWriter = {
   ): Promise<AuditEventPersistResult>;
 };
 
-// Construct the writer over an injected closed-allowlist write executor. The AUD-3
-// slice assembles the real chain (createServiceRoleClient() ->
-// createAuditEventWriteExecutor -> this writer) at the production composition root;
+// Construct the writer over an injected closed-allowlist write executor. The real
+// production chain (createServiceRoleClient() -> createAuditEventWriteExecutor ->
+// this writer) is assembled by createAdminAuditEventWriter
+// (../supabase/adminAuditEventWriter.ts) for the /admin/access composition root;
 // tests inject a deterministic executor double (no network, DB, or env).
 export function createAuthRlsAuditEventWriter(deps: {
   executor: AuditEventWriteExecutor;

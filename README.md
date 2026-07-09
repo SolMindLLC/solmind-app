@@ -39,13 +39,13 @@ Banked backend foundations (high level):
 
 - Supabase schema foundations: MVP0 schemas and tables exist through migrations under `supabase/migrations`, with Row Level Security enabled deny-by-default on application tables.
 - Auth/RLS request-auth boundary, real Admin auth-source loading, and server-only hardening under `src/lib/solmind/auth` and `src/lib/solmind/supabase`.
-- An Auth/RLS audit event seam and the `/admin/access` audit-seam wiring (default-off / no-op).
+- Auth/RLS audit persistence for `/admin/access`: the bounded audit event model, the `public.solmind_record_audit_event` database writer function, the closed-allowlist app writer chain, and the runtime wiring (AUD-1/AUD-2/AUD-3).
 
 What "banked" does and does not mean:
 
 - `/admin/access` is an opaque JSON probe that returns only `{ allowed }`. It does not yet mean the `/admin`, `/guide`, or `/explorer` pages are fully protected runtime workflows.
 - Permissive or role-aware RLS policies, grants, and runtime access enforcement remain deferred; RLS stays deny-by-default.
-- The audit seam is default-off / no-op: there is no real sink or store, no `audit.audit_event` writer, no runtime database audit writes, and no audit-persistence migrations or grants.
+- Runtime audit persistence exists ONLY for the `/admin/access` boundary: the enumerated `public.solmind_record_audit_event` function writes bounded Auth/RLS rows into `audit.audit_event` (guarded-read row first, then the decision row, both required before an outward allow). No broader audit wiring, no permissive RLS policy, and no table or schema grants exist; the `audit` schema stays off the Data API.
 - Login/provisioning write paths, invitations, onboarding workflows, conversation storage, and the safety escalation runtime workflow are not yet implemented.
 
 The authoritative banked-vs-deferred Auth/RLS status is tracked in `../solmind-docs/execution/12_SolMind_MVP0_Auth_RLS_Decision_Deferral_Register_v0_1.md` (Section 11).
@@ -264,7 +264,7 @@ As of the current MVP0 checkpoint:
 
 ## Next Implementation Direction
 
-Several backend foundations below are already banked (see Current MVP0 App Scope): Supabase schema foundations through migrations, and the read-only Auth/RLS request-auth boundary with the `/admin/access` probe. The remaining items, plus the deferred runtime work (RLS policy/grant enforcement, a real audit sink/store and `audit.audit_event` writer, and login/provisioning write paths), are the next areas.
+Several backend foundations below are already banked (see Current MVP0 App Scope): Supabase schema foundations through migrations, the Auth/RLS request-auth boundary with the `/admin/access` probe, and runtime audit persistence for that boundary. The remaining items, plus the deferred runtime work (RLS policy/grant enforcement, audit persistence beyond the `/admin/access` boundary, and login/provisioning write paths), are the next areas.
 
 Recommended next build areas:
 
