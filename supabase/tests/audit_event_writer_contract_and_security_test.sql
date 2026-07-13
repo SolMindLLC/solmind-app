@@ -48,8 +48,8 @@ select p.oid as fn_oid,
 select cmp_ok(
   (select count(*)::int from solmind_public_functions),
   '>=',
-  7,
-  'minimum-match-count guard: at least the seven known public.solmind_ functions exist (the dynamic hygiene sweep cannot pass vacuously)'
+  8,
+  'minimum-match-count guard: at least the eight known public.solmind_ functions exist (the dynamic hygiene sweep cannot pass vacuously)'
 );
 
 select ok(

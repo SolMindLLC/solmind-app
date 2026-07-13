@@ -1,0 +1,30 @@
+begin;
+select plan(24);
+
+select has_function('public', 'solmind_redeem_verification_challenge', array['uuid','text','text'], 'redemption function exists');
+select function_lang_is('public', 'solmind_redeem_verification_challenge', array['uuid','text','text'], 'plpgsql', 'function is plpgsql');
+select volatility_is('public', 'solmind_redeem_verification_challenge', array['uuid','text','text'], 'volatile', 'function is volatile');
+select is((select pg_get_function_result(p.oid) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='solmind_redeem_verification_challenge'), 'TABLE(outcome text)', 'function returns the exact one-column table shape');
+select ok((select p.prosrc like '%solmind_redeem_cardinality_violation%' from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='solmind_redeem_verification_challenge'), 'function carries the fixed impossible-cardinality identifier');
+select ok((select indisunique from pg_index where indrelid='identity.verification_challenge'::regclass and indkey::text=(select attnum::text from pg_attribute where attrelid='identity.verification_challenge'::regclass and attname='verification_challenge_id')), 'challenge selector remains uniquely constrained');
+select ok((select p.prosecdef from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='solmind_redeem_verification_challenge'), 'function is security definer');
+select is((select pg_get_userbyid(p.proowner) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='solmind_redeem_verification_challenge'), 'postgres', 'owner is postgres');
+select ok(has_function_privilege('service_role','public.solmind_redeem_verification_challenge(uuid,text,text)','EXECUTE'), 'service_role can execute');
+select ok(not has_function_privilege('anon','public.solmind_redeem_verification_challenge(uuid,text,text)','EXECUTE'), 'anon denied');
+select ok(not has_function_privilege('authenticated','public.solmind_redeem_verification_challenge(uuid,text,text)','EXECUTE'), 'authenticated denied');
+select ok(not has_table_privilege('service_role','identity.verification_challenge','SELECT'), 'service_role has no challenge table select');
+select ok(not has_table_privilege('service_role','identity.verification_challenge','UPDATE'), 'service_role has no challenge table update');
+select ok(not has_table_privilege('service_role','audit.audit_event','INSERT'), 'service_role has no audit table insert');
+select ok((select relrowsecurity and not relforcerowsecurity from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='identity' and c.relname='verification_challenge'), 'challenge RLS enabled and not forced');
+select ok((select relrowsecurity and not relforcerowsecurity from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='audit' and c.relname='audit_event'), 'audit RLS enabled and not forced');
+select is((select count(*)::int from pg_policies where schemaname in ('identity','core','audit','content','ai','methodology','notification','scheduling')), 0, 'no policies exist in any SolMind application schema');
+select ok((select bool_and(c.relrowsecurity) from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind in ('r','p') and n.nspname in ('identity','core','audit','content','ai','methodology','notification','scheduling')), 'every SolMind application table keeps RLS enabled');
+select throws_ok($$select * from public.solmind_redeem_verification_challenge(null,'login','svf1:0000000000000000000000000000000000000000000000000000000000000000')$$,'P0001','solmind_redeem_invalid_selector','null selector fails closed');
+select throws_ok($$select * from public.solmind_redeem_verification_challenge('00000000-0000-4000-8000-000000000001','other','svf1:0000000000000000000000000000000000000000000000000000000000000000')$$,'P0001','solmind_redeem_invalid_purpose','unknown purpose fails closed');
+select throws_ok($$select * from public.solmind_redeem_verification_challenge('00000000-0000-4000-8000-000000000001',null,'svf1:0000000000000000000000000000000000000000000000000000000000000000')$$,'P0001','solmind_redeem_invalid_purpose','null purpose fails closed');
+select throws_ok($$select * from public.solmind_redeem_verification_challenge('00000000-0000-4000-8000-000000000001','login','SVF1:BAD')$$,'P0001','solmind_redeem_invalid_verifier_format','malformed verifier fails closed');
+select throws_ok($$select * from public.solmind_redeem_verification_challenge('00000000-0000-4000-8000-000000000001','login',null)$$,'P0001','solmind_redeem_invalid_verifier_format','null verifier fails closed');
+select is((select count(*)::int from pg_policies where schemaname='public'), 0, 'public schema has no policies');
+
+select * from finish();
+rollback;
