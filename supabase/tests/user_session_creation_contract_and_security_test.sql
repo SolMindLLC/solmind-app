@@ -1,5 +1,5 @@
 begin;
-select plan(40);
+select plan(49);
 
 select has_table('identity', 'session_creation_freshness_policy', 'freshness policy table exists');
 select columns_are(
@@ -18,9 +18,17 @@ select ok(
   'freshness policy RLS is enabled and not forced'
 );
 select ok(not has_table_privilege('service_role','identity.session_creation_freshness_policy','SELECT'), 'service_role cannot read policy table directly');
+select ok(not has_table_privilege('service_role','identity.session_creation_freshness_policy','INSERT'), 'service_role cannot insert policy rows directly');
 select ok(not has_table_privilege('service_role','identity.session_creation_freshness_policy','UPDATE'), 'service_role cannot update policy table directly');
+select ok(not has_table_privilege('service_role','identity.session_creation_freshness_policy','DELETE'), 'service_role cannot delete policy rows directly');
 select ok(not has_table_privilege('anon','identity.session_creation_freshness_policy','SELECT'), 'anon cannot read policy table');
+select ok(not has_table_privilege('anon','identity.session_creation_freshness_policy','INSERT'), 'anon cannot insert policy rows');
+select ok(not has_table_privilege('anon','identity.session_creation_freshness_policy','UPDATE'), 'anon cannot update policy rows');
+select ok(not has_table_privilege('anon','identity.session_creation_freshness_policy','DELETE'), 'anon cannot delete policy rows');
 select ok(not has_table_privilege('authenticated','identity.session_creation_freshness_policy','SELECT'), 'authenticated cannot read policy table');
+select ok(not has_table_privilege('authenticated','identity.session_creation_freshness_policy','INSERT'), 'authenticated cannot insert policy rows');
+select ok(not has_table_privilege('authenticated','identity.session_creation_freshness_policy','UPDATE'), 'authenticated cannot update policy rows');
+select ok(not has_table_privilege('authenticated','identity.session_creation_freshness_policy','DELETE'), 'authenticated cannot delete policy rows');
 
 select has_function('public','solmind_create_user_session',array['uuid','text','uuid','text','integer'],'session function exists');
 select function_lang_is('public','solmind_create_user_session',array['uuid','text','uuid','text','integer'],'plpgsql','session function is plpgsql');
@@ -54,6 +62,7 @@ select is(
 select ok((select prosrc like '%solmind_session_conflicting_retry%' from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='solmind_create_user_session'),'function carries fixed conflicting-retry identifier');
 select ok((select prosrc like '%solmind_session_policy_unavailable%' from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='solmind_create_user_session'),'function carries fixed unavailable-policy identifier');
 select ok((select prosrc like '%solmind_session_active_cardinality_violation%' from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='solmind_create_user_session'),'function carries fixed active-cardinality identifier');
+select ok((select prosrc like '%solmind_session_older_evidence%' from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='solmind_create_user_session'),'function carries fixed older-evidence identifier');
 
 select throws_ok($$select * from public.solmind_create_user_session(null,'admin','def50004-0000-4000-8000-000000000001','login',300)$$,'P0001','solmind_session_invalid_account','null account fails closed');
 select throws_ok($$select * from public.solmind_create_user_session('def50004-0000-4000-8000-000000000001','owner','def50004-0000-4000-8000-000000000002','login',300)$$,'P0001','solmind_session_invalid_role','unknown role fails closed');

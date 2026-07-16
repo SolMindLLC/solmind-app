@@ -1,5 +1,5 @@
 begin;
-select plan(35);
+select plan(51);
 
 insert into identity.user_account (user_account_id,display_name,account_status)
 values
@@ -14,9 +14,14 @@ values
 insert into identity.user_contact_method (
   user_contact_method_id,user_account_id,contact_method_type,contact_label,contact_value,
   normalized_contact_value,login_enabled,is_verified,status
-) values (
+) values
+(
   'def50004-1200-4000-8000-000000000001','def50004-1000-4000-8000-000000000001',
   'email','primary','def5s4-admin@synthetic.invalid','def5s4-admin@synthetic.invalid',true,true,'active'
+),
+(
+  'def50004-1200-4000-8000-000000000003','def50004-1000-4000-8000-000000000003',
+  'email','primary','def5s4-peer@synthetic.invalid','def5s4-peer@synthetic.invalid',true,true,'active'
 );
 
 set local role service_role;
@@ -85,6 +90,22 @@ select results_eq(
 
 select results_eq(
   $$select * from public.solmind_issue_verification_challenge(
+    'def50004-2000-4000-8000-000000000008','def5s4-admin@synthetic.invalid','email','role_reentry','email',
+    'svf1:8888888888888888888888888888888888888888888888888888888888888888',
+    'def50004-1000-4000-8000-000000000001','def50004-1200-4000-8000-000000000001')$$,
+  $$select 'issued'::text$$,
+  'real issuance creates delayed older evidence that will never mint its own session'
+);
+select results_eq(
+  $$select * from public.solmind_redeem_verification_challenge(
+    'def50004-2000-4000-8000-000000000008','role_reentry',
+    'svf1:8888888888888888888888888888888888888888888888888888888888888888')$$,
+  $$select 'redeemed'::text$$,
+  'real redemption commits delayed older evidence without creating a session'
+);
+
+select results_eq(
+  $$select * from public.solmind_issue_verification_challenge(
     'def50004-2000-4000-8000-000000000002','def5s4-admin@synthetic.invalid','email','role_reentry','email',
     'svf1:2222222222222222222222222222222222222222222222222222222222222222',
     'def50004-1000-4000-8000-000000000001','def50004-1200-4000-8000-000000000001')$$,
@@ -104,6 +125,13 @@ select * from public.solmind_create_user_session(
   'def50004-2000-4000-8000-000000000002','role_reentry',3600
 );
 reset role;
+update identity.verification_challenge
+   set used_at = (
+     select used_at - interval '1 millisecond'
+       from identity.verification_challenge
+      where verification_challenge_id='def50004-2000-4000-8000-000000000002'
+   )
+ where verification_challenge_id='def50004-2000-4000-8000-000000000008';
 select is((select outcome from def5_s4_second_result),'created','newer evidence creates a replacement session');
 select ok((select user_session_id<>(select user_session_id from def5_s4_first_result) from def5_s4_second_result),'replacement receives a new database UUID');
 select results_eq(
@@ -129,7 +157,43 @@ select results_eq(
       from def5_s4_first_result$$,
   'replacement supersession audit row is exact'
 );
+select results_eq(
+  $$select * from public.solmind_issue_verification_challenge(
+    'def50004-2000-4000-8000-000000000000','def5s4-admin@synthetic.invalid','email','role_reentry','email',
+    'svf1:9999999999999999999999999999999999999999999999999999999999999999',
+    'def50004-1000-4000-8000-000000000001','def50004-1200-4000-8000-000000000001')$$,
+  $$select 'issued'::text$$,
+  'real issuance creates evidence for the equal-timestamp ordering case'
+);
+select results_eq(
+  $$select * from public.solmind_redeem_verification_challenge(
+    'def50004-2000-4000-8000-000000000000','role_reentry',
+    'svf1:9999999999999999999999999999999999999999999999999999999999999999')$$,
+  $$select 'redeemed'::text$$,
+  'real redemption commits evidence for the equal-timestamp ordering case'
+);
+update identity.verification_challenge
+   set used_at = (
+     select used_at
+       from identity.verification_challenge
+      where verification_challenge_id='def50004-2000-4000-8000-000000000002'
+   )
+ where verification_challenge_id='def50004-2000-4000-8000-000000000000';
 set local role service_role;
+select throws_ok(
+  $$select * from public.solmind_create_user_session(
+    'def50004-1000-4000-8000-000000000001','admin',
+    'def50004-2000-4000-8000-000000000008','role_reentry',300)$$,
+  'P0001','solmind_session_older_evidence',
+  'never-sessionized older evidence cannot supersede a session created from newer evidence'
+);
+select throws_ok(
+  $$select * from public.solmind_create_user_session(
+    'def50004-1000-4000-8000-000000000001','admin',
+    'def50004-2000-4000-8000-000000000000','role_reentry',300)$$,
+  'P0001','solmind_session_older_evidence',
+  'equal-timestamp evidence with the lower challenge UUID loses the deterministic database tie-break'
+);
 select throws_ok(
   $$select * from public.solmind_create_user_session(
     'def50004-1000-4000-8000-000000000001','admin',
@@ -137,6 +201,83 @@ select throws_ok(
   'P0001','solmind_session_conflicting_retry','older challenge cannot recover a superseded session'
 );
 reset role;
+select is(
+  (select user_session_id from identity.user_session where user_account_id='def50004-1000-4000-8000-000000000001' and session_status='active'),
+  (select user_session_id from def5_s4_second_result),
+  'older-evidence denial preserves the newer active session'
+);
+select is(
+  (select count(*)::int from audit.audit_event where target_entity_id in ((select user_session_id from def5_s4_first_result),(select user_session_id from def5_s4_second_result)) and event_type in ('session_created','session_superseded')),
+  3,
+  'older-evidence denial writes no session audit row'
+);
+
+set local role service_role;
+select results_eq(
+  $$select * from public.solmind_issue_verification_challenge(
+    'def50004-2000-4000-8000-000000000010','def5s4-peer@synthetic.invalid','email','login','email',
+    'svf1:1010101010101010101010101010101010101010101010101010101010101010',
+    'def50004-1000-4000-8000-000000000003','def50004-1200-4000-8000-000000000003')$$,
+  $$select 'issued'::text$$,
+  'real issuance creates the lower-UUID side of the inverse equal-time control'
+);
+select results_eq(
+  $$select * from public.solmind_redeem_verification_challenge(
+    'def50004-2000-4000-8000-000000000010','login',
+    'svf1:1010101010101010101010101010101010101010101010101010101010101010')$$,
+  $$select 'redeemed'::text$$,
+  'real redemption commits the lower-UUID equal-time control evidence'
+);
+create temp table def5_s4_equal_lower_result as
+select * from public.solmind_create_user_session(
+  'def50004-1000-4000-8000-000000000003','admin',
+  'def50004-2000-4000-8000-000000000010','login',300
+);
+reset role;
+select is((select outcome from def5_s4_equal_lower_result),'created','lower UUID creates the peer account first session');
+
+set local role service_role;
+select results_eq(
+  $$select * from public.solmind_issue_verification_challenge(
+    'def50004-2000-4000-8000-000000000011','def5s4-peer@synthetic.invalid','email','login','email',
+    'svf1:1110111011101110111011101110111011101110111011101110111011101110',
+    'def50004-1000-4000-8000-000000000003','def50004-1200-4000-8000-000000000003')$$,
+  $$select 'issued'::text$$,
+  'real issuance creates the higher-UUID side of the inverse equal-time control'
+);
+select results_eq(
+  $$select * from public.solmind_redeem_verification_challenge(
+    'def50004-2000-4000-8000-000000000011','login',
+    'svf1:1110111011101110111011101110111011101110111011101110111011101110')$$,
+  $$select 'redeemed'::text$$,
+  'real redemption commits the higher-UUID equal-time control evidence'
+);
+reset role;
+update identity.verification_challenge
+   set used_at = (
+     select used_at
+       from identity.verification_challenge
+      where verification_challenge_id='def50004-2000-4000-8000-000000000010'
+   )
+ where verification_challenge_id='def50004-2000-4000-8000-000000000011';
+set local role service_role;
+create temp table def5_s4_equal_higher_result as
+select * from public.solmind_create_user_session(
+  'def50004-1000-4000-8000-000000000003','admin',
+  'def50004-2000-4000-8000-000000000011','login',300
+);
+reset role;
+select is((select outcome from def5_s4_equal_higher_result),'created','higher UUID legitimately wins the inverse equal-time control');
+select is(
+  (select verification_challenge_id from identity.user_session where user_account_id='def50004-1000-4000-8000-000000000003' and session_status='active'),
+  'def50004-2000-4000-8000-000000000011'::uuid,
+  'equal-time terminal winner is the higher database challenge UUID'
+);
+select results_eq(
+  $$select session_status from identity.user_session where user_session_id=(select user_session_id from def5_s4_equal_lower_result)$$,
+  $$select 'revoked'::text$$,
+  'higher equal-time UUID atomically revokes the lower equal-time session'
+);
 
 insert into identity.verification_challenge (
   verification_challenge_id,user_account_id,user_contact_method_id,normalized_contact_value,

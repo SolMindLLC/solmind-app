@@ -10,7 +10,7 @@
 
 begin;
 create extension if not exists dblink;
-select plan(47);
+select plan(50);
 
 create function pg_temp.def5_s4_wait_for_lock(p_connection text, p_pid integer)
 returns boolean language plpgsql as $$
@@ -67,12 +67,13 @@ select is(dblink_exec('def5_s4_a',$q$
     verification_challenge_id,user_account_id,user_contact_method_id,normalized_contact_value,
     contact_method_type,purpose,delivery_channel,code_hash,expires_at,used_at
   ) values
-    ('def50004-3300-4000-8000-000000000001','def50004-3000-4000-8000-000000000001','def50004-3200-4000-8000-000000000001','def5s4-race@synthetic.invalid','email','login','email','svf1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',now()+interval '10 minutes',clock_timestamp()),
-    ('def50004-3300-4000-8000-000000000002','def50004-3000-4000-8000-000000000001','def50004-3200-4000-8000-000000000001','def5s4-race@synthetic.invalid','email','login','email','svf1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',now()+interval '10 minutes',clock_timestamp()),
-    ('def50004-3300-4000-8000-000000000003','def50004-3000-4000-8000-000000000001','def50004-3200-4000-8000-000000000001','def5s4-race@synthetic.invalid','email','login','email','svf1:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',now()+interval '10 minutes',clock_timestamp()),
-    ('def50004-3300-4000-8000-000000000004','def50004-3000-4000-8000-000000000001','def50004-3200-4000-8000-000000000001','def5s4-race@synthetic.invalid','email','login','email','svf1:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',now()+interval '10 minutes',clock_timestamp()-interval '120 seconds')
-$q$),'INSERT 0 4','owner commits complete synthetic fixture');
-select is((select count(*)::int from identity.verification_challenge where verification_challenge_id::text like 'def50004-3300-%'),4,'orchestrator sees committed evidence fixtures');
+    ('def50004-3300-4000-8000-000000000001','def50004-3000-4000-8000-000000000001','def50004-3200-4000-8000-000000000001','def5s4-race@synthetic.invalid','email','login','email','svf1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',now()+interval '10 minutes',clock_timestamp()-interval '180 seconds'),
+    ('def50004-3300-4000-8000-000000000002','def50004-3000-4000-8000-000000000001','def50004-3200-4000-8000-000000000001','def5s4-race@synthetic.invalid','email','login','email','svf1:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',now()+interval '10 minutes',clock_timestamp()-interval '170 seconds'),
+    ('def50004-3300-4000-8000-000000000003','def50004-3000-4000-8000-000000000001','def50004-3200-4000-8000-000000000001','def5s4-race@synthetic.invalid','email','login','email','svf1:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',now()+interval '10 minutes',clock_timestamp()-interval '160 seconds'),
+    ('def50004-3300-4000-8000-000000000004','def50004-3000-4000-8000-000000000001','def50004-3200-4000-8000-000000000001','def5s4-race@synthetic.invalid','email','login','email','svf1:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',now()+interval '10 minutes',clock_timestamp()-interval '120 seconds'),
+    ('def50004-3300-4000-8000-000000000005','def50004-3000-4000-8000-000000000001','def50004-3200-4000-8000-000000000001','def5s4-race@synthetic.invalid','email','login','email','svf1:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',now()+interval '10 minutes',clock_timestamp()-interval '165 seconds')
+$q$),'INSERT 0 5','owner commits complete synthetic fixture');
+select is((select count(*)::int from identity.verification_challenge where verification_challenge_id::text like 'def50004-3300-%'),5,'orchestrator sees committed evidence fixtures');
 
 select is(dblink_exec('def5_s4_a','set role service_role'),'SET','A assumes service_role');
 select is(dblink_exec('def5_s4_b','set role service_role'),'SET','B assumes service_role');
@@ -129,6 +130,26 @@ select results_eq(
   $$select event_type,count(*)::int from audit.audit_event where actor_user_account_id='def50004-3000-4000-8000-000000000001' and event_type in ('session_created','session_superseded') group by event_type order by event_type$$,
   $$select * from (values('session_created'::text,3),('session_superseded'::text,2)) as expected(event_type,row_count)$$,
   'concurrent sequence writes exact creation and supersession audit cardinality'
+);
+
+set local role service_role;
+select throws_ok(
+  $$select * from public.solmind_create_user_session(
+    'def50004-3000-4000-8000-000000000001','admin',
+    'def50004-3300-4000-8000-000000000005','login',300)$$,
+  'P0001','solmind_session_older_evidence',
+  'delayed never-sessionized evidence loses to the newer session created by the competing connection'
+);
+reset role;
+select is(
+  (select user_session_id from identity.user_session where user_account_id='def50004-3000-4000-8000-000000000001' and session_status='active'),
+  (select user_session_id from def5_s4_b_third),
+  'delayed older evidence preserves the concurrently selected active session'
+);
+select results_eq(
+  $$select event_type,count(*)::int from audit.audit_event where actor_user_account_id='def50004-3000-4000-8000-000000000001' and event_type in ('session_created','session_superseded') group by event_type order by event_type$$,
+  $$select * from (values('session_created'::text,3),('session_superseded'::text,2)) as expected(event_type,row_count)$$,
+  'delayed older-evidence denial writes no session audit row'
 );
 
 select is(dblink_exec('def5_s4_a','reset role'),'RESET','A returns to owner for policy-race setup');
