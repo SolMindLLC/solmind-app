@@ -372,6 +372,8 @@ The MVP0 schemas and tables are banked through migrations, with Row Level Securi
 
 The banked dormant DEF5-S3 issuance foundation keeps the database boundary narrow: `public.solmind_issue_verification_challenge` is a service-role-only, purpose-built `SECURITY DEFINER` operation over `identity.verification_challenge`, `identity.contact_method`, and the exact Family B `audit.audit_event` row. Its partial unique index independently limits each normalized-contact/purpose pair to one structurally open challenge. It does not authorize a route, delivery provider, invitation acceptance, session creation, self-signup, Guide assignment, or rate-limit implementation. The outer app/route layer must establish invitation or self-signup eligibility before calling it, and no runtime caller may be added until the separately mandatory resend and lockout controls are implemented.
 
+The review-only DEF5-S4 proposal keeps session mutation separate from redemption and provisioning. `public.solmind_create_user_session` consumes committed account-bound `login` or `role_reentry` evidence, owns account-wide supersede-then-create serialization, and embeds its exact Family B audit rows. Its freshness policy and both uniqueness indexes are hidden database backstops, not client authorization. The proposal creates no caller, route, cookie, provider action, account/profile/role provisioning, invitation or Guide assignment dependency, cloud path, or real-user flow. Until Paul applies and banks the packet, this paragraph describes proposed behavior only.
+
 ## Documentation Boundary
 
 When any route, role behavior, authentication behavior, onboarding workflow, or dashboard behavior changes, update:

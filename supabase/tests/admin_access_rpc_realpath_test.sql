@@ -8,11 +8,10 @@
 --     and prove the six public.solmind_find_* functions return exactly the rows that drive an
 --     ALLOW: the identity, account, single active session, and active admin role assignment
 --     resolve, while the optional guide/explorer profiles are absent (not a deny on /admin);
---   - prove the DB SURFACES ambiguity and expiry to the app rather than resolving them:
---     solmind_find_active_user_sessions returns ALL active-status sessions (two -> two rows)
---     and does not pre-filter an expired-but-active-status session (returns it, expiry visible).
---     The app layer (selectActiveUserSession) turns those into a deny; that decision is proven
---     in the mock route real-path test (route.realpath.test.ts) and adminAccessRequest.test.ts.
+--   - prove the DEF5-S4 database backstop rejects a second active account session, while the
+--     app layer's ambiguity-deny behavior remains independently proven in mocked app tests;
+--   - prove the DB does not pre-filter an expired-but-active-status session (returns it,
+--     expiry visible), which the app layer turns into a deny.
 --
 -- Rollback-safe: everything runs inside a transaction that ROLLS BACK, so no seeded row
 -- persists. It adds no migration, function, policy, or grant. The synthetic ids below are
@@ -103,18 +102,16 @@ select is(
   'an unseeded account id resolves to no account row'
 );
 
--- --- Ambiguity is surfaced, not resolved: add a second active session -----------------------
+-- --- DEF5-S4 structural backstop rejects a second active account session --------------------
 
-insert into identity.user_session
-  (user_account_id, active_role_context, expires_at, session_status)
-values
-  ('11111111-1111-1111-1111-111111111111', 'admin', now() + interval '2 hours', 'active');
-
-select is(
-  (select count(*)::int
-     from public.solmind_find_active_user_sessions('11111111-1111-1111-1111-111111111111'::uuid)),
-  2,
-  'two active sessions are both returned (ambiguity stays visible to the app)'
+select throws_ok(
+  $$insert into identity.user_session
+      (user_account_id, active_role_context, expires_at, session_status)
+    values
+      ('11111111-1111-1111-1111-111111111111', 'admin', now() + interval '2 hours', 'active')$$,
+  '23505',
+  'duplicate key value violates unique constraint "user_session_one_active_per_account_idx"',
+  'the database rejects a second active session for the same account'
 );
 
 -- --- Expiry is surfaced, not pre-filtered: a backdated, still-active-status session ----------
