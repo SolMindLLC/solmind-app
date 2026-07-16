@@ -2,6 +2,11 @@
 -- This function performs no delivery IO, invite authorization, runtime rate control,
 -- session creation, route wiring, provider call, or real-user activation.
 
+-- Supabase CLI 2.109.1 no longer supplies the transaction context that the
+-- top-level LOCK TABLE requires. Keep the migration replay-safe by owning the
+-- transaction boundary explicitly; runtime function semantics are unchanged.
+begin;
+
 lock table identity.verification_challenge in share mode;
 
 do $$
@@ -181,3 +186,5 @@ grant execute on function public.solmind_issue_verification_challenge(uuid, text
 
 comment on function public.solmind_issue_verification_challenge(uuid, text, text, text, text, text, uuid, uuid) is
   'DEF5-S3 dormant server-only challenge issuance. The caller owns canonical normalization, invite/bootstrap eligibility, code/UUID generation, and post-commit delivery. Both account/contact UUIDs must be null or both present; both-null is limited to first_admin_setup, invite-driven pre-account login, and invite-driven pre-account contact_verify, but this function cannot prove invite eligibility. Neutral counters are per-row initialization only and provide no resend-rate or lockout protection. No runtime caller or real-user path may use this function until the separately reviewed race-safe abuse-control gate passes.';
+
+commit;
