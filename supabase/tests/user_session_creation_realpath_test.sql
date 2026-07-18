@@ -1,5 +1,5 @@
 begin;
-select plan(51);
+select plan(65);
 
 insert into identity.user_account (user_account_id,display_name,account_status)
 values
@@ -64,6 +64,20 @@ select results_eq(
   $$select 'session_created'::text,'create'::text,'login_success'::text,'def50004-1000-4000-8000-000000000001'::uuid,'admin'::text,'user_session'::text,'{"purpose":"login"}'::jsonb$$,
   'first creation audit row is exact'
 );
+select is(
+  (select count(*)::int from identity.authorizing_evidence_consumption where verification_challenge_id='def50004-2000-4000-8000-000000000001'),
+  1,
+  'first creation consumes the challenge exactly once in the shared backstop'
+);
+select results_eq(
+  $$select consumer_type,consumer_record_id,consumed_at,retention_class
+      from identity.authorizing_evidence_consumption
+     where verification_challenge_id='def50004-2000-4000-8000-000000000001'$$,
+  $$select 'user_session'::text,user_session_id,created_at,'security_log'::text
+      from identity.user_session
+     where user_session_id=(select user_session_id from def5_s4_first_result)$$,
+  'first session and shared consumption use the same record and database clock'
+);
 
 set local role service_role;
 create temp table def5_s4_retry_result as
@@ -75,6 +89,11 @@ reset role;
 select is((select outcome from def5_s4_retry_result),'existing','exact response-loss retry returns existing');
 select is((select user_session_id from def5_s4_retry_result),(select user_session_id from def5_s4_first_result),'exact retry returns the same UUID');
 select is((select count(*)::int from audit.audit_event where target_entity_id=(select user_session_id from def5_s4_first_result)),1,'exact retry writes no audit row');
+select is(
+  (select count(*)::int from identity.authorizing_evidence_consumption where verification_challenge_id='def50004-2000-4000-8000-000000000001'),
+  1,
+  'exact retry does not consume evidence again'
+);
 
 update identity.verification_challenge
    set used_at = clock_timestamp()-interval '10 minutes'
@@ -146,6 +165,15 @@ select results_eq(
 );
 select is((select count(*)::int from identity.user_session where user_account_id='def50004-1000-4000-8000-000000000001' and session_status='active'),1,'exactly one active account session remains');
 select is((select count(*)::int from audit.audit_event where target_entity_id in ((select user_session_id from def5_s4_first_result),(select user_session_id from def5_s4_second_result)) and event_type in ('session_created','session_superseded')),3,'replacement yields one supersession and one additional creation audit');
+select is(
+  (select count(*)::int
+     from identity.authorizing_evidence_consumption consumption
+     join identity.verification_challenge challenge using (verification_challenge_id)
+    where challenge.user_account_id='def50004-1000-4000-8000-000000000001'
+      and consumption.consumer_type='user_session'),
+  2,
+  'replacement preserves the first consumption and inserts exactly one new consumption'
+);
 select results_eq(
   $$select event_type,action,reason_code,actor_user_account_id,actor_role_context,target_entity_type,target_entity_id,metadata
       from audit.audit_event
@@ -210,6 +238,14 @@ select is(
   (select count(*)::int from audit.audit_event where target_entity_id in ((select user_session_id from def5_s4_first_result),(select user_session_id from def5_s4_second_result)) and event_type in ('session_created','session_superseded')),
   3,
   'older-evidence denial writes no session audit row'
+);
+select is(
+  (select count(*)::int
+     from identity.authorizing_evidence_consumption consumption
+     join identity.verification_challenge challenge using (verification_challenge_id)
+    where challenge.user_account_id='def50004-1000-4000-8000-000000000001'),
+  2,
+  'older-evidence denials write no shared consumption'
 );
 
 set local role service_role;
@@ -278,6 +314,14 @@ select results_eq(
   $$select 'revoked'::text$$,
   'higher equal-time UUID atomically revokes the lower equal-time session'
 );
+select is(
+  (select count(*)::int
+     from identity.authorizing_evidence_consumption consumption
+     join identity.verification_challenge challenge using (verification_challenge_id)
+    where challenge.user_account_id='def50004-1000-4000-8000-000000000003'),
+  2,
+  'both legitimate peer-account sessions retain one shared consumption each'
+);
 
 insert into identity.verification_challenge (
   verification_challenge_id,user_account_id,user_contact_method_id,normalized_contact_value,
@@ -301,12 +345,16 @@ delete from identity.session_creation_freshness_policy;
 set local role service_role;
 select throws_ok($$select * from public.solmind_create_user_session('def50004-1000-4000-8000-000000000001','admin','def50004-2000-4000-8000-000000000003','login',300)$$,'P0001','solmind_session_policy_unavailable','missing policy fails closed');
 reset role;
+alter table identity.session_creation_freshness_policy
+  drop constraint session_creation_freshness_policy_pkey;
 insert into identity.session_creation_freshness_policy (minimum_seconds,active_seconds,maximum_seconds) values (60,300,600),(60,300,600);
 set local role service_role;
 select throws_ok($$select * from public.solmind_create_user_session('def50004-1000-4000-8000-000000000001','admin','def50004-2000-4000-8000-000000000003','login',300)$$,'P0001','solmind_session_policy_unavailable','duplicate policy fails closed');
 reset role;
 delete from identity.session_creation_freshness_policy;
 insert into identity.session_creation_freshness_policy (minimum_seconds,active_seconds,maximum_seconds) values (60,300,600);
+alter table identity.session_creation_freshness_policy
+  add constraint session_creation_freshness_policy_pkey primary key (policy_name);
 
 insert into identity.verification_challenge (
   verification_challenge_id,user_account_id,user_contact_method_id,normalized_contact_value,
@@ -322,8 +370,83 @@ set local role service_role;
 select throws_ok($$select * from public.solmind_create_user_session('def50004-1000-4000-8000-000000000001','admin','def50004-2000-4000-8000-000000000007','login',300)$$,'P0001','def5_s4_induced_audit_failure','audit failure propagates');
 reset role;
 select is((select count(*)::int from identity.user_session where verification_challenge_id='def50004-2000-4000-8000-000000000007'),0,'audit failure rolls back new session');
+select is((select count(*)::int from identity.authorizing_evidence_consumption where verification_challenge_id='def50004-2000-4000-8000-000000000007'),0,'audit failure rolls back shared consumption');
 select is((select user_session_id from identity.user_session where user_account_id='def50004-1000-4000-8000-000000000001' and session_status='active'),(select user_session_id from def5_s4_second_result),'audit failure rolls back supersession');
 select is((select count(*)::int from audit.audit_event where target_entity_id='def50004-2000-4000-8000-000000000007'),0,'audit failure leaves no session audit row');
+
+insert into identity.verification_challenge (
+  verification_challenge_id,user_account_id,user_contact_method_id,normalized_contact_value,
+  contact_method_type,purpose,delivery_channel,code_hash,expires_at,used_at
+) values (
+  'def50004-2000-4000-8000-000000000012','def50004-1000-4000-8000-000000000001',
+  'def50004-1200-4000-8000-000000000001','def5s4-admin@synthetic.invalid','email','login','email',
+  'svf1:1212121212121212121212121212121212121212121212121212121212121212',
+  now()+interval '10 minutes',clock_timestamp()
+);
+insert into identity.authorizing_evidence_consumption (
+  verification_challenge_id,consumer_type,consumer_record_id,consumed_at
+) values (
+  'def50004-2000-4000-8000-000000000012',
+  'guide_invitation_acceptance',
+  'def50004-2900-4000-8000-000000000012',
+  clock_timestamp()
+);
+set local role service_role;
+select throws_ok(
+  $$select * from public.solmind_create_user_session(
+    'def50004-1000-4000-8000-000000000001','admin',
+    'def50004-2000-4000-8000-000000000012','login',300)$$,
+  'P0001','solmind_session_evidence_consumed',
+  'evidence already consumed by a different authorizing family cannot mint a session'
+);
+reset role;
+select is(
+  (select count(*)::int from identity.user_session where verification_challenge_id='def50004-2000-4000-8000-000000000012'),
+  0,
+  'cross-consumer replay denial creates no session'
+);
+select results_eq(
+  $$select consumer_type,consumer_record_id
+      from identity.authorizing_evidence_consumption
+     where verification_challenge_id='def50004-2000-4000-8000-000000000012'$$,
+  $$select 'guide_invitation_acceptance'::text,'def50004-2900-4000-8000-000000000012'::uuid$$,
+  'cross-consumer replay denial preserves the winning consumption exactly'
+);
+select is(
+  (select count(*)::int from audit.audit_event where target_entity_id='def50004-2000-4000-8000-000000000012'),
+  0,
+  'cross-consumer replay denial writes no session audit'
+);
+
+delete from identity.authorizing_evidence_consumption
+ where verification_challenge_id='def50004-2000-4000-8000-000000000002';
+set local role service_role;
+select throws_ok(
+  $$select * from public.solmind_create_user_session(
+    'def50004-1000-4000-8000-000000000001','admin',
+    'def50004-2000-4000-8000-000000000002','role_reentry',3600)$$,
+  'P0001','solmind_session_consumption_integrity_failure',
+  'exact retry fails closed when the matching shared consumption is missing'
+);
+reset role;
+select lives_ok(
+  $$insert into identity.authorizing_evidence_consumption (
+      verification_challenge_id,consumer_type,consumer_record_id,consumed_at
+    )
+    select verification_challenge_id,'user_session',user_session_id,created_at
+      from identity.user_session
+     where user_session_id=(select user_session_id from def5_s4_second_result)$$,
+  'test restores the exact matching shared consumption'
+);
+set local role service_role;
+select results_eq(
+  $$select outcome,user_session_id from public.solmind_create_user_session(
+    'def50004-1000-4000-8000-000000000001','admin',
+    'def50004-2000-4000-8000-000000000002','role_reentry',3600)$$,
+  $$select 'existing'::text,user_session_id from def5_s4_second_result$$,
+  'restored exact consumption permits the original writeless recovery'
+);
+reset role;
 
 select is((select count(*)::int from audit.audit_event where event_type in ('session_created','session_superseded') and (to_jsonb(audit_event)::text like '%synthetic.invalid%' or to_jsonb(audit_event)::text like '%svf1:%')),0,'session audit rows exclude contact and verifier sentinels');
 

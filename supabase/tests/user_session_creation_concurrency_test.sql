@@ -1,6 +1,7 @@
 -- DEF5-S4 real-function concurrency proofs. Local ephemeral database only.
 -- A hard SQL error can leave reserved synthetic rows. Recovery requires Paul's approval:
 -- delete from audit.audit_event where target_entity_id::text like 'def50004-%' or actor_user_account_id::text like 'def50004-%';
+-- delete from identity.authorizing_evidence_consumption where verification_challenge_id::text like 'def50004-%';
 -- delete from identity.user_session where user_account_id::text like 'def50004-%';
 -- delete from identity.verification_challenge where verification_challenge_id::text like 'def50004-%';
 -- delete from identity.user_contact_method where user_account_id::text like 'def50004-%';
@@ -10,7 +11,7 @@
 
 begin;
 create extension if not exists dblink;
-select plan(50);
+select plan(56);
 
 create function pg_temp.def5_s4_wait_for_lock(p_connection text, p_pid integer)
 returns boolean language plpgsql as $$
@@ -39,6 +40,7 @@ select cmp_ok((select count(*)::int from def5_s4_counts_before),'>',0,'before sn
 
 select is((select count(*)::int from identity.user_account where user_account_id::text like 'def50004-%'),0,'preflight finds no account residue');
 select is((select count(*)::int from identity.user_session where user_account_id::text like 'def50004-%'),0,'preflight finds no session residue');
+select is((select count(*)::int from identity.authorizing_evidence_consumption where verification_challenge_id::text like 'def50004-%'),0,'preflight finds no shared-consumption residue');
 select is((select count(*)::int from audit.audit_event where actor_user_account_id::text like 'def50004-%'),0,'preflight finds no session audit residue');
 
 select lives_ok($$select dblink_connect('def5_s4_a','host=host.docker.internal port=54322 dbname=postgres user=postgres password=postgres connect_timeout=5')$$,'connection A opens');
@@ -90,7 +92,7 @@ select ok(dblink_send_query('def5_s4_b',$q$
     'def50004-3000-4000-8000-000000000001','admin',
     'def50004-3300-4000-8000-000000000001','login',300)
 $q$)=1,'B submits simultaneous exact retry');
-select ok(pg_temp.def5_s4_wait_for_lock('def5_s4_b',(select pid from def5_s4_pids where name='b')),'B visibly waits on the account advisory lock');
+select ok(pg_temp.def5_s4_wait_for_lock('def5_s4_b',(select pid from def5_s4_pids where name='b')),'B visibly waits on the shared evidence advisory lock');
 select is(dblink_exec('def5_s4_a','commit'),'COMMIT','A commits first creation');
 create temp table def5_s4_b_retry as
 select * from dblink_get_result('def5_s4_b') x(outcome text,user_session_id uuid,expires_at timestamptz);
@@ -98,6 +100,7 @@ select * from dblink_get_result('def5_s4_b') x(outcome text,user_session_id uuid
 select is((select outcome from def5_s4_b_retry),'existing','B sees A commit after the lock and returns existing');
 select is((select user_session_id from def5_s4_b_retry),(select user_session_id from def5_s4_a_first),'simultaneous exact retry returns the same UUID');
 select is((select count(*)::int from identity.user_session where user_account_id='def50004-3000-4000-8000-000000000001'),1,'exact-retry race creates one session');
+select is((select count(*)::int from identity.authorizing_evidence_consumption where verification_challenge_id='def50004-3300-4000-8000-000000000001'),1,'exact-retry race inserts one shared consumption');
 select is((select count(*)::int from audit.audit_event where actor_user_account_id='def50004-3000-4000-8000-000000000001' and event_type='session_created'),1,'exact-retry race writes one creation audit');
 
 select is(dblink_exec('def5_s4_a','begin'),'BEGIN','A begins competing-login race');
@@ -131,6 +134,11 @@ select results_eq(
   $$select * from (values('session_created'::text,3),('session_superseded'::text,2)) as expected(event_type,row_count)$$,
   'concurrent sequence writes exact creation and supersession audit cardinality'
 );
+select is(
+  (select count(*)::int from identity.authorizing_evidence_consumption where verification_challenge_id::text like 'def50004-3300-%'),
+  3,
+  'concurrent sequence records exactly one shared consumption per created session'
+);
 
 set local role service_role;
 select throws_ok(
@@ -151,6 +159,11 @@ select results_eq(
   $$select * from (values('session_created'::text,3),('session_superseded'::text,2)) as expected(event_type,row_count)$$,
   'delayed older-evidence denial writes no session audit row'
 );
+select is(
+  (select count(*)::int from identity.authorizing_evidence_consumption where verification_challenge_id::text like 'def50004-3300-%'),
+  3,
+  'delayed older-evidence denial writes no shared consumption'
+);
 
 select is(dblink_exec('def5_s4_a','reset role'),'RESET','A returns to owner for policy-race setup');
 select is(dblink_exec('def5_s4_a','begin'),'BEGIN','A begins concurrent policy change');
@@ -167,6 +180,11 @@ select * from dblink('def5_s4_b',$q$
     'def50004-3300-4000-8000-000000000004','login',300)
 $q$) x(outcome text,user_session_id uuid,expires_at timestamptz);
 select is((select outcome from def5_s4_b_policy_snapshot),'created','one invocation uses the prior committed policy snapshot during a concurrent change');
+select is(
+  (select count(*)::int from identity.authorizing_evidence_consumption where verification_challenge_id::text like 'def50004-3300-%'),
+  4,
+  'policy-snapshot success adds exactly one shared consumption'
+);
 select is(dblink_exec('def5_s4_a','commit'),'COMMIT','A commits the concurrent policy change after the invocation');
 select is(dblink_exec('def5_s4_a',$q$
   update identity.session_creation_freshness_policy
@@ -179,6 +197,7 @@ select is(dblink_exec('def5_s4_a','reset role'),'RESET','A returns to owner for 
 select is(dblink_exec('def5_s4_b','reset role'),'RESET','B returns to owner for cleanup');
 select is(dblink_exec('def5_s4_a',$q$
   delete from audit.audit_event where actor_user_account_id='def50004-3000-4000-8000-000000000001';
+  delete from identity.authorizing_evidence_consumption where verification_challenge_id::text like 'def50004-3300-%';
   delete from identity.user_session where user_account_id='def50004-3000-4000-8000-000000000001';
   delete from identity.verification_challenge where verification_challenge_id::text like 'def50004-3300-%';
   delete from identity.user_contact_method where user_account_id='def50004-3000-4000-8000-000000000001';
@@ -188,6 +207,7 @@ $q$),'DELETE 1','owner cleanup removes complete synthetic fixture');
 
 select is((select count(*)::int from identity.user_account where user_account_id::text like 'def50004-%'),0,'no account residue remains');
 select is((select count(*)::int from identity.user_session where user_account_id::text like 'def50004-%'),0,'no session residue remains');
+select is((select count(*)::int from identity.authorizing_evidence_consumption where verification_challenge_id::text like 'def50004-%'),0,'no shared-consumption residue remains');
 select is((select count(*)::int from audit.audit_event where actor_user_account_id::text like 'def50004-%'),0,'no session audit residue remains');
 create temp table def5_s4_counts_after as
 select n.nspname||'.'||c.relname relation_name,

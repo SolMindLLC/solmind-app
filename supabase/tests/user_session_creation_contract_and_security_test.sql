@@ -1,5 +1,70 @@
 begin;
-select plan(49);
+select plan(74);
+
+select has_table('identity', 'authorizing_evidence_consumption', 'shared authorizing-evidence table exists');
+select columns_are(
+  'identity',
+  'authorizing_evidence_consumption',
+  array['verification_challenge_id','consumer_type','consumer_record_id','consumed_at','retention_class'],
+  'shared authorizing-evidence table has the exact bounded columns'
+);
+select is(
+  (select count(*)::int from identity.authorizing_evidence_consumption),
+  0,
+  'fresh migration chain invents no consumption rows when no historical sessions exist'
+);
+select ok(
+  (select relrowsecurity and not relforcerowsecurity from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='identity' and c.relname='authorizing_evidence_consumption'),
+  'shared authorizing-evidence table RLS is enabled and not forced'
+);
+select is(
+  (select count(*)::int from pg_policies where schemaname='identity' and tablename='authorizing_evidence_consumption'),
+  0,
+  'shared authorizing-evidence table has no policy'
+);
+select ok(not has_table_privilege('service_role','identity.authorizing_evidence_consumption','SELECT'), 'service_role cannot read shared consumption directly');
+select ok(not has_table_privilege('service_role','identity.authorizing_evidence_consumption','INSERT'), 'service_role cannot insert shared consumption directly');
+select ok(not has_table_privilege('service_role','identity.authorizing_evidence_consumption','UPDATE'), 'service_role cannot update shared consumption directly');
+select ok(not has_table_privilege('service_role','identity.authorizing_evidence_consumption','DELETE'), 'service_role cannot delete shared consumption directly');
+select ok(not has_table_privilege('anon','identity.authorizing_evidence_consumption','SELECT'), 'anon cannot read shared consumption');
+select ok(not has_table_privilege('anon','identity.authorizing_evidence_consumption','INSERT'), 'anon cannot insert shared consumption');
+select ok(not has_table_privilege('authenticated','identity.authorizing_evidence_consumption','SELECT'), 'authenticated cannot read shared consumption');
+select ok(not has_table_privilege('authenticated','identity.authorizing_evidence_consumption','INSERT'), 'authenticated cannot insert shared consumption');
+select is(
+  (select pg_get_constraintdef(oid) from pg_constraint where conrelid='identity.authorizing_evidence_consumption'::regclass and contype='p'),
+  'PRIMARY KEY (verification_challenge_id)',
+  'challenge primary key is the structural cross-operation replay backstop'
+);
+select is(
+  (select pg_get_constraintdef(oid) from pg_constraint where conrelid='identity.authorizing_evidence_consumption'::regclass and contype='f'),
+  'FOREIGN KEY (verification_challenge_id) REFERENCES identity.verification_challenge(verification_challenge_id) ON UPDATE RESTRICT ON DELETE RESTRICT',
+  'shared consumption retains its exact protected evidence'
+);
+select is(
+  (select pg_get_constraintdef(oid) from pg_constraint where conrelid='identity.authorizing_evidence_consumption'::regclass and conname='authorizing_evidence_consumption_consumer_record_unique'),
+  'UNIQUE (consumer_type, consumer_record_id)',
+  'one owning consumer record cannot be represented by multiple challenges'
+);
+select is(
+  (select pg_get_constraintdef(oid) from pg_constraint where conrelid='identity.authorizing_evidence_consumption'::regclass and conname='authorizing_evidence_consumption_consumer_type_check'),
+  'CHECK ((consumer_type = ANY (ARRAY[''user_session''::text, ''guide_invitation_acceptance''::text, ''explorer_invitation_acceptance''::text])))',
+  'consumer vocabulary is closed to the three approved values'
+);
+select is(
+  (select column_default from information_schema.columns where table_schema='identity' and table_name='authorizing_evidence_consumption' and column_name='retention_class'),
+  '''security_log''::text',
+  'shared consumption has the fixed security-log retention default'
+);
+select is(
+  (select pg_get_constraintdef(oid) from pg_constraint where conrelid='identity.authorizing_evidence_consumption'::regclass and conname='authorizing_evidence_consumption_retention_class_check'),
+  'CHECK ((retention_class = ''security_log''::text))',
+  'shared consumption retention vocabulary is closed'
+);
+select is(
+  (select pg_get_constraintdef(oid) from pg_constraint where conrelid='identity.session_creation_freshness_policy'::regclass and contype='p'),
+  'PRIMARY KEY (policy_name)',
+  'session freshness policy is structurally singleton by fixed name'
+);
 
 select has_table('identity', 'session_creation_freshness_policy', 'freshness policy table exists');
 select columns_are(
@@ -63,6 +128,11 @@ select ok((select prosrc like '%solmind_session_conflicting_retry%' from pg_proc
 select ok((select prosrc like '%solmind_session_policy_unavailable%' from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='solmind_create_user_session'),'function carries fixed unavailable-policy identifier');
 select ok((select prosrc like '%solmind_session_active_cardinality_violation%' from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='solmind_create_user_session'),'function carries fixed active-cardinality identifier');
 select ok((select prosrc like '%solmind_session_older_evidence%' from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='solmind_create_user_session'),'function carries fixed older-evidence identifier');
+select ok((select prosrc like '%solmind:authorizing-evidence:v1|%' from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='solmind_create_user_session'),'function acquires the shared evidence advisory-lock domain');
+select ok((select prosrc like '%solmind:authorizing-domain:account:v1|%' from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='solmind_create_user_session'),'function acquires the shared account advisory-lock domain after evidence');
+select ok((select prosrc like '%insert into identity.authorizing_evidence_consumption%' from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='solmind_create_user_session'),'function inserts shared consumption inside the owning session transaction');
+select ok((select prosrc like '%solmind_session_evidence_consumed%' from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='solmind_create_user_session'),'function carries fixed cross-consumer replay denial');
+select ok((select prosrc like '%solmind_session_consumption_integrity_failure%' from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='solmind_create_user_session'),'function carries fixed session-consumption integrity denial');
 
 select throws_ok($$select * from public.solmind_create_user_session(null,'admin','def50004-0000-4000-8000-000000000001','login',300)$$,'P0001','solmind_session_invalid_account','null account fails closed');
 select throws_ok($$select * from public.solmind_create_user_session('def50004-0000-4000-8000-000000000001','owner','def50004-0000-4000-8000-000000000002','login',300)$$,'P0001','solmind_session_invalid_role','unknown role fails closed');
