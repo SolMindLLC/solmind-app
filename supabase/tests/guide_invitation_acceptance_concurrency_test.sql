@@ -5,7 +5,7 @@
 
 begin;
 create extension if not exists dblink;
-select plan(96);
+select plan(102);
 
 create function pg_temp.p27c_wait_for_advisory_lock(
   p_connection text,
@@ -23,6 +23,30 @@ begin
           where pid = p_pid
             and wait_event_type = 'Lock'
             and wait_event = 'advisory'
+       ) then
+      return true;
+    end if;
+    perform pg_catalog.pg_sleep(0.05);
+  end loop;
+  return false;
+end;
+$$;
+
+create function pg_temp.p27c_wait_for_any_lock(
+  p_connection text,
+  p_pid integer
+)
+returns boolean
+language plpgsql
+as $$
+begin
+  for attempt in 1..20 loop
+    if dblink_is_busy(p_connection) = 1
+       and exists (
+         select 1
+           from pg_catalog.pg_stat_activity
+          where pid = p_pid
+            and wait_event_type = 'Lock'
        ) then
       return true;
     end if;
@@ -1250,6 +1274,62 @@ select throws_ok(
   'P0001',
   'solmind_guide_accept_lock_unavailable',
   'helper-owned account contention preserves the fixed transient lock error'
+);
+
+-- F3: the same held helper-owned row with a caller-owned statement timeout
+-- must be caught as query_canceled inside the protected helper window.
+select is(
+  dblink_exec('p27c_b', 'set statement_timeout=''1500ms'''),
+  'SET',
+  'B uses a caller-owned timeout shorter than the helper lock timeout'
+);
+select is(
+  dblink_send_query(
+    'p27c_b',
+    $query$
+      select *
+        from public.solmind_accept_guide_invitation(
+          '270cc027-1000-4000-8000-000000000007',
+          '270cc027-2000-4000-8000-000000000007',
+          '270cc027-3000-4000-8000-000000000007',
+          'p27c-provider-helper-timeout',
+          'p27c-helper-timeout@synthetic.invalid'
+        )
+    $query$
+  ),
+  1,
+  'B launches the caller-cancellation helper-window schedule'
+);
+select ok(
+  pg_temp.p27c_wait_for_any_lock(
+    'p27c_b',
+    (select pid from p27c_pids where connection_name = 'b')
+  ),
+  'B reaches a helper-owned row lock before caller cancellation'
+);
+select throws_ok(
+  $drain_error$
+    select *
+      from dblink_get_result('p27c_b')
+        result(outcome text, user_account_id uuid, guide_profile_id uuid)
+  $drain_error$,
+  'P0001',
+  'solmind_guide_accept_lock_unavailable',
+  'helper-window query cancellation preserves the fixed transient lock error'
+);
+select is(
+  (
+    select pg_catalog.count(*)::integer
+      from dblink_get_result('p27c_b')
+        result(outcome text, user_account_id uuid, guide_profile_id uuid)
+  ),
+  0,
+  'failed caller-cancellation result stream is fully drained'
+);
+select is(
+  dblink_exec('p27c_b', 'set statement_timeout=''8s'''),
+  'SET',
+  'B restores the bounded concurrency-suite statement timeout'
 );
 select is(
   (

@@ -1,6 +1,6 @@
 -- SolMind MVP0 P27-C: dormant Guide invitation acceptance.
--- Proposal-only artifact. This file has not been applied to a live repository
--- or replayed against a local Supabase database.
+-- Banked migration. Its database-only primitives remain dormant until a
+-- separately approved caller and runtime path are implemented.
 --
 -- Purpose:
 --   - add a protected initial-display-name sanitizer;
@@ -1083,7 +1083,7 @@ begin
         v_display_name
       );
     exception
-      when lock_not_available or deadlock_detected or serialization_failure then
+      when lock_not_available or query_canceled or deadlock_detected or serialization_failure then
         raise exception 'solmind_guide_accept_lock_unavailable';
       when others then
         if sqlerrm = 'solmind_invited_identity_ineligible' then
