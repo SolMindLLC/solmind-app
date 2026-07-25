@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap;
-select plan(60);
+select plan(62);
 
 select ok(
   exists (select 1 from pg_namespace where nspname = 'private'),
@@ -31,8 +31,8 @@ select is(
        and a.attnum > 0
        and not a.attisdropped
   ),
-  'user_account_id:uuid,account_created:boolean,user_contact_method_id:uuid,contact_created:boolean,auth_provider_identity_id:uuid,provider_identity_created:boolean,user_role_assignment_id:uuid,role_created:boolean,profile_id:uuid,profile_created:boolean',
-  'protected result type has the exact identifier and created-flag contract'
+  'user_account_id:uuid,account_created:boolean,user_contact_method_id:uuid,contact_created:boolean,auth_provider_identity_id:uuid,provider_identity_created:boolean,user_role_assignment_id:uuid,role_created:boolean,profile_id:uuid,profile_created:boolean,profile_onboarding_changed:boolean',
+  'protected result type has the exact identifier, created-flag, and onboarding-transition contract'
 );
 
 select has_function(
@@ -43,9 +43,31 @@ select has_function(
 );
 select has_function(
   'private',
-  'solmind_provision_invited_guide_identity',
-  array['uuid','uuid','text','text','text','text','text','uuid','text'],
-  'protected Guide provisioning helper exists'
+  'solmind_provision_invited_identity',
+  array['uuid','uuid','text','text','text','text','text','text','uuid','text'],
+  'protected shared invited-identity provisioning helper exists'
+);
+select is(
+  (
+    select pg_catalog.count(*)::integer
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'private'
+       and p.proname = 'solmind_provision_invited_guide_identity'
+  ),
+  0,
+  'obsolete Guide-only provisioning helper is removed'
+);
+select is(
+  (
+    select pg_catalog.count(*)::integer
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'private'
+       and p.proname = 'solmind_provision_invited_identity'
+  ),
+  1,
+  'shared invited-identity helper has no overload'
 );
 select has_function(
   'private',
@@ -247,7 +269,7 @@ select ok(
 select ok(
   not has_function_privilege(
     'service_role',
-    'private.solmind_provision_invited_guide_identity(uuid,uuid,text,text,text,text,text,uuid,text)',
+    'private.solmind_provision_invited_identity(uuid,uuid,text,text,text,text,text,text,uuid,text)',
     'EXECUTE'
   ),
   'service_role cannot execute the protected provisioning helper'
@@ -266,7 +288,7 @@ select is(
       from pg_proc p
       join pg_namespace n on n.oid = p.pronamespace
      where n.nspname = 'private'
-       and p.proname = 'solmind_provision_invited_guide_identity'
+       and p.proname = 'solmind_provision_invited_identity'
   ),
   'postgres',
   'protected helper owner is postgres'
@@ -277,7 +299,7 @@ select ok(
       from pg_proc p
       join pg_namespace n on n.oid = p.pronamespace
      where n.nspname = 'private'
-       and p.proname = 'solmind_provision_invited_guide_identity'
+       and p.proname = 'solmind_provision_invited_identity'
   ),
   'protected helper is security invoker under the outer definer'
 );
@@ -287,7 +309,7 @@ select is(
       from pg_proc p
       join pg_namespace n on n.oid = p.pronamespace
      where n.nspname = 'private'
-       and p.proname = 'solmind_provision_invited_guide_identity'
+       and p.proname = 'solmind_provision_invited_identity'
   ),
   array['search_path=""']::text[],
   'protected helper pins an empty search path'
@@ -397,13 +419,14 @@ select ok(
 );
 select ok(
   (
-    select p.prosrc like '%private.solmind_provision_invited_guide_identity%'
+    select p.prosrc like
+           '%private.solmind_provision_invited_identity(%v_challenge.user_account_id,%v_challenge.user_contact_method_id,%''guide'',%v_invite.contact_method_type,%'
       from pg_proc p
       join pg_namespace n on n.oid = p.pronamespace
      where n.nspname = 'public'
        and p.proname = 'solmind_accept_guide_invitation'
   ),
-  'Guide acceptance invokes only the protected provisioning helper'
+  'Guide acceptance invokes the protected shared helper with Guide context'
 );
 select ok(
   (

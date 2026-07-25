@@ -20,7 +20,26 @@ Server route handlers:
 
 - `/admin/access` — opaque server-side Admin access probe returning only `{ allowed }`
 
-The user-facing pages are still static preview surfaces. Backend foundations banked at a high level include Supabase schema foundations (migrations, with Row Level Security enabled deny-by-default), the Auth/RLS request-auth boundary, real Admin auth-source loading, server-only hardening, and runtime Auth/RLS audit persistence at `/admin/access` (the `audit.audit_event` writer function plus the app writer chain, wired at AUD-3). DEF5-S2 adds a banked dormant verification-redemption database function with two embedded Family B audit pairs. DEF5-S3 adds a separate banked dormant issuance function and structural one-open-challenge backstop. DEF5-S4 adds a third banked dormant database primitive for session creation and supersession. None of these slices adds an app caller, provider delivery, invitation route, provisioning write, rate-limit enforcement, cloud path, or real-user path. Still not implemented: permissive or role-aware RLS policies, grants, and runtime enforcement; login/session callers, provisioning, routes, delivery, rate-limit enforcement, invitations, or other login/provisioning writes; intake workflows; conversation storage; safety-flag runtime handling; and Guide/Admin runtime workflows. See the "Banked Foundations vs Still Deferred" section below and the authoritative register in `../solmind-docs/execution/12_SolMind_MVP0_Auth_RLS_Decision_Deferral_Register_v0_1.md`.
+The user-facing pages are still static preview surfaces. Backend foundations banked at
+a high level include Supabase schema foundations with deny-by-default Row Level
+Security, the Auth/RLS request-auth boundary, real Admin auth-source loading,
+server-only hardening, and runtime Auth/RLS audit persistence at `/admin/access`.
+DEF5-S2 through DEF5-S4 add dormant verification redemption, issuance, and
+session-creation primitives. The invitation foundation additionally includes shared
+authorizing-evidence consumption, Guide/Explorer pre-provider preparation reservations,
+dormant Guide acceptance, dormant Admin Guide-invitation issuance/revocation, and the
+Explorer capacity/lock-key foundation. `PRJ01_F-WS06-WI008-S02C` - shared
+invited-identity provisioning-helper generalization - is proposed, not banked: it
+would replace the transitional Guide-only protected helper with one dormant
+Guide/Explorer helper while preserving Guide behavior and prior Explorer profile
+information. None of these slices adds an app caller, provider delivery, invitation
+route, runtime acceptance path, rate-limit enforcement, cloud path, or real-user path.
+Still not implemented: permissive or role-aware RLS policies and grants; login/session
+callers; effectful provider provisioning; Explorer invitation issuance or acceptance
+entry functions; routes, delivery, rate-limit enforcement, intake workflows,
+conversation storage, safety-flag runtime handling, and Guide/Admin runtime workflows.
+See the "Banked Foundations vs Still Deferred" section below and the authoritative
+register in `../solmind-docs/execution/12_SolMind_MVP0_Auth_RLS_Decision_Deferral_Register_v0_1.md`.
 
 ## Canonical Product Documentation
 
@@ -159,6 +178,7 @@ The `auth/`, `context/`, and `supabase/` directories hold server-only modules ke
 | Verification redemption CAS (dormant DEF5-S2) | `supabase/migrations/20260712000000_verification_challenge_redemption_function.sql`; `supabase/tests/verification_challenge_redemption_*_test.sql` | Dormant service-role-only verification redemption function and sequential/concurrent proofs. The concurrency suite commits reserved synthetic rows outside its outer rollback boundary, performs targeted cleanup, and requires Paul's explicit approval for the documented recovery cleanup after a hard failure. It does not issue challenges, create sessions, wire routes, or activate a runtime path. |
 | Verification challenge issuance (dormant DEF5-S3) | `supabase/migrations/20260713000000_verification_challenge_issuance_function.sql`; `supabase/tests/verification_challenge_issuance_*_test.sql` | Banked dormant service-role-only issuance function, structurally-open partial unique index, exact embedded Family B issuance audit, and sequential/concurrent proofs. It has no app caller, delivery path, invitation route, or rate-limit enforcement. Both UUID binding inputs are present together or both null; the null pair is restricted to approved pre-account purposes. |
 | Session creation and supersession (banked dormant DEF5-S4) | `supabase/migrations/20260716000000_user_session_creation_function.sql`; `supabase/migrations/20260716001000_user_session_creation_chronology_guard.sql`; `supabase/tests/user_session_creation_*_test.sql` | Banked service-role-only primitive consuming committed account-bound `login` or `role_reentry` redemption evidence. It includes a protected freshness policy, account-wide active-session and per-challenge uniqueness, safe exact retry, atomic supersession, embedded Family B session audit, and an all-history `(used_at, challenge UUID)` guard that prevents delayed never-sessionized older evidence from superseding newer login evidence. The correction is banked in `d2fbb0e`; the three plans contain 49/51/50 assertions and clean reset passed 14 files / 502 assertions. It has no caller, route, cookie, provider action, provisioning path, cloud action, or real-user activation. |
+| Invitation acceptance foundations (`PRJ01_F-WS06-WI008-S02B` banked; `PRJ01_F-WS06-WI008-S02C` proposed) | `supabase/migrations/20260718000000_authorizing_evidence_consumption.sql`; `20260718001000_invitation_acceptance_preparation.sql`; `20260718002000_guide_invitation_acceptance.sql`; `20260718003000_admin_guide_invitation_issuance.sql`; `20260721000000_explorer_engagement_capacity_foundation.sql`; proposed `20260724000000_invited_identity_provisioning_helper_generalization.sql`; related `supabase/tests/*invitation*` and `invited_identity_provisioning_helper_explorer_test.sql` | Banked dormant evidence-consumption, pre-provider reservation, Guide acceptance, Admin Guide-invitation, and Explorer capacity/lock foundations. The review-only `PRJ01_F-WS06-WI008-S02C` shared invited-identity provisioning-helper generalization proposal preserves the Guide path and adds only the dormant Explorer profile branch. No provider IO, caller, route, delivery, relationship, session, consent, cloud action, deployment, or real-user activation is included. |
 
 ## MVP0 Authentication Model
 
@@ -209,6 +229,7 @@ Earlier guidance told agents not to start Supabase, auth, or RLS. That is no lon
 - The Auth/RLS request-auth boundary, real Admin auth-source loading, and server-only hardening under `src/lib/solmind/auth` and `src/lib/solmind/supabase`.
 - The `/admin/access` server route handler: an opaque probe returning only `{ allowed }`. It is read-only and does not protect the `/admin`, `/guide`, or `/explorer` pages.
 - Auth/RLS audit persistence for `/admin/access`: the bounded event model (`src/lib/solmind/auth/authRlsAuditEvent.ts`), the enumerated `public.solmind_record_audit_event` writer function (migration `20260708000000_audit_event_writer_function.sql`), the closed-allowlist app writer chain (`auditEventWriter.ts`, `auditEventWriteExecutor.ts`, `adminAuditEventWriter.ts`), and the runtime wiring in `adminAccessRequest.ts` (AUD-1/AUD-2/AUD-3). On an allow the guarded-read row is written first, then the allow decision row, and both must persist before the outward allow (fail-closed); deny and resolution-failure rows are best-effort.
+- Dormant invitation foundations through `PRJ01_F-WS06-WI008-S02B` - Explorer capacity and lock-key foundation: shared authorizing-evidence consumption, Guide/Explorer preparation reservations, Guide acceptance, Admin Guide-invitation issuance/revocation, and Explorer capacity/lock-key substrate. They have no application caller or real-user path. `PRJ01_F-WS06-WI008-S02C` - shared invited-identity provisioning-helper generalization - remains proposed until separately reviewed, applied, validated, and banked.
 
 Extend these modules deliberately and in small slices. Keep server-only modules off the shared client barrels, as the existing code does.
 
