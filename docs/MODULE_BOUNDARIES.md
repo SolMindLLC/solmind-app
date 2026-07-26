@@ -374,6 +374,18 @@ The banked dormant DEF5-S3 issuance foundation keeps the database boundary narro
 
 The banked dormant DEF5-S4 slice keeps session mutation separate from redemption and provisioning. `public.solmind_create_user_session` consumes committed account-bound `login` or `role_reentry` evidence, owns account-wide supersede-then-create serialization, and embeds its exact Family B audit rows. Its freshness policy and both uniqueness indexes are hidden database backstops, not client authorization. Corrective migration `20260716001000_user_session_creation_chronology_guard.sql`, banked in `d2fbb0e`, preserves the writeless exact-retry branch and requires never-sessionized evidence to be strictly newer by `(used_at, challenge UUID)` than every prior session-linked evidence tuple for the account; chronology denial is fixed and zero-write. The three DEF5-S4 plans contain 49/51/50 assertions, and clean reset passed 14 files / 502 assertions. The banked slice creates no caller, route, cookie, provider action, account/profile/role provisioning, invitation or Guide assignment dependency, cloud path, or real-user flow.
 
+`PRJ01_F-WS06-WI008-S02D` - Guide-to-Explorer invitation issuance,
+same-Guide replacement, and revocation - keeps invitation lifecycle mutation inside
+two dormant service-role-only database entry functions. The issuance function
+re-derives Guide, Practice, and active membership authority; serializes the
+normalized-contact capacity domain; materializes expiry; replaces only the older
+same-Guide/same-Practice/same-contact invitation; denies cross-Guide capacity
+without displacement; snapshots protected lifetime policy; and writes exact
+transactional audit. The revocation function changes only an owned live invitation
+or returns a value-free terminal observation. The functions add no acceptance,
+relationship, evidence, reservation, session, provider, route, delivery, consent,
+RLS policy, table grant, cloud, deployment, or real-user path.
+
 ## Documentation Boundary
 
 When any route, role behavior, authentication behavior, onboarding workflow, or dashboard behavior changes, update:

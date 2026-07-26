@@ -95,7 +95,7 @@ export const SOLMIND_EXPLORER_INVITATION_LIFECYCLE: SolMindInvitationLifecycleSt
       status: "revoked",
       title: "Revoked",
       description:
-        "Guide or Admin revoked the Explorer invitation before acceptance.",
+        "The Explorer invitation was revoked before acceptance, either explicitly by its Guide or automatically when a newer same-Guide invitation replaced it.",
       terminal: true,
     },
     {
