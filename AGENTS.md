@@ -87,14 +87,18 @@ Do not expose:
 
 Client-accessible variables must be intentionally public and safe to expose.
 
-## Claude Code Local Executor Boundary
+## Local AI Executor Boundary
 
-When Claude Code is acting as a local repo executor:
+When Codex, Claude Code, or another AI assistant is acting as a local repo executor:
 
 - It may inspect files, edit explicitly approved files, and run approved local checks.
 - It must stop before `git add`, `git commit`, and `git push` unless Paul explicitly approves those actions in the current task.
 - It must not run production, cloud, install, dependency, Vercel, or Supabase cloud changes unless explicitly approved.
-- It must not run `npx.cmd supabase db reset` unless Paul explicitly approves that local destructive validation step.
+- It must never reset, drop, or destructively alter a pilot, cloud, production, linked remote, or other database that contains live user data.
+- It may run `npx.cmd supabase db reset` against the existing local development database when needed for bounded development testing. This authorization covers rebuilding the local development database contents from the repository migrations and seed data; it does not authorize dropping the local development database itself, its persistent volume, or its local Supabase project/container resources. Those actions require Paul's explicit approval.
+- The existing local development database is the default for ordinary development testing. Use an isolated temporary test database only when the test plan names a real isolation need, such as parallel or adversarial execution, intentional crash or cancellation testing, an unusual starting state, variant comparison, preservation of useful local development state, or a harness that requires exclusive database control.
+- It may create, reset, and drop a clearly identified temporary test database, including exact test-created containers or disposable volumes, without separate approval. Temporary test resources may persist only until the required evidence is captured; then remove them immediately, verify that no test-created residue remains, and close any Docker window opened for that test.
+- If temporary-resource cleanup fails, the test is incomplete. Preserve the evidence, report and quarantine the exact residue, do not touch unrelated Docker resources, and do not leave routine cleanup debt for Paul.
 - Paul remains the default approval gate for staging, commits, pushes, merges, deploys, and production/cloud changes.
 
 ## Verification Commands
