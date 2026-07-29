@@ -390,6 +390,22 @@ and complete 1,547/1,547 database assertions, zero-residue proof, final clean
 reset, lint, typecheck, 487 application tests, production build, and exact
 Fable 5 implementation assurance passed before banking.
 
+Proposed `PRJ01_F-WS06-WI008-S02E` - dormant Explorer invitation acceptance -
+keeps the next acceptance boundary inside one service-role-only database entry
+function. The review-only proposal verifies committed preparation and a
+server-verified provider result; acquires evidence-first and sorted domain locks;
+supports only exact writeless committed-response recovery; applies the protected
+current-Guide capacity policy; reuses the shared invited-identity helper; consumes
+the evidence; creates exactly one `intake_pending` relationship whose
+`created_from_invite_id` names the accepted invitation; accepts that invitation;
+revokes only open same-Guide, same-Practice, same-contact siblings; and persists the
+exact Family B audit rows in the same transaction. The paired preparation change is
+only a writeless, non-authoritative capacity pre-check after banked identity checks
+and before reservation creation. The proposal adds no provider IO, caller, route,
+cookie, session, consent, RLS policy, table grant, capacity-policy writer, cloud
+action, deployment, or real-user path. It is not banked until Paul approves and
+applies it and all later validation, Git, push, and synchronization gates pass.
+
 ## Documentation Boundary
 
 When any route, role behavior, authentication behavior, onboarding workflow, or dashboard behavior changes, update:

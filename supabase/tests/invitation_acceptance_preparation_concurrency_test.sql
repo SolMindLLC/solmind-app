@@ -6,7 +6,7 @@
 
 begin;
 create extension if not exists dblink;
-select plan(67);
+select plan(72);
 
 create function pg_temp.p27b_wait_for_advisory_lock(
   p_connection text,
@@ -814,6 +814,96 @@ select is(
   ),
   1,
   'session-first schedule leaves exactly one committed evidence consumer'
+);
+
+-- S02E extension: preserve the source-order contract that lets preparation
+-- coexist safely with later acceptance while leaving the remaining
+-- preparation-versus-preparation debt assigned to S02F.
+select ok(
+  (
+    select strpos(
+             p.prosrc,
+             'perform policy.capacity_policy_name'
+           ) < strpos(
+             p.prosrc,
+             'perform profile.explorer_profile_id'
+           )
+       and strpos(
+             p.prosrc,
+             'perform profile.explorer_profile_id'
+           ) < strpos(
+             p.prosrc,
+             'perform relationship.guide_explorer_relationship_id'
+           )
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.proname = 'solmind_prepare_explorer_invitation_acceptance'
+  ),
+  'Explorer preparation reads capacity policy before sorted profile and relationship locks'
+);
+select ok(
+  (
+    select strpos(
+             p.prosrc,
+             'perform relationship.guide_explorer_relationship_id'
+           ) < strpos(
+             p.prosrc,
+             'into v_current_relationship_count'
+           )
+       and strpos(
+             p.prosrc,
+             'into v_current_relationship_count'
+           ) < strpos(
+             p.prosrc,
+             'if v_existing_reservation then'
+           )
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.proname = 'solmind_prepare_explorer_invitation_acceptance'
+  ),
+  'capacity count completes before any existing-reservation response'
+);
+select ok(
+  (
+    select strpos(
+             p.prosrc,
+             'if v_current_relationship_count >= v_capacity_active then'
+           ) < strpos(
+             p.prosrc,
+             'insert into identity.auth_provider_provisioning_reservation'
+           )
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.proname = 'solmind_prepare_explorer_invitation_acceptance'
+  ),
+  'capacity denial occurs before reservation insertion'
+);
+select ok(
+  (
+    select p.prosrc like
+           '%order by relationship.guide_explorer_relationship_id%for share%'
+       and p.prosrc not like
+           '%order by relationship.guide_explorer_relationship_id%for update%'
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.proname = 'solmind_prepare_explorer_invitation_acceptance'
+  ),
+  'preparation uses sorted shared relationship locks and never mutates them'
+);
+select ok(
+  (
+    select obj_description(p.oid, 'pg_proc') like
+           '%non-authoritative current-relationship capacity pre-check%'
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.proname = 'solmind_prepare_explorer_invitation_acceptance'
+  ),
+  'preparation function comment preserves the non-authoritative capacity boundary'
 );
 
 select is(dblink_exec('p27b_a', 'reset role'), 'RESET', 'A returns to owner for cleanup');

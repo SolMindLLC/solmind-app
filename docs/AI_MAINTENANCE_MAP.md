@@ -39,9 +39,15 @@ capacity, lock, lifetime, Guide/Practice eligibility, and audit contracts. None
 of these slices adds an app caller, provider delivery,
 invitation route, runtime acceptance path, rate-limit enforcement, cloud path, or
 real-user path.
+`PRJ01_F-WS06-WI008-S02E` - dormant Explorer invitation acceptance - is an active
+review-only proposal, not a banked foundation. It adds one service-role-only
+acceptance entry function and the approved writeless, non-authoritative preparation
+capacity pre-check over the existing S02B-S02D substrate. It does not add a caller or
+activate a runtime path.
 Still not implemented: permissive or role-aware RLS policies and grants; login/session
-callers; effectful provider provisioning; Explorer invitation callers or the Explorer
-invitation acceptance entry function; routes, delivery, rate-limit enforcement, intake workflows,
+callers; effectful provider provisioning; Explorer invitation callers or any runtime
+invocation of the proposed acceptance entry function; routes, delivery, rate-limit enforcement,
+intake workflows,
 conversation storage, safety-flag runtime handling, and Guide/Admin runtime workflows.
 See the "Banked Foundations vs Still Deferred" section below and the authoritative
 register in `../solmind-docs/execution/12_SolMind_MVP0_Auth_RLS_Decision_Deferral_Register_v0_1.md`.
@@ -184,6 +190,7 @@ The `auth/`, `context/`, and `supabase/` directories hold server-only modules ke
 | Verification challenge issuance (dormant DEF5-S3) | `supabase/migrations/20260713000000_verification_challenge_issuance_function.sql`; `supabase/tests/verification_challenge_issuance_*_test.sql` | Banked dormant service-role-only issuance function, structurally-open partial unique index, exact embedded Family B issuance audit, and sequential/concurrent proofs. It has no app caller, delivery path, invitation route, or rate-limit enforcement. Both UUID binding inputs are present together or both null; the null pair is restricted to approved pre-account purposes. |
 | Session creation and supersession (banked dormant DEF5-S4) | `supabase/migrations/20260716000000_user_session_creation_function.sql`; `supabase/migrations/20260716001000_user_session_creation_chronology_guard.sql`; `supabase/tests/user_session_creation_*_test.sql` | Banked service-role-only primitive consuming committed account-bound `login` or `role_reentry` redemption evidence. It includes a protected freshness policy, account-wide active-session and per-challenge uniqueness, safe exact retry, atomic supersession, embedded Family B session audit, and an all-history `(used_at, challenge UUID)` guard that prevents delayed never-sessionized older evidence from superseding newer login evidence. The correction is banked in `d2fbb0e`; the three plans contain 49/51/50 assertions and clean reset passed 14 files / 502 assertions. It has no caller, route, cookie, provider action, provisioning path, cloud action, or real-user activation. |
 | Invitation acceptance and Explorer issuance foundations (`PRJ01_F-WS06-WI008-S02B` through `PRJ01_F-WS06-WI008-S02D`) | `supabase/migrations/20260718000000_authorizing_evidence_consumption.sql`; `20260718001000_invitation_acceptance_preparation.sql`; `20260718002000_guide_invitation_acceptance.sql`; `20260718003000_admin_guide_invitation_issuance.sql`; `20260721000000_explorer_engagement_capacity_foundation.sql`; `20260724000000_invited_identity_provisioning_helper_generalization.sql`; `20260725000000_explorer_invitation_issuance.sql`; related `supabase/tests/*invitation*` and `invited_identity_provisioning_helper_explorer_test.sql` | Banked dormant evidence-consumption, pre-provider reservation, Guide acceptance, Admin Guide-invitation, Explorer capacity/lock foundations, the shared invited-identity helper, and two Guide-owned Explorer issuance/revocation functions. `PRJ01_F-WS06-WI008-S02D` is banked in app commit `a9944f1` after focused 203/203 and complete 1,547/1,547 database assertions, zero-residue proof, final clean reset, lint, typecheck, 487 application tests, production build, and exact Fable 5 assurance passed. It enforces normalized-contact open-invitation capacity, same-Guide/same-Practice replacement, cross-Guide nondisplacement, expiry materialization, exact retry, explicit Guide revocation, and exact fail-closed transactional audit. It preserves the separately owned Explorer acceptance, preparation pre-check, cross-operation concurrency/debt closure, callers, provider effects, delivery, consent, sessions, cloud, deployment, and real-user gates. |
+| Explorer invitation acceptance (`PRJ01_F-WS06-WI008-S02E`; review-only proposal) | `supabase/migrations/20260727000000_explorer_invitation_acceptance.sql`; `supabase/tests/explorer_invitation_acceptance_*_test.sql`; focused extensions to `supabase/tests/invitation_acceptance_preparation_*_test.sql` | Proposed dormant service-role-only acceptance transaction plus the approved preparation capacity pre-check. The proposal consumes committed authorizing evidence once, reuses the shared invited-identity helper, enforces first-commit-wins current-Guide capacity, creates exactly one `intake_pending` relationship with invitation provenance, accepts the invitation, revokes only same-Guide/same-Practice/same-contact open siblings, and writes the exact Family B audit rows transactionally. This row is proposal documentation only: it is not banked, validated against a database, applied, callable by the app, deployed, or active for real users. |
 
 ## MVP0 Authentication Model
 
@@ -235,6 +242,11 @@ Earlier guidance told agents not to start Supabase, auth, or RLS. That is no lon
 - The `/admin/access` server route handler: an opaque probe returning only `{ allowed }`. It is read-only and does not protect the `/admin`, `/guide`, or `/explorer` pages.
 - Auth/RLS audit persistence for `/admin/access`: the bounded event model (`src/lib/solmind/auth/authRlsAuditEvent.ts`), the enumerated `public.solmind_record_audit_event` writer function (migration `20260708000000_audit_event_writer_function.sql`), the closed-allowlist app writer chain (`auditEventWriter.ts`, `auditEventWriteExecutor.ts`, `adminAuditEventWriter.ts`), and the runtime wiring in `adminAccessRequest.ts` (AUD-1/AUD-2/AUD-3). On an allow the guarded-read row is written first, then the allow decision row, and both must persist before the outward allow (fail-closed); deny and resolution-failure rows are best-effort.
 - Dormant invitation foundations through `PRJ01_F-WS06-WI008-S02D` - Guide-to-Explorer invitation issuance, same-Guide replacement, and revocation - are banked through synchronized app commit `a9944f1`. The S02D functions remain dormant over the earlier capacity/lock/helper substrate; none has an application caller or real-user path.
+
+The S02E Explorer acceptance files described above exist only in the current
+review-only proposal. Do not treat them as a banked foundation unless Paul applies
+the approved files and every later validation, Git, push, and synchronization gate
+passes.
 
 Extend these modules deliberately and in small slices. Keep server-only modules off the shared client barrels, as the existing code does.
 

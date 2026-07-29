@@ -1,5 +1,5 @@
 begin;
-select plan(90);
+select plan(97);
 
 select has_table(
   'identity',
@@ -912,6 +912,123 @@ select is(
   ),
   2,
   'both freshness checks accept exact equality and reject only values strictly outside the active boundary'
+);
+
+select ok(
+  (
+    select p.prosrc like
+           '%core.explorer_engagement_capacity_policy%'
+       and p.prosrc like
+           '%current_guide_relationship_maximum%'
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.proname = 'solmind_prepare_explorer_invitation_acceptance'
+  ),
+  'Explorer preparation reads the protected current-relationship capacity policy'
+);
+select ok(
+  (
+    select p.prosrc like
+           '%raise exception ''solmind_invitation_prepare_policy_unavailable''%'
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.proname = 'solmind_prepare_explorer_invitation_acceptance'
+  ),
+  'Explorer preparation maps capacity-policy failure to policy-unavailable'
+);
+select ok(
+  (
+    select p.prosrc like
+           '%if v_current_relationship_count >= v_capacity_active then%'
+       and p.prosrc like
+           '%raise exception ''solmind_invitation_prepare_ineligible'';%'
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.proname = 'solmind_prepare_explorer_invitation_acceptance'
+  ),
+  'Explorer preparation maps non-authoritative capacity denial to generic ineligible'
+);
+select ok(
+  (
+    select strpos(
+             p.prosrc,
+             'v_target_provider_email is distinct from p_normalized_provider_email'
+           ) < strpos(
+             p.prosrc,
+             'perform policy.capacity_policy_name'
+           )
+       and strpos(
+             p.prosrc,
+             'perform policy.capacity_policy_name'
+           ) < strpos(
+             p.prosrc,
+             'if v_existing_reservation then'
+           )
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.proname = 'solmind_prepare_explorer_invitation_acceptance'
+  ),
+  'capacity pre-check follows account-bound identity checks and precedes the reservation branch'
+);
+select ok(
+  (
+    select strpos(
+             p.prosrc,
+             'perform profile.explorer_profile_id'
+           ) < strpos(
+             p.prosrc,
+             'perform relationship.guide_explorer_relationship_id'
+           )
+       and strpos(
+             p.prosrc,
+             'perform relationship.guide_explorer_relationship_id'
+           ) < strpos(
+             p.prosrc,
+             'into v_current_relationship_count'
+           )
+       and strpos(
+             p.prosrc,
+             'into v_current_relationship_count'
+           ) < strpos(
+             p.prosrc,
+             'if v_current_relationship_count >= v_capacity_active then'
+           )
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.proname = 'solmind_prepare_explorer_invitation_acceptance'
+  ),
+  'capacity pre-check locks profiles then relationships before counting and denying'
+);
+select ok(
+  (
+    select p.prosrc not like
+           '%update core.guide_explorer_relationship%'
+       and p.prosrc not like
+           '%insert into core.guide_explorer_relationship%'
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.proname = 'solmind_prepare_explorer_invitation_acceptance'
+  ),
+  'Explorer preparation capacity check never mutates relationships'
+);
+select ok(
+  (
+    select obj_description(p.oid, 'pg_proc') like
+           '%non-authoritative current-relationship capacity pre-check%'
+       and obj_description(p.oid, 'pg_proc') like
+           '%Capacity denial is writeless and generic%'
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.proname = 'solmind_prepare_explorer_invitation_acceptance'
+  ),
+  'Explorer preparation comment records the writeless generic capacity contract'
 );
 
 select ok(

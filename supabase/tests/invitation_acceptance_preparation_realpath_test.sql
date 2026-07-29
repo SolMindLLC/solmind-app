@@ -1,5 +1,5 @@
 begin;
-select plan(49);
+select plan(57);
 
 insert into identity.user_account (
   user_account_id,
@@ -1211,6 +1211,213 @@ select results_eq(
      ) expected(invite_status,row_count)$$,
   'Explorer preparation leaves every synthetic invitation status unchanged'
 );
+
+-- S02E extension: Explorer preparation performs a writeless,
+-- non-authoritative current-relationship capacity pre-check.
+insert into core.explorer_profile (
+  explorer_profile_id,
+  user_account_id,
+  explorer_display_name,
+  onboarding_status,
+  status
+) values (
+  'def50027-2200-4000-8000-000000000010',
+  'def50027-1000-4000-8000-000000000003',
+  'P27-B capacity Explorer',
+  'active',
+  'active'
+);
+insert into core.guide_explorer_relationship (
+  guide_explorer_relationship_id,
+  guide_profile_id,
+  explorer_profile_id,
+  practice_id,
+  relationship_status,
+  started_at,
+  created_by_user_account_id
+) values (
+  'def50027-2300-4000-8000-000000000010',
+  'def50027-2200-4000-8000-000000000001',
+  'def50027-2200-4000-8000-000000000010',
+  'def50027-2100-4000-8000-000000000001',
+  'active',
+  pg_catalog.clock_timestamp() - interval '1 day',
+  'def50027-1000-4000-8000-000000000002'
+);
+insert into core.explorer_invite (
+  explorer_invite_id,
+  guide_profile_id,
+  practice_id,
+  invited_contact_value,
+  normalized_contact_value,
+  contact_method_type,
+  invite_status,
+  expires_at
+) values (
+  'def50027-3100-4000-8000-000000000010',
+  'def50027-2200-4000-8000-000000000001',
+  'def50027-2100-4000-8000-000000000001',
+  'p27b-existing@synthetic.invalid',
+  'p27b-existing@synthetic.invalid',
+  'email',
+  'created',
+  pg_catalog.clock_timestamp() + interval '1 day'
+);
+insert into identity.verification_challenge (
+  verification_challenge_id,
+  user_account_id,
+  user_contact_method_id,
+  normalized_contact_value,
+  contact_method_type,
+  purpose,
+  delivery_channel,
+  code_hash,
+  expires_at,
+  used_at
+) values (
+  'def50027-4000-4000-8000-000000000010',
+  'def50027-1000-4000-8000-000000000003',
+  'def50027-1200-4000-8000-000000000001',
+  'p27b-existing@synthetic.invalid',
+  'email',
+  'login',
+  'email',
+  'svf1:1010101010101010101010101010101010101010101010101010101010101010',
+  pg_catalog.clock_timestamp() + interval '10 minutes',
+  pg_catalog.clock_timestamp()
+);
+
+create temporary table p27b_capacity_before as
+select
+  (select pg_catalog.count(*)::integer
+     from identity.auth_provider_provisioning_reservation) as reservation_count,
+  (select pg_catalog.count(*)::integer
+     from audit.audit_event) as audit_count;
+
+select throws_ok(
+  $$select * from public.solmind_prepare_explorer_invitation_acceptance(
+      'def50027-3100-4000-8000-000000000010',
+      'def50027-4000-4000-8000-000000000010',
+      'p27b-existing@synthetic.invalid'
+    )$$,
+  'P0001',
+  'solmind_invitation_prepare_ineligible',
+  'Explorer preparation maps current-relationship capacity denial to generic ineligible'
+);
+select is(
+  (
+    select pg_catalog.count(*)::integer
+      from identity.auth_provider_provisioning_reservation
+  ),
+  (select reservation_count from p27b_capacity_before),
+  'capacity denial creates no reservation'
+);
+select is(
+  (select pg_catalog.count(*)::integer from audit.audit_event),
+  (select audit_count from p27b_capacity_before),
+  'capacity denial writes no audit row'
+);
+select is(
+  (
+    select invite_status
+      from core.explorer_invite
+     where explorer_invite_id =
+       'def50027-3100-4000-8000-000000000010'
+  ),
+  'created',
+  'capacity denial leaves the Explorer invitation open'
+);
+
+-- Capacity-policy absence has its own fail-closed fixed error and remains
+-- writeless.
+insert into core.explorer_invite (
+  explorer_invite_id,
+  guide_profile_id,
+  practice_id,
+  invited_contact_value,
+  normalized_contact_value,
+  contact_method_type,
+  invite_status,
+  expires_at
+) values (
+  'def50027-3100-4000-8000-000000000011',
+  'def50027-2200-4000-8000-000000000001',
+  'def50027-2100-4000-8000-000000000001',
+  'p27b-capacity-policy@synthetic.invalid',
+  'p27b-capacity-policy@synthetic.invalid',
+  'email',
+  'created',
+  pg_catalog.clock_timestamp() + interval '1 day'
+);
+insert into identity.verification_challenge (
+  verification_challenge_id,
+  normalized_contact_value,
+  contact_method_type,
+  purpose,
+  delivery_channel,
+  code_hash,
+  expires_at,
+  used_at
+) values (
+  'def50027-4000-4000-8000-000000000011',
+  'p27b-capacity-policy@synthetic.invalid',
+  'email',
+  'contact_verify',
+  'email',
+  'svf1:1111111111111111111111111111111111111111111111111111111111111111',
+  pg_catalog.clock_timestamp() + interval '10 minutes',
+  pg_catalog.clock_timestamp()
+);
+create temporary table p27b_saved_capacity_policy as
+select *
+  from core.explorer_engagement_capacity_policy
+ where capacity_policy_name = 'current_guide_relationship_maximum';
+delete from core.explorer_engagement_capacity_policy
+ where capacity_policy_name = 'current_guide_relationship_maximum';
+
+create temporary table p27b_policy_before as
+select
+  (select pg_catalog.count(*)::integer
+     from identity.auth_provider_provisioning_reservation) as reservation_count,
+  (select pg_catalog.count(*)::integer
+     from audit.audit_event) as audit_count;
+
+select throws_ok(
+  $$select * from public.solmind_prepare_explorer_invitation_acceptance(
+      'def50027-3100-4000-8000-000000000011',
+      'def50027-4000-4000-8000-000000000011',
+      'p27b-capacity-policy@synthetic.invalid'
+    )$$,
+  'P0001',
+  'solmind_invitation_prepare_policy_unavailable',
+  'missing capacity policy maps to policy-unavailable'
+);
+select is(
+  (
+    select pg_catalog.count(*)::integer
+      from identity.auth_provider_provisioning_reservation
+  ),
+  (select reservation_count from p27b_policy_before),
+  'capacity-policy failure creates no reservation'
+);
+select is(
+  (select pg_catalog.count(*)::integer from audit.audit_event),
+  (select audit_count from p27b_policy_before),
+  'capacity-policy failure writes no audit row'
+);
+select is(
+  (
+    select invite_status
+      from core.explorer_invite
+     where explorer_invite_id =
+       'def50027-3100-4000-8000-000000000011'
+  ),
+  'created',
+  'capacity-policy failure leaves the Explorer invitation open'
+);
+
+insert into core.explorer_engagement_capacity_policy
+select * from p27b_saved_capacity_policy;
 
 select * from finish();
 rollback;
