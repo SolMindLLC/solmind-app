@@ -29,6 +29,7 @@ src/
       BackLink.tsx
       ConversationPreview.tsx
       DashboardCard.tsx
+      ExplorerExperiencePrototype.tsx
       ExplorerResponseComposer.tsx
       ExplorerTopicList.tsx
       LoginOptionList.tsx
@@ -39,11 +40,13 @@ src/
       RoleBadge.tsx
       RouteAccessPreview.tsx
       SectionLabel.tsx
+      SessionCompass.tsx
 
   lib/
     solmind/
       conversation.ts
       dashboardPanels.ts
+      explorerExperience.ts
       invitations.ts
       loginOptions.ts
       navigation.ts
@@ -87,6 +90,9 @@ Route files should not:
 - contain long lists that belong in `src/lib/solmind`
 - contain reusable UI that belongs in `src/components/solmind`
 
+`src/app/explorer/page.tsx` remains a thin Server Component. It composes the
+interactive S01 client boundary without owning its state transitions.
+
 ## Components
 
 Reusable SolMind UI components live under:
@@ -111,6 +117,18 @@ Components should be presentational when possible.
 
 Avoid placing core product rules inside components. If a component needs product rules, import them from `src/lib/solmind`.
 
+### Explorer S01 components
+
+- `ExplorerExperiencePrototype.tsx` is the only new S01 `"use client"` entry
+  point. It orchestrates transient browser-memory stages and event handling.
+- `SessionCompass.tsx` is a controlled presentational component. It renders a
+  fixed Priority-up frame, readable zone labels, current attention, zero
+  through eight visible points, and `Other paths`.
+
+Neither component may own provider, persistence, auth, consent-version,
+safety, or visibility policy. The mock Guide view receives only the narrow
+projection returned by `createNonLiveGuideProjection`.
+
 ## Product Logic and Constants
 
 SolMind product constants and product logic live under:
@@ -123,6 +141,7 @@ Current examples:
 
 - `conversation.ts`
 - `dashboardPanels.ts`
+- `explorerExperience.ts`
 - `loginOptions.ts`
 - `navigation.ts`
 - `onboarding.ts`
@@ -144,6 +163,14 @@ Use this area for:
 - topic definitions
 - safety rule definitions
 - dashboard data-shaping helpers
+
+`onboarding.ts` owns the exact S01 structured-form field definitions and the
+distinct required-form/optional-First-Compass states.
+
+`explorerExperience.ts` owns pure deterministic Discovery, Compass, Route,
+private Waypoint, summary selection, exact review, frozen Shared Snapshot, and
+narrow non-live Guide-projection behavior. It has no React, provider,
+database, browser-storage, or server-only dependency.
 
 ## Types
 
@@ -219,6 +246,8 @@ Authentication code should not:
 - bypass role checks
 - expose server-only secrets to the client
 
+S01 does not import or extend this boundary.
+
 ## Role Boundary
 
 Role definitions should remain centralized.
@@ -246,6 +275,11 @@ The `/guide` route is the human Guide dashboard.
 Do not call this route the SolMind Guide Assistant dashboard. The SolMind Guide Assistant is the AI assistant that supports the human Guide.
 
 Guide dashboard data must remain scoped to assigned Explorers only once persistence exists.
+
+The S01 non-live Guide result is not `/guide` and is not an operational
+dashboard. It is a local proof that only submitted onboarding answers and an
+exact confirmed Shared Snapshot cross the visibility boundary. It never
+receives raw Explorer state.
 
 ## Invitation Boundary
 
@@ -291,6 +325,9 @@ Consent logic should handle:
 
 Consent should not be hidden inside chat components.
 
+S01 displays honest draft/TBD agreement copy but records no consent and must
+not imply that it does.
+
 ## Conversation Boundary
 
 Future conversation logic should remain separated from rendering.
@@ -309,6 +346,24 @@ Conversation code should not own:
 - consent versioning
 - Admin visibility rules
 
+S01 uses a fixed local script and exact Explorer-entered text. It must not
+claim semantic interpretation or a genuine model response. S03 owns the first
+server-side provider conversation.
+
+## Explorer Sharing Boundary
+
+S01 implements only transient UI/domain behavior:
+
+- exact item selection;
+- a freshly derived final review;
+- a deeply frozen in-memory Shared Snapshot;
+- `Not ready to share`; and
+- a narrow non-live Guide projection.
+
+It does not implement storage, sendability timing, expiry, lineage,
+notifications, audit, RLS, Guide Assistant context, or a real Guide view.
+Those remain S02 or later owners.
+
 ## Safety Boundary
 
 Safety and escalation code should be isolated and heavily reviewed.
@@ -321,6 +376,9 @@ src/lib/solmind/escalation/
 ```
 
 Safety code must not be scattered across UI components.
+
+S01 includes only accurate boundary copy. It does not classify, escalate,
+notify, or expose safety-level output.
 
 ## Supabase Boundary
 
@@ -335,6 +393,8 @@ This directory now holds the banked server-side Supabase integration: the reques
 Supabase code should not expose service-role credentials through client-accessible variables.
 
 Never put service-role keys or bootstrap tokens in `NEXT_PUBLIC_*`.
+
+S01 does not import or call Supabase.
 
 ## Admin Access Route Boundary
 
@@ -359,6 +419,9 @@ src/lib/solmind/context/
 Context code must preserve SolMind role separation. The SolMind Virtual Guide is Explorer-facing and must receive only Explorer-safe context. The SolMind Guide Assistant is Guide-facing and must receive only Guide-authorized context. Do not blend Explorer-private and Guide-private context in a single path.
 
 The human Guide remains the human Guide; the SolMind Guide Assistant is the AI that supports the human Guide. Do not conflate them.
+
+S01 does not assemble AI context. Its non-live Guide projection is a pure
+visibility-boundary function, not a prompt-context function.
 
 ## Schema Foundation Boundary
 
@@ -390,21 +453,30 @@ and complete 1,547/1,547 database assertions, zero-residue proof, final clean
 reset, lint, typecheck, 487 application tests, production build, and exact
 Fable 5 implementation assurance passed before banking.
 
-Proposed `PRJ01_F-WS06-WI008-S02E` - dormant Explorer invitation acceptance -
-keeps the next acceptance boundary inside one service-role-only database entry
-function. The review-only proposal verifies committed preparation and a
-server-verified provider result; acquires evidence-first and sorted domain locks;
-supports only exact writeless committed-response recovery; applies the protected
-current-Guide capacity policy; reuses the shared invited-identity helper; consumes
-the evidence; creates exactly one `intake_pending` relationship whose
-`created_from_invite_id` names the accepted invitation; accepts that invitation;
-revokes only open same-Guide, same-Practice, same-contact siblings; and persists the
-exact Family B audit rows in the same transaction. The paired preparation change is
-only a writeless, non-authoritative capacity pre-check after banked identity checks
-and before reservation creation. The proposal adds no provider IO, caller, route,
-cookie, session, consent, RLS policy, table grant, capacity-policy writer, cloud
-action, deployment, or real-user path. It is not banked until Paul approves and
-applies it and all later validation, Git, push, and synchronization gates pass.
+Banked `PRJ01_F-WS06-WI008-S02E` - dormant Explorer invitation acceptance -
+keeps the acceptance boundary inside one service-role-only database entry
+function. It verifies committed preparation and a server-verified provider
+result; acquires evidence-first and sorted domain locks; supports only exact
+writeless committed-response recovery; applies the protected current-Guide
+capacity policy; reuses the shared invited-identity helper; consumes the
+evidence; creates exactly one `intake_pending` relationship whose
+`created_from_invite_id` names the accepted invitation; accepts that
+invitation; revokes only open same-Guide, same-Practice, same-contact siblings;
+and persists the exact Family B audit rows in the same transaction. The paired
+preparation change is only a writeless, non-authoritative capacity pre-check
+after banked identity checks and before reservation creation. Focused
+validation passed 6 files / 436 assertions and complete validation passed 31
+files / 1,777 assertions with zero synthetic residue and three clean
+32-migration resets. The slice is banked in synchronized app commit
+`5e98ebf`; it remains dormant and adds no provider IO, caller, route, cookie,
+session, consent, RLS policy, table grant, capacity-policy writer, cloud
+action, deployment, or real-user path.
+
+`PRJ01_R-WS09-WI021-S02`, not S01, owns exact additive storage for submitted
+onboarding, Compass, Route, private Waypoint, Private Summary Draft, selection
+provenance, Shared Snapshot, lineage, the protected 1-100 day setting, and the
+local synthetic relationship fixture. Do not put that fixture in a production
+migration or universal seed.
 
 ## Documentation Boundary
 

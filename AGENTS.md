@@ -74,6 +74,39 @@ The MVP0 authentication model is:
 
 Do not describe Guide authentication as passwordless.
 
+## PRJ01_R-WS09-WI021-S01 Explorer Prototype Boundary
+
+The `/explorer` route contains the deterministic in-memory S01 prototype.
+
+- `src/app/explorer/page.tsx` stays a thin Server Component.
+- `src/components/solmind/ExplorerExperiencePrototype.tsx` is the interactive
+  client boundary.
+- `src/components/solmind/SessionCompass.tsx` is controlled and
+  presentational.
+- `src/lib/solmind/explorerExperience.ts` owns pure deterministic transitions,
+  Compass grouping, Route history, exact selection, snapshot freezing, and
+  the narrow non-live Guide projection.
+- `src/lib/solmind/onboarding.ts` owns the exact structured-form definitions
+  and distinct required-form/optional-First-Compass states.
+
+S01 must not call an AI provider or imply a model or human Guide is live. It
+must not use a database, route handler, cookie, `localStorage`,
+`sessionStorage`, URL state, or another persistence mechanism. It must not
+hard-code or simulate the future 1-100 day sendability setting, describe an
+in-memory Waypoint as durably stored, rotate the whole Compass, add literal
+direction letters, or introduce clinical scoring.
+
+Never pass the complete Explorer experience state to a mock Guide result. The
+narrow Guide projection may contain only submitted onboarding answers and the
+exact in-memory Shared Snapshot the Explorer confirmed. It must exclude the
+conversation, Route, private Waypoint, Private Summary Draft, excluded detail,
+selection state, and unconfirmed material.
+
+The visible disclosure must say the flow is an early fixed-script prototype,
+not a therapist or crisis service, and that refresh clears it. Protected
+persistence belongs to `PRJ01_R-WS09-WI021-S02`. Genuine server-side Virtual
+Guide conversation belongs to `PRJ01_R-WS09-WI021-S03`.
+
 ## Secrets Boundary
 
 Never expose server secrets through `NEXT_PUBLIC_` variables.
@@ -109,6 +142,11 @@ Run before reporting completion:
 npm.cmd run lint
 npm.cmd run build
 ```
+
+For `PRJ01_R-WS09-WI021-S01`, also run focused and full tests, typecheck, and
+a targeted source scan confirming no provider, Supabase, cookie, route
+handler, server action, `fetch`, `localStorage`, or `sessionStorage`
+integration in the new S01 files.
 
 ## If Uncertain
 

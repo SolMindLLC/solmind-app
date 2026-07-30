@@ -10,7 +10,17 @@ export type SolMindOnboardingStepKey =
   | "identityContact"
   | "codeVerification"
   | SolMindConsentDisclosureKey
+  | "structuredForm"
+  | "firstCompassOffer"
   | "conversationHub";
+
+export type SolMindStructuredFormFieldKey =
+  | "supportNow"
+  | "usefulOutcome"
+  | "supportStyle"
+  | "guideContext"
+  | "communicationPreference"
+  | "doNotEmphasize";
 
 export type SolMindConsentDocumentReference = {
   key: string;
@@ -27,6 +37,15 @@ export type SolMindOnboardingStep = {
   requiredForMvp0: boolean;
   blocksAiAccessUntilComplete?: boolean;
   consentDocumentReferences?: SolMindConsentDocumentReference[];
+};
+
+export type SolMindStructuredFormField = {
+  key: SolMindStructuredFormFieldKey;
+  label: string;
+  required: boolean;
+  guideVisibleAfterSubmission: true;
+  inputKind: "textarea" | "text";
+  hint: string;
 };
 
 export const SOLMIND_MVP0_CONSENT_DOCUMENT_REFERENCES: SolMindConsentDocumentReference[] =
@@ -48,6 +67,58 @@ export const SOLMIND_MVP0_CONSENT_DOCUMENT_REFERENCES: SolMindConsentDocumentRef
       title: "MVP0 AI and Crisis Limits Disclosure",
       version: "v1.0",
       requiredForMvp0: true,
+    },
+  ];
+
+export const SOLMIND_EXPLORER_STRUCTURED_FORM_FIELDS: SolMindStructuredFormField[] =
+  [
+    {
+      key: "supportNow",
+      label: "What would you like support with right now?",
+      required: true,
+      guideVisibleAfterSubmission: true,
+      inputKind: "textarea",
+      hint: "A sentence or two is enough.",
+    },
+    {
+      key: "usefulOutcome",
+      label: "What would make this first experience useful?",
+      required: true,
+      guideVisibleAfterSubmission: true,
+      inputKind: "textarea",
+      hint: "Describe a useful feeling, understanding, or next step.",
+    },
+    {
+      key: "supportStyle",
+      label: "What kind of support would feel most helpful today?",
+      required: true,
+      guideVisibleAfterSubmission: true,
+      inputKind: "textarea",
+      hint: "For example: listening, reflection, structure, or a lighter check-in.",
+    },
+    {
+      key: "guideContext",
+      label: "Context you want your Guide to know.",
+      required: false,
+      guideVisibleAfterSubmission: true,
+      inputKind: "textarea",
+      hint: "Optional. Leave this blank if there is nothing more to add.",
+    },
+    {
+      key: "communicationPreference",
+      label: "Communication preference.",
+      required: false,
+      guideVisibleAfterSubmission: true,
+      inputKind: "text",
+      hint: "Optional. For example: direct, gentle, brief, or detailed.",
+    },
+    {
+      key: "doNotEmphasize",
+      label: "Anything you do not want emphasized.",
+      required: false,
+      guideVisibleAfterSubmission: true,
+      inputKind: "textarea",
+      hint: "Optional. This answer is also part of the submitted form.",
     },
   ];
 
@@ -98,7 +169,7 @@ export const SOLMIND_EXPLORER_ONBOARDING_STEPS: SolMindOnboardingStep[] = [
     key: "adminVisibilityDisclosure",
     title: "Admin visibility disclosure",
     description:
-      "Confirm the Explorer understands that Admins may access MVP0 data for setup, QA, safety, and support purposes.",
+      "Confirm the Explorer understands that authorized Admin access to raw conversations, private drafts, excluded details, private Waypoints, or unconfirmed Reflections may occur under defined operational conditions; Admin access is not categorically impossible.",
     route: "/explorer",
     requiredForMvp0: true,
     blocksAiAccessUntilComplete: true,
@@ -121,6 +192,22 @@ export const SOLMIND_EXPLORER_ONBOARDING_STEPS: SolMindOnboardingStep[] = [
     requiredForMvp0: true,
     blocksAiAccessUntilComplete: true,
     consentDocumentReferences: SOLMIND_MVP0_CONSENT_DOCUMENT_REFERENCES,
+  },
+  {
+    key: "structuredForm",
+    title: "Structured onboarding form",
+    description:
+      "Submit the required support questions and any optional context as a distinct Guide-visible onboarding record.",
+    route: "/explorer",
+    requiredForMvp0: true,
+  },
+  {
+    key: "firstCompassOffer",
+    title: "First Compass offer",
+    description:
+      "Offer an encouraged but skippable First Compass after the structured form is submitted.",
+    route: "/explorer",
+    requiredForMvp0: false,
   },
   {
     key: "conversationHub",

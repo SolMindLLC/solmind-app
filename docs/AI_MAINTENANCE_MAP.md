@@ -1,56 +1,76 @@
 # SolMind App AI Maintenance Map
 
-Version: 0.2.0  
+Version: 0.3.0
 Repo: solmind-app  
 Purpose: Help AI coding assistants safely understand, maintain, and extend the SolMind MVP0 application.
 
 ## Current Application Scope
 
-This repository pairs the SolMind MVP0 preview UI with several banked, foundation-first backend modules. The user-facing pages remain preview and foundation surfaces, not complete runtime workflows.
+This repository pairs the SolMind MVP0 preview UI with several banked, foundation-first backend modules. Most user-facing pages remain preview and foundation surfaces, not complete runtime workflows.
 
-User-facing routes (preview):
+User-facing routes:
 
-- `/` — public landing page
-- `/login` — login preview
-- `/admin` — Admin dashboard preview
-- `/guide` — human Guide dashboard preview
-- `/explorer` — Explorer conversation preview
+- `/` - public landing page
+- `/login` - login preview
+- `/admin` - Admin dashboard preview
+- `/guide` - human Guide dashboard preview
+- `/explorer` - deterministic, browser-memory Explorer S01 experience
 
 Server route handlers:
 
-- `/admin/access` — opaque server-side Admin access probe returning only `{ allowed }`
+- `/admin/access` - opaque server-side Admin access probe returning only `{ allowed }`
 
-The user-facing pages are still static preview surfaces. Backend foundations banked at
-a high level include Supabase schema foundations with deny-by-default Row Level
-Security, the Auth/RLS request-auth boundary, real Admin auth-source loading,
-server-only hardening, and runtime Auth/RLS audit persistence at `/admin/access`.
+`PRJ01_R-WS09-WI021-S01` adds the first interactive Explorer experience
+without a provider or persistence. It contains the exact structured onboarding
+form, a distinct skippable First Compass, deterministic Discovery/Compass/Route
+and private Waypoint transitions, main-point and one-detail-level summary
+selection, a fresh exact final review, a deeply frozen in-memory Shared
+Snapshot, and a non-live Guide projection. The projection contains only
+submitted onboarding answers and the exact confirmed snapshot. Refreshing the
+page resets the experience.
+
+Backend foundations banked at a high level include Supabase schema foundations
+with deny-by-default Row Level Security, the Auth/RLS request-auth boundary,
+real Admin auth-source loading, server-only hardening, and runtime Auth/RLS
+audit persistence at `/admin/access`.
+
 DEF5-S2 through DEF5-S4 add dormant verification redemption, issuance, and
-session-creation primitives. The invitation foundation additionally includes shared
-authorizing-evidence consumption, Guide/Explorer pre-provider preparation reservations,
-dormant Guide acceptance, dormant Admin Guide-invitation issuance/revocation, and the
-Explorer capacity/lock-key foundation. `PRJ01_F-WS06-WI008-S02C` - shared
-invited-identity provisioning-helper generalization - is banked in app commit
-`1dd85b5`: it replaces the transitional Guide-only protected helper with one dormant
-Guide/Explorer helper while preserving Guide behavior and prior Explorer profile
-information. `PRJ01_F-WS06-WI008-S02D` - Guide-to-Explorer invitation issuance,
+session-creation primitives. The invitation foundation additionally includes
+shared authorizing-evidence consumption, Guide/Explorer pre-provider
+preparation reservations, dormant Guide acceptance, dormant Admin
+Guide-invitation issuance/revocation, and the Explorer capacity/lock-key
+foundation.
+
+`PRJ01_F-WS06-WI008-S02C` - shared invited-identity provisioning-helper
+generalization - is banked in app commit `1dd85b5`: it replaces the
+transitional Guide-only protected helper with one dormant Guide/Explorer helper
+while preserving Guide behavior and prior Explorer profile information.
+
+`PRJ01_F-WS06-WI008-S02D` - Guide-to-Explorer invitation issuance,
 same-Guide replacement, and revocation - is banked in synchronized app commit
-`a9944f1`: it adds two dormant service-role-only entry functions over the banked
-capacity, lock, lifetime, Guide/Practice eligibility, and audit contracts. None
-of these slices adds an app caller, provider delivery,
-invitation route, runtime acceptance path, rate-limit enforcement, cloud path, or
-real-user path.
-`PRJ01_F-WS06-WI008-S02E` - dormant Explorer invitation acceptance - is an active
-review-only proposal, not a banked foundation. It adds one service-role-only
-acceptance entry function and the approved writeless, non-authoritative preparation
-capacity pre-check over the existing S02B-S02D substrate. It does not add a caller or
-activate a runtime path.
-Still not implemented: permissive or role-aware RLS policies and grants; login/session
-callers; effectful provider provisioning; Explorer invitation callers or any runtime
-invocation of the proposed acceptance entry function; routes, delivery, rate-limit enforcement,
-intake workflows,
-conversation storage, safety-flag runtime handling, and Guide/Admin runtime workflows.
-See the "Banked Foundations vs Still Deferred" section below and the authoritative
-register in `../solmind-docs/execution/12_SolMind_MVP0_Auth_RLS_Decision_Deferral_Register_v0_1.md`.
+`a9944f1`: it adds two dormant service-role-only entry functions over the
+banked capacity, lock, lifetime, Guide/Practice eligibility, and audit
+contracts.
+
+`PRJ01_F-WS06-WI008-S02E` - dormant Explorer invitation acceptance - is a
+banked foundation. It adds one service-role-only acceptance entry function and
+the approved writeless, non-authoritative preparation capacity pre-check over
+the existing S02B-S02D substrate. It does not add a caller or activate a
+runtime path.
+
+None of those dormant backend slices adds an app caller, provider delivery,
+invitation route, runtime acceptance path, rate-limit enforcement, cloud path,
+or real-user path.
+
+Still not implemented: permissive or role-aware RLS policies and grants;
+login/session callers; effectful provider provisioning; Explorer invitation
+callers; onboarding/Compass persistence; sendability timing or expiry; genuine
+provider conversation; safety-flag runtime handling; and operational
+Guide/Admin runtime workflows.
+
+See the "Banked Foundations vs Still Deferred" section below and the
+authoritative register in
+`../solmind-docs/execution/12_SolMind_MVP0_Auth_RLS_Decision_Deferral_Register_v0_1.md`.
 
 ## Canonical Product Documentation
 
@@ -104,10 +124,13 @@ Do not rename these roles casually. Avoid deprecated generic terms such as "clie
 
 Use these names consistently:
 
-- SolMind Virtual Guide — Explorer-facing assistant
-- SolMind Guide Assistant — Guide-facing assistant
+- SolMind Virtual Guide - Explorer-facing assistant
+- SolMind Guide Assistant - Guide-facing assistant
 
 The `/guide` route is the human Guide dashboard. Do not label the human Guide dashboard as the SolMind Guide Assistant dashboard.
+
+S01 uses a deterministic local script. It must not be described as a real
+SolMind Virtual Guide conversation.
 
 ## Current Source Layout
 
@@ -128,6 +151,7 @@ src/
       BackLink.tsx
       ConversationPreview.tsx
       DashboardCard.tsx
+      ExplorerExperiencePrototype.tsx
       ExplorerResponseComposer.tsx
       ExplorerTopicList.tsx
       LoginOptionList.tsx
@@ -138,11 +162,13 @@ src/
       RoleBadge.tsx
       RouteAccessPreview.tsx
       SectionLabel.tsx
+      SessionCompass.tsx
 
   lib/
     solmind/
       conversation.ts
       dashboardPanels.ts
+      explorerExperience.ts
       invitations.ts
       loginOptions.ts
       navigation.ts
@@ -170,6 +196,10 @@ The `auth/`, `context/`, and `supabase/` directories hold server-only modules ke
 | Area | Files | Responsibility |
 |---|---|---|
 | Routes | `src/app/**/page.tsx` | Page composition only |
+| Explorer S01 composition | `src/app/explorer/page.tsx` | Thin Server Component composing the single S01 client boundary |
+| Explorer S01 orchestration | `src/components/solmind/ExplorerExperiencePrototype.tsx` | Transient browser-memory state and events; no provider or persistence |
+| Compass presentation | `src/components/solmind/SessionCompass.tsx` | Controlled fixed-frame Compass rendering; no policy or state ownership |
+| Explorer S01 domain | `src/lib/solmind/explorerExperience.ts` | Pure deterministic Compass, Route, Waypoint, summary, snapshot, and narrow Guide-projection transitions |
 | Shared UI | `src/components/solmind/*.tsx` | Reusable presentational components |
 | Role model | `src/lib/solmind/roles.ts` | Canonical role strings, labels, and home routes |
 | Route metadata | `src/lib/solmind/pages.ts` | Page titles, descriptions, and hrefs |
@@ -177,7 +207,7 @@ The `auth/`, `context/`, and `supabase/` directories hold server-only modules ke
 | Login options | `src/lib/solmind/loginOptions.ts` | Static login option copy and auth summaries |
 | Dashboard panels | `src/lib/solmind/dashboardPanels.ts` | Static Admin and Guide panel definitions |
 | Route access preview | `src/lib/solmind/routeAccess.ts` | Static route-access preview rules |
-| Onboarding preview | `src/lib/solmind/onboarding.ts` | Static Explorer onboarding/checkpoint definitions |
+| Explorer onboarding | `src/lib/solmind/onboarding.ts` | Exact S01 structured-form fields and distinct required-form/optional-First-Compass states |
 | Terms | `src/lib/solmind/terms.ts` | Canonical product and assistant terms |
 | Conversation/profile/topics | `src/lib/solmind/*.ts` | Static Explorer preview content |
 | Admin access probe | `src/app/admin/access/route.ts` | Opaque Admin access probe returning `{ allowed }`; does not protect pages; its composition persists bounded Auth/RLS audit rows (AUD-3) |
@@ -190,7 +220,22 @@ The `auth/`, `context/`, and `supabase/` directories hold server-only modules ke
 | Verification challenge issuance (dormant DEF5-S3) | `supabase/migrations/20260713000000_verification_challenge_issuance_function.sql`; `supabase/tests/verification_challenge_issuance_*_test.sql` | Banked dormant service-role-only issuance function, structurally-open partial unique index, exact embedded Family B issuance audit, and sequential/concurrent proofs. It has no app caller, delivery path, invitation route, or rate-limit enforcement. Both UUID binding inputs are present together or both null; the null pair is restricted to approved pre-account purposes. |
 | Session creation and supersession (banked dormant DEF5-S4) | `supabase/migrations/20260716000000_user_session_creation_function.sql`; `supabase/migrations/20260716001000_user_session_creation_chronology_guard.sql`; `supabase/tests/user_session_creation_*_test.sql` | Banked service-role-only primitive consuming committed account-bound `login` or `role_reentry` redemption evidence. It includes a protected freshness policy, account-wide active-session and per-challenge uniqueness, safe exact retry, atomic supersession, embedded Family B session audit, and an all-history `(used_at, challenge UUID)` guard that prevents delayed never-sessionized older evidence from superseding newer login evidence. The correction is banked in `d2fbb0e`; the three plans contain 49/51/50 assertions and clean reset passed 14 files / 502 assertions. It has no caller, route, cookie, provider action, provisioning path, cloud action, or real-user activation. |
 | Invitation acceptance and Explorer issuance foundations (`PRJ01_F-WS06-WI008-S02B` through `PRJ01_F-WS06-WI008-S02D`) | `supabase/migrations/20260718000000_authorizing_evidence_consumption.sql`; `20260718001000_invitation_acceptance_preparation.sql`; `20260718002000_guide_invitation_acceptance.sql`; `20260718003000_admin_guide_invitation_issuance.sql`; `20260721000000_explorer_engagement_capacity_foundation.sql`; `20260724000000_invited_identity_provisioning_helper_generalization.sql`; `20260725000000_explorer_invitation_issuance.sql`; related `supabase/tests/*invitation*` and `invited_identity_provisioning_helper_explorer_test.sql` | Banked dormant evidence-consumption, pre-provider reservation, Guide acceptance, Admin Guide-invitation, Explorer capacity/lock foundations, the shared invited-identity helper, and two Guide-owned Explorer issuance/revocation functions. `PRJ01_F-WS06-WI008-S02D` is banked in app commit `a9944f1` after focused 203/203 and complete 1,547/1,547 database assertions, zero-residue proof, final clean reset, lint, typecheck, 487 application tests, production build, and exact Fable 5 assurance passed. It enforces normalized-contact open-invitation capacity, same-Guide/same-Practice replacement, cross-Guide nondisplacement, expiry materialization, exact retry, explicit Guide revocation, and exact fail-closed transactional audit. It preserves the separately owned Explorer acceptance, preparation pre-check, cross-operation concurrency/debt closure, callers, provider effects, delivery, consent, sessions, cloud, deployment, and real-user gates. |
-| Explorer invitation acceptance (`PRJ01_F-WS06-WI008-S02E`; review-only proposal) | `supabase/migrations/20260727000000_explorer_invitation_acceptance.sql`; `supabase/tests/explorer_invitation_acceptance_*_test.sql`; focused extensions to `supabase/tests/invitation_acceptance_preparation_*_test.sql` | Proposed dormant service-role-only acceptance transaction plus the approved preparation capacity pre-check. The proposal consumes committed authorizing evidence once, reuses the shared invited-identity helper, enforces first-commit-wins current-Guide capacity, creates exactly one `intake_pending` relationship with invitation provenance, accepts the invitation, revokes only same-Guide/same-Practice/same-contact open siblings, and writes the exact Family B audit rows transactionally. This row is proposal documentation only: it is not banked, validated against a database, applied, callable by the app, deployed, or active for real users. |
+| Explorer invitation acceptance (`PRJ01_F-WS06-WI008-S02E`; banked dormant foundation) | `supabase/migrations/20260727000000_explorer_invitation_acceptance.sql`; `supabase/tests/explorer_invitation_acceptance_*_test.sql`; focused extensions to `supabase/tests/invitation_acceptance_preparation_*_test.sql` | Banked dormant service-role-only acceptance transaction plus the approved preparation capacity pre-check. It consumes committed authorizing evidence once, reuses the shared invited-identity helper, enforces first-commit-wins current-Guide capacity, creates exactly one `intake_pending` relationship with invitation provenance, accepts the invitation, revokes only same-Guide/same-Practice/same-contact open siblings, and writes the exact Family B audit rows transactionally. Focused validation passed 6 files / 436 assertions and complete validation passed 31 files / 1,777 assertions with zero synthetic residue and three clean 32-migration resets. It is banked in app commit `5e98ebf`; it remains dormant, has no app caller, and is not deployed or active for real users. |
+
+## S01 Privacy and Visibility Rules
+
+- Submitted onboarding answers become Guide-visible only after form submission.
+- First Compass is optional and distinct from required-form completion.
+- Conversation, Compass, Route, Waypoint, selection, and Private Summary Draft
+  remain Explorer-private.
+- Selecting summary items is not sharing.
+- Final review is freshly derived from the current selection.
+- `Not ready to share` creates no Guide-visible conversation artifact.
+- Only explicit confirmation creates a deeply frozen in-memory Shared Snapshot.
+- The non-live Guide projection receives submitted onboarding answers and that
+  exact snapshot, never raw conversation or excluded items.
+- Admin disclosure must say that authorized Admin access may occur under
+  defined operational conditions; do not claim Admin cannot see content.
 
 ## MVP0 Authentication Model
 
@@ -226,10 +271,12 @@ Do not expose:
 
 ```powershell
 npm.cmd run lint
+npm.cmd run typecheck
+npm.cmd run test
 npm.cmd run build
 ```
 
-5. If Paul approves staging and committing, commit with a narrow message. Claude Code must stop before `git add`, `git commit`, and `git push` unless Paul explicitly approves those actions in the current task.
+5. Stop at every approval gate required by the current workspace workflow.
 
 ## Banked Foundations vs Still Deferred
 
@@ -241,12 +288,17 @@ Earlier guidance told agents not to start Supabase, auth, or RLS. That is no lon
 - The Auth/RLS request-auth boundary, real Admin auth-source loading, and server-only hardening under `src/lib/solmind/auth` and `src/lib/solmind/supabase`.
 - The `/admin/access` server route handler: an opaque probe returning only `{ allowed }`. It is read-only and does not protect the `/admin`, `/guide`, or `/explorer` pages.
 - Auth/RLS audit persistence for `/admin/access`: the bounded event model (`src/lib/solmind/auth/authRlsAuditEvent.ts`), the enumerated `public.solmind_record_audit_event` writer function (migration `20260708000000_audit_event_writer_function.sql`), the closed-allowlist app writer chain (`auditEventWriter.ts`, `auditEventWriteExecutor.ts`, `adminAuditEventWriter.ts`), and the runtime wiring in `adminAccessRequest.ts` (AUD-1/AUD-2/AUD-3). On an allow the guarded-read row is written first, then the allow decision row, and both must persist before the outward allow (fail-closed); deny and resolution-failure rows are best-effort.
-- Dormant invitation foundations through `PRJ01_F-WS06-WI008-S02D` - Guide-to-Explorer invitation issuance, same-Guide replacement, and revocation - are banked through synchronized app commit `a9944f1`. The S02D functions remain dormant over the earlier capacity/lock/helper substrate; none has an application caller or real-user path.
+- Dormant invitation foundations through `PRJ01_F-WS06-WI008-S02D` - Guide-to-Explorer invitation issuance, same-Guide replacement, and revocation - are banked through synchronized app commit `a9944f1`. The S02D functions remain dormant over the earlier capacity, lock, and helper substrate; none has an application caller or real-user path.
 
-The S02E Explorer acceptance files described above exist only in the current
-review-only proposal. Do not treat them as a banked foundation unless Paul applies
-the approved files and every later validation, Git, push, and synchronization gate
-passes.
+The S02E Explorer acceptance files described above are banked in synchronized
+app commit `5e98ebf13f2626d75c140d3d654dfbfd06258b21` after exact application,
+focused and complete database validation, staged-blob equality, push, and clean
+synchronization. Do not treat the banked dormant substrate as a live caller,
+provider path, session/consent workflow, deployment, or real-user feature.
+
+The S01 Explorer experience is interactive application code, but it is
+deliberately deterministic and transient. Its presence does not mean S02
+persistence or S03 provider integration is banked.
 
 Extend these modules deliberately and in small slices. Keep server-only modules off the shared client barrels, as the existing code does.
 
@@ -256,11 +308,24 @@ Extend these modules deliberately and in small slices. Keep server-only modules 
 - Audit persistence beyond the banked dormant DEF5-S2 redemption, DEF5-S3 issuance, and DEF5-S4 session subsets: remaining login/provisioning (Family B), Admin sensitive-access (Family C), safety/escalation (Family D), and content/AI-lifecycle (Family E) audit vocabularies and runtime wiring; a real operational logging/alarm mechanism (the AUD-3 operational signal is an injectable no-op seam); the deferred system-context/null-actor guarded-read vocabulary (AUTH-RLS-DEF-019); and any audit retention/review tooling. No new audit table grants, policies, or hidden-schema Data API exposure exist.
 - Authentication middleware. MVP0 deliberately prefers explicit per-route and server-action composition over middleware (register decision AUTH-RLS-DEC-017); do not introduce middleware without a specific approved justification.
 - The runtime login/provisioning write path, including any caller of the banked dormant session primitive, any caller of the dormant invitation functions, and all provider-identity/provisioning writes.
-- AI chat persistence
-- Reflection storage
-- runtime escalation logic
-- summaries
-- vector retrieval
-- billing
-- calendar integrations
-- NDA workflow
+- S02 onboarding, Compass, Route, Waypoint, summary, snapshot, provenance,
+  sendability, expiry, lineage, setting, and synthetic-fixture persistence.
+- S03 genuine provider conversation.
+- Guide Assistant context from these Explorer artifacts.
+- Production Guide dashboard integration.
+- Runtime safety classification and escalation.
+- Reflection storage beyond approved future slices.
+- Vector retrieval.
+- Billing.
+- Calendar integrations.
+- NDA workflow.
+
+## S01 Test Ownership
+
+`src/lib/solmind/__tests__/explorerExperience.test.ts` owns deterministic
+acceptance proofs for S01 Compass, Route, Waypoint, summary selection, final
+review, frozen snapshot, and non-live Guide projection behavior.
+
+`src/lib/solmind/__tests__/onboarding.test.ts` owns the exact six-field
+onboarding contract, required/optional distinction, Guide-visibility marker,
+distinct optional First Compass offer, and corrected Admin disclosure.

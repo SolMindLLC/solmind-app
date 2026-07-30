@@ -170,6 +170,35 @@ These areas require explicit review:
 
 An agent may propose changes in these areas, but should not implement broad changes without human review.
 
+## Explorer S01 Task Contract
+
+`PRJ01_R-WS09-WI021-S01` is a deterministic, browser-memory-only Explorer
+experience. Work in this slice must:
+
+- keep required structured-form completion distinct from the optional,
+  skippable First Compass;
+- allow Discovery to begin or end with zero Compass points and no invented
+  Priority;
+- keep the Priority-up frame fixed while current attention moves separately;
+- require Explorer confirmation before a proposed Priority reorientation or
+  Waypoint is confirmed;
+- show no more than eight visible Compass points and preserve categorized
+  overflow under `Other paths`;
+- keep conversation, Compass, Route, Waypoint, selection, and Private Summary
+  Draft state Explorer-private;
+- derive the final review from the latest selection and create a Shared
+  Snapshot only after separate confirmation;
+- keep `Not ready to share` private and never auto-send; and
+- pass only submitted onboarding answers plus the exact confirmed Shared
+  Snapshot to the explicitly non-live Guide projection.
+
+S01 must not use a provider, database, route handler, cookie, `fetch`,
+`localStorage`, `sessionStorage`, URL state, timer, notification, or another
+persistence mechanism. It must not imply that the mock Guide result is the
+operational `/guide` dashboard. Persistence belongs to
+`PRJ01_R-WS09-WI021-S02`; genuine provider conversation belongs to
+`PRJ01_R-WS09-WI021-S03`.
+
 ## Documentation Update Rule
 
 When changing any of the following, update documentation in the same task:
