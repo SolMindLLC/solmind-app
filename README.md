@@ -4,12 +4,31 @@ SolMind is an AI-assisted reflective support platform for human Guides and Explo
 
 This repository contains the SolMind MVP0 application shell built with Next.js, React, TypeScript, and Tailwind CSS.
 
-## Current MVP0 App Scope
+## Audience and Stable Orientation Rule
+
+This README is for developers, reviewers, and AI assistants who need a stable
+orientation to the `solmind-app` repository.
+
+Keep this file focused on durable repository purpose, architecture, routes,
+local development, verification, and safety or security boundaries. It is not
+an execution-status owner. Do not add:
+
+- active weekly priorities or temporary operating status;
+- project traceability IDs or other execution identifiers;
+- commit hashes, proposal states, or banking evidence; or
+- ordered work queues or instructions for the current slice.
+
+Record exact implementation status and evidence in the MVP0 Slice Ledger,
+current priorities and decisions in the active weekly execution workspace, and
+implementation ordering in the MVP0 Implementation Task Breakdown. Update this
+README only when durable repository capabilities, structure, boundaries, setup,
+or validation expectations change.
+
+## Repository Scope
 
 The current app pairs an interactive deterministic Explorer prototype with
-static MVP0 preview pages and several banked, foundation-first backend
-modules. These surfaces are development and review artifacts, not complete
-runtime workflows.
+static MVP0 preview pages and several foundation-first backend modules. These
+surfaces are development and review artifacts, not complete runtime workflows.
 
 User-facing routes:
 
@@ -38,8 +57,7 @@ Current route purpose:
 | `/explorer` | Deterministic Explorer onboarding, First Compass, Waypoint, exact-summary review, and non-live Guide-boundary prototype |
 | `/admin/access` | Opaque server-side Admin access probe returning only `{ allowed }` |
 
-The `/explorer` prototype is the browser-memory-only
-`PRJ01_R-WS09-WI021-S01` experience. It:
+The `/explorer` route hosts a browser-memory-only deterministic prototype. It:
 
 - displays the preferred-name placeholder without collecting it again;
 - submits the approved three required and three optional onboarding questions;
@@ -62,27 +80,25 @@ It makes no provider call and uses no database, route handler, cookie,
 experience. It does not create a real Guide session, send information, deploy a
 feature, or affect a real user.
 
-Banked backend foundations (high level):
+Backend foundations present in the repository (high level):
 
 - Supabase schema foundations: MVP0 schemas and tables exist through migrations under `supabase/migrations`, with Row Level Security enabled deny-by-default on application tables.
 - Auth/RLS request-auth boundary, real Admin auth-source loading, server-only hardening, and enumerated RPC transport under `src/lib/solmind/auth` and `src/lib/solmind/supabase`.
-- Auth/RLS audit persistence for `/admin/access`: the bounded audit event model, the `public.solmind_record_audit_event` database writer function, the closed-allowlist app writer chain, and the runtime wiring (AUD-1/AUD-2/AUD-3).
-- Dormant verification and session database primitives: verification-challenge redemption (`DEF5-S2`), verification-challenge issuance (`DEF5-S3`), and account-bound session creation plus the all-history chronology correction (`DEF5-S4`).
-- Dormant Explorer invitation foundations through `PRJ01_F-WS06-WI008-S02E`: the protected invitation-acceptance preparation helper, capacity and lock-key behavior, shared invited-identity provisioning, Guide-to-Explorer invitation issuance/replacement/revocation, and Explorer invitation acceptance with one `intake_pending` relationship.
+- Auth/RLS audit persistence for `/admin/access`: the bounded audit event model, the `public.solmind_record_audit_event` database writer function, the closed-allowlist app writer chain, and the runtime wiring.
+- Dormant verification and session database primitives: verification-challenge redemption and issuance, account-bound session creation, and the all-history chronology correction.
+- Dormant Explorer invitation foundations: the protected invitation-acceptance preparation helper, capacity and lock-key behavior, shared invited-identity provisioning, Guide-to-Explorer invitation issuance, replacement, revocation, and Explorer invitation acceptance with one `intake_pending` relationship.
 
-What "banked" does and does not mean:
+Important technical boundaries:
 
 - `/admin/access` is an opaque JSON probe that returns only `{ allowed }`. It does not yet mean the `/admin`, `/guide`, or `/explorer` pages are fully protected runtime workflows.
 - Permissive or role-aware RLS policies, grants, and runtime access enforcement remain deferred; RLS stays deny-by-default.
 - Runtime audit persistence exists ONLY for the `/admin/access` boundary: the enumerated `public.solmind_record_audit_event` function writes bounded Auth/RLS rows into `audit.audit_event` (guarded-read row first, then the decision row, both required before an outward allow). No broader audit wiring, no permissive RLS policy, and no table or schema grants exist; the `audit` schema stays off the Data API.
 - The verification, session, provisioning, and invitation foundations remain dormant substrate. Provider delivery, application callers, runtime routes, cookie/session bridging, consent, persistent onboarding, conversation storage, and the safety escalation runtime workflow are not yet implemented.
-- The remaining mapped Explorer invitation-acceptance slice is `PRJ01_F-WS06-WI008-S02F`, which owns cross-operation and inherited-debt closure. S02E is banked in synchronized app commit `5e98ebf`.
-- The S01 Explorer prototype does not turn those foundations into a runtime
-  path. Protected persistence belongs to `PRJ01_R-WS09-WI021-S02`; genuine
-  server-side Virtual Guide conversation belongs to
-  `PRJ01_R-WS09-WI021-S03`.
+- The Explorer prototype does not turn those foundations into a runtime path.
+  Protected persistence and genuine server-side Virtual Guide conversation
+  require separately reviewed implementation work.
 
-The authoritative banked-vs-deferred Auth/RLS and product-slice status is tracked in:
+Authoritative implementation status and exact evidence are tracked in:
 
 - `../solmind-docs/execution/12_SolMind_MVP0_Auth_RLS_Decision_Deferral_Register_v0_1.md` (Section 11);
 - `../solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md`; and
@@ -176,7 +192,7 @@ supabase/
   seed.sql
 ```
 
-The S01 interactive boundary is intentionally narrow:
+The Explorer prototype boundary is intentionally narrow:
 
 - `src/app/explorer/page.tsx` is a thin Server Component.
 - `src/components/solmind/ExplorerExperiencePrototype.tsx` is the only new
@@ -308,38 +324,22 @@ git status
 
 Claude Code local executor exception: Claude Code must stop before `git add`, `git commit`, and `git push` unless Paul explicitly approves those actions in the current task.
 
-## Current Build Status
+## Implementation Planning
 
-At the latest banked baseline before this proposal:
+The exact implementation order, active proposals, banking evidence, and
+current priorities are controlled by the MVP0 Slice Ledger, MVP0
+Implementation Task Breakdown, and active weekly execution workspace. Do not
+duplicate that changing execution state here.
 
-- `npm.cmd run lint` passes.
-- `npm.cmd run build` passes.
-- Routes build successfully:
-  - `/`
-  - `/login`
-  - `/admin`
-  - `/guide`
-  - `/explorer`
-  - `/admin/access` (server route handler)
+Durable implementation boundaries:
 
-The S01 proposal requires its separate application and full-repository
-validation gates before it may be described as banked.
-
-## Next Implementation Direction
-
-The exact next implementation order is controlled by the current slice ledger,
-task breakdown, and separately approved proposal checkpoints.
-
-1. Review, apply, validate, and bank `PRJ01_R-WS09-WI021-S01` only through its
-   separate gates.
-2. Design protected persistence and the dedicated local synthetic
-   Guide/Explorer fixture under `PRJ01_R-WS09-WI021-S02`; do not place the
-   fixture in a production migration or universal seed.
-3. Add the genuine server-side Virtual Guide provider path only under
-   `PRJ01_R-WS09-WI021-S03`, after provider, context, consent, storage,
-   failure, and leakage-test boundaries pass.
-4. Complete `PRJ01_F-WS06-WI008-S02F` through its independent owner.
-5. Expand RLS, audit, consent, safety, and Guide runtime behavior only through
-   their separately reviewed slices.
+- Keep the Explorer prototype deterministic and non-live until protected
+  persistence is separately designed, reviewed, and validated.
+- Add genuine server-side Virtual Guide behavior only after provider, context,
+  consent, storage, failure, and leakage-test boundaries pass.
+- Keep local synthetic Guide and Explorer fixtures out of production migrations
+  and universal seed data.
+- Expand RLS, audit, consent, safety, and Guide runtime behavior only through
+  separately reviewed changes.
 
 Safety, consent, role access, and privacy behavior must be implemented carefully and verified before production use.
