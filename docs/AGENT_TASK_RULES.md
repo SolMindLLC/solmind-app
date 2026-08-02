@@ -131,7 +131,8 @@ Agents must not:
 12. Expose server secrets through `NEXT_PUBLIC_` variables.
 13. Claim success without running verification commands.
 14. Run production, cloud, install, dependency, Vercel, or Supabase cloud changes without explicit approval.
-15. Run `npx.cmd supabase db reset` without Paul explicitly approving that local destructive validation step.
+15. Run `npx.cmd supabase db reset` against the existing local development database without first affirmatively verifying immediately before the reset that no other test is currently using it, or while another test is using it. When the preflight verifies that no test is using it, or after the active test completes and a fresh check confirms that no other test is then using it, the agent may run that reset without separate approval for bounded development testing. If database use cannot be determined or the active test does not complete, do not reset; stop and report to Paul. Do not interrupt or invalidate the active test.
+16. Drop the existing local development database, its persistent volume, or its local Supabase project/container resources without explicit approval; reset authority does not cover those actions.
 
 ## SolMind Role Boundaries
 
