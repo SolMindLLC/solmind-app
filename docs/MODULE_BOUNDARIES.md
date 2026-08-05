@@ -63,6 +63,7 @@ src/
 
 supabase/
   config.toml
+  fixtures/      Banked manually invoked local-only S02 fixture; never production migration or universal seed
   migrations/    MVP0 schema foundations with Row Level Security enabled deny-by-default
   seed.sql
 ```
@@ -390,6 +391,13 @@ src/lib/solmind/supabase/
 
 This directory now holds the banked server-side Supabase integration: the request-auth client (identity, who), the guarded service-role loader (record loads, what), principal mapping, session selection, and the audit write path (the closed-allowlist `auditEventWriteExecutor.ts` over the single enumerated `public.solmind_record_audit_event` function, assembled by `adminAuditEventWriter.ts` for the `/admin/access` composition). The request-auth client, the service-role factory, and the audit write modules are server-only and kept off the shared barrel.
 
+Banked dormant `PRJ01_R-WS09-WI021-S02` adds
+`applicationSettingReader.ts` as the narrow setting-read boundary. It accepts
+no key from its caller, invokes only the fixed service-role RPC, validates the
+exact 1-100/default-7/version shape, returns a frozen value, and maps failures
+to one value-free sentinel. It is server-only, remains off the shared barrel,
+has no browser export, and has no banked application caller.
+
 Supabase code should not expose service-role credentials through client-accessible variables.
 
 Never put service-role keys or bootstrap tokens in `NEXT_PUBLIC_*`.
@@ -433,6 +441,17 @@ supabase/migrations/
 
 The MVP0 schemas and tables are banked through migrations, with Row Level Security enabled deny-by-default on application tables. Permissive or role-aware RLS policies, grants, and runtime access enforcement remain deferred. Do not add policies, grants, or schema changes without a Database/Supabase workflow slice and approval. The authoritative Auth/RLS banked-vs-deferred status is `../solmind-docs/execution/12_SolMind_MVP0_Auth_RLS_Decision_Deferral_Register_v0_1.md`.
 
+The banked dormant S02 protected-setting foundation adds one deny-by-default
+`core.application_setting` singleton and two purpose-built service-role-only
+functions. The mutation serializes the singleton, checks expected version, and
+embeds the exact
+`../solmind-docs/execution/22_SolMind_MVP0_Auth_RLS_Audit_Persistence_Contract_v0_1.md`
+Family F row in the same transaction as an actual change. The audit payload is
+closed and typed: no free-form caller reference or reason can enter the
+database. Same-value/current-version requests and exact already-applied retries
+are writeless; any request-field mismatch, stale version, unknown token, lock
+failure, or audit failure fails closed.
+
 The banked dormant DEF5-S3 issuance foundation keeps the database boundary narrow: `public.solmind_issue_verification_challenge` is a service-role-only, purpose-built `SECURITY DEFINER` operation over `identity.verification_challenge`, `identity.contact_method`, and the exact Family B `audit.audit_event` row. Its partial unique index independently limits each normalized-contact/purpose pair to one structurally open challenge. It does not authorize a route, delivery provider, invitation acceptance, session creation, self-signup, Guide assignment, or rate-limit implementation. The outer app/route layer must establish invitation or self-signup eligibility before calling it, and no runtime caller may be added until the separately mandatory resend and lockout controls are implemented.
 
 The banked dormant DEF5-S4 slice keeps session mutation separate from redemption and provisioning. `public.solmind_create_user_session` consumes committed account-bound `login` or `role_reentry` evidence, owns account-wide supersede-then-create serialization, and embeds its exact Family B audit rows. Its freshness policy and both uniqueness indexes are hidden database backstops, not client authorization. Corrective migration `20260716001000_user_session_creation_chronology_guard.sql`, banked in `d2fbb0e`, preserves the writeless exact-retry branch and requires never-sessionized evidence to be strictly newer by `(used_at, challenge UUID)` than every prior session-linked evidence tuple for the account; chronology denial is fixed and zero-write. The three DEF5-S4 plans contain 49/51/50 assertions, and clean reset passed 14 files / 502 assertions. The banked slice creates no caller, route, cookie, provider action, account/profile/role provisioning, invitation or Guide assignment dependency, cloud path, or real-user flow.
@@ -474,9 +493,29 @@ action, deployment, or real-user path.
 
 `PRJ01_R-WS09-WI021-S02`, not S01, owns exact additive storage for submitted
 onboarding, Compass, Route, private Waypoint, Private Summary Draft, selection
-provenance, Shared Snapshot, lineage, the protected 1-100 day setting, and the
-local synthetic relationship fixture. Do not put that fixture in a production
-migration or universal seed.
+provenance, Shared Snapshot, and lineage. Its protected 1-100 day setting and
+local synthetic relationship fixture are banked dormant foundations; the other
+persistence remains unbanked. Do not put that fixture in a production migration
+or universal seed.
+
+The banked manually invoked local-development fixture boundary is:
+
+```text
+supabase/fixtures/
+  PRJ01_R_WS09_WI021_S02_LOCAL_FIXTURE.md
+  prj01_r_ws09_wi021_s02_local_fixture_setup.sql
+  prj01_r_ws09_wi021_s02_local_fixture_validate.sql
+  prj01_r_ws09_wi021_s02_local_fixture_cleanup.sql
+```
+
+It creates only one reserved synthetic Guide, one reserved synthetic Explorer,
+their minimum organization/practice membership substrate, one active
+relationship, and one bounded Explorer-safe Virtual Guide behavior string.
+Setup rejects pre-existing deterministic IDs or ownership markers before
+writes; validation is read-only and exact-cardinality; cleanup rejects
+mismatched or expanded ownership and proves zero known residue. The fixture is
+local-development support, not schema, universal seed, authentication state,
+runtime product behavior, hosted data, or a real-user identity source.
 
 ## Documentation Boundary
 

@@ -87,6 +87,7 @@ Backend foundations present in the repository (high level):
 - Auth/RLS audit persistence for `/admin/access`: the bounded audit event model, the `public.solmind_record_audit_event` database writer function, the closed-allowlist app writer chain, and the runtime wiring.
 - Dormant verification and session database primitives: verification-challenge redemption and issuance, account-bound session creation, and the all-history chronology correction.
 - Dormant Explorer invitation foundations: the protected invitation-acceptance preparation helper, capacity and lock-key behavior, shared invited-identity provisioning, Guide-to-Explorer invitation issuance, replacement, revocation, and Explorer invitation acceptance with one `intake_pending` relationship.
+- Dormant Explorer S02 foundation: a protected 1-100 day Shared Snapshot sendability setting (default 7), a server-only fixed-key reader, a service-role-only audited mutation, and a manually invoked local synthetic Guide/Explorer fixture. It adds no application caller, hosted fixture, provider action, deployment, or real-user path.
 
 Important technical boundaries:
 

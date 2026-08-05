@@ -29,6 +29,17 @@ Snapshot, and a non-live Guide projection. The projection contains only
 submitted onboarding answers and the exact confirmed snapshot. Refreshing the
 page resets the experience.
 
+Banked dormant `PRJ01_R-WS09-WI021-S02` provides one protected global
+`explorer_shared_snapshot_sendability_days` setting (1-100, default 7), a
+server-only fixed-key reader, a service-role-only expected-version mutation
+with exact Family F transactional audit, and one manually invoked local
+synthetic Guide/Explorer fixture with setup, fail-closed cleanup, and read-only
+validation. The fixture lives only under
+`supabase/fixtures/`; it is not a production migration, universal seed,
+hosted fixture, authentication state, runtime product behavior, or real-user
+identity source. The slice adds no application caller and does not add the
+remaining Explorer persistence records.
+
 Backend foundations banked at a high level include Supabase schema foundations
 with deny-by-default Row Level Security, the Auth/RLS request-auth boundary,
 real Admin auth-source loading, server-only hardening, and runtime Auth/RLS
@@ -185,6 +196,7 @@ src/
 
 supabase/
   config.toml
+  fixtures/      Banked local-only setup, validation, cleanup, and operator notes; manually invoked and never a production migration or universal seed
   migrations/    MVP0 schema foundations with Row Level Security enabled deny-by-default
   seed.sql
 ```
@@ -214,6 +226,8 @@ The `auth/`, `context/`, and `supabase/` directories hold server-only modules ke
 | Server authorization | `src/lib/solmind/auth/*.ts` | Deny-by-default request-auth boundary, role context, route-access decisions, relationship guards, the bounded audit event model, and the audit event writer |
 | Role/AI context | `src/lib/solmind/context/*.ts` | Explorer-facing and AI-role context assembly; keeps Explorer-private and Guide-private context separate |
 | Supabase integration | `src/lib/solmind/supabase/*.ts` | Server-side request-auth client (who), guarded service-role loader (what), principal mapping, session selection, and the closed-allowlist audit write executor with its admin audit-writer factory |
+| Banked dormant protected application setting (`PRJ01_R-WS09-WI021-S02`) | `src/lib/solmind/supabase/applicationSettingReader.ts`; `supabase/migrations/20260730000000_application_setting_foundation.sql`; `supabase/tests/application_setting_foundation_*_test.sql` | Fixed-key server-only read plus protected service-role-only mutation for the 1-100 day Shared Snapshot sendability setting. Actual changes use expected-version serialization and exact Family F same-transaction audit; same-value/current-version requests and exact already-applied retries are writeless. No routine role, browser, or direct-table mutation path exists, and no application caller is banked. |
+| Banked local S02 synthetic relationship fixture | `supabase/fixtures/PRJ01_R_WS09_WI021_S02_LOCAL_FIXTURE.md`; `supabase/fixtures/prj01_r_ws09_wi021_s02_local_fixture_{setup,validate,cleanup}.sql` | Manually invoked local-development fixture for exactly one synthetic Guide, one synthetic Explorer, and one active relationship with bounded Virtual Guide behavior text. Setup and cleanup fail closed; validation is read-only. It is never a production migration, universal seed, hosted fixture, or real-user identity source. |
 | Schema foundations | `supabase/migrations/*.sql` | MVP0 schemas and tables; Row Level Security enabled deny-by-default; no permissive policies or grants yet |
 | Write-path concurrency harness | `supabase/tests/write_path_concurrency_harness_test.sql` | Local-only pgTAP plus `dblink` foundation for deterministic multi-session race proofs; future DEF-005 function slices must reuse its distinct-session, observed-lock-contention, bounded-timeout, and teardown pattern for their owning concurrency tests |
 | Verification redemption CAS (dormant DEF5-S2) | `supabase/migrations/20260712000000_verification_challenge_redemption_function.sql`; `supabase/tests/verification_challenge_redemption_*_test.sql` | Dormant service-role-only verification redemption function and sequential/concurrent proofs. The concurrency suite commits reserved synthetic rows outside its outer rollback boundary, performs targeted cleanup, and requires Paul's explicit approval for the documented recovery cleanup after a hard failure. It does not issue challenges, create sessions, wire routes, or activate a runtime path. |
@@ -305,11 +319,14 @@ Extend these modules deliberately and in small slices. Keep server-only modules 
 ### Still deferred (do not start without prerequisite docs, tests, and approval)
 
 - Permissive or role-aware RLS policies, grants, and runtime access enforcement. RLS stays deny-by-default.
-- Audit persistence beyond the banked dormant DEF5-S2 redemption, DEF5-S3 issuance, and DEF5-S4 session subsets: remaining login/provisioning (Family B), Admin sensitive-access (Family C), safety/escalation (Family D), and content/AI-lifecycle (Family E) audit vocabularies and runtime wiring; a real operational logging/alarm mechanism (the AUD-3 operational signal is an injectable no-op seam); the deferred system-context/null-actor guarded-read vocabulary (AUTH-RLS-DEF-019); and any audit retention/review tooling. No new audit table grants, policies, or hidden-schema Data API exposure exist.
+- Audit persistence beyond the banked dormant DEF5-S2 redemption, DEF5-S3 issuance, DEF5-S4 session, and S02 protected-setting Family F subsets: remaining login/provisioning (Family B), Admin sensitive-access (Family C), safety/escalation (Family D), and content/AI-lifecycle (Family E) audit vocabularies and runtime wiring; a real operational logging/alarm mechanism (the AUD-3 operational signal is an injectable no-op seam); the deferred system-context/null-actor guarded-read vocabulary (AUTH-RLS-DEF-019); and any audit retention/review tooling. No new audit table grants, policies, or hidden-schema Data API exposure exist.
 - Authentication middleware. MVP0 deliberately prefers explicit per-route and server-action composition over middleware (register decision AUTH-RLS-DEC-017); do not introduce middleware without a specific approved justification.
 - The runtime login/provisioning write path, including any caller of the banked dormant session primitive, any caller of the dormant invitation functions, and all provider-identity/provisioning writes.
-- S02 onboarding, Compass, Route, Waypoint, summary, snapshot, provenance,
-  sendability, expiry, lineage, setting, and synthetic-fixture persistence.
+- S02 onboarding, Compass, Route, Waypoint, Private Summary Draft, selection
+  provenance, Shared Snapshot, send operation, expiry, lineage, publication,
+  and remaining persistence. The protected-setting and local-fixture foundation
+  is banked dormant, but no application caller, operational timer, hosted data,
+  provider behavior, deployment, or real-user path is banked.
 - S03 genuine provider conversation.
 - Guide Assistant context from these Explorer artifacts.
 - Production Guide dashboard integration.
