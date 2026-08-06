@@ -20,7 +20,9 @@ import {
   setDetailIncluded,
   setMainPointIncluded,
   type CompassPointCandidate,
+  type ExplorerStructuredFormAnswers,
 } from "../explorerExperience";
+import { SOLMIND_EXPLORER_STRUCTURED_FORM_FIELDS } from "../onboarding";
 
 function createAnswers() {
   return {
@@ -29,6 +31,19 @@ function createAnswers() {
     usefulOutcome: "Leave with one manageable next step",
     supportStyle: "Gentle reflection with some structure",
     guideContext: "Work has felt crowded lately",
+  };
+}
+
+function createSummaryFixture() {
+  const answers = createAnswers();
+  const revealed = revealCompassPoints(createDiscoveryCompass(), answers);
+  const oriented = confirmInitialPriority(revealed, "support-now");
+  const directions = buildDirectionsTakenSummary(oriented);
+  const waypoint = confirmWaypoint(createWaypointProposal(oriented));
+
+  return {
+    answers,
+    draft: createSummaryDraft(answers, oriented, directions, waypoint),
   };
 }
 
@@ -288,5 +303,169 @@ describe("PRJ01_R-WS09-WI021-S01 deterministic Explorer experience", () => {
     expect(Object.isFrozen(snapshot.mainPoints[0]?.details)).toBe(true);
     expect(Object.isFrozen(snapshot.mainPoints[0]?.details[0])).toBe(true);
     expect(snapshot.mainPoints).toEqual(review.mainPoints);
+  });
+
+  it("S01R1-PRIV-001 excludes waypoint-status by default", () => {
+    const { draft } = createSummaryFixture();
+    const selection = createDefaultSummarySelection(draft);
+
+    expect(selection.waypoint).toBe(true);
+    expect(selection["waypoint-status"]).toBe(false);
+    expect(selection["support-focus"]).toBe(true);
+    expect(selection["support-focus-answer"]).toBe(true);
+  });
+
+  it("S01R1-PRIV-002 excludes attention-ending by default", () => {
+    const { draft } = createSummaryFixture();
+    const selection = createDefaultSummarySelection(draft);
+
+    expect(selection["attention-ending"]).toBe(false);
+  });
+
+  it("S01R1-PRIV-003 makes a future private child inherit the parent default", () => {
+    const { draft } = createSummaryFixture();
+    const waypoint = draft.mainPoints.find((point) => point.id === "waypoint");
+
+    waypoint?.details.push({
+      id: "future-waypoint-detail",
+      text: "SM_PRIVATE_FUTURE_WAYPOINT_8Q4N6V",
+    });
+
+    const selection = createDefaultSummarySelection(draft);
+
+    expect(selection["future-waypoint-detail"]).toBe(false);
+  });
+
+  it("S01R1-PRIV-004 deliberately includes only the selected private detail", () => {
+    const { draft } = createSummaryFixture();
+    const initial = createDefaultSummarySelection(draft);
+    const selected = setDetailIncluded(initial, "waypoint-status", true);
+    const review = buildExactSummaryReview(draft, selected);
+    const waypoint = review.mainPoints.find((point) => point.id === "waypoint");
+
+    expect(selected["waypoint-status"]).toBe(true);
+    expect(selected["attention-ending"]).toBe(false);
+    expect(waypoint?.details.map((detail) => detail.id)).toEqual([
+      "waypoint-status",
+    ]);
+    expect(JSON.stringify(review)).not.toContain("defaultDetailSharing");
+  });
+
+  it("S01R1-PRIV-005 parent exclusion clears every current and future child", () => {
+    const { draft } = createSummaryFixture();
+    const waypoint = draft.mainPoints.find((point) => point.id === "waypoint");
+
+    waypoint?.details.push({
+      id: "future-waypoint-detail",
+      text: "SM_PRIVATE_FUTURE_WAYPOINT_3P7K2M",
+    });
+
+    const initial = createDefaultSummarySelection(draft);
+    const selected = setDetailIncluded(initial, "waypoint-status", true);
+    const excluded = setMainPointIncluded(draft, selected, "waypoint", false);
+
+    expect(excluded.waypoint).toBe(false);
+    expect(excluded["waypoint-status"]).toBe(false);
+    expect(excluded["attention-ending"]).toBe(false);
+    expect(excluded["future-waypoint-detail"]).toBe(false);
+  });
+
+  it("S01R1-PROJ-001 emits only the six canonical onboarding keys in order", () => {
+    const answers: ExplorerStructuredFormAnswers = {
+      supportNow: "SM_ALLOWED_SUPPORT_NOW_A1",
+      usefulOutcome: "SM_ALLOWED_USEFUL_OUTCOME_B2",
+      supportStyle: "SM_ALLOWED_SUPPORT_STYLE_C3",
+      guideContext: "SM_ALLOWED_GUIDE_CONTEXT_D4",
+      communicationPreference: "SM_ALLOWED_COMMUNICATION_E5",
+      doNotEmphasize: "SM_ALLOWED_DO_NOT_EMPHASIZE_F6",
+    };
+
+    const projection = createNonLiveGuideProjection(answers, null);
+
+    expect(projection.onboardingAnswers.map((answer) => answer.key)).toEqual(
+      SOLMIND_EXPLORER_STRUCTURED_FORM_FIELDS.map((field) => field.key),
+    );
+  });
+
+  it("S01R1-PROJ-002 excludes a runtime-injected seventh key and sentinel", () => {
+    const answers = createAnswers() as ExplorerStructuredFormAnswers &
+      Record<string, string>;
+    answers.unexpectedPrivateKey = "SM_CANARY_SEVENTH_KEY_7Q4M9X";
+
+    const serialized = JSON.stringify(createNonLiveGuideProjection(answers, null));
+
+    expect(serialized).not.toContain("unexpectedPrivateKey");
+    expect(serialized).not.toContain("SM_CANARY_SEVENTH_KEY_7Q4M9X");
+  });
+
+  it("S01R1-PROJ-003 excludes Route, conversation, selection, draft, and excluded-detail canaries", () => {
+    const { answers, draft } = createSummaryFixture();
+    const support = draft.mainPoints.find((point) => point.id === "support-focus");
+    support?.details.push({
+      id: "excluded-detail-canary",
+      text: "SM_CANARY_EXCLUDED_DETAIL_9D5H7S",
+    });
+
+    const initial = createDefaultSummarySelection(draft);
+    const selected = setDetailIncluded(
+      initial,
+      "excluded-detail-canary",
+      false,
+    );
+    const snapshot = createSharedSnapshot(
+      buildExactSummaryReview(draft, selected),
+    );
+    const unsafeAnswers = answers as ExplorerStructuredFormAnswers &
+      Record<string, string>;
+    unsafeAnswers.route = "SM_CANARY_ROUTE_8N3C6P";
+    unsafeAnswers.conversation = "SM_CANARY_CONVERSATION_5R9K2V";
+    unsafeAnswers.selection = "SM_CANARY_SELECTION_4T7B3J";
+    unsafeAnswers.privateDraft = "SM_CANARY_PRIVATE_DRAFT_6W2F8L";
+
+    const serialized = JSON.stringify(
+      createNonLiveGuideProjection(unsafeAnswers, snapshot),
+    );
+
+    for (const canary of [
+      "SM_CANARY_ROUTE_8N3C6P",
+      "SM_CANARY_CONVERSATION_5R9K2V",
+      "SM_CANARY_SELECTION_4T7B3J",
+      "SM_CANARY_PRIVATE_DRAFT_6W2F8L",
+      "SM_CANARY_EXCLUDED_DETAIL_9D5H7S",
+    ]) {
+      expect(serialized).not.toContain(canary);
+    }
+  });
+
+  it("S01R1-STATE-001 keeps Discovery and null Priority after decline", () => {
+    const revealed = revealCompassPoints(
+      createDiscoveryCompass(),
+      createAnswers(),
+    );
+    const proposed = proposePriorityChange(revealed, "support-now");
+    const declined = resolvePriorityChange(proposed, false);
+
+    expect(declined.mode).toBe("discovery");
+    expect(declined.priorityPointId).toBeNull();
+    expect(declined.pendingPriorityPointId).toBeNull();
+    expect(declined.route.at(-1)?.description).toBe(
+      "Explorer declined the proposed Priority. Discovery remains the current direction.",
+    );
+  });
+
+  it("S01R1-STATE-002 preserves and names the existing Priority after decline", () => {
+    const revealed = revealCompassPoints(
+      createDiscoveryCompass(),
+      createAnswers(),
+    );
+    const oriented = confirmInitialPriority(revealed, "support-now");
+    const proposed = proposePriorityChange(oriented, "useful-outcome");
+    const declined = resolvePriorityChange(proposed, false);
+
+    expect(declined.priorityPointId).toBe("support-now");
+    expect(declined.pendingPriorityPointId).toBeNull();
+    expect(declined.route.at(-1)?.description).toContain(
+      '"Create more room to breathe" remains the current Priority.',
+    );
   });
 });

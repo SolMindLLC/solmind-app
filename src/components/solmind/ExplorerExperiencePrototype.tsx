@@ -3,7 +3,9 @@
 import {
   type ChangeEvent,
   type FormEvent,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -225,6 +227,8 @@ function MockGuideResult({ answers, snapshot }: MockGuideResultProps) {
 export function ExplorerExperiencePrototype() {
   const [stage, setStage] =
     useState<ExplorerExperienceStage>("structuredForm");
+  const activeStageHeadingRef = useRef<HTMLHeadingElement>(null);
+  const previousStageRef = useRef<ExplorerExperienceStage | null>(null);
   const [answers, setAnswers] = useState(createEmptyStructuredFormAnswers);
   const [submittedAnswers, setSubmittedAnswers] =
     useState<ExplorerStructuredFormAnswers | null>(null);
@@ -256,6 +260,17 @@ export function ExplorerExperiencePrototype() {
   const [announcement, setAnnouncement] = useState(
     "Structured onboarding form ready.",
   );
+
+  useEffect(() => {
+    const previousStage = previousStageRef.current;
+    previousStageRef.current = stage;
+
+    if (previousStage === null || previousStage === stage) {
+      return;
+    }
+
+    activeStageHeadingRef.current?.focus({ preventScroll: true });
+  }, [stage]);
 
   const currentPriority = compass.points.find(
     (point) => point.id === compass.priorityPointId,
@@ -443,11 +458,14 @@ export function ExplorerExperiencePrototype() {
 
   function answerPriorityChange(accept: boolean) {
     const label = pendingPriority?.label ?? "the proposed path";
+    const retainedPriorityLabel = currentPriority?.label ?? null;
     setCompass((current) => resolvePriorityChange(current, accept));
     setAnnouncement(
       accept
         ? `${label} is now the Explorer-confirmed Priority.`
-        : `The proposed Priority change to ${label} was declined.`,
+        : retainedPriorityLabel
+          ? `The proposed Priority change to ${label} was declined. ${retainedPriorityLabel} remains the current Priority.`
+          : "The proposed Priority was declined. Discovery remains the current direction.",
     );
   }
 
@@ -590,10 +608,11 @@ export function ExplorerExperiencePrototype() {
           <p className="mt-1 font-semibold">{STEP_LABELS[stage]}</p>
         </div>
         <p className="text-sm text-slate-300">
-          Preferred name on file:{" "}
+          Prototype display name:{" "}
           <span className="font-semibold text-slate-100">Explorer</span>
           <span className="block text-xs text-slate-400">
-            Displayed only; this form does not ask for or store it again.
+            A future authenticated profile supplies the Explorer&apos;s preferred
+            name; this non-live prototype does not read or store profile data.
           </span>
         </p>
       </div>
@@ -611,7 +630,11 @@ export function ExplorerExperiencePrototype() {
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-300">
             Structured onboarding
           </p>
-          <h1 className="mt-3 text-3xl font-semibold">
+          <h1
+            ref={activeStageHeadingRef}
+            className="mt-3 text-3xl font-semibold"
+            tabIndex={-1}
+          >
             What would make this first experience useful?
           </h1>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
@@ -711,7 +734,11 @@ export function ExplorerExperiencePrototype() {
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-300">
               Encouraged, never required
             </p>
-            <h1 className="mt-3 text-3xl font-semibold">
+            <h1
+              ref={activeStageHeadingRef}
+              className="mt-3 text-3xl font-semibold"
+              tabIndex={-1}
+            >
               Would you like to try a First Compass?
             </h1>
             <p className="mt-3 text-sm leading-6 text-slate-300">
@@ -749,7 +776,11 @@ export function ExplorerExperiencePrototype() {
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">
                   Fixed local conversation
                 </p>
-                <h2 className="mt-2 text-2xl font-semibold">
+                <h2
+                  ref={activeStageHeadingRef}
+                  className="mt-2 text-2xl font-semibold"
+                  tabIndex={-1}
+                >
                   Conversation with SolMind Virtual Guide
                 </h2>
               </div>
@@ -881,7 +912,11 @@ export function ExplorerExperiencePrototype() {
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-300">
               Compass ending
             </p>
-            <h1 className="mt-3 text-3xl font-semibold">
+            <h1
+              ref={activeStageHeadingRef}
+              className="mt-3 text-3xl font-semibold"
+              tabIndex={-1}
+            >
               {directions.heading}
             </h1>
             <ul className="mt-5 list-disc space-y-2 pl-5 text-sm leading-6 text-slate-200">
@@ -930,7 +965,11 @@ export function ExplorerExperiencePrototype() {
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-300">
             Explorer-controlled summary
           </p>
-          <h1 className="mt-3 text-3xl font-semibold">
+          <h1
+            ref={activeStageHeadingRef}
+            className="mt-3 text-3xl font-semibold"
+            tabIndex={-1}
+          >
             Choose the exact items to review
           </h1>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
@@ -1025,7 +1064,11 @@ export function ExplorerExperiencePrototype() {
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-300">
             Fresh exact final review
           </p>
-          <h1 className="mt-3 text-3xl font-semibold">
+          <h1
+            ref={activeStageHeadingRef}
+            className="mt-3 text-3xl font-semibold"
+            tabIndex={-1}
+          >
             This is the complete selected snapshot
           </h1>
           <div className="mt-5 rounded-2xl border border-rose-300/40 bg-rose-300/10 p-4 text-sm leading-6 text-rose-100">
@@ -1099,7 +1142,11 @@ export function ExplorerExperiencePrototype() {
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-200">
               In-memory outcome
             </p>
-            <h1 className="mt-3 text-3xl font-semibold">
+            <h1
+              ref={activeStageHeadingRef}
+              className="mt-3 text-3xl font-semibold"
+              tabIndex={-1}
+            >
               Shared Snapshot preview confirmed
             </h1>
             <p className="mt-3 text-sm leading-6 text-slate-200">
@@ -1128,7 +1175,11 @@ export function ExplorerExperiencePrototype() {
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-violet-200">
               Explorer-private in-memory outcome
             </p>
-            <h1 className="mt-3 text-3xl font-semibold">
+            <h1
+              ref={activeStageHeadingRef}
+              className="mt-3 text-3xl font-semibold"
+              tabIndex={-1}
+            >
               Not ready to share
             </h1>
             <p className="mt-3 text-sm leading-6 text-slate-200">
@@ -1154,7 +1205,11 @@ export function ExplorerExperiencePrototype() {
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-cyan-300">
               Valid onboarding outcome
             </p>
-            <h1 className="mt-3 text-3xl font-semibold">
+            <h1
+              ref={activeStageHeadingRef}
+              className="mt-3 text-3xl font-semibold"
+              tabIndex={-1}
+            >
               First Compass skipped for now
             </h1>
             <p className="mt-3 text-sm leading-6 text-slate-300">

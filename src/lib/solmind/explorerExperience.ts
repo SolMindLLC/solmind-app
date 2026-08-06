@@ -1,4 +1,7 @@
-import type { SolMindStructuredFormFieldKey } from "./onboarding";
+import {
+  SOLMIND_EXPLORER_STRUCTURED_FORM_FIELDS,
+  type SolMindStructuredFormFieldKey,
+} from "./onboarding";
 
 export const MAX_VISIBLE_COMPASS_POINTS = 8;
 
@@ -65,6 +68,7 @@ export type SummaryMainPoint = {
   id: string;
   title: string;
   details: SummaryDetail[];
+  defaultDetailSharing?: "included" | "excluded";
 };
 
 export type SummaryDraft = {
@@ -342,6 +346,10 @@ export function resolvePriorityChange(
   }
 
   if (!accept) {
+    const retainedPriority = state.points.find(
+      (point) => point.id === state.priorityPointId,
+    );
+
     return {
       ...state,
       pendingPriorityPointId: null,
@@ -349,7 +357,9 @@ export function resolvePriorityChange(
         ...state.route,
         {
           id: `route-${state.route.length + 1}`,
-          description: `Explorer kept the current Priority instead of changing it to "${proposedPoint.label}".`,
+          description: retainedPriority
+            ? `Explorer declined the proposed Priority "${proposedPoint.label}". "${retainedPriority.label}" remains the current Priority.`
+            : "Explorer declined the proposed Priority. Discovery remains the current direction.",
           attentionPointId: state.attentionPointId,
           confirmedPriorityId: state.priorityPointId,
         },
@@ -478,6 +488,7 @@ export function createSummaryDraft(
         title: waypoint.confirmed
           ? "A private Waypoint I confirmed"
           : "A Waypoint I did not confirm",
+        defaultDetailSharing: "excluded",
         details: [
           {
             id: "waypoint-status",
@@ -506,7 +517,8 @@ export function createDefaultSummarySelection(
     selection[mainPoint.id] = true;
 
     for (const detail of mainPoint.details) {
-      selection[detail.id] = true;
+      selection[detail.id] =
+        mainPoint.defaultDetailSharing !== "excluded";
     }
 
     return selection;
@@ -581,11 +593,15 @@ export function createNonLiveGuideProjection(
   answers: ExplorerStructuredFormAnswers,
   snapshot: SharedSnapshot | null,
 ): NonLiveGuideProjection {
-  const onboardingAnswers = (
-    Object.entries(answers) as [SolMindStructuredFormFieldKey, string][]
-  )
-    .filter(([, value]) => normalizeSpaces(value).length > 0)
-    .map(([key, value]) => Object.freeze({ key, value: normalizeSpaces(value) }));
+  const onboardingAnswers: GuideVisibleOnboardingAnswer[] = [];
+
+  for (const field of SOLMIND_EXPLORER_STRUCTURED_FORM_FIELDS) {
+    const value = normalizeSpaces(answers[field.key]);
+
+    if (value) {
+      onboardingAnswers.push(Object.freeze({ key: field.key, value }));
+    }
+  }
 
   return Object.freeze({
     onboardingAnswers: Object.freeze(onboardingAnswers),
