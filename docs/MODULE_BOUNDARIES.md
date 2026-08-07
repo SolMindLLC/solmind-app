@@ -431,6 +431,28 @@ The human Guide remains the human Guide; the SolMind Guide Assistant is the AI t
 S01 does not assemble AI context. Its non-live Guide projection is a pure
 visibility-boundary function, not a prompt-context function.
 
+`PRJ01_R-WS09-WI021-S03A` adds one provider-free Explorer-safe context kernel:
+
+```text
+src/lib/solmind/context/explorerSafeContext.ts
+src/lib/solmind/context/__tests__/explorerSafeContext.test.ts
+```
+
+The module is server-only, is imported directly by later server composition,
+and must remain off `src/lib/solmind/context/index.ts`. It accepts one unknown
+runtime envelope, validates exact keys and Virtual Guide/Explorer bindings,
+projects the canonical nine layers into a new fixed-key deeply immutable
+object, and returns its compact deterministic JSON serialization. It may reuse
+only the pure role-alignment and Explorer-eligibility owners in this directory.
+
+This boundary is not a provider prompt or complete orchestration service. It
+must not import React/client code, routes/actions, repositories, Supabase,
+provider adapters, environment owners, browser state, Guide/Admin/safety
+repositories, or the S01 Explorer browser-memory prototype. Source retrieval,
+authorization/consent refresh, context snapshots, audit/fingerprint runtime
+enforcement, context budgeting, provider dispatch, persistence, route/UI
+integration, deployment, and real-user use remain separate gates.
+
 ## Schema Foundation Boundary
 
 Database schema foundations live under:

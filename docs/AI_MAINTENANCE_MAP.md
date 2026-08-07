@@ -225,6 +225,7 @@ The `auth/`, `context/`, and `supabase/` directories hold server-only modules ke
 | Admin access probe | `src/app/admin/access/route.ts` | Opaque Admin access probe returning `{ allowed }`; does not protect pages; its composition persists bounded Auth/RLS audit rows (AUD-3) |
 | Server authorization | `src/lib/solmind/auth/*.ts` | Deny-by-default request-auth boundary, role context, route-access decisions, relationship guards, the bounded audit event model, and the audit event writer |
 | Role/AI context | `src/lib/solmind/context/*.ts` | Explorer-facing and AI-role context assembly; keeps Explorer-private and Guide-private context separate |
+| Provider-free Explorer-safe context kernel (`PRJ01_R-WS09-WI021-S03A`) | `src/lib/solmind/context/explorerSafeContext.ts`; `src/lib/solmind/context/__tests__/explorerSafeContext.test.ts` | Direct-import server-only runtime validation and deterministic nine-layer Explorer projection. It stays off the context barrel and proves exact keys, role/binding separation, privacy-byte absence, limits, immutability, and canonical serialization. It is not a provider prompt, source repository, snapshot/audit owner, context budget, route/UI path, or real-user conversation. |
 | Supabase integration | `src/lib/solmind/supabase/*.ts` | Server-side request-auth client (who), guarded service-role loader (what), principal mapping, session selection, and the closed-allowlist audit write executor with its admin audit-writer factory |
 | Banked dormant protected application setting (`PRJ01_R-WS09-WI021-S02`) | `src/lib/solmind/supabase/applicationSettingReader.ts`; `supabase/migrations/20260730000000_application_setting_foundation.sql`; `supabase/tests/application_setting_foundation_*_test.sql` | Fixed-key server-only read plus protected service-role-only mutation for the 1-100 day Shared Snapshot sendability setting. Actual changes use expected-version serialization and exact Family F same-transaction audit; same-value/current-version requests and exact already-applied retries are writeless. No routine role, browser, or direct-table mutation path exists, and no application caller is banked. |
 | Banked local S02 synthetic relationship fixture | `supabase/fixtures/PRJ01_R_WS09_WI021_S02_LOCAL_FIXTURE.md`; `supabase/fixtures/prj01_r_ws09_wi021_s02_local_fixture_{setup,validate,cleanup}.sql` | Manually invoked local-development fixture for exactly one synthetic Guide, one synthetic Explorer, and one active relationship with bounded Virtual Guide behavior text. Setup and cleanup fail closed; validation is read-only. It is never a production migration, universal seed, hosted fixture, or real-user identity source. |
@@ -327,7 +328,10 @@ Extend these modules deliberately and in small slices. Keep server-only modules 
   and remaining persistence. The protected-setting and local-fixture foundation
   is banked dormant, but no application caller, operational timer, hosted data,
   provider behavior, deployment, or real-user path is banked.
-- S03 genuine provider conversation.
+- S03 genuine provider conversation beyond the banked provider-free S03A
+  kernel: source repositories, current authorization/consent revalidation,
+  snapshot and audit/fingerprint enforcement, context budgeting, provider
+  selection/dispatch, session/message persistence, safety response, and UI.
 - Guide Assistant context from these Explorer artifacts.
 - Production Guide dashboard integration.
 - Runtime safety classification and escalation.
