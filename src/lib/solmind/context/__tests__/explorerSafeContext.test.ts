@@ -3,7 +3,9 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import { SOLMIND_EXPLORER_STRUCTURED_FORM_FIELDS } from "../../onboarding";
 import {
+  EXPLORER_ONBOARDING_CONTINUITY_FIELDS,
   EXPLORER_SAFE_CONTEXT_ERROR_CODES,
   EXPLORER_SAFE_CONTEXT_LIMITS,
   ExplorerSafeContextValidationError,
@@ -100,7 +102,7 @@ function validInput(): Record<string, unknown> {
         explorerId: IDS.explorer,
         sessionId: IDS.session,
         continuityBindingId: IDS.binding,
-        field: "current_challenges",
+        field: "supportNow",
         content: "Keeping priorities clear.",
       },
     ],
@@ -320,6 +322,50 @@ describe("PRJ01_R-WS09-WI021-S03A Explorer-safe context kernel", () => {
       unknownSummaryType,
       "explorer_context_invalid_candidate_kind",
     );
+  });
+
+  it("accepts exactly the six banked onboarding fields in source order", () => {
+    const bankedFields = SOLMIND_EXPLORER_STRUCTURED_FORM_FIELDS.map(
+      ({ key }) => key,
+    );
+    expect(EXPLORER_ONBOARDING_CONTINUITY_FIELDS).toEqual(bankedFields);
+
+    for (const field of bankedFields) {
+      const input = validInput();
+      const candidates = input.continuityCandidates as Array<
+        Record<string, unknown>
+      >;
+      candidates[3].field = field;
+      const result = assembleExplorerSafeContext(input);
+      const onboardingAnswer = result.context.approvedContinuity.find(
+        (item) => item.kind === "onboarding_answer",
+      );
+      expect(onboardingAnswer).toMatchObject({
+        kind: "onboarding_answer",
+        field,
+      });
+    }
+  });
+
+  it("rejects every stale onboarding field and returns no partial result", () => {
+    const staleFields = [
+      "current_challenges",
+      "desired_changes",
+      "what_has_helped",
+      "what_has_not_helped",
+      "preferences",
+      "anything_else",
+      "unknown_field",
+    ] as const;
+
+    for (const field of staleFields) {
+      const input = validInput();
+      const candidates = input.continuityCandidates as Array<
+        Record<string, unknown>
+      >;
+      candidates[3].field = field;
+      expectCode(input, "explorer_context_invalid_candidate_kind");
+    }
   });
 
   it("rejects duplicate identity, duplicate order, and missing order", () => {

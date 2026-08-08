@@ -105,12 +105,12 @@ type SessionContext = {
 };
 
 export const EXPLORER_ONBOARDING_CONTINUITY_FIELDS = Object.freeze([
-  "current_challenges",
-  "desired_changes",
-  "what_has_helped",
-  "what_has_not_helped",
-  "preferences",
-  "anything_else",
+  "supportNow",
+  "usefulOutcome",
+  "supportStyle",
+  "guideContext",
+  "communicationPreference",
+  "doNotEmphasize",
 ] as const);
 
 type ExplorerOnboardingContinuityField =
