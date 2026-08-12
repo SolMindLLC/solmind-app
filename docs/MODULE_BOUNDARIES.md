@@ -515,10 +515,21 @@ action, deployment, or real-user path.
 
 `PRJ01_R-WS09-WI021-S02`, not S01, owns exact additive storage for submitted
 onboarding, Compass, Route, private Waypoint, Private Summary Draft, selection
-provenance, Shared Snapshot, and lineage. Its protected 1-100 day setting and
-local synthetic relationship fixture are banked dormant foundations; the other
-persistence remains unbanked. Do not put that fixture in a production migration
-or universal seed.
+provenance, Shared Snapshot, and lineage. Its protected 1-100 day setting,
+local synthetic relationship fixture, and forward-only Summary publication /
+Shared Snapshot persistence realignment are banked dormant foundations.
+
+The realignment owns immutable Guide-authored Summary revisions and sections,
+the authoritative publication record, the fail-closed targeted Explorer
+projection, Explorer-private exact-review drafts, immutable confirmed Shared
+Snapshots, preserved original/addendum/replacement lineage, and bounded
+service-role-only publication, unpublication, confirmation, and integrity
+surfaces. It does not own Suggested Waypoint identity and adds no application
+caller, permissive RLS policy, direct-table role grant, operational timer,
+hosted data, provider behavior, deployment, or real-user path. Submitted
+onboarding, Compass, Route, private Waypoint, conversation, notification, and
+the remaining caller/runtime persistence still require separate slices. Do not
+put the synthetic fixture in a production migration or universal seed.
 
 The banked manually invoked local-development fixture boundary is:
 

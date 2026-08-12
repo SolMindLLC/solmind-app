@@ -87,17 +87,19 @@ Backend foundations present in the repository (high level):
 - Auth/RLS audit persistence for `/admin/access`: the bounded audit event model, the `public.solmind_record_audit_event` database writer function, the closed-allowlist app writer chain, and the runtime wiring.
 - Dormant verification and session database primitives: verification-challenge redemption and issuance, account-bound session creation, and the all-history chronology correction.
 - Dormant Explorer invitation foundations: the protected invitation-acceptance preparation helper, capacity and lock-key behavior, shared invited-identity provisioning, Guide-to-Explorer invitation issuance, replacement, revocation, and Explorer invitation acceptance with one `intake_pending` relationship.
-- Dormant Explorer S02 foundation: a protected 1-100 day Shared Snapshot sendability setting (default 7), a server-only fixed-key reader, a service-role-only audited mutation, and a manually invoked local synthetic Guide/Explorer fixture. It adds no application caller, hosted fixture, provider action, deployment, or real-user path.
+- Dormant Explorer S02 foundations: a protected 1-100 day Shared Snapshot sendability setting (default 7), a server-only fixed-key reader, a service-role-only audited mutation, and a manually invoked local synthetic Guide/Explorer fixture.
+- Dormant Summary and Shared Snapshot persistence foundation: immutable Guide-authored Summary revisions and sections, an authoritative publication record and fail-closed Explorer projection, Explorer-private exact-review drafts, immutable Explorer-confirmed Shared Snapshots with preserved lineage, and bounded service-role-only publication, unpublication, confirmation, and integrity surfaces. It has no application caller, permissive RLS policy, direct-table role grant, hosted data, provider action, deployment, or real-user path.
 
 Important technical boundaries:
 
 - `/admin/access` is an opaque JSON probe that returns only `{ allowed }`. It does not yet mean the `/admin`, `/guide`, or `/explorer` pages are fully protected runtime workflows.
 - Permissive or role-aware RLS policies, grants, and runtime access enforcement remain deferred; RLS stays deny-by-default.
 - Runtime audit persistence exists ONLY for the `/admin/access` boundary: the enumerated `public.solmind_record_audit_event` function writes bounded Auth/RLS rows into `audit.audit_event` (guarded-read row first, then the decision row, both required before an outward allow). No broader audit wiring, no permissive RLS policy, and no table or schema grants exist; the `audit` schema stays off the Data API.
-- The verification, session, provisioning, and invitation foundations remain dormant substrate. Provider delivery, application callers, runtime routes, cookie/session bridging, consent, persistent onboarding, conversation storage, and the safety escalation runtime workflow are not yet implemented.
+- The verification, session, provisioning, invitation, Summary-publication, and Shared-Snapshot foundations remain dormant substrate. Provider delivery, application callers, runtime routes, cookie/session bridging, consent, persistent onboarding/Compass/Route/Waypoint state, conversation storage, operational send/expiry timing, and the safety escalation runtime workflow are not yet implemented.
 - The Explorer prototype does not turn those foundations into a runtime path.
-  Protected persistence and genuine server-side Virtual Guide conversation
-  require separately reviewed implementation work.
+  The additional Explorer persistence owners, application callers, operational
+  timing, and genuine server-side Virtual Guide conversation require separately
+  reviewed implementation work.
 
 Authoritative implementation status and exact evidence are tracked in:
 
