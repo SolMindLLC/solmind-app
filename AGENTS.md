@@ -102,6 +102,21 @@ exact in-memory Shared Snapshot the Explorer confirmed. It must exclude the
 conversation, Route, private Waypoint, Private Summary Draft, excluded detail,
 selection state, and unconfirmed material.
 
+## PRJ01_V-WS05-WI022-S01 Suggested Waypoint Prototype Boundary
+
+`/explorer/waypoints` is a separate deterministic, fixture-backed review
+surface. Keep its route thin, its client UI in
+`ExplorerSuggestedWaypointWorkspace.tsx`, and its lifecycle and role
+projections in the isolated `suggestedWaypoints.ts` module family. Do not add
+cross-role lifecycle state to `ExplorerExperiencePrototype.tsx`.
+
+Until separately gated persistence and server transport exist, this surface
+must not use a provider, database, route handler, server action, cookie,
+`fetch`, browser storage, notification, or real Guide data. Every visible
+control must navigate, change only fixture-local state, or explain its intended
+production behavior. Explorer projections must exclude Guide-only draft,
+pending-send, Pull Back, archive, appointment, and Guide Assistant state.
+
 The visible disclosure must say the flow is an early fixed-script prototype,
 not a therapist or crisis service, and that refresh clears it. Protected
 persistence belongs to `PRJ01_R-WS09-WI021-S02`. Genuine server-side Virtual

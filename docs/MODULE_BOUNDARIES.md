@@ -94,6 +94,10 @@ Route files should not:
 `src/app/explorer/page.tsx` remains a thin Server Component. It composes the
 interactive S01 client boundary without owning its state transitions.
 
+`src/app/explorer/waypoints/page.tsx` is a separate thin Server Component for
+the deterministic Suggested Waypoint review surface. It must not import or
+extend `ExplorerExperiencePrototype.tsx`.
+
 ## Components
 
 Reusable SolMind UI components live under:
@@ -129,6 +133,21 @@ Avoid placing core product rules inside components. If a component needs product
 Neither component may own provider, persistence, auth, consent-version,
 safety, or visibility policy. The mock Guide view receives only the narrow
 projection returned by `createNonLiveGuideProjection`.
+
+### Suggested Waypoint components
+
+- `ExplorerSuggestedWaypointWorkspace.tsx` owns only fixture-local view state
+  for the Explorer inbox, detail, private comparison, acknowledgement, and
+  exact-response review surface.
+- `SuggestedWaypointStatusPill.tsx` is a presentational status component.
+- `suggestedWaypointFixtures.ts` constructs the synthetic delivered state by
+  calling the pure domain rather than duplicating lifecycle rules in React.
+
+The Suggested Waypoint UI does not access a provider, persistence, server
+action, route handler, cookie, browser storage, notification, or real Guide
+record. Its production transport remains separately gated. Canonical product
+and screen documents are unchanged because they already own these accepted
+Explorer surfaces and fixture-first implementation boundaries.
 
 ## Product Logic and Constants
 
@@ -172,6 +191,10 @@ distinct required-form/optional-First-Compass states.
 private Waypoint, summary selection, exact review, frozen Shared Snapshot, and
 narrow non-live Guide-projection behavior. It has no React, provider,
 database, browser-storage, or server-only dependency.
+
+`suggestedWaypoints.ts` owns the separate pure Suggested Waypoint lifecycle,
+timing, replay, immutable-version, and role-projection rules. Do not duplicate
+those rules in the Explorer or Guide component trees.
 
 ## Types
 

@@ -38,6 +38,7 @@ User-facing routes:
 /admin
 /guide
 /explorer
+/explorer/waypoints
 ```
 
 Server route handlers:
@@ -55,6 +56,7 @@ Current route purpose:
 | `/admin` | Admin dashboard preview |
 | `/guide` | Guide dashboard preview |
 | `/explorer` | Deterministic Explorer onboarding, First Compass, Waypoint, exact-summary review, and non-live Guide-boundary prototype |
+| `/explorer/waypoints` | Deterministic fixture-backed Explorer Waypoint Suggestions inbox, detail, private comparison, receipt, and exact-response review surface |
 | `/admin/access` | Opaque server-side Admin access probe returning only `{ allowed }` |
 
 The `/explorer` route hosts a browser-memory-only deterministic prototype. It:
@@ -79,6 +81,14 @@ It makes no provider call and uses no database, route handler, cookie,
 `localStorage`, `sessionStorage`, or other persistence. Refreshing clears the
 experience. It does not create a real Guide session, send information, deploy a
 feature, or affect a real user.
+
+The separate `/explorer/waypoints` route is also deterministic and
+browser-memory-only. It presents one synthetic delivered Suggested Waypoint
+through the isolated `suggestedWaypoints.ts` contract, preserves Explorer read
+state and drafted text locally, and demonstrates explicit receipt and exact
+response actions. Its left navigation either reaches an existing route or
+explains the intended future destination. It is not authenticated, persistent,
+provider-backed, deployed, or connected to a real Human Guide.
 
 Backend foundations present in the repository (high level):
 

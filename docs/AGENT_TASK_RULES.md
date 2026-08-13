@@ -200,6 +200,21 @@ operational `/guide` dashboard. Persistence belongs to
 `PRJ01_R-WS09-WI021-S02`; genuine provider conversation belongs to
 `PRJ01_R-WS09-WI021-S03`.
 
+### Explorer Suggested Waypoint deterministic UI
+
+For `PRJ01_V-WS05-WI022-S01`, keep `/explorer/waypoints` separate from the
+frozen S01 Explorer prototype. Compose the thin route from the dedicated client
+workspace and the pure Suggested Waypoint contract. Fixture-local UI may
+demonstrate unread/read, receipt acknowledgement, exact response, and private
+comparison, but it must not call persistence, providers, server actions,
+`fetch`, cookies, browser storage, notifications, or real Guide records.
+
+Every visible prototype control must navigate, mutate only fixture-local state,
+or display the intended production destination. Test structural omission of
+Guide-only state from Explorer projections. Treat canonical Suggested Waypoint
+documents as already controlling; this route does not change their product
+scope.
+
 ## Documentation Update Rule
 
 When changing any of the following, update documentation in the same task:
