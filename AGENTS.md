@@ -110,7 +110,16 @@ surface. Keep its route thin, its client UI in
 projections in the isolated `suggestedWaypoints.ts` module family. Do not add
 cross-role lifecycle state to `ExplorerExperiencePrototype.tsx`.
 
-Until separately gated persistence and server transport exist, this surface
+`/guide/explorers/avery/waypoint-suggestions` is the paired deterministic Human
+Guide review surface. Keep its route thin, its client UI in
+`GuideSuggestedWaypointWorkspace.tsx`, and its synthetic lifecycle construction
+in `guideSuggestedWaypointFixtures.ts`. It may demonstrate Guide-only drafts,
+pending sends, Pull Back, open suggestions, deliberate receipt
+acknowledgements, corrections, withdrawal, and Guide-only archive language,
+but it must not infer passive Explorer activity or expose Explorer-private
+comparison, drafts, questions, Waypoints, or Virtual Guide observations.
+
+Until separately gated persistence and server transport exist, these surfaces
 must not use a provider, database, route handler, server action, cookie,
 `fetch`, browser storage, notification, or real Guide data. Every visible
 control must navigate, change only fixture-local state, or explain its intended

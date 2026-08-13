@@ -215,6 +215,21 @@ Guide-only state from Explorer projections. Treat canonical Suggested Waypoint
 documents as already controlling; this route does not change their product
 scope.
 
+### Guide Suggested Waypoint deterministic UI
+
+Keep `/guide/explorers/avery/waypoint-suggestions` in its dedicated Guide
+workspace component and synthetic fixture builder. Guide rows may show Draft,
+Autosaved, Pending send, Pull Back available, Open suggestion, No response,
+Receipt acknowledged, Corrected, Withdrawn, and Guide-only Archive states using
+symbol-plus-text pills. Never derive or display passive Explorer read state,
+private comparison, private response drafts, possible connections, or use in a
+Waypoint.
+
+Pending send must remain absent from the Explorer projection until delivery.
+Pull Back must return to the ordinary editable detail. Controls that depend on
+later persistence or transport must explain their destination and produce no
+outward effect in this deterministic review surface.
+
 ## Documentation Update Rule
 
 When changing any of the following, update documentation in the same task:

@@ -37,6 +37,7 @@ User-facing routes:
 /login
 /admin
 /guide
+/guide/explorers/avery/waypoint-suggestions
 /explorer
 /explorer/waypoints
 ```
@@ -55,6 +56,7 @@ Current route purpose:
 | `/login` | Login preview |
 | `/admin` | Admin dashboard preview |
 | `/guide` | Guide dashboard preview |
+| `/guide/explorers/avery/waypoint-suggestions` | Deterministic fixture-backed Human Guide Suggested Waypoint list, draft, Pull Back, sent-detail, and receipt review surface |
 | `/explorer` | Deterministic Explorer onboarding, First Compass, Waypoint, exact-summary review, and non-live Guide-boundary prototype |
 | `/explorer/waypoints` | Deterministic fixture-backed Explorer Waypoint Suggestions inbox, detail, private comparison, receipt, and exact-response review surface |
 | `/admin/access` | Opaque server-side Admin access probe returning only `{ allowed }` |
@@ -89,6 +91,14 @@ state and drafted text locally, and demonstrates explicit receipt and exact
 response actions. Its left navigation either reaches an existing route or
 explains the intended future destination. It is not authenticated, persistent,
 provider-backed, deployed, or connected to a real Human Guide.
+
+The paired `/guide/explorers/avery/waypoint-suggestions` route is deterministic
+and browser-memory-only. It demonstrates a Guide's Explorer-context list,
+Guide-only draft review, the five-minute Pull Back grace period, open sent
+detail, and a deliberately supplied receipt acknowledgement. It reports no
+passive Explorer opens, private comparison, private question, or use in an
+Explorer-owned Waypoint, and it performs no real save, send, provider, database,
+notification, or user action.
 
 Backend foundations present in the repository (high level):
 

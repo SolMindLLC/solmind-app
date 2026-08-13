@@ -98,6 +98,10 @@ interactive S01 client boundary without owning its state transitions.
 the deterministic Suggested Waypoint review surface. It must not import or
 extend `ExplorerExperiencePrototype.tsx`.
 
+`src/app/guide/explorers/avery/waypoint-suggestions/page.tsx` is the paired thin
+Server Component for the deterministic Human Guide review surface. It composes
+only `GuideSuggestedWaypointWorkspace.tsx`.
+
 ## Components
 
 Reusable SolMind UI components live under:
@@ -142,12 +146,18 @@ projection returned by `createNonLiveGuideProjection`.
 - `SuggestedWaypointStatusPill.tsx` is a presentational status component.
 - `suggestedWaypointFixtures.ts` constructs the synthetic delivered state by
   calling the pure domain rather than duplicating lifecycle rules in React.
+- `GuideSuggestedWaypointWorkspace.tsx` owns only fixture-local Guide list,
+  draft, pending-send, Pull Back, sent-detail, withdrawal, and receipt-review
+  presentation.
+- `guideSuggestedWaypointFixtures.ts` constructs Guide-only draft, pending,
+  open, and acknowledged examples through the pure domain. It must not emulate
+  passive Explorer telemetry or import Explorer-private fixture observations.
 
-The Suggested Waypoint UI does not access a provider, persistence, server
+The Suggested Waypoint UIs do not access a provider, persistence, server
 action, route handler, cookie, browser storage, notification, or real Guide
 record. Its production transport remains separately gated. Canonical product
 and screen documents are unchanged because they already own these accepted
-Explorer surfaces and fixture-first implementation boundaries.
+Explorer and Guide surfaces and fixture-first implementation boundaries.
 
 ## Product Logic and Constants
 

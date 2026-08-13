@@ -14,6 +14,8 @@ User-facing routes:
 - `/login` - login preview
 - `/admin` - Admin dashboard preview
 - `/guide` - human Guide dashboard preview
+- `/guide/explorers/avery/waypoint-suggestions` - deterministic, fixture-backed
+  Human Guide Suggested Waypoint review surface; no persistence or real delivery
 - `/explorer` - deterministic, browser-memory Explorer S01 experience
 - `/explorer/waypoints` - deterministic, fixture-backed Explorer Suggested
   Waypoint review surface; no persistence or real Guide connection
@@ -225,6 +227,7 @@ The `auth/`, `context/`, and `supabase/` directories hold server-only modules ke
 | Explorer S01 domain | `src/lib/solmind/explorerExperience.ts` | Pure deterministic Compass, Route, Waypoint, summary, snapshot, and narrow Guide-projection transitions |
 | Suggested Waypoint pure domain | `src/lib/solmind/suggestedWaypoints.ts` | Immutable Guide authoring, shared-channel, Explorer-private engagement, replay, timing, and role-projection rules |
 | Explorer Suggested Waypoint fixture UI | `src/app/explorer/waypoints/page.tsx`; `src/components/solmind/ExplorerSuggestedWaypointWorkspace.tsx`; `src/lib/solmind/suggestedWaypointFixtures.ts` | Thin deterministic inbox/detail/private-comparison presentation over one synthetic delivered suggestion; no persistence, provider, or authenticated runtime |
+| Guide Suggested Waypoint fixture UI | `src/app/guide/explorers/avery/waypoint-suggestions/page.tsx`; `src/components/solmind/GuideSuggestedWaypointWorkspace.tsx`; `src/lib/solmind/guideSuggestedWaypointFixtures.ts` | Thin deterministic Explorer-context list/detail presentation over Guide-only draft, pending-send, Pull Back, open, and acknowledged states; no persistence, provider, passive Explorer telemetry, or authenticated runtime |
 | Shared UI | `src/components/solmind/*.tsx` | Reusable presentational components |
 | Role model | `src/lib/solmind/roles.ts` | Canonical role strings, labels, and home routes |
 | Route metadata | `src/lib/solmind/pages.ts` | Page titles, descriptions, and hrefs |
