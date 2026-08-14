@@ -113,7 +113,9 @@ Backend foundations present in the repository (high level):
 - Closed Suggested Waypoint S03 RPC transport: server-only exact-call and
   exact-response validation over nine human functions and one separately
   constructed delivery-worker function. The dormant Admin operational query is
-  excluded, failures are value-free, and the modules remain off the shared
+  excluded. The six command validators preserve the canonical closed outcome
+  algebra, exact function-specific nullable fields, and call/result binding;
+  transport failures remain value-free and the modules stay off the shared
   Supabase barrel. No authenticated composition, relationship enforcement,
   route, server action, hosted worker, or UI caller is included.
 

@@ -154,26 +154,113 @@ export type SuggestedWaypointRpcCall =
   | SuggestedWaypointHumanRpcCall
   | SuggestedWaypointWorkerRpcCall;
 
-export type SuggestedWaypointCommandRow = Readonly<{
-  outcome_code: "applied" | "already_applied";
+export const SUGGESTED_WAYPOINT_COMMAND_OUTCOMES = Object.freeze([
+  "applied",
+  "idempotent",
+  "stale",
+  "too_late",
+  "invalid_transition",
+  "relationship_unavailable",
+  "policy_unavailable",
+  "operation_conflict",
+] as const);
+
+export type SuggestedWaypointCommandOutcome =
+  (typeof SUGGESTED_WAYPOINT_COMMAND_OUTCOMES)[number];
+
+type SuggestedWaypointSaveDraftOutcome =
+  | "applied"
+  | "idempotent"
+  | "invalid_transition"
+  | "operation_conflict"
+  | "relationship_unavailable"
+  | "stale";
+
+type SuggestedWaypointScheduleSendOutcome =
+  | SuggestedWaypointSaveDraftOutcome
+  | "policy_unavailable";
+
+type SuggestedWaypointPullBackOutcome =
+  | SuggestedWaypointSaveDraftOutcome
+  | "too_late";
+
+type SuggestedWaypointDeliverOutcome =
+  | "applied"
+  | "idempotent"
+  | "invalid_transition"
+  | "operation_conflict"
+  | "relationship_unavailable"
+  | "too_late";
+
+type SuggestedWaypointMarkReadOutcome = Exclude<
+  SuggestedWaypointDeliverOutcome,
+  "too_late"
+>;
+
+type SuggestedWaypointAcknowledgeOutcome =
+  | SuggestedWaypointMarkReadOutcome
+  | "stale";
+
+type SuggestedWaypointCommandCommonRow<
+  TOutcome extends SuggestedWaypointCommandOutcome,
+> = Readonly<{
+  outcome_code: TOutcome;
   operation_id: string;
-  suggested_waypoint_id: string;
-  authoring_revision: number;
+  suggested_waypoint_id: string | null;
+  authoring_revision: number | null;
   current_version_id: string | null;
-  committed_at: string;
-  draft_saved_at?: string;
-  pending_version_id?: string;
-  deadline_at?: string;
-  policy_key?: string;
-  policy_version?: number;
-  effective_seconds?: number;
-  draft_restored_at?: string;
-  delivered_version_id?: string;
-  delivered_at?: string;
-  read_at?: string;
-  acknowledged_version_id?: string;
-  acknowledged_at?: string;
+  committed_at: string | null;
 }>;
+
+export type SuggestedWaypointSaveDraftCommandRow =
+  SuggestedWaypointCommandCommonRow<SuggestedWaypointSaveDraftOutcome> &
+    Readonly<{
+      draft_saved_at: string | null;
+    }>;
+
+export type SuggestedWaypointScheduleSendCommandRow =
+  SuggestedWaypointCommandCommonRow<SuggestedWaypointScheduleSendOutcome> &
+    Readonly<{
+      pending_version_id: string | null;
+      deadline_at: string | null;
+      policy_key: "suggested_waypoint_send_grace_seconds" | null;
+      policy_version: number | null;
+      effective_seconds: number | null;
+    }>;
+
+export type SuggestedWaypointPullBackCommandRow =
+  SuggestedWaypointCommandCommonRow<SuggestedWaypointPullBackOutcome> &
+    Readonly<{
+      draft_restored_at: string | null;
+    }>;
+
+export type SuggestedWaypointDeliverCommandRow =
+  SuggestedWaypointCommandCommonRow<SuggestedWaypointDeliverOutcome> &
+    Readonly<{
+      delivered_version_id: string | null;
+      delivered_at: string | null;
+    }>;
+
+export type SuggestedWaypointMarkReadCommandRow =
+  SuggestedWaypointCommandCommonRow<SuggestedWaypointMarkReadOutcome> &
+    Readonly<{
+      read_at: string | null;
+    }>;
+
+export type SuggestedWaypointAcknowledgeCommandRow =
+  SuggestedWaypointCommandCommonRow<SuggestedWaypointAcknowledgeOutcome> &
+    Readonly<{
+      acknowledged_version_id: string | null;
+      acknowledged_at: string | null;
+    }>;
+
+export type SuggestedWaypointCommandRow =
+  | SuggestedWaypointSaveDraftCommandRow
+  | SuggestedWaypointScheduleSendCommandRow
+  | SuggestedWaypointPullBackCommandRow
+  | SuggestedWaypointDeliverCommandRow
+  | SuggestedWaypointMarkReadCommandRow
+  | SuggestedWaypointAcknowledgeCommandRow;
 
 export type GuideSuggestedWaypointListItem = Readonly<{
   suggested_waypoint_id: string;
@@ -619,8 +706,135 @@ function isExplorerEngagementCoherent(
   );
 }
 
+type SuggestedWaypointCommandRpcFunction =
+  | "solmind_save_suggested_waypoint_draft"
+  | "solmind_schedule_suggested_waypoint_send"
+  | "solmind_pull_back_suggested_waypoint"
+  | "solmind_deliver_suggested_waypoint"
+  | "solmind_mark_suggested_waypoint_read"
+  | "solmind_acknowledge_suggested_waypoint_receipt";
+
+const COMMAND_OUTCOMES_BY_FUNCTION: Readonly<
+  Record<SuggestedWaypointCommandRpcFunction, ReadonlySet<SuggestedWaypointCommandOutcome>>
+> = Object.freeze({
+  solmind_save_suggested_waypoint_draft: new Set<SuggestedWaypointCommandOutcome>([
+    "applied",
+    "idempotent",
+    "invalid_transition",
+    "operation_conflict",
+    "relationship_unavailable",
+    "stale",
+  ]),
+  solmind_schedule_suggested_waypoint_send: new Set<SuggestedWaypointCommandOutcome>([
+    "applied",
+    "idempotent",
+    "invalid_transition",
+    "operation_conflict",
+    "policy_unavailable",
+    "relationship_unavailable",
+    "stale",
+  ]),
+  solmind_pull_back_suggested_waypoint: new Set<SuggestedWaypointCommandOutcome>([
+    "applied",
+    "idempotent",
+    "invalid_transition",
+    "operation_conflict",
+    "relationship_unavailable",
+    "stale",
+    "too_late",
+  ]),
+  solmind_deliver_suggested_waypoint: new Set<SuggestedWaypointCommandOutcome>([
+    "applied",
+    "idempotent",
+    "invalid_transition",
+    "operation_conflict",
+    "relationship_unavailable",
+    "too_late",
+  ]),
+  solmind_mark_suggested_waypoint_read: new Set<SuggestedWaypointCommandOutcome>([
+    "applied",
+    "idempotent",
+    "invalid_transition",
+    "operation_conflict",
+    "relationship_unavailable",
+  ]),
+  solmind_acknowledge_suggested_waypoint_receipt: new Set<SuggestedWaypointCommandOutcome>([
+    "applied",
+    "idempotent",
+    "invalid_transition",
+    "operation_conflict",
+    "relationship_unavailable",
+    "stale",
+  ]),
+});
+
+function isCommandOutcome(
+  value: unknown,
+): value is SuggestedWaypointCommandOutcome {
+  return (
+    typeof value === "string" &&
+    (SUGGESTED_WAYPOINT_COMMAND_OUTCOMES as readonly string[]).includes(value)
+  );
+}
+
+function isCommittedOutcome(
+  value: unknown,
+): value is "applied" | "idempotent" {
+  return value === "applied" || value === "idempotent";
+}
+
+function hasValidCommonCommandValues(
+  value: Record<string, unknown>,
+): boolean {
+  if (!isCommandOutcome(value.outcome_code) || !isUuid(value.operation_id)) {
+    return false;
+  }
+
+  switch (value.outcome_code) {
+    case "relationship_unavailable":
+      return (
+        value.suggested_waypoint_id === null &&
+        value.authoring_revision === null &&
+        value.current_version_id === null &&
+        value.committed_at === null
+      );
+    case "operation_conflict":
+      return (
+        isUuid(value.suggested_waypoint_id) &&
+        value.authoring_revision === null &&
+        value.current_version_id === null &&
+        value.committed_at === null
+      );
+    case "policy_unavailable":
+      return (
+        isUuid(value.suggested_waypoint_id) &&
+        isSafeInteger(value.authoring_revision, 1) &&
+        value.current_version_id === null &&
+        value.committed_at === null
+      );
+    case "stale":
+    case "too_late":
+    case "invalid_transition":
+      return (
+        isUuid(value.suggested_waypoint_id) &&
+        isSafeInteger(value.authoring_revision, 1) &&
+        isNullableUuid(value.current_version_id) &&
+        value.committed_at === null
+      );
+    case "applied":
+    case "idempotent":
+      return (
+        isUuid(value.suggested_waypoint_id) &&
+        isSafeInteger(value.authoring_revision, 1) &&
+        isNullableUuid(value.current_version_id) &&
+        isTimestamp(value.committed_at)
+      );
+  }
+}
+
 function isCommandRow(
   value: unknown,
+  functionName: SuggestedWaypointCommandRpcFunction,
   extraKeys: readonly string[],
 ): value is Record<string, unknown> {
   if (!isPlainObject(value)) {
@@ -640,14 +854,17 @@ function isCommandRow(
     return false;
   }
   return (
-    (value.outcome_code === "applied" ||
-      value.outcome_code === "already_applied") &&
-    isUuid(value.operation_id) &&
-    isUuid(value.suggested_waypoint_id) &&
-    isSafeInteger(value.authoring_revision, 1) &&
-    isNullableUuid(value.current_version_id) &&
-    isTimestamp(value.committed_at)
+    isCommandOutcome(value.outcome_code) &&
+    COMMAND_OUTCOMES_BY_FUNCTION[functionName].has(value.outcome_code) &&
+    hasValidCommonCommandValues(value)
   );
+}
+
+function allExtensionsAreNull(
+  value: Record<string, unknown>,
+  extraKeys: readonly string[],
+): boolean {
+  return extraKeys.every((key) => value[key] === null);
 }
 
 function isGuideListItem(value: unknown): value is GuideSuggestedWaypointListItem {
@@ -908,48 +1125,91 @@ export function validateSuggestedWaypointRpcPayload(
   let valid = false;
   switch (functionName) {
     case "solmind_save_suggested_waypoint_draft":
-      valid = isCommandRow(row, ["draft_saved_at"]) && isTimestamp(row.draft_saved_at);
+      valid =
+        isCommandRow(row, functionName, ["draft_saved_at"]) &&
+        (isCommittedOutcome(row.outcome_code)
+          ? isTimestamp(row.draft_saved_at) &&
+            row.draft_saved_at === row.committed_at &&
+            (row.outcome_code === "idempotent" ||
+              row.current_version_id === null)
+          : row.draft_saved_at === null);
       break;
     case "solmind_schedule_suggested_waypoint_send":
       valid =
-        isCommandRow(row, [
+        isCommandRow(row, functionName, [
           "pending_version_id",
           "deadline_at",
           "policy_key",
           "policy_version",
           "effective_seconds",
         ]) &&
-        isUuid(row.pending_version_id) &&
-        isTimestamp(row.deadline_at) &&
-        row.policy_key === "suggested_waypoint_send_grace_seconds" &&
-        isSafeInteger(row.policy_version, 1) &&
-        isSafeInteger(row.effective_seconds, 60) &&
-        row.effective_seconds <= 3600;
+        (isCommittedOutcome(row.outcome_code)
+          ? isUuid(row.pending_version_id) &&
+            isTimestamp(row.deadline_at) &&
+            row.policy_key === "suggested_waypoint_send_grace_seconds" &&
+            isSafeInteger(row.policy_version, 1) &&
+            isSafeInteger(row.effective_seconds, 60) &&
+            row.effective_seconds <= 3600 &&
+            (row.outcome_code === "idempotent" ||
+              row.current_version_id === null)
+          : allExtensionsAreNull(row, [
+              "pending_version_id",
+              "deadline_at",
+              "policy_key",
+              "policy_version",
+              "effective_seconds",
+            ]));
       break;
     case "solmind_pull_back_suggested_waypoint":
       valid =
-        isCommandRow(row, ["draft_restored_at"]) &&
-        isTimestamp(row.draft_restored_at);
+        isCommandRow(row, functionName, ["draft_restored_at"]) &&
+        (isCommittedOutcome(row.outcome_code)
+          ? isTimestamp(row.draft_restored_at) &&
+            row.draft_restored_at === row.committed_at &&
+            (row.outcome_code === "idempotent" ||
+              row.current_version_id === null)
+          : row.draft_restored_at === null);
       break;
     case "solmind_deliver_suggested_waypoint":
       valid =
-        isCommandRow(row, ["delivered_version_id", "delivered_at"]) &&
-        isUuid(row.delivered_version_id) &&
-        row.delivered_version_id === row.current_version_id &&
-        isTimestamp(row.delivered_at);
+        isCommandRow(row, functionName, [
+          "delivered_version_id",
+          "delivered_at",
+        ]) &&
+        (isCommittedOutcome(row.outcome_code)
+          ? isUuid(row.delivered_version_id) &&
+            row.delivered_version_id === row.current_version_id &&
+            isTimestamp(row.delivered_at) &&
+            row.delivered_at === row.committed_at
+          : allExtensionsAreNull(row, [
+              "delivered_version_id",
+              "delivered_at",
+            ]));
       break;
     case "solmind_mark_suggested_waypoint_read":
       valid =
-        isCommandRow(row, ["read_at"]) &&
-        isTimestamp(row.read_at) &&
-        row.current_version_id !== null;
+        isCommandRow(row, functionName, ["read_at"]) &&
+        (isCommittedOutcome(row.outcome_code)
+          ? isTimestamp(row.read_at) &&
+            row.read_at === row.committed_at &&
+            row.current_version_id !== null
+          : row.read_at === null);
       break;
     case "solmind_acknowledge_suggested_waypoint_receipt":
       valid =
-        isCommandRow(row, ["acknowledged_version_id", "acknowledged_at"]) &&
-        isUuid(row.acknowledged_version_id) &&
-        row.acknowledged_version_id === row.current_version_id &&
-        isTimestamp(row.acknowledged_at);
+        isCommandRow(row, functionName, [
+          "acknowledged_version_id",
+          "acknowledged_at",
+        ]) &&
+        (isCommittedOutcome(row.outcome_code)
+          ? isUuid(row.acknowledged_version_id) &&
+            row.acknowledged_version_id === row.current_version_id &&
+            isTimestamp(row.acknowledged_at) &&
+            row.acknowledged_at === row.committed_at
+          : allExtensionsAreNull(row, [
+              "acknowledged_version_id",
+              "acknowledged_at",
+            ]));
       break;
     case "solmind_list_guide_suggested_waypoints":
       valid = isListRow(row, "guide");
@@ -974,37 +1234,38 @@ export function isSuggestedWaypointRpcPayloadBoundToCall(
   const row = payload as unknown as Record<string, unknown>;
   const args = call.args as unknown as Record<string, unknown>;
 
+  const isCommand = "outcome_code" in row;
+  const committed = isCommand && isCommittedOutcome(row.outcome_code);
+  const commonCommandBinding =
+    !isCommand ||
+    (row.operation_id === args.p_operation_id &&
+      (row.suggested_waypoint_id === null ||
+        row.suggested_waypoint_id === args.p_suggested_waypoint_id));
+
+  if (!commonCommandBinding) {
+    return false;
+  }
+
   switch (call.functionName) {
     case "solmind_save_suggested_waypoint_draft":
     case "solmind_pull_back_suggested_waypoint":
-      return (
-        row.operation_id === args.p_operation_id &&
-        row.suggested_waypoint_id === args.p_suggested_waypoint_id
-      );
+      return true;
     case "solmind_schedule_suggested_waypoint_send":
       return (
-        row.operation_id === args.p_operation_id &&
-        row.suggested_waypoint_id === args.p_suggested_waypoint_id &&
+        !committed ||
         row.pending_version_id === args.p_suggested_waypoint_version_id
       );
     case "solmind_deliver_suggested_waypoint":
       return (
-        row.operation_id === args.p_operation_id &&
-        row.suggested_waypoint_id === args.p_suggested_waypoint_id &&
+        !committed ||
         row.delivered_version_id === args.p_expected_pending_version_id
       );
     case "solmind_mark_suggested_waypoint_read":
-      return (
-        row.operation_id === args.p_operation_id &&
-        row.suggested_waypoint_id === args.p_suggested_waypoint_id &&
-        row.current_version_id === args.p_version_id
-      );
+      return !committed || row.current_version_id === args.p_version_id;
     case "solmind_acknowledge_suggested_waypoint_receipt":
       return (
-        row.operation_id === args.p_operation_id &&
-        row.suggested_waypoint_id === args.p_suggested_waypoint_id &&
-        row.acknowledged_version_id ===
-          args.p_expected_current_version_id
+        !committed ||
+        row.acknowledged_version_id === args.p_expected_current_version_id
       );
     case "solmind_get_guide_suggested_waypoint":
     case "solmind_get_explorer_suggested_waypoint":

@@ -178,8 +178,12 @@ co-located contract/executor tests. The human executor exposes exactly nine
 functions; the separately constructed worker executor exposes only delivery.
 The dormant Admin query stays excluded. Both files are server-only, stay off the
 shared barrel, validate exact call/response shapes and lifecycle coherence, and
-return frozen copies or value-free failure sentinels. They do not derive auth,
-check relationships, protect routes, schedule delivery, or activate a caller.
+return frozen copies or value-free failure sentinels. Command validation keeps
+all eight canonical database outcomes distinct from transport failure, applies
+the exact per-function outcome subset and nullable row shape, and preserves
+opaque relationship-unavailable results without weakening operation binding.
+They do not derive auth, check relationships, protect routes, schedule delivery,
+or activate a caller.
 
 ## Product Logic and Constants
 
