@@ -1,6 +1,6 @@
 # SolMind App Agent Task Rules
 
-Version: 0.2.0  
+Version: 0.2.1
 Repo: solmind-app  
 Purpose: Define safe rules for AI coding agents and AI assistants working on the SolMind MVP0 application.
 
@@ -229,6 +229,18 @@ Pending send must remain absent from the Explorer projection until delivery.
 Pull Back must return to the ordinary editable detail. Controls that depend on
 later persistence or transport must explain their destination and produce no
 outward effect in this deterministic review surface.
+
+### Suggested Waypoint S03 server transport
+
+The first `PRJ01_V-WS05-WI022-S03` increment is limited to direct-import,
+server-only transport. Keep the exact nine human RPCs separate from the one
+delivery-worker RPC, exclude the dormant Admin operational query, validate
+exact call and response shapes, freeze accepted responses, and map errors to
+value-free sentinels. Keep the transport off shared barrels.
+
+Do not infer actor identity, role, Guide-Explorer relationship, route access,
+worker authorization, or real-user readiness from the transport. Those controls
+belong to later separately reviewed composition and adapter work.
 
 ## Documentation Update Rule
 

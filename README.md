@@ -110,6 +110,12 @@ Backend foundations present in the repository (high level):
 - Dormant Explorer S02 foundations: a protected 1-100 day Shared Snapshot sendability setting (default 7), a server-only fixed-key reader, a service-role-only audited mutation, and a manually invoked local synthetic Guide/Explorer fixture.
 - Dormant Summary and Shared Snapshot persistence foundation: immutable Guide-authored Summary revisions and sections, an authoritative publication record and fail-closed Explorer projection, Explorer-private exact-review drafts, immutable Explorer-confirmed Shared Snapshots with preserved lineage, and bounded service-role-only publication, unpublication, confirmation, and integrity surfaces. It has no application caller, permissive RLS policy, direct-table role grant, hosted data, provider action, deployment, or real-user path.
 - Dormant Suggested Waypoint persistence and security foundation: distinct Guide draft, pending outbound, immutable delivered-version, Explorer-private read, shared receipt, protected preference, and replay-proof owners; a closed six-command/five-query service-role-only catalog; and the protected 60-3600 second send-grace policy (default 300). The fixture-backed Explorer and Guide pages still have no database caller, hosted scheduler, provider action, deployment, or real-user path.
+- Closed Suggested Waypoint S03 RPC transport: server-only exact-call and
+  exact-response validation over nine human functions and one separately
+  constructed delivery-worker function. The dormant Admin operational query is
+  excluded, failures are value-free, and the modules remain off the shared
+  Supabase barrel. No authenticated composition, relationship enforcement,
+  route, server action, hosted worker, or UI caller is included.
 
 Important technical boundaries:
 
@@ -121,6 +127,10 @@ Important technical boundaries:
   The additional Explorer persistence owners, application callers, operational
   timing, and genuine server-side Virtual Guide conversation require separately
   reviewed implementation work.
+- The Suggested Waypoint S03 transport is substrate only. It must not be used
+  directly by browser code or treated as proof of authenticated role,
+  Guide-Explorer relationship, route/page protection, delivery scheduling, or
+  worker authorization; those composition roots remain separately gated.
 
 Authoritative implementation status and exact evidence are tracked in:
 

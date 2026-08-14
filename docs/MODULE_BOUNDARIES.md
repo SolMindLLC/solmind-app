@@ -1,6 +1,6 @@
 # SolMind App Module Boundaries
 
-Version: 0.2.0  
+Version: 0.2.1
 Repo: solmind-app  
 Purpose: Define where code should live as the SolMind MVP0 application grows.
 
@@ -171,6 +171,15 @@ direct role grants. No `src/` caller, browser path, hosted delivery worker,
 provider, or real-user activation is part of S02. Do not wire these functions
 through a generic RPC executor or the shared Supabase barrel; the separately
 gated S03 composition must introduce narrow human and worker allowlists.
+
+The first S03 increment adds those narrow allowlists in
+`suggestedWaypointRpcContract.ts` and `suggestedWaypointRpcExecutor.ts`, with
+co-located contract/executor tests. The human executor exposes exactly nine
+functions; the separately constructed worker executor exposes only delivery.
+The dormant Admin query stays excluded. Both files are server-only, stay off the
+shared barrel, validate exact call/response shapes and lifecycle coherence, and
+return frozen copies or value-free failure sentinels. They do not derive auth,
+check relationships, protect routes, schedule delivery, or activate a caller.
 
 ## Product Logic and Constants
 
@@ -436,6 +445,12 @@ src/lib/solmind/supabase/
 ```
 
 This directory now holds the banked server-side Supabase integration: the request-auth client (identity, who), the guarded service-role loader (record loads, what), principal mapping, session selection, and the audit write path (the closed-allowlist `auditEventWriteExecutor.ts` over the single enumerated `public.solmind_record_audit_event` function, assembled by `adminAuditEventWriter.ts` for the `/admin/access` composition). The request-auth client, the service-role factory, and the audit write modules are server-only and kept off the shared barrel.
+
+The closed Suggested Waypoint S03 transport also lives here. Its contract and
+human/worker executors are direct-import server-only modules kept off the shared
+barrel. Later request-auth, Guide-Explorer relationship, route/server-action,
+page, and worker composition must wrap this transport rather than weakening or
+bypassing its exact allowlists and validators.
 
 Banked dormant `PRJ01_R-WS09-WI021-S02` adds
 `applicationSettingReader.ts` as the narrow setting-read boundary. It accepts

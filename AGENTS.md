@@ -131,6 +131,22 @@ not a therapist or crisis service, and that refresh clears it. Protected
 persistence belongs to `PRJ01_R-WS09-WI021-S02`. Genuine server-side Virtual
 Guide conversation belongs to `PRJ01_R-WS09-WI021-S03`.
 
+## PRJ01_V-WS05-WI022-S03 Suggested Waypoint Transport Boundary
+
+The first S03 increment is a closed server-only RPC transport under
+`src/lib/solmind/supabase/`. It allows exactly nine human calls and one
+delivery-worker call. Keep those capabilities in separate executors, keep both
+modules off the shared Supabase barrel, and omit the dormant Admin operational
+query. Validate exact call and response keys, UUIDs, page sizes, cursors,
+bounded text, lifecycle coherence, and the protected 60-3600 second send-grace
+shape before returning a frozen copy. Map all failures to value-free sentinels.
+
+This transport is not an authentication or relationship-composition root, a
+route or server action, a hosted worker, a UI caller, provider integration, or
+real-user activation. A later reviewed composition must derive actor identity
+and role from request auth, enforce the Guide-Explorer relationship, and build
+only the appropriate human or worker executor.
+
 ## Secrets Boundary
 
 Never expose server secrets through `NEXT_PUBLIC_` variables.
