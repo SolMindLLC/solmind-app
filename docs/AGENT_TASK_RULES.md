@@ -248,6 +248,15 @@ returns only fixed browser-safe result shapes. Do not infer route protection,
 concrete cookie wiring, worker authorization, UI integration, or real-user
 readiness from this composition primitive.
 
+Use `suggestedWaypointRequestDependencies.ts` as the only concrete,
+request-scoped dependency factory for that primitive and
+`suggestedWaypointScopedIdentifiers.ts` as its stable UUIDv5 identifier owner.
+Keep both direct-import, server-only, and off shared barrels. The identifier
+scope must bind purpose, server-derived actor, authorized relationship,
+operation, and when applicable the target suggestion. This factory does not
+itself authorize a route, Server Action, browser caller, delivery worker, or
+real-user path.
+
 ## Documentation Update Rule
 
 When changing any of the following, update documentation in the same task:

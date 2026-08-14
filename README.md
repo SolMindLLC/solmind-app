@@ -125,6 +125,11 @@ Backend foundations present in the repository (high level):
   browser-safe results. It remains a direct-import server-only dependency with
   no route, server action, UI caller, hosted worker, provider, deployment, or
   real-user activation.
+- Suggested Waypoint S03 concrete request dependencies: one request-scoped,
+  direct-import server-only factory wires verified request identity,
+  enumerated auth-record reads, the closed human executor, and UUIDv5 scoped
+  suggestion/version identifiers. It remains dormant with no route, Server
+  Action, browser caller, worker, provider, deployment, or real-user activation.
 
 Important technical boundaries:
 
@@ -136,9 +141,10 @@ Important technical boundaries:
   The additional Explorer persistence owners, application callers, operational
   timing, and genuine server-side Virtual Guide conversation require separately
   reviewed implementation work.
-- The Suggested Waypoint S03 transport and request composition are substrate
+- The Suggested Waypoint S03 transport, request composition, and concrete
+  dependency factory are substrate
   only. They must not be imported by browser code or treated as proof of
-  route/page protection, concrete request-cookie wiring, delivery scheduling,
+  route/page protection, route-owned cookie wiring, delivery scheduling,
   worker authorization, UI integration, or real-user readiness; those roots
   remain separately gated.
 

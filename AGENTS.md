@@ -151,6 +151,16 @@ injected server resolver, never a browser form. Keep the module and test off
 shared barrels. It is not a route, server action, worker, UI caller, hosted
 scheduler, provider integration, deployment, or real-user activation.
 
+The concrete request-dependency increment adds
+`suggestedWaypointRequestDependencies.ts` and
+`suggestedWaypointScopedIdentifiers.ts`. Keep both direct-import and
+server-only. The request-scoped factory must construct verified request
+identity, enumerated auth-record reads, the closed human executor, and required
+stable scoped identifiers without adding a route or browser caller. UUIDv5
+inputs must bind purpose, actor, relationship, operation, and when applicable
+the target suggestion so identical retries are stable and authority scopes do
+not collide. Do not export either owner from a shared barrel.
+
 ## Secrets Boundary
 
 Never expose server secrets through `NEXT_PUBLIC_` variables.

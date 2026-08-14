@@ -471,6 +471,13 @@ cookie, route/server-action, page/data-adapter, and worker composition must wrap
 these boundaries rather than weakening or bypassing their exact allowlists,
 validators, role separation, or result binding.
 
+The concrete `suggestedWaypointRequestDependencies.ts` request factory now
+wires the request-auth principal source, enumerated auth-record loader, closed
+human executor, and `suggestedWaypointScopedIdentifiers.ts` UUIDv5 owner. Both
+remain direct-import server-only modules off the shared barrel. This dependency
+root is still dormant: a later route or Server Action must construct the cookie
+accessor and invoke the request composition without widening browser authority.
+
 Banked dormant `PRJ01_R-WS09-WI021-S02` adds
 `applicationSettingReader.ts` as the narrow setting-read boundary. It accepts
 no key from its caller, invokes only the fixed service-role RPC, validates the
