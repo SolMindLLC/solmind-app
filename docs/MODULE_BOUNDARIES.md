@@ -478,6 +478,19 @@ remain direct-import server-only modules off the shared barrel. This dependency
 root is still dormant: a later route or Server Action must construct the cookie
 accessor and invoke the request composition without widening browser authority.
 
+The S03 Guide entry boundary also owns one feature-specific Suggested Waypoint
+relationship selector. Its forward-only migration exposes only active
+relationship ID, Explorer display name, relationship creation time, and
+pagination through the closed service-role-only
+`solmind_list_guide_suggested_waypoint_relationships` function. The direct-
+import `suggestedWaypointRelationshipSelectorContract.ts`, executor, and
+authenticated request seam validate and freeze that exact projection; the
+concrete request factory wires the executor through the same request-scoped
+service-role client. This selector is not the canonical Guide Explorer roster
+and must never acquire onboarding, appointment, Shared Snapshot, Practice,
+suggestion-count, contact, or private Explorer fields. It remains dormant until
+a separately reviewed Guide route or Server Action invokes the request seam.
+
 Banked dormant `PRJ01_R-WS09-WI021-S02` adds
 `applicationSettingReader.ts` as the narrow setting-read boundary. It accepts
 no key from its caller, invokes only the fixed service-role RPC, validates the

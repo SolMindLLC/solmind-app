@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   createAuthQueryClient: vi.fn(),
   createAuthSource: vi.fn(),
   createHumanExecutor: vi.fn(),
+  createRelationshipSelectorExecutor: vi.fn(),
   createIdentifiers: vi.fn(),
 }));
 
@@ -30,6 +31,10 @@ vi.mock("../serverAuthSourceAdapter", () => ({
 vi.mock("../suggestedWaypointRpcExecutor", () => ({
   createSuggestedWaypointHumanRpcExecutor: mocks.createHumanExecutor,
 }));
+vi.mock("../suggestedWaypointRelationshipSelectorExecutor", () => ({
+  createSuggestedWaypointRelationshipSelectorExecutor:
+    mocks.createRelationshipSelectorExecutor,
+}));
 vi.mock("../suggestedWaypointScopedIdentifiers", () => ({
   createSuggestedWaypointScopedIdentifiers: mocks.createIdentifiers,
 }));
@@ -47,6 +52,7 @@ const authQueryExecutor = Object.freeze({ select: vi.fn() });
 const authQueryClient = Object.freeze({ kind: "auth-query-client" });
 const authSource = Object.freeze({ kind: "auth-source" });
 const humanExecutor = Object.freeze({ execute: vi.fn() });
+const relationshipSelectorExecutor = Object.freeze({ execute: vi.fn() });
 const identifiers = Object.freeze({
   suggestedWaypointIdForCreate: vi.fn(),
   versionIdForSchedule: vi.fn(),
@@ -65,6 +71,9 @@ describe("createSuggestedWaypointRequestDependencies", () => {
     mocks.createAuthQueryClient.mockReturnValue(authQueryClient);
     mocks.createAuthSource.mockReturnValue(authSource);
     mocks.createHumanExecutor.mockReturnValue(humanExecutor);
+    mocks.createRelationshipSelectorExecutor.mockReturnValue(
+      relationshipSelectorExecutor,
+    );
     mocks.createIdentifiers.mockReturnValue(identifiers);
   });
 
@@ -84,11 +93,15 @@ describe("createSuggestedWaypointRequestDependencies", () => {
     });
     expect(mocks.createAuthSource).toHaveBeenCalledWith(authQueryClient);
     expect(mocks.createHumanExecutor).toHaveBeenCalledWith(serviceRoleClient);
+    expect(mocks.createRelationshipSelectorExecutor).toHaveBeenCalledWith(
+      serviceRoleClient,
+    );
     expect(mocks.createIdentifiers).toHaveBeenCalledTimes(1);
     expect(result).toEqual({
       principalSource,
       authSource,
       executor: humanExecutor,
+      relationshipSelectorExecutor,
       identifiers,
     });
     expect(Object.isFrozen(result)).toBe(true);
@@ -103,6 +116,7 @@ describe("createSuggestedWaypointRequestDependencies", () => {
       "executor",
       "identifiers",
       "principalSource",
+      "relationshipSelectorExecutor",
     ]);
   });
 

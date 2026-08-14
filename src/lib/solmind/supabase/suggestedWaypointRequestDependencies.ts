@@ -18,6 +18,7 @@ import {
   type SuggestedWaypointRequestCompositionDependencies,
 } from "./suggestedWaypointRequestComposition";
 import { createSuggestedWaypointHumanRpcExecutor } from "./suggestedWaypointRpcExecutor";
+import { createSuggestedWaypointRelationshipSelectorExecutor } from "./suggestedWaypointRelationshipSelectorExecutor";
 import { createSuggestedWaypointScopedIdentifiers } from "./suggestedWaypointScopedIdentifiers";
 
 if (typeof window !== "undefined") {
@@ -30,6 +31,9 @@ export type ConcreteSuggestedWaypointRequestDependencies = Readonly<
   Omit<SuggestedWaypointRequestCompositionDependencies, "identifiers"> & {
     identifiers: NonNullable<
       SuggestedWaypointRequestCompositionDependencies["identifiers"]
+    >;
+    relationshipSelectorExecutor: ReturnType<
+      typeof createSuggestedWaypointRelationshipSelectorExecutor
     >;
   }
 >;
@@ -54,12 +58,15 @@ export function createSuggestedWaypointRequestDependencies(args: {
       }),
     );
     const executor = createSuggestedWaypointHumanRpcExecutor(serviceRoleClient);
+    const relationshipSelectorExecutor =
+      createSuggestedWaypointRelationshipSelectorExecutor(serviceRoleClient);
     const identifiers = createSuggestedWaypointScopedIdentifiers();
 
     return Object.freeze({
       principalSource,
       authSource,
       executor,
+      relationshipSelectorExecutor,
       identifiers,
     });
   } catch {

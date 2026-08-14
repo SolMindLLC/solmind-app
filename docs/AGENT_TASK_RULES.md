@@ -257,6 +257,18 @@ operation, and when applicable the target suggestion. This factory does not
 itself authorize a route, Server Action, browser caller, delivery worker, or
 real-user path.
 
+Use `suggestedWaypointRelationshipSelectorContract.ts`, its closed executor,
+and `suggestedWaypointRelationshipSelectorRequest.ts` only for the Suggested
+Waypoint Guide-entry selector. Client input may control validated pagination
+only; actor and Guide authority come from request auth and the database
+rechecks active relationship ownership. The exact projection is relationship
+ID, Explorer display name, relationship creation time, next cursor, and total
+count. Do not present this owner as the canonical Guide Explorer roster or add
+onboarding, appointment, Shared Snapshot, Practice, suggestion-count, contact,
+or private Explorer data. Keep every selector owner direct-import, server-only,
+off shared barrels, and dormant until a separately reviewed route or Server
+Action invokes it.
+
 ## Documentation Update Rule
 
 When changing any of the following, update documentation in the same task:
