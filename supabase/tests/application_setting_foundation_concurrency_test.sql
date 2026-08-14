@@ -1,5 +1,5 @@
 -- Local ephemeral database only. This test commits reserved synthetic
--- operations across dblink sessions, then restores the exact singleton state
+-- operations across dblink sessions, then restores the exact selected-row state
 -- and deletes only its reserved audit rows. Never run against hosted or
 -- real-user data.
 -- If execution aborts after a dblink commit, the absolute-baseline S02 and
@@ -51,7 +51,7 @@ select setting.*,
 select is(
   (select pg_catalog.count(*)::integer from s02_setting_before),
   1,
-  'preflight captures the singleton setting'
+  'preflight captures the selected Shared Snapshot setting'
 );
 select is(
   (select reserved_audit_count from s02_setting_before),
@@ -214,7 +214,7 @@ select ok(
     's02_setting_b',
     (select pid from s02_setting_pids where name = 'b')
   ),
-  'B waits on the protected singleton row'
+  'B waits on the protected Shared Snapshot setting row'
 );
 select is(
   dblink_exec('s02_setting_a', 'commit'),
@@ -268,6 +268,7 @@ select is(
   (
     select version
       from core.application_setting
+     where setting_key = 'explorer_shared_snapshot_sendability_days'
   ),
   (select version + 1 from s02_setting_before),
   'first commit advances the version exactly once'
@@ -293,7 +294,7 @@ select lives_ok(
      where event_type = 'application_setting_changed'
        and metadata ->> 'operation_id' like 'a30f0210-2000-%';
   $cleanup$,
-  'targeted local-only cleanup restores the singleton and audit rows'
+  'targeted local-only cleanup restores the selected setting and audit rows'
 );
 select is(
   (

@@ -131,7 +131,7 @@ select is(
            'explorer_shared_snapshot_sendability_days'
   ),
   8,
-  'singleton row stores the new value'
+  'selected Shared Snapshot row stores the new value'
 );
 select is(
   (
@@ -468,6 +468,7 @@ select is(
   (
     select integer_value::text || ':' || version::text
       from core.application_setting
+     where setting_key = 'explorer_shared_snapshot_sendability_days'
   ),
   '8:2',
   'audit insertion failure rolls back the setting update'

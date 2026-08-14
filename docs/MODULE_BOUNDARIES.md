@@ -153,11 +153,24 @@ projection returned by `createNonLiveGuideProjection`.
   open, and acknowledged examples through the pure domain. It must not emulate
   passive Explorer telemetry or import Explorer-private fixture observations.
 
-The Suggested Waypoint UIs do not access a provider, persistence, server
-action, route handler, cookie, browser storage, notification, or real Guide
-record. Its production transport remains separately gated. Canonical product
+The Suggested Waypoint UIs do not access a provider, the dormant Suggested
+Waypoint database owners, a server action, route handler, cookie, browser
+storage, notification, or real Guide record. Their authenticated production
+transport remains separately gated. Canonical product
 and screen documents are unchanged because they already own these accepted
 Explorer and Guide surfaces and fixture-first implementation boundaries.
+
+Dormant `PRJ01_V-WS05-WI022-S02` adds a database-only Suggested Waypoint
+boundary under `supabase/migrations/` and `supabase/tests/`. Eight owners keep
+Guide draft content, pending outbound content, immutable delivered versions,
+Explorer-private read state, deliberately shared receipts, Guide preference,
+and content-free operation replay proof separate. The public catalog is closed
+to six commands and five role queries, owned by `postgres`, executable only by
+`service_role`, and backed by deny-by-default RLS with zero policies and no
+direct role grants. No `src/` caller, browser path, hosted delivery worker,
+provider, or real-user activation is part of S02. Do not wire these functions
+through a generic RPC executor or the shared Supabase barrel; the separately
+gated S03 composition must introduce narrow human and worker allowlists.
 
 ## Product Logic and Constants
 

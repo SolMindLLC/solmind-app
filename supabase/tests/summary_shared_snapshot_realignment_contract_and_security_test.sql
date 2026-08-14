@@ -106,6 +106,16 @@ select ok(
       from pg_catalog.pg_constraint constraint_row
      where pg_catalog.pg_get_constraintdef(constraint_row.oid) ilike '%suggested_waypoint%'
        and constraint_row.connamespace = 'content'::regnamespace
+       and constraint_row.conrelid in (
+         'content.summary'::regclass,
+         'content.summary_revision'::regclass,
+         'content.summary_section'::regclass,
+         'content.summary_publication'::regclass,
+         'content.private_summary_draft'::regclass,
+         'content.private_summary_draft_item'::regclass,
+         'content.shared_snapshot'::regclass,
+         'content.shared_snapshot_item'::regclass
+       )
   ),
   'Suggested Waypoint identity is absent from Summary and Snapshot constraints'
 );

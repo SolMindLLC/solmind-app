@@ -1,5 +1,5 @@
 begin;
-select plan(35);
+select plan(36);
 
 select has_table(
   'core',
@@ -28,8 +28,8 @@ select is(
 );
 select is(
   (select pg_catalog.count(*)::integer from core.application_setting),
-  1,
-  'exactly one global MVP0 setting row exists'
+  2,
+  'exactly two closed MVP0 setting rows exist'
 );
 select is(
   (
@@ -48,7 +48,25 @@ select is(
        and retention_class = 'core_business'
   ),
   1,
-  'the singleton row has the exact key, 1-100 bounds, default 7, and version'
+  'the Shared Snapshot row preserves its exact key, 1-100 bounds, default 7, and version'
+);
+select is(
+  (
+    select pg_catalog.count(*)::integer
+      from core.application_setting
+     where application_setting_id =
+           'a30f0220-0000-4000-8000-000000000001'
+       and setting_key = 'suggested_waypoint_send_grace_seconds'
+       and integer_value = 300
+       and minimum_integer_value = 60
+       and default_integer_value = 300
+       and maximum_integer_value = 3600
+       and version = 1
+       and last_operation_id is null
+       and retention_class = 'core_business'
+  ),
+  1,
+  'the Suggested Waypoint send-grace row has exact 60-3600 bounds, default 300, and version'
 );
 select ok(
   not has_table_privilege(
