@@ -185,6 +185,18 @@ opaque relationship-unavailable results without weakening operation binding.
 They do not derive auth, check relationships, protect routes, schedule delivery,
 or activate a caller.
 
+The next S03 increment adds `suggestedWaypointRequestComposition.ts`. It wraps
+only the human executor, snapshots and validates exact client-safe operation
+shapes, derives the trusted actor and active role from injected request-auth and
+record sources, authorizes Guide relationship selectors against server-loaded
+records, and requires an active Explorer context on the Explorer path. The
+actor account is always injected from that trusted context. Initial suggestion
+and pending-version identifiers are supplied only by an injected server
+resolver. The module returns executor-validated role-safe payload data or one
+of two fixed browser-safe errors. It remains off the shared barrel and owns no
+route, server action, cookie adapter, UI caller, worker, scheduler, provider,
+deployment, or real-user path.
+
 ## Product Logic and Constants
 
 SolMind product constants and product logic live under:
@@ -450,11 +462,14 @@ src/lib/solmind/supabase/
 
 This directory now holds the banked server-side Supabase integration: the request-auth client (identity, who), the guarded service-role loader (record loads, what), principal mapping, session selection, and the audit write path (the closed-allowlist `auditEventWriteExecutor.ts` over the single enumerated `public.solmind_record_audit_event` function, assembled by `adminAuditEventWriter.ts` for the `/admin/access` composition). The request-auth client, the service-role factory, and the audit write modules are server-only and kept off the shared barrel.
 
-The closed Suggested Waypoint S03 transport also lives here. Its contract and
-human/worker executors are direct-import server-only modules kept off the shared
-barrel. Later request-auth, Guide-Explorer relationship, route/server-action,
-page, and worker composition must wrap this transport rather than weakening or
-bypassing its exact allowlists and validators.
+The closed Suggested Waypoint S03 transport and authenticated human-request
+composition also live here. Their contract, human/worker executors, and request
+composition are direct-import server-only modules kept off the shared barrel.
+The request composition wraps only the human executor and derives authority
+from injected request-auth and server-loaded records. Later concrete request-
+cookie, route/server-action, page/data-adapter, and worker composition must wrap
+these boundaries rather than weakening or bypassing their exact allowlists,
+validators, role separation, or result binding.
 
 Banked dormant `PRJ01_R-WS09-WI021-S02` adds
 `applicationSettingReader.ts` as the narrow setting-read boundary. It accepts

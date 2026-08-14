@@ -141,11 +141,15 @@ query. Validate exact call and response keys, UUIDs, page sizes, cursors,
 bounded text, lifecycle coherence, and the protected 60-3600 second send-grace
 shape before returning a frozen copy. Map all failures to value-free sentinels.
 
-This transport is not an authentication or relationship-composition root, a
-route or server action, a hosted worker, a UI caller, provider integration, or
-real-user activation. A later reviewed composition must derive actor identity
-and role from request auth, enforce the Guide-Explorer relationship, and build
-only the appropriate human or worker executor.
+The next S03 increment adds `suggestedWaypointRequestComposition.ts` as a
+direct-import server-only human-request boundary. It validates exact
+client-safe Guide/Explorer shapes, derives actor identity and role from the
+injected request-auth and record sources, rechecks Guide relationship access,
+injects only the server-derived actor, and maps transport detail to fixed
+browser-safe results. Initial suggestion/version identifiers come only from an
+injected server resolver, never a browser form. Keep the module and test off
+shared barrels. It is not a route, server action, worker, UI caller, hosted
+scheduler, provider integration, deployment, or real-user activation.
 
 ## Secrets Boundary
 

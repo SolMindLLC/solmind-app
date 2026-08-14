@@ -118,6 +118,13 @@ Backend foundations present in the repository (high level):
   transport failures remain value-free and the modules stay off the shared
   Supabase barrel. No authenticated composition, relationship enforcement,
   route, server action, hosted worker, or UI caller is included.
+- Suggested Waypoint S03 authenticated composition primitive: exact
+  client-safe Guide/Explorer request validation, request-auth actor/role
+  derivation, Guide relationship enforcement, server-derived actor injection,
+  server-resolved initial suggestion/version identifiers, and fixed
+  browser-safe results. It remains a direct-import server-only dependency with
+  no route, server action, UI caller, hosted worker, provider, deployment, or
+  real-user activation.
 
 Important technical boundaries:
 
@@ -129,10 +136,11 @@ Important technical boundaries:
   The additional Explorer persistence owners, application callers, operational
   timing, and genuine server-side Virtual Guide conversation require separately
   reviewed implementation work.
-- The Suggested Waypoint S03 transport is substrate only. It must not be used
-  directly by browser code or treated as proof of authenticated role,
-  Guide-Explorer relationship, route/page protection, delivery scheduling, or
-  worker authorization; those composition roots remain separately gated.
+- The Suggested Waypoint S03 transport and request composition are substrate
+  only. They must not be imported by browser code or treated as proof of
+  route/page protection, concrete request-cookie wiring, delivery scheduling,
+  worker authorization, UI integration, or real-user readiness; those roots
+  remain separately gated.
 
 Authoritative implementation status and exact evidence are tracked in:
 

@@ -238,9 +238,15 @@ delivery-worker RPC, exclude the dormant Admin operational query, validate
 exact call and response shapes, freeze accepted responses, and map errors to
 value-free sentinels. Keep the transport off shared barrels.
 
-Do not infer actor identity, role, Guide-Explorer relationship, route access,
-worker authorization, or real-user readiness from the transport. Those controls
-belong to later separately reviewed composition and adapter work.
+Use `suggestedWaypointRequestComposition.ts` only as the direct-import
+server-only human-request boundary around that transport. It must accept no
+client actor, role, profile, database function name, initial suggestion id, or
+new pending-version id. It derives actor/role from injected request-auth and
+record sources, authorizes Guide relationship selectors against server-loaded
+records, requires an active Explorer context for Explorer operations, and
+returns only fixed browser-safe result shapes. Do not infer route protection,
+concrete cookie wiring, worker authorization, UI integration, or real-user
+readiness from this composition primitive.
 
 ## Documentation Update Rule
 
