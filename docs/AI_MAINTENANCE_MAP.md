@@ -8,10 +8,13 @@ Purpose: Help AI coding assistants safely understand, maintain, and extend the S
 
 This repository pairs the SolMind MVP0 preview UI with several banked, foundation-first backend modules. Most user-facing pages remain preview and foundation surfaces, not complete runtime workflows.
 
-The first `PRJ01_V-WS05-WI022-S03` increment adds a closed server-only
-Suggested Waypoint RPC contract and separate human/worker executors. It has no
-request-auth composition, relationship guard, route, UI caller, hosted worker,
-provider path, deployment, or real-user activation.
+Banked `PRJ01_V-WS05-WI022-S03` construction now includes the closed server-only
+Suggested Waypoint RPC transport, authenticated human-request composition,
+concrete server-only dependencies and stable scoped identities, a
+feature-specific Guide relationship selector, and its first read-only
+authenticated route. No visible page consumes that route, and no human command
+edge, operational delivery worker, hosted worker, provider path, deployment, or
+real-user activation exists.
 
 User-facing routes:
 
@@ -374,9 +377,10 @@ Extend these modules deliberately and in small slices. Keep server-only modules 
   snapshot and audit/fingerprint enforcement, context budgeting, provider
   selection/dispatch, session/message persistence, safety response, and UI.
 - Guide Assistant context from these Explorer artifacts.
-- Suggested Waypoint authenticated request composition, relationship guards,
-  route/server-action adapters, page wiring, and hosted delivery-worker caller
-  beyond the closed S03 transport.
+- Suggested Waypoint Guide/Explorer list/detail adapters, five human command
+  route/action edges, visible page wiring, operational local delivery-worker
+  invocation, and hosted delivery-worker caller beyond the banked authenticated
+  composition and read-only Guide relationship-selector route.
 - Production Guide dashboard integration.
 - Runtime safety classification and escalation.
 - Reflection storage beyond approved future slices.
