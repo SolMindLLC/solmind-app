@@ -46,6 +46,7 @@ Server route handlers:
 
 ```text
 /admin/access
+/guide/waypoint-suggestions/relationships
 ```
 
 Current route purpose:
@@ -60,6 +61,7 @@ Current route purpose:
 | `/explorer` | Deterministic Explorer onboarding, First Compass, Waypoint, exact-summary review, and non-live Guide-boundary prototype |
 | `/explorer/waypoints` | Deterministic fixture-backed Explorer Waypoint Suggestions inbox, detail, private comparison, receipt, and exact-response review surface |
 | `/admin/access` | Opaque server-side Admin access probe returning only `{ allowed }` |
+| `/guide/waypoint-suggestions/relationships` | Read-only authenticated Guide entry selector for Suggested Waypoints; returns only relationship ID, Explorer display name, relationship creation time, cursor, and count |
 
 The `/explorer` route hosts a browser-memory-only deterministic prototype. It:
 
@@ -128,8 +130,15 @@ Backend foundations present in the repository (high level):
 - Suggested Waypoint S03 concrete request dependencies: one request-scoped,
   direct-import server-only factory wires verified request identity,
   enumerated auth-record reads, the closed human executor, and UUIDv5 scoped
-  suggestion/version identifiers. It remains dormant with no route, Server
-  Action, browser caller, worker, provider, deployment, or real-user activation.
+  suggestion/version identifiers. Its feature-specific relationship-selector
+  executor now has one read-only route caller; the human command composition,
+  worker, provider, deployment, and fixture UI integration remain dormant.
+- Suggested Waypoint S03 Guide relationship-selector route: the thin dynamic
+  `/guide/waypoint-suggestions/relationships` JSON boundary accepts only one
+  closed page size plus one optional opaque cursor, derives Guide authority
+  from request cookies and server records, and returns the already-minimized
+  feature-specific projection. It is not the canonical Guide Explorer roster,
+  does not replace either fixture UI, writes nothing, and is not deployed.
 
 Important technical boundaries:
 
@@ -141,12 +150,12 @@ Important technical boundaries:
   The additional Explorer persistence owners, application callers, operational
   timing, and genuine server-side Virtual Guide conversation require separately
   reviewed implementation work.
-- The Suggested Waypoint S03 transport, request composition, and concrete
-  dependency factory are substrate
-  only. They must not be imported by browser code or treated as proof of
-  route/page protection, route-owned cookie wiring, delivery scheduling,
-  worker authorization, UI integration, or real-user readiness; those roots
-  remain separately gated.
+- The Suggested Waypoint S03 relationship-selector route is the only
+  browser-reachable S03 boundary. It does not protect a page or activate the
+  human command composition, delivery scheduling, worker authorization,
+  fixture UI replacement, deployment, or real-user readiness; those roots
+  remain separately gated. All server-only S03 owners stay off client/shared
+  barrels.
 
 Authoritative implementation status and exact evidence are tracked in:
 

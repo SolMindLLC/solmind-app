@@ -71,7 +71,7 @@ function snapshotClientRequest(value: unknown): unknown {
   return Object.freeze(snapshot);
 }
 
-function validateClientRequest(
+export function validateSuggestedWaypointRelationshipSelectorClientRequest(
   value: unknown,
 ): SuggestedWaypointRelationshipSelectorClientRequest | null {
   if (!isPlainObject(value)) {
@@ -127,7 +127,9 @@ export async function resolveSuggestedWaypointRelationshipSelectorRequest(
 ): Promise<SuggestedWaypointRelationshipSelectorRequestResult> {
   let request: SuggestedWaypointRelationshipSelectorClientRequest | null;
   try {
-    request = validateClientRequest(snapshotClientRequest(input));
+    request = validateSuggestedWaypointRelationshipSelectorClientRequest(
+      snapshotClientRequest(input),
+    );
   } catch {
     return denied();
   }

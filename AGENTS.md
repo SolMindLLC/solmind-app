@@ -161,6 +161,17 @@ inputs must bind purpose, actor, relationship, operation, and when applicable
 the target suggestion so identical retries are stable and authority scopes do
 not collide. Do not export either owner from a shared barrel.
 
+`src/app/guide/waypoint-suggestions/relationships/route.ts` is the first
+read-only S03 browser-reachable boundary. Keep it a thin dynamic Route Handler:
+the query may control only one closed page size and one optional opaque cursor;
+request cookies and server records derive and recheck Guide authority; and the
+outward JSON may contain only the fixed relationship-selector result. It is
+not the canonical Guide Explorer roster, does not protect a page, and must not
+add onboarding, appointment, Shared Snapshot, Practice, suggestion-count,
+contact, or private Explorer fields. It may not invoke human commands, mutate
+Suggested Waypoints, replace fixture UI, schedule delivery, call a provider,
+or imply deployment or real-user readiness.
+
 ## Secrets Boundary
 
 Never expose server secrets through `NEXT_PUBLIC_` variables.

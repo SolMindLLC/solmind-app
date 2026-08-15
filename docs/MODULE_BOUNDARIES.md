@@ -475,8 +475,9 @@ The concrete `suggestedWaypointRequestDependencies.ts` request factory now
 wires the request-auth principal source, enumerated auth-record loader, closed
 human executor, and `suggestedWaypointScopedIdentifiers.ts` UUIDv5 owner. Both
 remain direct-import server-only modules off the shared barrel. This dependency
-root is still dormant: a later route or Server Action must construct the cookie
-accessor and invoke the request composition without widening browser authority.
+root remains the only concrete assembly owner. The relationship-selector route
+uses its selector subset; the human command composition remains dormant until a
+later route or Server Action invokes it without widening browser authority.
 
 The S03 Guide entry boundary also owns one feature-specific Suggested Waypoint
 relationship selector. Its forward-only migration exposes only active
@@ -488,8 +489,20 @@ authenticated request seam validate and freeze that exact projection; the
 concrete request factory wires the executor through the same request-scoped
 service-role client. This selector is not the canonical Guide Explorer roster
 and must never acquire onboarding, appointment, Shared Snapshot, Practice,
-suggestion-count, contact, or private Explorer fields. It remains dormant until
-a separately reviewed Guide route or Server Action invokes the request seam.
+suggestion-count, contact, or private Explorer fields.
+
+The first read-only caller lives at:
+
+```text
+src/app/guide/waypoint-suggestions/relationships/route.ts
+```
+
+It is a thin, dynamic, uncached Route Handler. It accepts validated pagination
+only, builds the read-only request-cookie accessor, delegates trusted
+actor/role derivation and the database relationship recheck, and serializes
+only the fixed selector result. It does not protect the Guide page, replace
+fixture UI, invoke human commands, mutate Suggested Waypoints, schedule
+delivery, call a provider, deploy, or activate a real-user path.
 
 Banked dormant `PRJ01_R-WS09-WI021-S02` adds
 `applicationSettingReader.ts` as the narrow setting-read boundary. It accepts

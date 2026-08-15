@@ -266,8 +266,16 @@ ID, Explorer display name, relationship creation time, next cursor, and total
 count. Do not present this owner as the canonical Guide Explorer roster or add
 onboarding, appointment, Shared Snapshot, Practice, suggestion-count, contact,
 or private Explorer data. Keep every selector owner direct-import, server-only,
-off shared barrels, and dormant until a separately reviewed route or Server
-Action invokes it.
+and off shared barrels.
+
+The separately reviewed read-only caller is
+`src/app/guide/waypoint-suggestions/relationships/route.ts`. Keep it dynamic,
+uncached, and thin. It may accept only one closed page size and one optional
+opaque cursor, build only the read-only request-cookie accessor, and serialize
+only the fixed selector result. Malformed or authority-bearing query input must
+deny before cookie, auth, or selector IO. The route does not protect a page,
+replace fixture UI, invoke a human command, mutate product data, authorize the
+delivery worker, call a provider, deploy, or make the feature real-user ready.
 
 ## Documentation Update Rule
 
