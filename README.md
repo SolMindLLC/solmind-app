@@ -38,8 +38,12 @@ User-facing routes:
 /admin
 /guide
 /guide/explorers/avery/waypoint-suggestions
+/guide/waypoint-suggestions
+/guide/waypoint-suggestions/[relationshipId]
+/guide/waypoint-suggestions/[relationshipId]/[suggestedWaypointId]
 /explorer
 /explorer/waypoints
+/explorer/waypoints/[suggestedWaypointId]
 ```
 
 Server route handlers:
@@ -47,6 +51,10 @@ Server route handlers:
 ```text
 /admin/access
 /guide/waypoint-suggestions/relationships
+/guide/waypoint-suggestions/[relationshipId]/suggestions
+/guide/waypoint-suggestions/[relationshipId]/[suggestedWaypointId]/detail
+/explorer/waypoints/suggestions
+/explorer/waypoints/[suggestedWaypointId]/detail
 ```
 
 Current route purpose:
@@ -59,9 +67,13 @@ Current route purpose:
 | `/guide` | Guide dashboard preview |
 | `/guide/explorers/avery/waypoint-suggestions` | Deterministic fixture-backed Human Guide Suggested Waypoint list, draft, Pull Back, sent-detail, and receipt review surface |
 | `/explorer` | Deterministic Explorer onboarding, First Compass, Waypoint, exact-summary review, and non-live Guide-boundary prototype |
-| `/explorer/waypoints` | Deterministic fixture-backed Explorer Waypoint Suggestions inbox, detail, private comparison, receipt, and exact-response review surface |
+| `/explorer/waypoints` | Authenticated read-only Explorer Suggested Waypoint inbox over the banked `explorer.list` request composition |
+| `/explorer/waypoints/[suggestedWaypointId]` | Authenticated read-only Explorer Suggested Waypoint detail over the banked `explorer.get` request composition |
 | `/admin/access` | Opaque server-side Admin access probe returning only `{ allowed }` |
 | `/guide/waypoint-suggestions/relationships` | Read-only authenticated Guide entry selector for Suggested Waypoints; returns only relationship ID, Explorer display name, relationship creation time, cursor, and count |
+| `/guide/waypoint-suggestions` | Authenticated read-only Guide relationship entry page |
+| `/guide/waypoint-suggestions/[relationshipId]` | Authenticated relationship-scoped Guide Suggested Waypoint list |
+| `/guide/waypoint-suggestions/[relationshipId]/[suggestedWaypointId]` | Authenticated relationship-scoped Guide Suggested Waypoint detail |
 
 The `/explorer` route hosts a browser-memory-only deterministic prototype. It:
 
@@ -86,13 +98,14 @@ It makes no provider call and uses no database, route handler, cookie,
 experience. It does not create a real Guide session, send information, deploy a
 feature, or affect a real user.
 
-The separate `/explorer/waypoints` route is also deterministic and
-browser-memory-only. It presents one synthetic delivered Suggested Waypoint
-through the isolated `suggestedWaypoints.ts` contract, preserves Explorer read
-state and drafted text locally, and demonstrates explicit receipt and exact
-response actions. Its left navigation either reaches an existing route or
-explains the intended future destination. It is not authenticated, persistent,
-provider-backed, deployed, or connected to a real Human Guide.
+The separate `/explorer/waypoints` route now composes an authenticated,
+read-only inbox and suggestion detail over the server-derived Explorer
+request boundary. It validates exact browser-safe projections, exposes only
+delivered/current-version content plus Explorer-private read state and a
+deliberate dated receipt acknowledgement, and returns value-free denied or
+failed states. It adds no command, worker, provider, deployment, or real-user
+activation. The earlier deterministic Explorer fixture component remains
+retained design evidence but no longer owns this route.
 
 The paired `/guide/explorers/avery/waypoint-suggestions` route is deterministic
 and browser-memory-only. It demonstrates a Guide's Explorer-context list,
@@ -111,7 +124,7 @@ Backend foundations present in the repository (high level):
 - Dormant Explorer invitation foundations: the protected invitation-acceptance preparation helper, capacity and lock-key behavior, shared invited-identity provisioning, Guide-to-Explorer invitation issuance, replacement, revocation, and Explorer invitation acceptance with one `intake_pending` relationship.
 - Dormant Explorer S02 foundations: a protected 1-100 day Shared Snapshot sendability setting (default 7), a server-only fixed-key reader, a service-role-only audited mutation, and a manually invoked local synthetic Guide/Explorer fixture.
 - Dormant Summary and Shared Snapshot persistence foundation: immutable Guide-authored Summary revisions and sections, an authoritative publication record and fail-closed Explorer projection, Explorer-private exact-review drafts, immutable Explorer-confirmed Shared Snapshots with preserved lineage, and bounded service-role-only publication, unpublication, confirmation, and integrity surfaces. It has no application caller, permissive RLS policy, direct-table role grant, hosted data, provider action, deployment, or real-user path.
-- Dormant Suggested Waypoint persistence and security foundation: distinct Guide draft, pending outbound, immutable delivered-version, Explorer-private read, shared receipt, protected preference, and replay-proof owners; a closed six-command/five-query service-role-only catalog; and the protected 60-3600 second send-grace policy (default 300). The fixture-backed Explorer and Guide pages still have no database caller, hosted scheduler, provider action, deployment, or real-user path.
+- Dormant Suggested Waypoint persistence and security foundation: distinct Guide draft, pending outbound, immutable delivered-version, Explorer-private read, shared receipt, protected preference, and replay-proof owners; a closed six-command/five-query service-role-only catalog; and the protected 60-3600 second send-grace policy (default 300). Separately banked authenticated read callers now reach minimized Guide and Explorer projections; commands, hosted scheduling, providers, deployment, and real-user activation remain absent.
 - Closed Suggested Waypoint S03 RPC transport: server-only exact-call and
   exact-response validation over nine human functions and one separately
   constructed delivery-worker function. The dormant Admin operational query is
@@ -124,15 +137,16 @@ Backend foundations present in the repository (high level):
   client-safe Guide/Explorer request validation, request-auth actor/role
   derivation, Guide relationship enforcement, server-derived actor injection,
   server-resolved initial suggestion/version identifiers, and fixed
-  browser-safe results. It remains a direct-import server-only dependency with
-  no route, server action, UI caller, hosted worker, provider, deployment, or
-  real-user activation.
+  browser-safe results. It remains a direct-import server-only dependency;
+  separately reviewed thin read routes call it without adding a Server Action,
+  hosted worker, provider, deployment, or real-user activation.
 - Suggested Waypoint S03 concrete request dependencies: one request-scoped,
   direct-import server-only factory wires verified request identity,
   enumerated auth-record reads, the closed human executor, and UUIDv5 scoped
-  suggestion/version identifiers. Its feature-specific relationship-selector
-  executor now has one read-only route caller; the human command composition,
-  worker, provider, deployment, and fixture UI integration remain dormant.
+  suggestion/version identifiers. The relationship-selector and human request
+  composition now have bounded read-only route callers for Guide relationship
+  selection, Guide list/detail, and Explorer list/detail. Human commands,
+  worker, provider, deployment, and real-user activation remain dormant.
 - Suggested Waypoint S03 Guide relationship-selector route: the thin dynamic
   `/guide/waypoint-suggestions/relationships` JSON boundary accepts only one
   closed page size plus one optional opaque cursor, derives Guide authority
@@ -150,12 +164,13 @@ Important technical boundaries:
   The additional Explorer persistence owners, application callers, operational
   timing, and genuine server-side Virtual Guide conversation require separately
   reviewed implementation work.
-- The Suggested Waypoint S03 relationship-selector route is the only
-  browser-reachable S03 boundary. It does not protect a page or activate the
-  human command composition, delivery scheduling, worker authorization,
-  fixture UI replacement, deployment, or real-user readiness; those roots
-  remain separately gated. All server-only S03 owners stay off client/shared
-  barrels.
+- Suggested Waypoint S03 now has bounded browser-reachable read paths for the
+  Guide relationship selector, Guide relationship-scoped list/detail, and
+  Explorer list/detail. Those routes derive actor and role from authenticated
+  request state, validate exact minimized results again at the browser edge,
+  and stay read-only. They do not activate human commands, delivery scheduling,
+  worker authorization, providers, deployment, or real-user readiness. All
+  server-only S03 owners stay off client/shared barrels.
 
 Authoritative implementation status and exact evidence are tracked in:
 

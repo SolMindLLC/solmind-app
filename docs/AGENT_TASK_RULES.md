@@ -202,12 +202,13 @@ operational `/guide` dashboard. Persistence belongs to
 
 ### Explorer Suggested Waypoint deterministic UI
 
-For `PRJ01_V-WS05-WI022-S01`, keep `/explorer/waypoints` separate from the
-frozen S01 Explorer prototype. Compose the thin route from the dedicated client
-workspace and the pure Suggested Waypoint contract. Fixture-local UI may
-demonstrate unread/read, receipt acknowledgement, exact response, and private
-comparison, but it must not call persistence, providers, server actions,
-`fetch`, cookies, browser storage, notifications, or real Guide records.
+For `PRJ01_V-WS05-WI022-S01`, keep the retained
+`ExplorerSuggestedWaypointWorkspace.tsx` fixture separate from the frozen S01
+Explorer prototype. Fixture-local UI may demonstrate unread/read, receipt
+acknowledgement, exact response, and private comparison, but it must not call
+persistence, providers, server actions, `fetch`, cookies, browser storage,
+notifications, or real Guide records. The `/explorer/waypoints` route now
+belongs to the separately reviewed authenticated S03 inbox/detail read layer.
 
 Every visible prototype control must navigate, mutate only fixture-local state,
 or display the intended production destination. Test structural omission of
@@ -268,7 +269,7 @@ onboarding, appointment, Shared Snapshot, Practice, suggestion-count, contact,
 or private Explorer data. Keep every selector owner direct-import, server-only,
 and off shared barrels.
 
-The separately reviewed read-only caller is
+The first separately reviewed read-only caller is
 `src/app/guide/waypoint-suggestions/relationships/route.ts`. Keep it dynamic,
 uncached, and thin. It may accept only one closed page size and one optional
 opaque cursor, build only the read-only request-cookie accessor, and serialize
@@ -276,6 +277,17 @@ only the fixed selector result. Malformed or authority-bearing query input must
 deny before cookie, auth, or selector IO. The route does not protect a page,
 replace fixture UI, invoke a human command, mutate product data, authorize the
 delivery worker, call a provider, deploy, or make the feature real-user ready.
+
+The separately reviewed S03 read layer also includes relationship-scoped Guide
+list/detail routes and Explorer list/detail routes. Keep every route dynamic,
+uncached, and thin. Guide reads admit only an authorized relationship selector
+plus closed pagination or one opaque suggestion identifier. Explorer reads
+admit only closed pagination or one opaque suggestion identifier and derive the
+Explorer actor from request auth. Browser contracts must validate exact
+minimized projections and fail closed on widened authoring, pending, policy,
+Assistant, relationship, private Waypoint, conversation, evidence, or inference
+data. These routes remain read-only and authorize no command, delivery worker,
+provider, deployment, or real-user activation.
 
 ## Documentation Update Rule
 

@@ -24,6 +24,21 @@ const item = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+const detail = (overrides: Record<string, unknown> = {}) => ({
+  suggested_waypoint_id: UNREAD_ID,
+  current_version_id: VERSION_ID,
+  destination: "Protect one evening each week for recovery",
+  why: "A protected evening may make the week feel more sustainable.",
+  arrival_signals: ["One evening stays unscheduled."],
+  received_at: "2026-08-16T06:00:00.000Z",
+  read: false,
+  read_at: null,
+  receipt_acknowledged: false,
+  acknowledged_at: null,
+  channel_category: "open",
+  ...overrides,
+});
+
 const fulfillJson = (route: Route, body: unknown) =>
   route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
 
@@ -51,6 +66,9 @@ test.describe("authenticated Explorer Suggested Waypoint inbox", () => {
         acknowledged_at: "2026-08-16T06:05:00.000Z",
       }),
     ], null, 2)));
+    await page.route(`**/explorer/waypoints/${UNREAD_ID}/detail`, (route) =>
+      fulfillJson(route, { ok: true, data: detail(), error: null }),
+    );
 
     await page.goto("/explorer/waypoints");
     await expect(page.getByText("Unread", { exact: false })).toBeVisible();
@@ -62,10 +80,68 @@ test.describe("authenticated Explorer Suggested Waypoint inbox", () => {
     await row.focus();
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(new RegExp(`/explorer/waypoints/${UNREAD_ID}$`));
-    await expect(page.getByRole("heading", { name: "Suggestion detail" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", {
+        name: "Protect one evening each week for recovery",
+      }),
+    ).toBeVisible();
+    await expect(page.getByText("Received Aug 16 as a suggestion, not an assignment.")).toBeVisible();
+    await expect(page.getByText("One evening stays unscheduled.")).toBeVisible();
+    await expect(page.getByText("Private Explorer view", { exact: false })).toBeVisible();
     await page.getByRole("link", { name: "Back to Waypoint Suggestions" }).click();
     await expect(page).toHaveURL(new RegExp(`/explorer/waypoints\\?focus=${UNREAD_ID}$`));
     await expect(row).toBeFocused();
+    await expectNoSeriousAxeViolations(page);
+  });
+
+  test("shows exact read and acknowledgement states without Guide-only leakage", async ({ page }) => {
+    await page.route(`**/explorer/waypoints/${UNREAD_ID}/detail`, (route) =>
+      fulfillJson(route, {
+        ok: true,
+        data: detail({
+          read: true,
+          read_at: "2026-08-16T06:01:00.000Z",
+          receipt_acknowledged: true,
+          acknowledged_at: "2026-08-16T06:02:00.000Z",
+        }),
+        error: null,
+      }),
+    );
+
+    await page.goto(`/explorer/waypoints/${UNREAD_ID}`);
+    await expect(page.getByText("✓ Read", { exact: true })).toBeVisible();
+    await expect(page.getByText("You acknowledged receipt Aug 16", { exact: false })).toBeVisible();
+    await expect(page.locator("body")).not.toContainText("Pull Back");
+    await expect(page.locator("body")).not.toContainText("Pending send");
+    await expect(page.locator("body")).not.toContainText("Kairos");
+    await expectNoSeriousAxeViolations(page);
+  });
+
+  test("renders denied and failed detail states without suggestion leakage and retries safely", async ({ page }) => {
+    let mode: "denied" | "failed" | "success" = "denied";
+    await page.route(`**/explorer/waypoints/${UNREAD_ID}/detail`, (route) => {
+      if (mode === "success") {
+        return fulfillJson(route, { ok: true, data: detail(), error: null });
+      }
+      return fulfillJson(route, {
+        ok: false,
+        data: null,
+        error:
+          mode === "denied"
+            ? "SolMind Waypoint Suggestions are unavailable."
+            : "SolMind Waypoint Suggestions could not be loaded.",
+      });
+    });
+
+    await page.goto(`/explorer/waypoints/${UNREAD_ID}`);
+    await expect(page.getByRole("heading", { name: "Suggestion unavailable" })).toBeVisible();
+    mode = "failed";
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Could not load suggestion" })).toBeVisible();
+    await expect(page.locator("body")).not.toContainText("A protected evening may make the week feel more sustainable.");
+    mode = "success";
+    await page.getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByRole("heading", { name: "Protect one evening each week for recovery" })).toBeVisible();
     await expectNoSeriousAxeViolations(page);
   });
 

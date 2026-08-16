@@ -102,13 +102,13 @@ exact in-memory Shared Snapshot the Explorer confirmed. It must exclude the
 conversation, Route, private Waypoint, Private Summary Draft, excluded detail,
 selection state, and unconfirmed material.
 
-## PRJ01_V-WS05-WI022-S01 Suggested Waypoint Prototype Boundary
+## PRJ01_V-WS05-WI022 Suggested Waypoint UI Boundaries
 
-`/explorer/waypoints` is a separate deterministic, fixture-backed review
-surface. Keep its route thin, its client UI in
-`ExplorerSuggestedWaypointWorkspace.tsx`, and its lifecycle and role
-projections in the isolated `suggestedWaypoints.ts` module family. Do not add
-cross-role lifecycle state to `ExplorerExperiencePrototype.tsx`.
+`ExplorerSuggestedWaypointWorkspace.tsx` remains deterministic fixture-backed
+design evidence for private comparison, response, and acknowledgement flows.
+It does not own `/explorer/waypoints`: that route now composes the separately
+reviewed authenticated S03 inbox and detail reads. Do not add cross-role
+lifecycle state to `ExplorerExperiencePrototype.tsx`.
 
 `/guide/explorers/avery/waypoint-suggestions` is the paired deterministic Human
 Guide review surface. Keep its route thin, its client UI in
@@ -119,12 +119,12 @@ acknowledgements, corrections, withdrawal, and Guide-only archive language,
 but it must not infer passive Explorer activity or expose Explorer-private
 comparison, drafts, questions, Waypoints, or Virtual Guide observations.
 
-Until separately gated persistence and server transport exist, these surfaces
-must not use a provider, database, route handler, server action, cookie,
-`fetch`, browser storage, notification, or real Guide data. Every visible
-control must navigate, change only fixture-local state, or explain its intended
-production behavior. Explorer projections must exclude Guide-only draft,
-pending-send, Pull Back, archive, appointment, and Guide Assistant state.
+The retained fixture surfaces must not use a provider, database, route handler,
+server action, cookie, `fetch`, browser storage, notification, or real Guide
+data. Every visible fixture control must navigate, change only fixture-local
+state, or explain its intended production behavior. Authenticated Explorer
+read projections must exclude Guide-only draft, pending-send, Pull Back,
+archive, appointment, relationship, and Guide Assistant state.
 
 The visible disclosure must say the flow is an early fixed-script prototype,
 not a therapist or crisis service, and that refresh clears it. Protected
@@ -141,22 +141,24 @@ query. Validate exact call and response keys, UUIDs, page sizes, cursors,
 bounded text, lifecycle coherence, and the protected 60-3600 second send-grace
 shape before returning a frozen copy. Map all failures to value-free sentinels.
 
-The next S03 increment adds `suggestedWaypointRequestComposition.ts` as a
-direct-import server-only human-request boundary. It validates exact
+The banked `suggestedWaypointRequestComposition.ts` is the direct-import
+server-only human-request boundary. It validates exact
 client-safe Guide/Explorer shapes, derives actor identity and role from the
 injected request-auth and record sources, rechecks Guide relationship access,
 injects only the server-derived actor, and maps transport detail to fixed
 browser-safe results. Initial suggestion/version identifiers come only from an
 injected server resolver, never a browser form. Keep the module and test off
-shared barrels. It is not a route, server action, worker, UI caller, hosted
-scheduler, provider integration, deployment, or real-user activation.
+shared barrels. It does not itself own a route, Server Action, worker, UI,
+hosted scheduler, provider integration, deployment, or real-user activation;
+separately reviewed thin read routes call it.
 
-The concrete request-dependency increment adds
+The banked concrete request-dependency owners are
 `suggestedWaypointRequestDependencies.ts` and
 `suggestedWaypointScopedIdentifiers.ts`. Keep both direct-import and
 server-only. The request-scoped factory must construct verified request
 identity, enumerated auth-record reads, the closed human executor, and required
-stable scoped identifiers without adding a route or browser caller. UUIDv5
+stable scoped identifiers. The factory does not itself own a route or browser
+caller, although the separately reviewed read routes use it. UUIDv5
 inputs must bind purpose, actor, relationship, operation, and when applicable
 the target suggestion so identical retries are stable and authority scopes do
 not collide. Do not export either owner from a shared barrel.
@@ -171,6 +173,16 @@ add onboarding, appointment, Shared Snapshot, Practice, suggestion-count,
 contact, or private Explorer fields. It may not invoke human commands, mutate
 Suggested Waypoints, replace fixture UI, schedule delivery, call a provider,
 or imply deployment or real-user readiness.
+
+The separately reviewed Guide list/detail and Explorer list/detail routes are
+also thin, dynamic, uncached, and read-only. Guide reads accept only an
+authorized relationship selector plus closed pagination or one suggestion
+identifier. Explorer reads accept only closed pagination or one opaque
+suggestion identifier and derive the Explorer actor from request auth. Every
+browser contract must reject widened role, relationship, authoring, pending,
+policy, Assistant, private Waypoint, conversation, evidence, or inference data.
+These read paths do not authorize command routes, delivery, providers,
+deployment, or real-user activation.
 
 ## Secrets Boundary
 

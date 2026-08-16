@@ -94,9 +94,9 @@ Route files should not:
 `src/app/explorer/page.tsx` remains a thin Server Component. It composes the
 interactive S01 client boundary without owning its state transitions.
 
-`src/app/explorer/waypoints/page.tsx` is a separate thin Server Component for
-the deterministic Suggested Waypoint review surface. It must not import or
-extend `ExplorerExperiencePrototype.tsx`.
+`src/app/explorer/waypoints/page.tsx` and its suggestion-scoped detail page are
+thin Server Components for the authenticated read-only S03 Explorer inbox and
+detail. They must not import or extend `ExplorerExperiencePrototype.tsx`.
 
 `src/app/guide/explorers/avery/waypoint-suggestions/page.tsx` is the paired thin
 Server Component for the deterministic Human Guide review surface. It composes
@@ -152,13 +152,21 @@ projection returned by `createNonLiveGuideProjection`.
 - `guideSuggestedWaypointFixtures.ts` constructs Guide-only draft, pending,
   open, and acknowledged examples through the pure domain. It must not emulate
   passive Explorer telemetry or import Explorer-private fixture observations.
+- `ExplorerSuggestedWaypointInbox.tsx` and
+  `ExplorerSuggestedWaypointDetail.tsx` own authenticated read presentation
+  only. Their browser contracts admit exact delivered-current-version and
+  Explorer-private engagement fields, then reject Guide-only or inferred data.
+- `GuideSuggestedWaypointRelationshipEntry.tsx`,
+  `GuideSuggestedWaypointRelationshipList.tsx`, and
+  `GuideSuggestedWaypointDetail.tsx` own authenticated Guide read presentation
+  only and remain relationship-scoped.
 
-The Suggested Waypoint UIs do not access a provider, the dormant Suggested
-Waypoint database owners, a server action, route handler, cookie, browser
-storage, notification, or real Guide record. Their authenticated production
-transport remains separately gated. Canonical product
-and screen documents are unchanged because they already own these accepted
-Explorer and Guide surfaces and fixture-first implementation boundaries.
+The retained fixture UIs do not access a provider, database owner, Server
+Action, Route Handler, cookie, browser storage, notification, or real Guide
+record. The authenticated S03 read components use thin same-origin routes over
+server-derived request authority and exact role-safe projections. No current
+Suggested Waypoint UI invokes a human command, worker, provider, deployment, or
+real-user activation.
 
 Dormant `PRJ01_V-WS05-WI022-S02` adds a database-only Suggested Waypoint
 boundary under `supabase/migrations/` and `supabase/tests/`. Eight owners keep
@@ -185,7 +193,7 @@ opaque relationship-unavailable results without weakening operation binding.
 They do not derive auth, check relationships, protect routes, schedule delivery,
 or activate a caller.
 
-The next S03 increment adds `suggestedWaypointRequestComposition.ts`. It wraps
+The banked S03 composition adds `suggestedWaypointRequestComposition.ts`. It wraps
 only the human executor, snapshots and validates exact client-safe operation
 shapes, derives the trusted actor and active role from injected request-auth and
 record sources, authorizes Guide relationship selectors against server-loaded
@@ -194,8 +202,17 @@ actor account is always injected from that trusted context. Initial suggestion
 and pending-version identifiers are supplied only by an injected server
 resolver. The module returns executor-validated role-safe payload data or one
 of two fixed browser-safe errors. It remains off the shared barrel and owns no
-route, server action, cookie adapter, UI caller, worker, scheduler, provider,
-deployment, or real-user path.
+route, Server Action, UI, worker, scheduler, provider, deployment, or real-user
+activation. Separately reviewed thin Route Handlers build its read-only cookie
+adapter and invoke only the closed Guide or Explorer read operations.
+
+The banked S03 read layer owns the Guide relationship selector, Guide
+relationship-scoped list/detail, and Explorer list/detail. Route input is
+limited to closed pagination or opaque identifiers; actor, role, and Guide
+relationship authority come from server request state and records. A second
+browser contract validates the already-minimized role projection before
+rendering. These routes add no command, delivery worker, provider, deployment,
+or real-user activation.
 
 ## Product Logic and Constants
 
