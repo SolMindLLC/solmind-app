@@ -28,6 +28,14 @@ User-facing routes:
 - `/explorer/waypoints` - deterministic, fixture-backed Explorer Suggested
   Waypoint review surface; no persistence or real Guide connection
 
+Shared browser interaction assurance uses a separate Playwright configuration
+and `tests/browser/` harness. It preserves the Node-oriented Vitest
+configuration and exercises the deterministic Explorer and Human Guide
+Suggested Waypoint review routes at desktop and narrow viewports. The harness
+owns keyboard, focus, responsive navigation, live-region, and companion
+automated accessibility checks only; it uses no Supabase, Docker, provider,
+hosted data, or real-user path.
+
 Server route handlers:
 
 - `/admin/access` - opaque server-side Admin access probe returning only `{ allowed }`
@@ -330,6 +338,7 @@ Do not expose:
 npm.cmd run lint
 npm.cmd run typecheck
 npm.cmd run test
+npm.cmd run test:browser
 npm.cmd run build
 ```
 

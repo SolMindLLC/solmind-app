@@ -348,10 +348,20 @@ Run these before committing code changes:
 
 ```powershell
 npm.cmd test
+npm.cmd run test:browser
 npm.cmd run lint
 npm.cmd run typecheck
 npm.cmd run build
 ```
+
+The shared Playwright harness first builds the app, then runs the deterministic
+Explorer and Human Guide Suggested Waypoint review routes in desktop and
+narrow Chromium viewports. It
+checks keyboard operation, focus continuity, responsive navigation, polite
+status announcements, and companion automated accessibility findings without
+using Supabase, Docker, providers, hosted data, or real users. See
+`tests/browser/README.md` for one-time browser installation, the bounded local
+port, failure artifacts, and teardown expectations.
 
 On Windows PowerShell, use `npm.cmd` instead of `npm` if PowerShell blocks `npm.ps1`.
 
