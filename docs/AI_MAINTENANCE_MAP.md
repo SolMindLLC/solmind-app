@@ -13,7 +13,8 @@ Suggested Waypoint RPC transport, authenticated human-request composition,
 concrete server-only dependencies and stable scoped identities, a
 feature-specific Guide relationship selector, its first read-only authenticated
 route, and the first production Guide relationship-entry page that consumes the
-route. No human command
+route. The production Guide relationship path also has exact read-only list and
+detail browser boundaries over the banked Guide projections. No human command
 edge, operational delivery worker, hosted worker, provider path, deployment, or
 real-user activation exists.
 
@@ -261,7 +262,8 @@ The `auth/`, `context/`, and `supabase/` directories hold server-only modules ke
 | Explorer Suggested Waypoint fixture UI | `src/app/explorer/waypoints/page.tsx`; `src/components/solmind/ExplorerSuggestedWaypointWorkspace.tsx`; `src/lib/solmind/suggestedWaypointFixtures.ts` | Thin deterministic inbox/detail/private-comparison presentation over one synthetic delivered suggestion; no persistence, provider, or authenticated runtime |
 | Guide Suggested Waypoint fixture UI | `src/app/guide/explorers/avery/waypoint-suggestions/page.tsx`; `src/components/solmind/GuideSuggestedWaypointWorkspace.tsx`; `src/lib/solmind/guideSuggestedWaypointFixtures.ts` | Thin deterministic Explorer-context list/detail presentation over Guide-only draft, pending-send, Pull Back, open, and acknowledged states; no persistence, provider, passive Explorer telemetry, or authenticated runtime |
 | Guide Suggested Waypoint relationship entry | `src/app/guide/waypoint-suggestions/page.tsx`; `src/app/guide/waypoint-suggestions/[relationshipId]/page.tsx`; `src/components/solmind/GuideSuggestedWaypointRelationshipEntry.tsx`; `src/lib/solmind/suggestedWaypointRelationshipBrowserContract.ts` | Authenticated, read-only feature entry over the banked relationship-selector route; exact browser response validation, opaque-cursor pagination, distinct empty/denied/failed states, safe-page retention, and relationship-scoped navigation without suggestion data or commands |
-| Guide Suggested Waypoint relationship list | `src/app/guide/waypoint-suggestions/[relationshipId]/page.tsx`; `src/app/guide/waypoint-suggestions/[relationshipId]/suggestions/route.ts`; `src/app/guide/waypoint-suggestions/[relationshipId]/[suggestedWaypointId]/page.tsx`; `src/components/solmind/GuideSuggestedWaypointRelationshipList.tsx`; `src/lib/solmind/suggestedWaypointGuideList{Browser,Shared}Contract.ts` | Authenticated, relationship-scoped, read-only Guide list over the banked `guide.list` request composition; exact browser validation, privacy-minimized lifecycle/status projection, progressive opaque-cursor pagination, safe-page retention, and an honest data-free detail destination. It adds no command, worker, provider, database, deployment, or real-user activation. |
+| Guide Suggested Waypoint relationship list | `src/app/guide/waypoint-suggestions/[relationshipId]/page.tsx`; `src/app/guide/waypoint-suggestions/[relationshipId]/suggestions/route.ts`; `src/components/solmind/GuideSuggestedWaypointRelationshipList.tsx`; `src/lib/solmind/suggestedWaypointGuideList{Browser,Shared}Contract.ts` | Authenticated, relationship-scoped, read-only Guide list over the banked `guide.list` request composition; exact browser validation, privacy-minimized lifecycle/status projection, progressive opaque-cursor pagination, safe-page retention, and suggestion-scoped navigation into the separately owned detail read. It adds no command, worker, provider, database, deployment, or real-user activation. |
+| Guide Suggested Waypoint relationship detail | `src/app/guide/waypoint-suggestions/[relationshipId]/[suggestedWaypointId]/page.tsx`; `src/app/guide/waypoint-suggestions/[relationshipId]/[suggestedWaypointId]/detail/route.ts`; `src/components/solmind/GuideSuggestedWaypointDetail.tsx`; `src/lib/solmind/suggestedWaypointGuideDetailBrowserContract.ts`; co-located focused and browser tests | Authenticated, relationship-scoped, read-only Guide detail over the banked `guide.get` request composition; exact browser validation, Guide-only draft/pending content, immutable delivered content, pending-policy facts, deliberate dated receipt acknowledgement, fixed denied/failure states, and structural omission of Explorer-private engagement, Waypoint, conversation, evidence, and inference data. It adds no command, worker, provider, database, deployment, or real-user activation. |
 | Shared UI | `src/components/solmind/*.tsx` | Reusable presentational components |
 | Role model | `src/lib/solmind/roles.ts` | Canonical role strings, labels, and home routes |
 | Route metadata | `src/lib/solmind/pages.ts` | Page titles, descriptions, and hrefs |
@@ -393,10 +395,10 @@ Extend these modules deliberately and in small slices. Keep server-only modules 
   snapshot and audit/fingerprint enforcement, context budgeting, provider
   selection/dispatch, session/message persistence, safety response, and UI.
 - Guide Assistant context from these Explorer artifacts.
-- Suggested Waypoint Guide detail and Explorer list/detail adapters, five human
+- Suggested Waypoint Explorer list/detail adapters, five human
   command route/action edges, operational local delivery-worker invocation, and
   hosted delivery-worker caller beyond the banked authenticated composition,
-  read-only Guide relationship selector, and relationship-scoped Guide list.
+  read-only Guide relationship selector, and relationship-scoped Guide list/detail.
 - Production Guide dashboard integration.
 - Runtime safety classification and escalation.
 - Reflection storage beyond approved future slices.

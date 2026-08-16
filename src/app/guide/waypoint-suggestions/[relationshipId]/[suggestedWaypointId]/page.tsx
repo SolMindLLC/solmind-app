@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { BackLink } from "@/components/solmind/BackLink";
+import { GuideSuggestedWaypointDetail } from "@/components/solmind/GuideSuggestedWaypointDetail";
 import { PageShell } from "@/components/solmind/PageShell";
 import { Panel } from "@/components/solmind/Panel";
 import { SectionLabel } from "@/components/solmind/SectionLabel";
@@ -35,15 +36,15 @@ export default async function GuideSuggestionDetailPage({
       <Panel className="mt-10">
         <SectionLabel>Guide workspace</SectionLabel>
         <h1 className="mt-4 text-4xl font-semibold">Suggestion detail</h1>
-        <div className="mt-6 rounded-2xl border border-cyan-800 bg-cyan-950/30 p-6">
-          <h2 className="text-xl font-semibold">Next bounded connection</h2>
-          <p className="mt-2 text-slate-300">
-            No suggestion detail is loaded on this page. A later bounded step
-            will recheck the active Guide relationship and load only the exact
-            Guide-visible detail for this suggestion before exposing review or
-            command controls.
-          </p>
-        </div>
+        <p className="mt-3 max-w-3xl text-slate-300">
+          Review the exact current Guide-visible content and lifecycle state.
+          This page does not expose Explorer-private activity and does not yet
+          provide save, schedule, Pull Back, correction, or withdrawal controls.
+        </p>
+        <GuideSuggestedWaypointDetail
+          relationshipId={relationshipId}
+          suggestedWaypointId={suggestedWaypointId}
+        />
       </Panel>
     </PageShell>
   );

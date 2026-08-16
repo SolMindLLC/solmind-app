@@ -42,7 +42,7 @@ const expectNoSeriousAxeViolations = async (page: Page) => {
 };
 
 test.describe("relationship-scoped Guide Suggested Waypoint list", () => {
-  test("shows distinct states and opens an honest data-free detail destination", async ({ page }) => {
+  test("shows distinct states and opens the bounded detail destination", async ({ page }) => {
     const pending = {
       ...draft(PENDING_ID, "Plan a short transition after work"),
       authoring_mode: "pending",
@@ -68,6 +68,25 @@ test.describe("relationship-scoped Guide Suggested Waypoint list", () => {
         open,
       ], null, 3)),
     );
+    await page.route(
+      `**/guide/waypoint-suggestions/${RELATIONSHIP_ID}/${DRAFT_ID}/detail`,
+      (route) => fulfillJson(route, {
+        ok: true,
+        data: {
+          ...draft(DRAFT_ID, "Protect one evening each week for recovery"),
+          draft_or_pending_destination: "Protect one evening each week for recovery",
+          draft_or_pending_why: "A protected evening may support recovery.",
+          draft_or_pending_arrival_signals: ["One evening stays unscheduled."],
+          delivered_destination: null,
+          delivered_why: null,
+          delivered_arrival_signals: null,
+          policy_key: null,
+          policy_version: null,
+          effective_seconds: null,
+        },
+        error: null,
+      }),
+    );
 
     await page.goto(`/guide/waypoint-suggestions/${RELATIONSHIP_ID}`);
     await expect(page.getByText(/Draft$/, { exact: false })).toBeVisible();
@@ -79,7 +98,7 @@ test.describe("relationship-scoped Guide Suggested Waypoint list", () => {
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(new RegExp(`/${RELATIONSHIP_ID}/${DRAFT_ID}$`));
     await expect(page.getByRole("heading", { name: "Suggestion detail" })).toBeVisible();
-    await expect(page.getByText("No suggestion detail is loaded on this page.")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Guide-only draft" })).toBeVisible();
     await page.getByRole("link", { name: "Back to Waypoint Suggestions" }).click();
     await expect(page).toHaveURL(new RegExp(`/${RELATIONSHIP_ID}\\?focus=${DRAFT_ID}$`));
     await expect(row).toBeFocused();
