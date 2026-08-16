@@ -11,8 +11,9 @@ This repository pairs the SolMind MVP0 preview UI with several banked, foundatio
 Banked `PRJ01_V-WS05-WI022-S03` construction now includes the closed server-only
 Suggested Waypoint RPC transport, authenticated human-request composition,
 concrete server-only dependencies and stable scoped identities, a
-feature-specific Guide relationship selector, and its first read-only
-authenticated route. No visible page consumes that route, and no human command
+feature-specific Guide relationship selector, its first read-only authenticated
+route, and the first production Guide relationship-entry page that consumes the
+route. No human command
 edge, operational delivery worker, hosted worker, provider path, deployment, or
 real-user activation exists.
 
@@ -22,6 +23,10 @@ User-facing routes:
 - `/login` - login preview
 - `/admin` - Admin dashboard preview
 - `/guide` - human Guide dashboard preview
+- `/guide/waypoint-suggestions` - authenticated, read-only Human Guide
+  relationship entry for Suggested Waypoints; no suggestion data or command
+- `/guide/waypoint-suggestions/[relationshipId]` - bounded relationship-selected
+  placeholder for the next Guide-visible suggestion-list increment
 - `/guide/explorers/avery/waypoint-suggestions` - deterministic, fixture-backed
   Human Guide Suggested Waypoint review surface; no persistence or real delivery
 - `/explorer` - deterministic, browser-memory Explorer S01 experience
@@ -40,7 +45,7 @@ Server route handlers:
 
 - `/admin/access` - opaque server-side Admin access probe returning only `{ allowed }`
 - `/guide/waypoint-suggestions/relationships` - read-only authenticated
-  Suggested Waypoint Guide-entry selector; no page protection or UI caller
+  Suggested Waypoint Guide-entry selector consumed by the production entry page
 
 `PRJ01_R-WS09-WI021-S01` adds the first interactive Explorer experience
 without a provider or persistence. It contains the exact structured onboarding
@@ -255,6 +260,7 @@ The `auth/`, `context/`, and `supabase/` directories hold server-only modules ke
 | Suggested Waypoint pure domain | `src/lib/solmind/suggestedWaypoints.ts` | Immutable Guide authoring, shared-channel, Explorer-private engagement, replay, timing, and role-projection rules |
 | Explorer Suggested Waypoint fixture UI | `src/app/explorer/waypoints/page.tsx`; `src/components/solmind/ExplorerSuggestedWaypointWorkspace.tsx`; `src/lib/solmind/suggestedWaypointFixtures.ts` | Thin deterministic inbox/detail/private-comparison presentation over one synthetic delivered suggestion; no persistence, provider, or authenticated runtime |
 | Guide Suggested Waypoint fixture UI | `src/app/guide/explorers/avery/waypoint-suggestions/page.tsx`; `src/components/solmind/GuideSuggestedWaypointWorkspace.tsx`; `src/lib/solmind/guideSuggestedWaypointFixtures.ts` | Thin deterministic Explorer-context list/detail presentation over Guide-only draft, pending-send, Pull Back, open, and acknowledged states; no persistence, provider, passive Explorer telemetry, or authenticated runtime |
+| Guide Suggested Waypoint relationship entry | `src/app/guide/waypoint-suggestions/page.tsx`; `src/app/guide/waypoint-suggestions/[relationshipId]/page.tsx`; `src/components/solmind/GuideSuggestedWaypointRelationshipEntry.tsx`; `src/lib/solmind/suggestedWaypointRelationshipBrowserContract.ts` | Authenticated, read-only feature entry over the banked relationship-selector route; exact browser response validation, opaque-cursor pagination, distinct empty/denied/failed states, safe-page retention, and relationship-scoped navigation without suggestion data or commands |
 | Shared UI | `src/components/solmind/*.tsx` | Reusable presentational components |
 | Role model | `src/lib/solmind/roles.ts` | Canonical role strings, labels, and home routes |
 | Route metadata | `src/lib/solmind/pages.ts` | Page titles, descriptions, and hrefs |
@@ -277,8 +283,8 @@ The `auth/`, `context/`, and `supabase/` directories hold server-only modules ke
 | Suggested Waypoint closed S03 RPC transport (`PRJ01_V-WS05-WI022-S03`) | `src/lib/solmind/supabase/suggestedWaypointRpcContract.ts`; `src/lib/solmind/supabase/suggestedWaypointRpcExecutor.ts`; `src/lib/solmind/supabase/__tests__/suggestedWaypointRpcExecutor.test.ts`; `src/lib/solmind/supabase/__tests__/suggestedWaypointRpcOutcomeAlgebra.test.ts` | Exact nine-function human and one-function worker allowlists, exact input/output validation, canonical eight-value command outcomes with function-specific nullability and call binding, lifecycle-coherent role projections, frozen copies, and value-free transport-failure mapping. It excludes the dormant Admin query and has no auth/relationship composition, route, server action, UI caller, hosted worker, provider, deployment, or real-user effect. |
 | Suggested Waypoint S03 authenticated request composition (`PRJ01_V-WS05-WI022-S03`) | `src/lib/solmind/supabase/suggestedWaypointRequestComposition.ts`; `src/lib/solmind/supabase/__tests__/suggestedWaypointRequestComposition.test.ts` | Direct-import server-only human-request boundary with exact client-safe Guide/Explorer shapes, request-auth actor/role derivation, Guide relationship enforcement, server-derived actor injection, server-resolved initial suggestion/version identifiers, and fixed browser-safe results. It has no route, server action, concrete cookie wiring, UI caller, worker, provider, deployment, or real-user activation. |
 | Suggested Waypoint S03 concrete request dependencies (`PRJ01_V-WS05-WI022-S03`) | `src/lib/solmind/supabase/suggestedWaypointRequestDependencies.ts`; `src/lib/solmind/supabase/suggestedWaypointScopedIdentifiers.ts`; co-located focused tests | Request-scoped direct-import server-only assembly of verified request identity, enumerated auth-record reads, the closed human executor, and required stable UUIDv5 identifiers bound to exact actor/relationship/operation purposes. Its relationship-selector subset is used by one read-only route; the human command composition, Server Action, worker, provider, deployment, and real-user path remain absent. |
-| Suggested Waypoint S03 Guide relationship selector (`PRJ01_V-WS05-WI022-S03`) | `supabase/migrations/20260814000000_suggested_waypoint_relationship_selector.sql`; `supabase/tests/suggested_waypoint_relationship_selector_*_test.sql`; `src/lib/solmind/supabase/suggestedWaypointRelationshipSelector*.ts`; co-located focused tests | Feature-specific active relationship selector with server-derived Guide authority, stable keyset pagination, exact relationship-ID/Explorer-display-name/creation-time projection, frozen browser-safe results, and no generic roster semantics. It excludes onboarding, appointment, Shared Snapshot, Practice, suggestion-count, contact, and private Explorer data. One read-only route invokes it; no page/UI caller, Server Action, deployment, or real-user activation exists. |
-| Suggested Waypoint S03 Guide relationship-selector route (`PRJ01_V-WS05-WI022-S03`) | `src/app/guide/waypoint-suggestions/relationships/route.ts`; co-located route tests | First read-only browser-reachable S03 boundary. It accepts validated pagination only, builds the read-only request-cookie accessor, delegates actor/role derivation and relationship recheck to the banked server owners, returns the fixed minimized selector result, and sets `private, no-store`. It does not protect a page, replace fixture UI, invoke human commands, write product data, schedule delivery, call a provider, deploy, or affect real users. |
+| Suggested Waypoint S03 Guide relationship selector (`PRJ01_V-WS05-WI022-S03`) | `supabase/migrations/20260814000000_suggested_waypoint_relationship_selector.sql`; `supabase/tests/suggested_waypoint_relationship_selector_*_test.sql`; `src/lib/solmind/supabase/suggestedWaypointRelationshipSelector*.ts`; co-located focused tests | Feature-specific active relationship selector with server-derived Guide authority, stable keyset pagination, exact relationship-ID/Explorer-display-name/creation-time projection, frozen browser-safe results, and no generic roster semantics. It excludes onboarding, appointment, Shared Snapshot, Practice, suggestion-count, contact, and private Explorer data. One read-only route and production entry page use it; no Server Action, command, deployment, or real-user activation exists. |
+| Suggested Waypoint S03 Guide relationship-selector route (`PRJ01_V-WS05-WI022-S03`) | `src/app/guide/waypoint-suggestions/relationships/route.ts`; co-located route tests | First read-only browser-reachable S03 data boundary. It accepts validated pagination only, builds the read-only request-cookie accessor, delegates actor/role derivation and relationship recheck to the banked server owners, returns the fixed minimized selector result, and sets `private, no-store`. The production entry page consumes it; the route does not replace the fixture UI, invoke human commands, write product data, schedule delivery, call a provider, deploy, or affect real users. |
 | Schema foundations | `supabase/migrations/*.sql` | MVP0 schemas and tables; Row Level Security enabled deny-by-default; no permissive policies or grants yet |
 | Write-path concurrency harness | `supabase/tests/write_path_concurrency_harness_test.sql` | Local-only pgTAP plus `dblink` foundation for deterministic multi-session race proofs; future DEF-005 function slices must reuse its distinct-session, observed-lock-contention, bounded-timeout, and teardown pattern for their owning concurrency tests |
 | Verification redemption CAS (dormant DEF5-S2) | `supabase/migrations/20260712000000_verification_challenge_redemption_function.sql`; `supabase/tests/verification_challenge_redemption_*_test.sql` | Dormant service-role-only verification redemption function and sequential/concurrent proofs. The concurrency suite commits reserved synthetic rows outside its outer rollback boundary, performs targeted cleanup, and requires Paul's explicit approval for the documented recovery cleanup after a hard failure. It does not issue challenges, create sessions, wire routes, or activate a runtime path. |
