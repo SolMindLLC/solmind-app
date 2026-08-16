@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { BackLink } from "@/components/solmind/BackLink";
+import { GuideSuggestedWaypointRelationshipList } from "@/components/solmind/GuideSuggestedWaypointRelationshipList";
 import { PageShell } from "@/components/solmind/PageShell";
 import { Panel } from "@/components/solmind/Panel";
 import { SectionLabel } from "@/components/solmind/SectionLabel";
@@ -28,18 +29,13 @@ export default async function GuideRelationshipSuggestedWaypointPage({
 
       <Panel className="mt-10">
         <SectionLabel>Guide workspace</SectionLabel>
-        <h1 className="mt-4 text-4xl font-semibold">
-          Suggested Waypoint relationship workspace
-        </h1>
-        <div className="mt-6 rounded-2xl border border-cyan-800 bg-cyan-950/30 p-6">
-          <h2 className="text-xl font-semibold">Next bounded connection</h2>
-          <p className="mt-2 text-slate-300">
-            No Explorer or suggestion information is loaded on this page. The
-            next bounded implementation step will recheck the selected Guide
-            relationship and load only that Explorer&apos;s Guide-visible
-            suggestion list.
-          </p>
-        </div>
+        <h1 className="mt-4 text-4xl font-semibold">Suggested Waypoints</h1>
+        <p className="mt-3 max-w-3xl text-slate-300">
+          Review Guide-only drafts, pending sends, and suggestions already sent
+          through this active Explorer relationship. Explorer-private activity
+          and Waypoints never appear here.
+        </p>
+        <GuideSuggestedWaypointRelationshipList relationshipId={relationshipId} />
       </Panel>
     </PageShell>
   );

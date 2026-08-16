@@ -39,6 +39,9 @@ test.describe("authenticated Guide Suggested Waypoint relationship entry", () =>
     await page.route("**/guide/waypoint-suggestions/relationships?**", (route) =>
       fulfillJson(route, success([item(RELATIONSHIP_ID, "Avery"), item(SECOND_RELATIONSHIP_ID, "Jordan")], null, 2)),
     );
+    await page.route(`**/guide/waypoint-suggestions/${RELATIONSHIP_ID}/suggestions?**`, (route) =>
+      fulfillJson(route, success([], null, 0)),
+    );
 
     await page.goto("/guide/waypoint-suggestions");
     await expect(page.getByRole("heading", { name: "Suggested Waypoints" })).toBeVisible();
@@ -46,7 +49,7 @@ test.describe("authenticated Guide Suggested Waypoint relationship entry", () =>
     await avery.focus();
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(new RegExp(`/guide/waypoint-suggestions/${RELATIONSHIP_ID}$`));
-    await expect(page.getByRole("heading", { name: "Suggested Waypoint relationship workspace" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Suggested Waypoints", exact: true })).toBeVisible();
 
     await page.getByRole("link", { name: "Back to Explorer relationships" }).click();
     await expect(page).toHaveURL(new RegExp(`/guide/waypoint-suggestions\\?focus=${RELATIONSHIP_ID}$`));
