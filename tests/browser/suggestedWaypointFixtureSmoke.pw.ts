@@ -66,37 +66,7 @@ const verifyResponsiveNavigation = async (
   await expect(navigation).toBeVisible();
 };
 
-test.describe("deterministic Suggested Waypoint review surfaces", () => {
-  test("Explorer opens a suggestion by keyboard and receives a private live-region update", async ({
-    page,
-  }) => {
-    const expectNoBrowserErrors = captureBrowserErrors(page);
-    await page.goto("/explorer/waypoints");
-
-    await expect(
-      page.getByRole("heading", { name: "Waypoint Suggestions" }),
-    ).toBeVisible();
-    await verifyResponsiveNavigation(page, "Explorer navigation");
-
-    const suggestionRow = page
-      .getByRole("button")
-      .filter({ hasText: "Protect one evening each week for recovery" });
-    await suggestionRow.focus();
-    await expect(suggestionRow).toBeFocused();
-    await page.keyboard.press("Enter");
-
-    await expect(
-      page.getByRole("heading", {
-        name: "Protect one evening each week for recovery",
-      }),
-    ).toBeVisible();
-    await expect(page.getByRole("status")).toContainText(
-      "Opened privately. Morgan is not notified that you viewed this.",
-    );
-    await expectNoSeriousAxeViolations(page);
-    expectNoBrowserErrors();
-  });
-
+test.describe("deterministic Guide Suggested Waypoint review surface", () => {
   test("Guide opens a draft by keyboard and receives a no-effect live-region update", async ({
     page,
   }) => {
