@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   SOLMIND_EXPLORER_ALWAYS_EXCLUDED_CONTENT_KINDS,
-  SOLMIND_SUMMARY_TYPES_EXPLORER_VISIBLE_AFTER_APPROVAL,
+  SOLMIND_GUIDE_EXPLORER_RELATIONSHIP_STATUSES,
+  SOLMIND_SUMMARY_PUBLICATION_STATUSES,
+  SOLMIND_SUMMARY_REVISION_STATUSES,
+  SOLMIND_SUMMARY_SECTION_TYPES,
+  SOLMIND_SUMMARY_SECTION_VISIBILITIES,
+  SOLMIND_SUMMARY_STATUSES,
+  SOLMIND_SUMMARY_TYPES,
   isAlwaysExcludedFromExplorerContext,
   isExplorerFacingContextItemAllowed,
   isReflectionExplorerVisible,
@@ -11,9 +17,6 @@ import {
   type SolMindReflectionContextInput,
   type SolMindReflectionVisibility,
   type SolMindSummaryContextInput,
-  type SolMindSummaryStatus,
-  type SolMindSummaryType,
-  type SolMindSummaryVisibility,
 } from "../explorerContext";
 
 const REFLECTION_STATUSES: ReadonlyArray<SolMindReflectionConfirmationStatus> = [
@@ -111,158 +114,83 @@ describe("Explorer-facing reflection inclusion", () => {
   });
 });
 
-const ALL_SUMMARY_TYPES: ReadonlyArray<SolMindSummaryType> = [
-  "guide_prep",
-  "check_in",
-  "reflection",
-  "session",
-  "safety",
-  "trigger_pattern",
-  "general",
-];
-
-const ALLOWED_EXPLORER_SUMMARY_TYPES: ReadonlyArray<SolMindSummaryType> = [
-  "check_in",
-  "reflection",
-  "session",
-  "general",
-];
-
-const BLOCKED_EXPLORER_SUMMARY_TYPES: ReadonlyArray<SolMindSummaryType> = [
-  "guide_prep",
-  "safety",
-  "trigger_pattern",
-];
-
-const SUMMARY_STATUSES: ReadonlyArray<SolMindSummaryStatus> = [
-  "draft",
-  "ready_for_review",
-  "approved",
-  "rejected",
-  "archived",
-];
-
-const SUMMARY_VISIBILITIES: ReadonlyArray<SolMindSummaryVisibility> = [
-  "guide_only",
-  "admin_qa",
-  "explorer_visible_after_approval",
-];
+function publishedSummary(
+  overrides: Partial<SolMindSummaryContextInput> = {},
+): SolMindSummaryContextInput {
+  return {
+    summaryType: "explorer_facing_summary",
+    summaryStatus: "published",
+    publicationStatus: "published",
+    relationshipStatus: "active",
+    revisionStatus: "published_to_explorer",
+    sectionType: "explorer_facing",
+    sectionVisibility: "published_to_explorer",
+    ...overrides,
+  };
+}
 
 describe("Explorer-facing summary inclusion", () => {
-  it("uses an explicit MVP0 allowlist of Explorer-visible summary types", () => {
-    expect(
-      [...SOLMIND_SUMMARY_TYPES_EXPLORER_VISIBLE_AFTER_APPROVAL].sort(),
-    ).toEqual(["check_in", "general", "reflection", "session"]);
-    // guide_prep, safety, and trigger_pattern are deliberately not on the list.
-    expect(
-      SOLMIND_SUMMARY_TYPES_EXPLORER_VISIBLE_AFTER_APPROVAL.has("guide_prep"),
-    ).toBe(false);
-    expect(
-      SOLMIND_SUMMARY_TYPES_EXPLORER_VISIBLE_AFTER_APPROVAL.has("safety"),
-    ).toBe(false);
-    expect(
-      SOLMIND_SUMMARY_TYPES_EXPLORER_VISIBLE_AFTER_APPROVAL.has(
-        "trigger_pattern",
-      ),
-    ).toBe(false);
-  });
-
   const summaryCases: ReadonlyArray<{
     input: SolMindSummaryContextInput;
     allowed: boolean;
     reason: string;
   }> = [
     {
-      input: {
-        summaryType: "general",
-        summaryStatus: "approved",
-        visibility: "explorer_visible_after_approval",
-      },
+      input: publishedSummary(),
       allowed: true,
-      reason:
-        "allowlisted general summary is allowed when approved + explorer_visible_after_approval",
+      reason: "the exact published Explorer projection is allowed",
     },
     {
-      input: {
-        summaryType: "guide_prep",
-        summaryStatus: "approved",
-        visibility: "explorer_visible_after_approval",
-      },
+      input: publishedSummary({ summaryStatus: "approved" }),
       allowed: false,
-      reason:
-        "guide_prep is blocked even when approved + explorer_visible_after_approval",
+      reason: "an approved but unpublished Summary container is blocked",
     },
     {
-      input: {
-        summaryType: "general",
-        summaryStatus: "approved",
-        visibility: "guide_only",
-      },
+      input: publishedSummary({ publicationStatus: "unpublished" }),
       allowed: false,
-      reason: "guide_only visibility is blocked",
+      reason: "an unpublished publication is blocked",
     },
     {
-      input: {
-        summaryType: "general",
-        summaryStatus: "approved",
-        visibility: "admin_qa",
-      },
+      input: publishedSummary({ publicationStatus: "superseded" }),
       allowed: false,
-      reason: "admin_qa visibility is blocked",
+      reason: "a superseded publication is blocked",
     },
     {
-      input: {
-        summaryType: "safety",
-        summaryStatus: "approved",
-        visibility: "explorer_visible_after_approval",
-      },
+      input: publishedSummary({ relationshipStatus: "ended" }),
       allowed: false,
-      reason: "safety summary is blocked",
+      reason: "an ended Guide-Explorer relationship is blocked",
     },
     {
-      input: {
-        summaryType: "trigger_pattern",
-        summaryStatus: "approved",
-        visibility: "explorer_visible_after_approval",
-      },
+      input: publishedSummary({ revisionStatus: "guide_approved" }),
       allowed: false,
-      reason: "trigger_pattern summary is blocked",
+      reason: "a Guide-approved but unpublished revision is blocked",
     },
     {
-      input: {
-        summaryType: "general",
-        summaryStatus: "draft",
-        visibility: "explorer_visible_after_approval",
-      },
+      input: publishedSummary({ sectionType: "guide_only" }),
       allowed: false,
-      reason: "draft summary is blocked",
+      reason: "a Guide-only section is blocked",
     },
     {
-      input: {
-        summaryType: "general",
-        summaryStatus: "ready_for_review",
-        visibility: "explorer_visible_after_approval",
-      },
+      input: publishedSummary({ sectionType: "sensitive_observation" }),
       allowed: false,
-      reason: "ready_for_review summary is blocked",
+      reason: "a sensitive-observation section is blocked",
     },
     {
-      input: {
-        summaryType: "general",
-        summaryStatus: "rejected",
-        visibility: "explorer_visible_after_approval",
-      },
+      input: publishedSummary({ sectionType: "trigger_observation" }),
       allowed: false,
-      reason: "rejected summary is blocked",
+      reason: "a trigger-observation section is blocked",
     },
     {
-      input: {
-        summaryType: "general",
-        summaryStatus: "archived",
-        visibility: "explorer_visible_after_approval",
-      },
+      input: publishedSummary({ sectionType: "safety_review" }),
       allowed: false,
-      reason: "archived summary is blocked",
+      reason: "a safety-review section is blocked",
+    },
+    {
+      input: publishedSummary({
+        sectionVisibility: "explorer_publishable",
+      }),
+      allowed: false,
+      reason: "an Explorer-publishable but unpublished section is blocked",
     },
   ];
 
@@ -275,42 +203,79 @@ describe("Explorer-facing summary inclusion", () => {
     });
   }
 
-  it("allows each allowlisted summary type only when approved + explorer_visible_after_approval", () => {
-    for (const summaryType of ALLOWED_EXPLORER_SUMMARY_TYPES) {
-      for (const summaryStatus of SUMMARY_STATUSES) {
-        for (const visibility of SUMMARY_VISIBILITIES) {
-          const expected =
-            summaryStatus === "approved" &&
-            visibility === "explorer_visible_after_approval";
-          expect(
-            isSummaryExplorerVisible({ summaryType, summaryStatus, visibility }),
-          ).toBe(expected);
-        }
-      }
+  it("allows every canonical container type only through the same exact projection", () => {
+    for (const summaryType of SOLMIND_SUMMARY_TYPES) {
+      expect(isSummaryExplorerVisible(publishedSummary({ summaryType }))).toBe(
+        true,
+      );
     }
   });
 
-  it("blocks guide_prep, safety, and trigger_pattern summaries in every state", () => {
-    for (const summaryType of BLOCKED_EXPLORER_SUMMARY_TYPES) {
-      for (const summaryStatus of SUMMARY_STATUSES) {
-        for (const visibility of SUMMARY_VISIBILITIES) {
-          expect(
-            isSummaryExplorerVisible({ summaryType, summaryStatus, visibility }),
-          ).toBe(false);
-        }
-      }
+  it("pins the closed source-current Summary publication vocabulary", () => {
+    expect(SOLMIND_SUMMARY_TYPES).toEqual([
+      "guide_summary",
+      "pre_session_summary",
+      "explorer_facing_summary",
+    ]);
+    expect(SOLMIND_SUMMARY_STATUSES).toEqual([
+      "draft",
+      "in_review",
+      "approved",
+      "published",
+      "archived",
+    ]);
+    expect(SOLMIND_SUMMARY_PUBLICATION_STATUSES).toEqual([
+      "published",
+      "unpublished",
+      "superseded",
+    ]);
+    expect(SOLMIND_SUMMARY_REVISION_STATUSES).toEqual([
+      "ai_generated",
+      "guide_edited",
+      "ai_edited",
+      "guide_approved",
+      "published_to_explorer",
+      "superseded",
+    ]);
+    expect(SOLMIND_SUMMARY_SECTION_TYPES).toEqual([
+      "explorer_facing",
+      "guide_only",
+      "sensitive_observation",
+      "trigger_observation",
+      "safety_review",
+    ]);
+    expect(SOLMIND_SUMMARY_SECTION_VISIBILITIES).toEqual([
+      "guide_only",
+      "explorer_publishable",
+      "published_to_explorer",
+    ]);
+    expect(SOLMIND_GUIDE_EXPLORER_RELATIONSHIP_STATUSES).toEqual([
+      "invited",
+      "intake_pending",
+      "active",
+      "paused",
+      "ended",
+      "transferred",
+    ]);
+    for (const vocabulary of [
+      SOLMIND_SUMMARY_TYPES,
+      SOLMIND_SUMMARY_STATUSES,
+      SOLMIND_SUMMARY_PUBLICATION_STATUSES,
+      SOLMIND_SUMMARY_REVISION_STATUSES,
+      SOLMIND_SUMMARY_SECTION_TYPES,
+      SOLMIND_SUMMARY_SECTION_VISIBILITIES,
+      SOLMIND_GUIDE_EXPLORER_RELATIONSHIP_STATUSES,
+    ]) {
+      expect(Object.isFrozen(vocabulary)).toBe(true);
     }
   });
 
-  it("never marks any summary Explorer-visible unless its type is allowlisted", () => {
-    for (const summaryType of ALL_SUMMARY_TYPES) {
-      const allowed = isSummaryExplorerVisible({
-        summaryType,
-        summaryStatus: "approved",
-        visibility: "explorer_visible_after_approval",
-      });
-      expect(allowed).toBe(
-        SOLMIND_SUMMARY_TYPES_EXPLORER_VISIBLE_AFTER_APPROVAL.has(summaryType),
+  it("permits only active or paused relationship states in an otherwise published projection", () => {
+    for (const relationshipStatus of SOLMIND_GUIDE_EXPLORER_RELATIONSHIP_STATUSES) {
+      expect(
+        isSummaryExplorerVisible(publishedSummary({ relationshipStatus })),
+      ).toBe(
+        relationshipStatus === "active" || relationshipStatus === "paused",
       );
     }
   });

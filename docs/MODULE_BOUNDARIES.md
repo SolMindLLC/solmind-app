@@ -1,6 +1,6 @@
 # SolMind App Module Boundaries
 
-Version: 0.2.1
+Version: 0.2.2
 Repo: solmind-app  
 Purpose: Define where code should live as the SolMind MVP0 application grows.
 
@@ -577,6 +577,13 @@ runtime envelope, validates exact keys and Virtual Guide/Explorer bindings,
 projects the canonical nine layers into a new fixed-key deeply immutable
 object, and returns its compact deterministic JSON serialization. It may reuse
 only the pure role-alignment and Explorer-eligibility owners in this directory.
+Summary continuity is eligible only through the exact banked publication
+projection: a published Summary container, a target-bound published
+publication, an active or paused Guide-Explorer relationship, a
+`published_to_explorer` revision, and an `explorer_facing` section whose
+visibility is `published_to_explorer`. Container type or status alone never
+authorizes inclusion. Co-located cross-contract tests pin the accepted Summary
+and relationship vocabulary to the owning migrations.
 
 This boundary is not a provider prompt or complete orchestration service. It
 must not import React/client code, routes/actions, repositories, Supabase,

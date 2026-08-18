@@ -5,17 +5,22 @@
 //     Explorer-facing AI prompt context (the SolMind Virtual Guide)
 //   - exclude Guide-only / private, safety, trigger, and escalation content
 //   - exclude reflections that are not confirmed and unpaused
-//   - exclude summaries that are not approved and Explorer-visible
+//   - exclude summaries that are not present in the exact published Explorer
+//     projection
 //
 // These helpers are pure, deterministic, and deny-by-default. They make no
 // database, AI provider, or network calls. The string values mirror the
 // canonical schema constraints:
 //   - content.reflection.confirmation_status / .visibility
-//   - content.summary.summary_type / .summary_status / .visibility
+//   - content.summary.summary_type / .summary_status
+//   - content.summary_publication.publication_status
+//   - content.summary_revision.revision_status
+//   - content.summary_section.section_type / .visibility
+//   - core.guide_explorer_relationship.relationship_status
 //
-// Explorer-facing summary inclusion is an explicit allowlist of summary types,
-// not "everything that is not safety/trigger". Any summary type that is not on
-// the allowlist (including guide_prep, safety, and trigger_pattern) is excluded.
+// Explorer-facing Summary inclusion is established only by the complete,
+// target-bound publication evidence. Container labels alone never authorize
+// visibility.
 
 // --- Reflection vocabulary (mirrors content.reflection) ---
 
@@ -35,40 +40,88 @@ export type SolMindReflectionContextInput = {
   visibility: SolMindReflectionVisibility;
 };
 
-// --- Summary vocabulary (mirrors content.summary) ---
+// --- Summary publication vocabulary (mirrors the banked S02 foundation) ---
 
-export type SolMindSummaryType =
-  | "guide_prep"
-  | "check_in"
-  | "reflection"
-  | "session"
-  | "safety"
-  | "trigger_pattern"
-  | "general";
+export const SOLMIND_SUMMARY_TYPES = Object.freeze([
+  "guide_summary",
+  "pre_session_summary",
+  "explorer_facing_summary",
+] as const);
 
-export type SolMindSummaryStatus =
-  | "draft"
-  | "ready_for_review"
-  | "approved"
-  | "rejected"
-  | "archived";
+export type SolMindSummaryType = (typeof SOLMIND_SUMMARY_TYPES)[number];
 
-export type SolMindSummaryVisibility =
-  | "guide_only"
-  | "admin_qa"
-  | "explorer_visible_after_approval";
+export const SOLMIND_SUMMARY_STATUSES = Object.freeze([
+  "draft",
+  "in_review",
+  "approved",
+  "published",
+  "archived",
+] as const);
+
+export type SolMindSummaryStatus = (typeof SOLMIND_SUMMARY_STATUSES)[number];
+
+export const SOLMIND_SUMMARY_PUBLICATION_STATUSES = Object.freeze([
+  "published",
+  "unpublished",
+  "superseded",
+] as const);
+
+export type SolMindSummaryPublicationStatus =
+  (typeof SOLMIND_SUMMARY_PUBLICATION_STATUSES)[number];
+
+export const SOLMIND_SUMMARY_REVISION_STATUSES = Object.freeze([
+  "ai_generated",
+  "guide_edited",
+  "ai_edited",
+  "guide_approved",
+  "published_to_explorer",
+  "superseded",
+] as const);
+
+export type SolMindSummaryRevisionStatus =
+  (typeof SOLMIND_SUMMARY_REVISION_STATUSES)[number];
+
+export const SOLMIND_SUMMARY_SECTION_TYPES = Object.freeze([
+  "explorer_facing",
+  "guide_only",
+  "sensitive_observation",
+  "trigger_observation",
+  "safety_review",
+] as const);
+
+export type SolMindSummarySectionType =
+  (typeof SOLMIND_SUMMARY_SECTION_TYPES)[number];
+
+export const SOLMIND_SUMMARY_SECTION_VISIBILITIES = Object.freeze([
+  "guide_only",
+  "explorer_publishable",
+  "published_to_explorer",
+] as const);
+
+export type SolMindSummarySectionVisibility =
+  (typeof SOLMIND_SUMMARY_SECTION_VISIBILITIES)[number];
+
+export const SOLMIND_GUIDE_EXPLORER_RELATIONSHIP_STATUSES = Object.freeze([
+  "invited",
+  "intake_pending",
+  "active",
+  "paused",
+  "ended",
+  "transferred",
+] as const);
+
+export type SolMindGuideExplorerRelationshipStatus =
+  (typeof SOLMIND_GUIDE_EXPLORER_RELATIONSHIP_STATUSES)[number];
 
 export type SolMindSummaryContextInput = {
   summaryType: SolMindSummaryType;
   summaryStatus: SolMindSummaryStatus;
-  visibility: SolMindSummaryVisibility;
+  publicationStatus: SolMindSummaryPublicationStatus;
+  relationshipStatus: SolMindGuideExplorerRelationshipStatus;
+  revisionStatus: SolMindSummaryRevisionStatus;
+  sectionType: SolMindSummarySectionType;
+  sectionVisibility: SolMindSummarySectionVisibility;
 };
-
-// Explicit allowlist of summary types that may become Explorer-facing for MVP0.
-// guide_prep is intentionally excluded: it is Guide preparation content, not
-// Explorer-facing content. safety and trigger_pattern are excluded by omission.
-export const SOLMIND_SUMMARY_TYPES_EXPLORER_VISIBLE_AFTER_APPROVAL: ReadonlySet<SolMindSummaryType> =
-  new Set(["check_in", "reflection", "session", "general"]);
 
 // Content kinds that are always excluded from Explorer-facing context. These
 // are existing Guide/Admin/safety review artifacts with canonical schema tables
@@ -107,23 +160,21 @@ export function isReflectionExplorerVisible(
   );
 }
 
-// A summary may enter Explorer-facing context only when its type is on the
-// Explorer-visible allowlist, its status is approved, and its visibility is
-// explorer_visible_after_approval. Everything else is excluded.
+// A Summary may enter Explorer-facing context only through the exact
+// target-bound published projection. The caller separately binds the candidate
+// Explorer identifier to the authenticated Explorer. Container type or status
+// alone is never sufficient.
 export function isSummaryExplorerVisible(
   summary: SolMindSummaryContextInput,
 ): boolean {
-  if (
-    !SOLMIND_SUMMARY_TYPES_EXPLORER_VISIBLE_AFTER_APPROVAL.has(
-      summary.summaryType,
-    )
-  ) {
-    return false;
-  }
-
   return (
-    summary.summaryStatus === "approved" &&
-    summary.visibility === "explorer_visible_after_approval"
+    summary.summaryStatus === "published" &&
+    summary.publicationStatus === "published" &&
+    (summary.relationshipStatus === "active" ||
+      summary.relationshipStatus === "paused") &&
+    summary.revisionStatus === "published_to_explorer" &&
+    summary.sectionType === "explorer_facing" &&
+    summary.sectionVisibility === "published_to_explorer"
   );
 }
 

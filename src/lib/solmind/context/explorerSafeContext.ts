@@ -5,12 +5,23 @@ import {
   isAiRoleAllowedInContext,
 } from "./aiRoleContext";
 import {
+  SOLMIND_GUIDE_EXPLORER_RELATIONSHIP_STATUSES,
+  SOLMIND_SUMMARY_PUBLICATION_STATUSES,
+  SOLMIND_SUMMARY_REVISION_STATUSES,
+  SOLMIND_SUMMARY_SECTION_TYPES,
+  SOLMIND_SUMMARY_SECTION_VISIBILITIES,
+  SOLMIND_SUMMARY_STATUSES,
+  SOLMIND_SUMMARY_TYPES,
   isExplorerFacingContextItemAllowed,
+  type SolMindGuideExplorerRelationshipStatus,
   type SolMindReflectionConfirmationStatus,
   type SolMindReflectionVisibility,
+  type SolMindSummaryPublicationStatus,
+  type SolMindSummaryRevisionStatus,
+  type SolMindSummarySectionType,
+  type SolMindSummarySectionVisibility,
   type SolMindSummaryStatus,
   type SolMindSummaryType,
-  type SolMindSummaryVisibility,
 } from "./explorerContext";
 
 export const EXPLORER_SAFE_CONTEXT_LIMITS = Object.freeze({
@@ -137,7 +148,11 @@ type SummaryCandidate = {
   continuityBindingId: string;
   summaryType: SolMindSummaryType;
   summaryStatus: SolMindSummaryStatus;
-  visibility: SolMindSummaryVisibility;
+  publicationStatus: SolMindSummaryPublicationStatus;
+  relationshipStatus: SolMindGuideExplorerRelationshipStatus;
+  revisionStatus: SolMindSummaryRevisionStatus;
+  sectionType: SolMindSummarySectionType;
+  sectionVisibility: SolMindSummarySectionVisibility;
   content: string;
 };
 
@@ -537,7 +552,11 @@ function parseContinuityCandidates(
           ...commonRequired,
           "summaryType",
           "summaryStatus",
-          "visibility",
+          "publicationStatus",
+          "relationshipStatus",
+          "revisionStatus",
+          "sectionType",
+          "sectionVisibility",
         ]);
         break;
       case "shared_snapshot":
@@ -601,17 +620,29 @@ function parseContinuityCandidates(
           ...commonRequired,
           "summaryType",
           "summaryStatus",
-          "visibility",
+          "publicationStatus",
+          "relationshipStatus",
+          "revisionStatus",
+          "sectionType",
+          "sectionVisibility",
         ]);
         if (
-          !(["guide_prep", "check_in", "reflection", "session", "safety", "trigger_pattern", "general"] as const).includes(
-            object.summaryType as never,
+          !SOLMIND_SUMMARY_TYPES.includes(object.summaryType as never) ||
+          !SOLMIND_SUMMARY_STATUSES.includes(object.summaryStatus as never) ||
+          !SOLMIND_SUMMARY_PUBLICATION_STATUSES.includes(
+            object.publicationStatus as never,
           ) ||
-          !(["draft", "ready_for_review", "approved", "rejected", "archived"] as const).includes(
-            object.summaryStatus as never,
+          !SOLMIND_GUIDE_EXPLORER_RELATIONSHIP_STATUSES.includes(
+            object.relationshipStatus as never,
           ) ||
-          !(["guide_only", "admin_qa", "explorer_visible_after_approval"] as const).includes(
-            object.visibility as never,
+          !SOLMIND_SUMMARY_REVISION_STATUSES.includes(
+            object.revisionStatus as never,
+          ) ||
+          !SOLMIND_SUMMARY_SECTION_TYPES.includes(
+            object.sectionType as never,
+          ) ||
+          !SOLMIND_SUMMARY_SECTION_VISIBILITIES.includes(
+            object.sectionVisibility as never,
           )
         ) {
           fail("explorer_context_invalid_candidate_kind");
@@ -620,7 +651,15 @@ function parseContinuityCandidates(
           kind: "summary",
           summaryType: object.summaryType as SolMindSummaryType,
           summaryStatus: object.summaryStatus as SolMindSummaryStatus,
-          visibility: object.visibility as SolMindSummaryVisibility,
+          publicationStatus:
+            object.publicationStatus as SolMindSummaryPublicationStatus,
+          relationshipStatus:
+            object.relationshipStatus as SolMindGuideExplorerRelationshipStatus,
+          revisionStatus:
+            object.revisionStatus as SolMindSummaryRevisionStatus,
+          sectionType: object.sectionType as SolMindSummarySectionType,
+          sectionVisibility:
+            object.sectionVisibility as SolMindSummarySectionVisibility,
         });
         break;
       }

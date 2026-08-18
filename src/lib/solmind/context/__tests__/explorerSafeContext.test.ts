@@ -1,9 +1,18 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
 import { SOLMIND_EXPLORER_STRUCTURED_FORM_FIELDS } from "../../onboarding";
+import {
+  SOLMIND_GUIDE_EXPLORER_RELATIONSHIP_STATUSES,
+  SOLMIND_SUMMARY_PUBLICATION_STATUSES,
+  SOLMIND_SUMMARY_REVISION_STATUSES,
+  SOLMIND_SUMMARY_SECTION_TYPES,
+  SOLMIND_SUMMARY_SECTION_VISIBILITIES,
+  SOLMIND_SUMMARY_STATUSES,
+  SOLMIND_SUMMARY_TYPES,
+} from "../explorerContext";
 import {
   EXPLORER_ONBOARDING_CONTINUITY_FIELDS,
   EXPLORER_SAFE_CONTEXT_ERROR_CODES,
@@ -80,10 +89,14 @@ function validInput(): Record<string, unknown> {
         explorerId: IDS.explorer,
         sessionId: IDS.session,
         continuityBindingId: IDS.binding,
-        summaryType: "general",
-        summaryStatus: "approved",
-        visibility: "explorer_visible_after_approval",
-        content: "Approved Explorer-visible continuity.",
+        summaryType: "explorer_facing_summary",
+        summaryStatus: "published",
+        publicationStatus: "published",
+        relationshipStatus: "active",
+        revisionStatus: "published_to_explorer",
+        sectionType: "explorer_facing",
+        sectionVisibility: "published_to_explorer",
+        content: "Published Explorer-visible continuity.",
       },
       {
         kind: "shared_snapshot",
@@ -153,6 +166,26 @@ function setNested(
     cursor = cursor[key] as Record<string, unknown>;
   }
   cursor[path[path.length - 1]] = value;
+}
+
+function extractConstraintValues(
+  source: string,
+  constraintName: string,
+  nextConstraintName: string,
+): ReadonlyArray<string> {
+  const addedMarker = `add constraint ${constraintName}`;
+  const nextAddedMarker = `add constraint ${nextConstraintName}`;
+  const start = source.includes(addedMarker)
+    ? source.indexOf(addedMarker)
+    : source.indexOf(`constraint ${constraintName}`);
+  const end = source.includes(nextAddedMarker, start + 1)
+    ? source.indexOf(nextAddedMarker, start + 1)
+    : source.indexOf(`constraint ${nextConstraintName}`, start + 1);
+  expect(start).toBeGreaterThanOrEqual(0);
+  expect(end).toBeGreaterThan(start);
+  return [...source.slice(start, end).matchAll(/'([^']+)'/g)].map(
+    (match) => match[1],
+  );
 }
 
 describe("PRJ01_R-WS09-WI021-S03A Explorer-safe context kernel", () => {
@@ -284,12 +317,12 @@ describe("PRJ01_R-WS09-WI021-S03A Explorer-safe context kernel", () => {
     );
   });
 
-  it("omits canonically ineligible Reflection and summary candidates", () => {
+  it("omits canonically ineligible Reflection and Summary candidates", () => {
     const input = validInput();
     const candidates = input.continuityCandidates as Array<Record<string, unknown>>;
     candidates[0].visibility = "paused_from_ai_context";
     candidates[0].content = "SM_CANARY_PRIVATE_WAYPOINT_5V9C3R";
-    candidates[1].summaryStatus = "draft";
+    candidates[1].publicationStatus = "unpublished";
     candidates[1].content = "SM_CANARY_PRIVATE_DRAFT_4J8N2X";
     const result = assembleExplorerSafeContext(input);
     expect(result.context.approvedContinuity.map((item) => item.kind)).toEqual([
@@ -298,6 +331,154 @@ describe("PRJ01_R-WS09-WI021-S03A Explorer-safe context kernel", () => {
     ]);
     expect(result.serialized).not.toContain("SM_CANARY_PRIVATE_WAYPOINT_5V9C3R");
     expect(result.serialized).not.toContain("SM_CANARY_PRIVATE_DRAFT_4J8N2X");
+  });
+
+  it("omits a Summary when any known publication-projection fact is ineligible", () => {
+    const mutations: ReadonlyArray<{
+      field: string;
+      value: string;
+    }> = [
+      { field: "summaryStatus", value: "approved" },
+      { field: "publicationStatus", value: "superseded" },
+      { field: "relationshipStatus", value: "ended" },
+      { field: "revisionStatus", value: "guide_approved" },
+      { field: "sectionType", value: "guide_only" },
+      { field: "sectionVisibility", value: "explorer_publishable" },
+    ];
+
+    for (const { field, value } of mutations) {
+      const input = validInput();
+      const summary = (input.continuityCandidates as Array<
+        Record<string, unknown>
+      >)[1];
+      summary[field] = value;
+      summary.content = `SM_CANARY_INELIGIBLE_SUMMARY_${field}`;
+      const result = assembleExplorerSafeContext(input);
+      expect(result.context.approvedContinuity.map((item) => item.kind)).toEqual([
+        "reflection",
+        "shared_snapshot",
+        "onboarding_answer",
+      ]);
+      expect(result.serialized).not.toContain(summary.content as string);
+    }
+  });
+
+  it("pins Summary vocabulary and Explorer projection facts to the banked migrations", () => {
+    const migrationDirectory = fileURLToPath(
+      new URL("../../../../../supabase/migrations/", import.meta.url),
+    );
+    const migrationFiles = readdirSync(migrationDirectory)
+      .filter((fileName) => fileName.endsWith(".sql"))
+      .sort();
+    const summaryMigration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../../../../../supabase/migrations/20260812000000_summary_shared_snapshot_realignment.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+    const relationshipMigration = readFileSync(
+      fileURLToPath(
+        new URL(
+          "../../../../../supabase/migrations/20260613003000_core_organization_practice_profile_schema.sql",
+          import.meta.url,
+        ),
+      ),
+      "utf8",
+    );
+
+    expect(
+      extractConstraintValues(
+        summaryMigration,
+        "summary_type_check",
+        "summary_status_check",
+      ),
+    ).toEqual(SOLMIND_SUMMARY_TYPES);
+    expect(
+      extractConstraintValues(
+        summaryMigration,
+        "summary_status_check",
+        "summary_created_by_actor_type_check",
+      ),
+    ).toEqual(SOLMIND_SUMMARY_STATUSES);
+    expect(
+      extractConstraintValues(
+        summaryMigration,
+        "summary_revision_status_check",
+        "summary_revision_created_by_actor_type_check",
+      ),
+    ).toEqual(SOLMIND_SUMMARY_REVISION_STATUSES);
+    expect(
+      extractConstraintValues(
+        summaryMigration,
+        "summary_section_type_check",
+        "summary_section_visibility_check",
+      ),
+    ).toEqual(SOLMIND_SUMMARY_SECTION_TYPES);
+    expect(
+      extractConstraintValues(
+        summaryMigration,
+        "summary_section_visibility_check",
+        "summary_section_type_visibility_pair_check",
+      ),
+    ).toEqual(SOLMIND_SUMMARY_SECTION_VISIBILITIES);
+    expect(
+      extractConstraintValues(
+        summaryMigration,
+        "summary_publication_status_check",
+        "summary_publication_end_fields_check",
+      ),
+    ).toEqual(SOLMIND_SUMMARY_PUBLICATION_STATUSES);
+    expect(
+      extractConstraintValues(
+        relationshipMigration,
+        "guide_explorer_relationship_status_check",
+        "guide_explorer_relationship_retention_class_check",
+      ),
+    ).toEqual(SOLMIND_GUIDE_EXPLORER_RELATIONSHIP_STATUSES);
+
+    expect(summaryMigration).toMatch(
+      /where publication\.publication_status = 'published'\s+and revision\.revision_status = 'published_to_explorer'\s+and section\.section_type = 'explorer_facing'\s+and section\.visibility = 'published_to_explorer'\s+and relationship\.relationship_status in \('active', 'paused'\)/,
+    );
+
+    const currentOwnerChecks = [
+      {
+        owner: "20260613003000_core_organization_practice_profile_schema.sql",
+        tokens: ["guide_explorer_relationship_status_check"],
+      },
+      {
+        owner: "20260812000000_summary_shared_snapshot_realignment.sql",
+        tokens: [
+          "summary_type_check",
+          "summary_status_check",
+          "summary_revision_status_check",
+          "summary_section_type_check",
+          "summary_section_visibility_check",
+          "summary_publication_status_check",
+          "vw_explorer_published_summary_timeline",
+        ],
+      },
+    ] as const;
+
+    for (const { owner, tokens } of currentOwnerChecks) {
+      const laterOwners = migrationFiles
+        .filter((fileName) => fileName > owner)
+        .filter((fileName) => {
+          const source = readFileSync(
+            fileURLToPath(
+              new URL(
+                `../../../../../supabase/migrations/${fileName}`,
+                import.meta.url,
+              ),
+            ),
+            "utf8",
+          );
+          return tokens.some((token) => source.includes(token));
+        });
+      expect(laterOwners).toEqual([]);
+    }
   });
 
   it("rejects unknown and unconfirmed continuity kinds", () => {
@@ -322,6 +503,25 @@ describe("PRJ01_R-WS09-WI021-S03A Explorer-safe context kernel", () => {
       unknownSummaryType,
       "explorer_context_invalid_candidate_kind",
     );
+
+    const unknownPublicationStatus = validInput();
+    ((unknownPublicationStatus.continuityCandidates as unknown[])[1] as Record<
+      string,
+      unknown
+    >).publicationStatus = "published_to_anyone";
+    expectCode(
+      unknownPublicationStatus,
+      "explorer_context_invalid_candidate_kind",
+    );
+
+    const removedContainerVisibility = validInput();
+    const staleSummary = (
+      removedContainerVisibility.continuityCandidates as Array<
+        Record<string, unknown>
+      >
+    )[1];
+    staleSummary.visibility = "explorer_visible_after_approval";
+    expectCode(removedContainerVisibility, "explorer_context_unknown_key");
   });
 
   it("accepts exactly the six banked onboarding fields in source order", () => {
