@@ -18,6 +18,7 @@ import {
   validateSuggestedWaypointRpcPayload,
   validateSuggestedWaypointWorkerRpcCall,
 } from "./suggestedWaypointRpcContract";
+import { isSuggestedWaypointRefreshRequiredRpcError } from "./suggestedWaypointPaginationRpcError";
 
 if (typeof window !== "undefined") {
   throw new Error(
@@ -31,15 +32,22 @@ export const SUGGESTED_WAYPOINT_RPC_FAILED =
   "solmind_suggested_waypoint_rpc_failed";
 export const SUGGESTED_WAYPOINT_RPC_DENIED =
   "solmind_suggested_waypoint_rpc_denied";
+export const SUGGESTED_WAYPOINT_RPC_REFRESH_REQUIRED =
+  "solmind_suggested_waypoint_rpc_refresh_required";
 
 type SuggestedWaypointDetailRpcFunction =
   | "solmind_get_guide_suggested_waypoint"
   | "solmind_get_explorer_suggested_waypoint";
 
+type SuggestedWaypointListRpcFunction =
+  | "solmind_list_guide_suggested_waypoints"
+  | "solmind_list_explorer_suggested_waypoints";
+
 export type SuggestedWaypointRpcError =
   | typeof SUGGESTED_WAYPOINT_RPC_UNMAPPED_CALL
   | typeof SUGGESTED_WAYPOINT_RPC_FAILED
-  | typeof SUGGESTED_WAYPOINT_RPC_DENIED;
+  | typeof SUGGESTED_WAYPOINT_RPC_DENIED
+  | typeof SUGGESTED_WAYPOINT_RPC_REFRESH_REQUIRED;
 
 export type SuggestedWaypointRpcResult =
   | Readonly<{
@@ -51,6 +59,11 @@ export type SuggestedWaypointRpcResult =
       functionName: SuggestedWaypointDetailRpcFunction;
       data: null;
       error: typeof SUGGESTED_WAYPOINT_RPC_DENIED;
+    }>
+  | Readonly<{
+      functionName: SuggestedWaypointListRpcFunction;
+      data: null;
+      error: typeof SUGGESTED_WAYPOINT_RPC_REFRESH_REQUIRED;
     }>
   | Readonly<{
       functionName: null;
@@ -87,6 +100,17 @@ async function dispatch(
   try {
     const { data, error } = await client.rpc(call.functionName, call.args);
     if (error !== null && error !== undefined) {
+      if (
+        (call.functionName === "solmind_list_guide_suggested_waypoints" ||
+          call.functionName === "solmind_list_explorer_suggested_waypoints") &&
+        isSuggestedWaypointRefreshRequiredRpcError(call.functionName, error)
+      ) {
+        return Object.freeze({
+          functionName: call.functionName,
+          data: null,
+          error: SUGGESTED_WAYPOINT_RPC_REFRESH_REQUIRED,
+        });
+      }
       return Object.freeze({
         functionName: null,
         data: null,

@@ -10,6 +10,10 @@ import {
   SUGGESTED_WAYPOINT_EXPLORER_LIST_PAGE_SIZES,
   type SuggestedWaypointExplorerListPageSize,
 } from "./suggestedWaypointExplorerListSharedContract";
+import {
+  SUGGESTED_WAYPOINT_REFRESH_REQUIRED,
+  isSuggestedWaypointOptionalCursor,
+} from "./suggestedWaypointPaginationSharedContract";
 
 export {
   SUGGESTED_WAYPOINT_EXPLORER_LIST_DENIED,
@@ -46,12 +50,12 @@ export type SuggestedWaypointExplorerListBrowserResult =
       data: null;
       error:
         | typeof SUGGESTED_WAYPOINT_EXPLORER_LIST_DENIED
-        | typeof SUGGESTED_WAYPOINT_EXPLORER_LIST_FAILED;
+        | typeof SUGGESTED_WAYPOINT_EXPLORER_LIST_FAILED
+        | typeof SUGGESTED_WAYPOINT_REFRESH_REQUIRED;
     }>;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 const RFC3339_TIMESTAMP_PATTERN =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/;
 
@@ -105,17 +109,6 @@ function isDestinationPreview(value: unknown): value is string {
     !value.includes("\r") &&
     !value.includes("\n") &&
     !hasForbiddenControl(value)
-  );
-}
-
-function isCursor(value: unknown): value is string | null {
-  return (
-    value === null ||
-    (typeof value === "string" &&
-      value.length > 0 &&
-      value.length <= 512 &&
-      value.length % 4 === 0 &&
-      BASE64_PATTERN.test(value))
   );
 }
 
@@ -178,7 +171,8 @@ export function parseSuggestedWaypointExplorerListBrowserResult(
     if (
       value.data !== null ||
       (value.error !== SUGGESTED_WAYPOINT_EXPLORER_LIST_DENIED &&
-        value.error !== SUGGESTED_WAYPOINT_EXPLORER_LIST_FAILED)
+        value.error !== SUGGESTED_WAYPOINT_EXPLORER_LIST_FAILED &&
+        value.error !== SUGGESTED_WAYPOINT_REFRESH_REQUIRED)
     ) {
       return null;
     }
@@ -191,7 +185,7 @@ export function parseSuggestedWaypointExplorerListBrowserResult(
     !isPlainObject(value.data) ||
     !hasExactKeys(value.data, ["items", "next_cursor", "total_count"]) ||
     !Array.isArray(value.data.items) ||
-    !isCursor(value.data.next_cursor) ||
+    !isSuggestedWaypointOptionalCursor(value.data.next_cursor) ||
     typeof value.data.total_count !== "number" ||
     !Number.isSafeInteger(value.data.total_count) ||
     value.data.total_count < value.data.items.length ||

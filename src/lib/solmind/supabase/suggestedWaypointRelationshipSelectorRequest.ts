@@ -10,12 +10,18 @@ import { type SolMindRequestAuthPrincipalSource } from "../auth/requestAuthPrinc
 import { deriveTrustedServerAuthContext } from "../auth/serverAuthContext";
 import { SOLMIND_ROLES } from "../roles";
 import {
+  isSuggestedWaypointOptionalCursor,
+  isSuggestedWaypointPageSize,
+} from "../suggestedWaypointPaginationSharedContract";
+import {
   SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_FUNCTION,
-  SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_PAGE_SIZES,
   type SuggestedWaypointRelationshipSelectorPage,
   type SuggestedWaypointRelationshipSelectorPageSize,
 } from "./suggestedWaypointRelationshipSelectorContract";
-import { type SuggestedWaypointRelationshipSelectorExecutor } from "./suggestedWaypointRelationshipSelectorExecutor";
+import {
+  SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_RPC_REFRESH_REQUIRED,
+  type SuggestedWaypointRelationshipSelectorExecutor,
+} from "./suggestedWaypointRelationshipSelectorExecutor";
 
 if (typeof window !== "undefined") {
   throw new Error(
@@ -27,6 +33,8 @@ export const SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_DENIED =
   "SolMind Suggested Waypoint relationships are unavailable." as const;
 export const SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_FAILED =
   "SolMind Suggested Waypoint relationships could not be loaded." as const;
+export const SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_REFRESH_REQUIRED =
+  "solmind_suggested_waypoint_relationship_selector_refresh_required" as const;
 
 export type SuggestedWaypointRelationshipSelectorClientRequest = Readonly<{
   pageSize: SuggestedWaypointRelationshipSelectorPageSize;
@@ -44,7 +52,8 @@ export type SuggestedWaypointRelationshipSelectorRequestResult =
       data: null;
       error:
         | typeof SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_DENIED
-        | typeof SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_FAILED;
+        | typeof SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_FAILED
+        | typeof SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_REFRESH_REQUIRED;
     }>;
 
 export type SuggestedWaypointRelationshipSelectorRequestDependencies =
@@ -53,8 +62,6 @@ export type SuggestedWaypointRelationshipSelectorRequestDependencies =
     authSource: SolMindAuthSource;
     executor: SuggestedWaypointRelationshipSelectorExecutor;
   }>;
-
-const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -82,21 +89,11 @@ export function validateSuggestedWaypointRelationshipSelectorClientRequest(
     return null;
   }
   if (
-    typeof value.pageSize !== "number" ||
-    !SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_PAGE_SIZES.includes(
-      value.pageSize as SuggestedWaypointRelationshipSelectorPageSize,
-    )
+    !isSuggestedWaypointPageSize(value.pageSize)
   ) {
     return null;
   }
-  if (
-    value.cursor !== null &&
-    (typeof value.cursor !== "string" ||
-      value.cursor.length < 1 ||
-      value.cursor.length > 512 ||
-      value.cursor.length % 4 !== 0 ||
-      !BASE64_PATTERN.test(value.cursor))
-  ) {
+  if (!isSuggestedWaypointOptionalCursor(value.cursor)) {
     return null;
   }
   return Object.freeze({
@@ -118,6 +115,14 @@ function failed(): SuggestedWaypointRelationshipSelectorRequestResult {
     ok: false,
     data: null,
     error: SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_FAILED,
+  });
+}
+
+function refreshRequired(): SuggestedWaypointRelationshipSelectorRequestResult {
+  return Object.freeze({
+    ok: false,
+    data: null,
+    error: SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_REFRESH_REQUIRED,
   });
 }
 
@@ -168,8 +173,12 @@ export async function resolveSuggestedWaypointRelationshipSelectorRequest(
         p_cursor: request.cursor,
       },
     });
-    return result.error === null && result.data !== null
-      ? Object.freeze({ ok: true, data: result.data, error: null })
+    if (result.error === null && result.data !== null) {
+      return Object.freeze({ ok: true, data: result.data, error: null });
+    }
+    return result.error ===
+      SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_RPC_REFRESH_REQUIRED
+      ? refreshRequired()
       : failed();
   } catch {
     return failed();

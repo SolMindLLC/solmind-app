@@ -16,12 +16,14 @@ import {
 } from "@/lib/solmind/auth/requestCookieAccessor";
 import { createSuggestedWaypointRequestDependencies } from "@/lib/solmind/supabase/suggestedWaypointRequestDependencies";
 import {
-  SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_PAGE_SIZES,
-  type SuggestedWaypointRelationshipSelectorPageSize,
-} from "@/lib/solmind/supabase/suggestedWaypointRelationshipSelectorContract";
+  SUGGESTED_WAYPOINT_REFRESH_REQUIRED,
+  parseSuggestedWaypointPaginationSearchParams,
+} from "@/lib/solmind/suggestedWaypointPaginationSharedContract";
+import type { SuggestedWaypointRelationshipBrowserPage } from "@/lib/solmind/suggestedWaypointRelationshipBrowserContract";
 import {
   SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_DENIED,
   SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_FAILED,
+  SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_REFRESH_REQUIRED,
   resolveSuggestedWaypointRelationshipSelectorRequest,
   type SuggestedWaypointRelationshipSelectorRequestResult,
   validateSuggestedWaypointRelationshipSelectorClientRequest,
@@ -29,8 +31,20 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const DEFAULT_PAGE_SIZE: SuggestedWaypointRelationshipSelectorPageSize = 10;
-const ALLOWED_QUERY_KEYS = Object.freeze(["cursor", "pageSize"] as const);
+type PublicResult =
+  | Readonly<{
+      ok: true;
+      data: SuggestedWaypointRelationshipBrowserPage;
+      error: null;
+    }>
+  | Readonly<{
+      ok: false;
+      data: null;
+      error:
+        | typeof SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_DENIED
+        | typeof SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_FAILED
+        | typeof SUGGESTED_WAYPOINT_REFRESH_REQUIRED;
+    }>;
 
 function denied(): SuggestedWaypointRelationshipSelectorRequestResult {
   return Object.freeze({
@@ -49,36 +63,17 @@ function failed(): SuggestedWaypointRelationshipSelectorRequestResult {
 }
 
 function parsePagination(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  for (const key of searchParams.keys()) {
-    if (!ALLOWED_QUERY_KEYS.includes(key as (typeof ALLOWED_QUERY_KEYS)[number])) {
-      return null;
-    }
-    if (searchParams.getAll(key).length !== 1) {
-      return null;
-    }
-  }
-
-  const pageSizeText = searchParams.get("pageSize");
-  const pageSize =
-    pageSizeText === null
-      ? DEFAULT_PAGE_SIZE
-      : SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_PAGE_SIZES.find(
-          (candidate) => String(candidate) === pageSizeText,
-        );
-  if (pageSize === undefined) {
-    return null;
-  }
-
-  return validateSuggestedWaypointRelationshipSelectorClientRequest({
-    pageSize,
-    cursor: searchParams.get("cursor"),
-  });
+  const parsed = parseSuggestedWaypointPaginationSearchParams(
+    request.nextUrl.searchParams,
+  );
+  return parsed === null
+    ? null
+    : validateSuggestedWaypointRelationshipSelectorClientRequest(parsed);
 }
 
 function projectResult(
   result: SuggestedWaypointRelationshipSelectorRequestResult,
-): SuggestedWaypointRelationshipSelectorRequestResult {
+): PublicResult {
   if (result.ok) {
     return Object.freeze({
       ok: true,
@@ -99,12 +94,32 @@ function projectResult(
       error: null,
     });
   }
+  if (
+    result.error ===
+    SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_REFRESH_REQUIRED
+  ) {
+    return Object.freeze({
+      ok: false,
+      data: null,
+      error: SUGGESTED_WAYPOINT_REFRESH_REQUIRED,
+    });
+  }
   return result.error === SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_DENIED
-    ? denied()
-    : failed();
+    ? Object.freeze({
+        ok: false,
+        data: null,
+        error: SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_DENIED,
+      })
+    : Object.freeze({
+        ok: false,
+        data: null,
+        error: SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_FAILED,
+      });
 }
 
-function json(result: SuggestedWaypointRelationshipSelectorRequestResult): Response {
+function json(
+  result: SuggestedWaypointRelationshipSelectorRequestResult,
+): Response {
   return NextResponse.json(projectResult(result), {
     status: 200,
     headers: {

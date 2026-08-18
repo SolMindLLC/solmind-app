@@ -293,6 +293,17 @@ Assistant, relationship, private Waypoint, conversation, evidence, or inference
 data. These routes remain read-only and authorize no command, delivery worker,
 provider, deployment, or real-user activation.
 
+All three Suggested Waypoint paginated list routes and clients reuse
+`suggestedWaypointPaginationSharedContract.ts`; do not recreate page-size,
+cursor, query, or `refresh_required` syntax locally. Preserve the exact
+function-bound database error classification in the server-only RPC layer.
+Only a non-null cursor may trigger one automatic page-one retry, with the same
+page size and the same request controller, timeout, and sequence. Clear cursor
+history only after that retry succeeds. Page one, a second refresh result,
+denial, malformed data, timeout, abort, and failed reset must not loop.
+Malformed or operationally failed resets retain the last safe page; a current
+authority denial clears it.
+
 ## Documentation Update Rule
 
 When changing any of the following, update documentation in the same task:

@@ -169,7 +169,13 @@ Important technical boundaries:
   Guide relationship selector, Guide relationship-scoped list/detail, and
   Explorer list/detail. Those routes derive actor and role from authenticated
   request state, validate exact minimized results again at the browser edge,
-  and stay read-only. They do not activate human commands, delivery scheduling,
+  and stay read-only. The three paginated lists share one strict browser-safe
+  page-size/cursor/query contract. Only the exact database invalid-cursor error
+  from the function that received the cursor becomes the value-free
+  `refresh_required` result; a later-page client retries page one once with the
+  same page size, clears cursor history only after success, and keeps the last
+  safe page after malformed or operationally failed resets. A current authority
+  denial clears the previously displayed page. They do not activate human commands, delivery scheduling,
   worker authorization, providers, deployment, or real-user readiness. All
   server-only S03 owners stay off client/shared barrels.
 

@@ -16,23 +16,23 @@ import {
 import {
   SUGGESTED_WAYPOINT_GUIDE_LIST_DENIED,
   SUGGESTED_WAYPOINT_GUIDE_LIST_FAILED,
-  SUGGESTED_WAYPOINT_GUIDE_LIST_PAGE_SIZES,
   parseSuggestedWaypointGuideListBrowserResult,
   type SuggestedWaypointGuideListPage,
 } from "@/lib/solmind/suggestedWaypointGuideListBrowserContract";
-import { isSuggestedWaypointGuideListPageSize } from "@/lib/solmind/suggestedWaypointGuideListSharedContract";
+import {
+  SUGGESTED_WAYPOINT_REFRESH_REQUIRED,
+  parseSuggestedWaypointPaginationSearchParams,
+} from "@/lib/solmind/suggestedWaypointPaginationSharedContract";
 import { isSuggestedWaypointRelationshipId } from "@/lib/solmind/suggestedWaypointRelationshipBrowserContract";
 import { createSuggestedWaypointRequestDependencies } from "@/lib/solmind/supabase/suggestedWaypointRequestDependencies";
 import {
   SUGGESTED_WAYPOINT_REQUEST_DENIED,
+  SUGGESTED_WAYPOINT_REQUEST_REFRESH_REQUIRED,
   resolveSuggestedWaypointRequest,
   type SuggestedWaypointRequestResult,
 } from "@/lib/solmind/supabase/suggestedWaypointRequestComposition";
 
 export const dynamic = "force-dynamic";
-
-const DEFAULT_PAGE_SIZE = 10 as const;
-const ALLOWED_QUERY_KEYS = Object.freeze(["cursor", "pageSize"] as const);
 
 type RouteContext = Readonly<{
   params: Promise<Readonly<{ relationshipId: string }>>;
@@ -49,7 +49,8 @@ type PublicResult =
       data: null;
       error:
         | typeof SUGGESTED_WAYPOINT_GUIDE_LIST_DENIED
-        | typeof SUGGESTED_WAYPOINT_GUIDE_LIST_FAILED;
+        | typeof SUGGESTED_WAYPOINT_GUIDE_LIST_FAILED
+        | typeof SUGGESTED_WAYPOINT_REFRESH_REQUIRED;
     }>;
 
 function denied(): PublicResult {
@@ -69,44 +70,23 @@ function failed(): PublicResult {
 }
 
 function parsePagination(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  for (const key of searchParams.keys()) {
-    if (!ALLOWED_QUERY_KEYS.includes(key as (typeof ALLOWED_QUERY_KEYS)[number])) {
-      return null;
-    }
-    if (searchParams.getAll(key).length !== 1) {
-      return null;
-    }
-  }
-
-  const pageSizeText = searchParams.get("pageSize");
-  const pageSize =
-    pageSizeText === null
-      ? DEFAULT_PAGE_SIZE
-      : SUGGESTED_WAYPOINT_GUIDE_LIST_PAGE_SIZES.find(
-          (candidate) => String(candidate) === pageSizeText,
-        );
-  if (pageSize === undefined || !isSuggestedWaypointGuideListPageSize(pageSize)) {
-    return null;
-  }
-
-  const cursor = searchParams.get("cursor");
-  if (
-    cursor !== null &&
-    (cursor.length === 0 ||
-      cursor.length > 512 ||
-      cursor.length % 4 !== 0 ||
-      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(cursor))
-  ) {
-    return null;
-  }
-
-  return Object.freeze({ pageSize, cursor });
+  return parseSuggestedWaypointPaginationSearchParams(
+    request.nextUrl.searchParams,
+  );
 }
 
 function projectSuccess(result: SuggestedWaypointRequestResult): PublicResult {
   if (!result.ok) {
-    return result.error === SUGGESTED_WAYPOINT_REQUEST_DENIED ? denied() : failed();
+    if (result.error === SUGGESTED_WAYPOINT_REQUEST_DENIED) {
+      return denied();
+    }
+    return result.error === SUGGESTED_WAYPOINT_REQUEST_REFRESH_REQUIRED
+      ? Object.freeze({
+          ok: false,
+          data: null,
+          error: SUGGESTED_WAYPOINT_REFRESH_REQUIRED,
+        })
+      : failed();
   }
 
   const projected = parseSuggestedWaypointGuideListBrowserResult({

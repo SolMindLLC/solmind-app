@@ -6,15 +6,21 @@
 
 import "server-only";
 
+import {
+  SUGGESTED_WAYPOINT_PAGE_SIZES,
+  isSuggestedWaypointOptionalCursor,
+  isSuggestedWaypointPageSize,
+  type SuggestedWaypointPageSize,
+} from "../suggestedWaypointPaginationSharedContract";
+
 export const SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_FUNCTION =
   "solmind_list_guide_suggested_waypoint_relationships" as const;
 
-export const SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_PAGE_SIZES = Object.freeze([
-  5, 10, 20, 50, 100,
-] as const);
+export const SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_PAGE_SIZES =
+  SUGGESTED_WAYPOINT_PAGE_SIZES;
 
 export type SuggestedWaypointRelationshipSelectorPageSize =
-  (typeof SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_PAGE_SIZES)[number];
+  SuggestedWaypointPageSize;
 
 export type SuggestedWaypointRelationshipSelectorRpcCall = Readonly<{
   functionName: typeof SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_FUNCTION;
@@ -39,7 +45,6 @@ export type SuggestedWaypointRelationshipSelectorPage = Readonly<{
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
 const RFC3339_TIMESTAMP_PATTERN =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/;
 
@@ -63,26 +68,10 @@ function isUuid(value: unknown): value is string {
   return typeof value === "string" && UUID_PATTERN.test(value);
 }
 
-function isCursor(value: unknown): value is string | null {
-  return (
-    value === null ||
-    (typeof value === "string" &&
-      value.length > 0 &&
-      value.length <= 512 &&
-      value.length % 4 === 0 &&
-      BASE64_PATTERN.test(value))
-  );
-}
-
 function isPageSize(
   value: unknown,
 ): value is SuggestedWaypointRelationshipSelectorPageSize {
-  return (
-    typeof value === "number" &&
-    SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_PAGE_SIZES.includes(
-      value as SuggestedWaypointRelationshipSelectorPageSize,
-    )
-  );
+  return isSuggestedWaypointPageSize(value);
 }
 
 function hasForbiddenControl(value: string): boolean {
@@ -156,7 +145,7 @@ export function validateSuggestedWaypointRelationshipSelectorRpcCall(
     ]) ||
     !isUuid(value.args.p_actor_user_account_id) ||
     !isPageSize(value.args.p_page_size) ||
-    !isCursor(value.args.p_cursor)
+    !isSuggestedWaypointOptionalCursor(value.args.p_cursor)
   ) {
     return null;
   }
@@ -177,7 +166,7 @@ export function validateSuggestedWaypointRelationshipSelectorPayload(
     !isPlainObject(row) ||
     !hasExactKeys(row, ["items", "next_cursor", "total_count"]) ||
     !Array.isArray(row.items) ||
-    !isCursor(row.next_cursor) ||
+    !isSuggestedWaypointOptionalCursor(row.next_cursor) ||
     typeof row.total_count !== "number" ||
     !Number.isSafeInteger(row.total_count) ||
     row.total_count < row.items.length ||

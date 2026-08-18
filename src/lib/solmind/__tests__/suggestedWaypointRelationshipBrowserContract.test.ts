@@ -55,6 +55,21 @@ describe("Suggested Waypoint relationship browser contract", () => {
       data: null,
       error: SUGGESTED_WAYPOINT_RELATIONSHIP_DENIED,
     });
+    expect(
+      parseSuggestedWaypointRelationshipBrowserResult({
+        ok: false,
+        data: null,
+        error: "refresh_required",
+      }),
+    ).toEqual({ ok: false, data: null, error: "refresh_required" });
+    expect(
+      parseSuggestedWaypointRelationshipBrowserResult({
+        ok: false,
+        data: null,
+        error: "refresh_required",
+        reason: "database detail",
+      }),
+    ).toBeNull();
   });
 
   it("uses the approved progressive page-size choices", () => {

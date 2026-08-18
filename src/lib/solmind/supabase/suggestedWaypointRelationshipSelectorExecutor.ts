@@ -9,6 +9,7 @@ import {
   validateSuggestedWaypointRelationshipSelectorPayload,
   validateSuggestedWaypointRelationshipSelectorRpcCall,
 } from "./suggestedWaypointRelationshipSelectorContract";
+import { isSuggestedWaypointRefreshRequiredRpcError } from "./suggestedWaypointPaginationRpcError";
 
 if (typeof window !== "undefined") {
   throw new Error(
@@ -18,6 +19,8 @@ if (typeof window !== "undefined") {
 
 export const SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_RPC_FAILED =
   "solmind_suggested_waypoint_relationship_selector_rpc_failed" as const;
+export const SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_RPC_REFRESH_REQUIRED =
+  "solmind_suggested_waypoint_relationship_selector_rpc_refresh_required" as const;
 
 export type SuggestedWaypointRelationshipSelectorRpcResult =
   | Readonly<{
@@ -26,7 +29,9 @@ export type SuggestedWaypointRelationshipSelectorRpcResult =
     }>
   | Readonly<{
       data: null;
-      error: typeof SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_RPC_FAILED;
+      error:
+        | typeof SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_RPC_FAILED
+        | typeof SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_RPC_REFRESH_REQUIRED;
     }>;
 
 export type SuggestedWaypointRelationshipSelectorExecutor = Readonly<{
@@ -61,6 +66,18 @@ export function createSuggestedWaypointRelationshipSelectorExecutor(
           validated.args,
         );
         if (error !== null && error !== undefined) {
+          if (
+            isSuggestedWaypointRefreshRequiredRpcError(
+              validated.functionName,
+              error,
+            )
+          ) {
+            return Object.freeze({
+              data: null,
+              error:
+                SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_RPC_REFRESH_REQUIRED,
+            });
+          }
           return failed();
         }
         const payload = validateSuggestedWaypointRelationshipSelectorPayload(data);

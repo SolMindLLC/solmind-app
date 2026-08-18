@@ -6,6 +6,12 @@
 
 import "server-only";
 
+import {
+  isSuggestedWaypointOptionalCursor,
+  isSuggestedWaypointPageSize,
+  type SuggestedWaypointPageSize,
+} from "../suggestedWaypointPaginationSharedContract";
+
 if (typeof window !== "undefined") {
   throw new Error(
     "SolMind server configuration error: suggestedWaypointRpcContract must not be imported in browser code.",
@@ -341,8 +347,6 @@ export type SuggestedWaypointRpcPayload =
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
-const PAGE_SIZES = new Set([5, 10, 20, 50, 100]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -430,19 +434,8 @@ function isArrivalSignals(value: unknown): value is readonly string[] {
   return true;
 }
 
-function isCursor(value: unknown): value is string | null {
-  return (
-    value === null ||
-    (typeof value === "string" &&
-      value.length > 0 &&
-      value.length <= 512 &&
-      value.length % 4 === 0 &&
-      BASE64_PATTERN.test(value))
-  );
-}
-
-function isPageSize(value: unknown): value is 5 | 10 | 20 | 50 | 100 {
-  return typeof value === "number" && PAGE_SIZES.has(value);
+function isPageSize(value: unknown): value is SuggestedWaypointPageSize {
+  return isSuggestedWaypointPageSize(value);
 }
 
 function isExactCallEnvelope(value: unknown): value is {
@@ -576,7 +569,7 @@ export function validateSuggestedWaypointHumanRpcCall(
           "p_guide_explorer_relationship_id",
         ]) ||
         !isPageSize(args.p_page_size) ||
-        !isCursor(args.p_cursor)
+        !isSuggestedWaypointOptionalCursor(args.p_cursor)
       ) {
         return null;
       }
@@ -602,7 +595,7 @@ export function validateSuggestedWaypointHumanRpcCall(
         ]) ||
         !isUuid(args.p_actor_user_account_id) ||
         !isPageSize(args.p_page_size) ||
-        !isCursor(args.p_cursor)
+        !isSuggestedWaypointOptionalCursor(args.p_cursor)
       ) {
         return null;
       }
@@ -940,7 +933,7 @@ function isListRow(value: unknown, role: "guide" | "explorer"): boolean {
     !isPlainObject(value) ||
     !hasExactKeys(value, ["items", "next_cursor", "total_count"]) ||
     !Array.isArray(value.items) ||
-    !isCursor(value.next_cursor) ||
+    !isSuggestedWaypointOptionalCursor(value.next_cursor) ||
     !isSafeInteger(value.total_count) ||
     value.total_count < value.items.length ||
     (value.next_cursor !== null && value.total_count <= value.items.length)

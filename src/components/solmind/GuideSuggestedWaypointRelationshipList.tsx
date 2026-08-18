@@ -19,6 +19,7 @@ import {
   type SuggestedWaypointGuideListPage,
   type SuggestedWaypointGuideListPageSize,
 } from "@/lib/solmind/suggestedWaypointGuideListBrowserContract";
+import { SUGGESTED_WAYPOINT_REFRESH_REQUIRED } from "@/lib/solmind/suggestedWaypointPaginationSharedContract";
 import { SuggestedWaypointStatusPill } from "./SuggestedWaypointStatusPill";
 
 type RequestState = Readonly<{
@@ -110,61 +111,86 @@ export function GuideSuggestedWaypointRelationshipList({
         setNotice("Loading the requested suggestion page.");
       }
 
-      const query = new URLSearchParams({ pageSize: String(nextRequest.pageSize) });
-      if (nextRequest.cursor !== null) {
-        query.set("cursor", nextRequest.cursor);
-      }
-
+      let attemptRequest = nextRequest;
+      let refreshAttempted = false;
       try {
-        const response = await fetch(
-          `/guide/waypoint-suggestions/${encodeURIComponent(relationshipId)}/suggestions?${query.toString()}`,
-          {
-            cache: "no-store",
-            credentials: "same-origin",
-            headers: { Accept: "application/json" },
-            signal: controller.signal,
-          },
-        );
-        if (!response.ok) {
-          throw new Error("Unexpected Suggested Waypoint list response status.");
-        }
-        const result = parseSuggestedWaypointGuideListBrowserResult(
-          await response.json(),
-        );
-        if (controller.signal.aborted || sequence !== requestSequence.current) {
-          return;
-        }
+        for (;;) {
+          const query = new URLSearchParams({
+            pageSize: String(attemptRequest.pageSize),
+          });
+          if (attemptRequest.cursor !== null) {
+            query.set("cursor", attemptRequest.cursor);
+          }
+          const response = await fetch(
+            `/guide/waypoint-suggestions/${encodeURIComponent(relationshipId)}/suggestions?${query.toString()}`,
+            {
+              cache: "no-store",
+              credentials: "same-origin",
+              headers: { Accept: "application/json" },
+              signal: controller.signal,
+            },
+          );
+          if (!response.ok) {
+            throw new Error("Unexpected Suggested Waypoint list response status.");
+          }
+          const result = parseSuggestedWaypointGuideListBrowserResult(
+            await response.json(),
+          );
+          if (controller.signal.aborted || sequence !== requestSequence.current) {
+            return;
+          }
 
-        if (
-          result === null ||
-          (!result.ok && result.error !== SUGGESTED_WAYPOINT_GUIDE_LIST_DENIED)
-        ) {
-          setViewState(pageRef.current === null ? "failed" : "ready");
+          if (
+            result !== null &&
+            !result.ok &&
+            result.error === SUGGESTED_WAYPOINT_REFRESH_REQUIRED &&
+            attemptRequest.cursor !== null &&
+            !refreshAttempted
+          ) {
+            refreshAttempted = true;
+            attemptRequest = Object.freeze({
+              cursor: null,
+              cursorHistory: Object.freeze([]),
+              pageSize: attemptRequest.pageSize,
+            });
+            setNotice("This list changed. Refreshing the first page.");
+            continue;
+          }
+
+          if (
+            result === null ||
+            (!result.ok && result.error !== SUGGESTED_WAYPOINT_GUIDE_LIST_DENIED)
+          ) {
+            setViewState(pageRef.current === null ? "failed" : "ready");
+            setNotice(
+              pageRef.current === null
+                ? "Suggested Waypoints could not be loaded."
+                : "The requested page could not be loaded. The current page remains available.",
+            );
+            return;
+          }
+
+          if (!result.ok) {
+            pageRef.current = null;
+            setPage(null);
+            setViewState("denied");
+            setNotice("Suggested Waypoints are unavailable for this Explorer relationship.");
+            return;
+          }
+
+          pageRef.current = result.data;
+          setPage(result.data);
+          setRequest(attemptRequest);
+          setViewState("ready");
           setNotice(
-            pageRef.current === null
-              ? "Suggested Waypoints could not be loaded."
-              : "The requested page could not be loaded. The current page remains available.",
+            refreshAttempted
+              ? "This list changed, so the first page was refreshed."
+              : result.data.items.length === 0
+                ? "No Suggested Waypoints are currently available for this Explorer."
+                : `Loaded ${result.data.items.length} ${result.data.items.length === 1 ? "suggestion" : "suggestions"}.`,
           );
           return;
         }
-
-        if (!result.ok) {
-          pageRef.current = null;
-          setPage(null);
-          setViewState("denied");
-          setNotice("Suggested Waypoints are unavailable for this Explorer relationship.");
-          return;
-        }
-
-        pageRef.current = result.data;
-        setPage(result.data);
-        setRequest(nextRequest);
-        setViewState("ready");
-        setNotice(
-          result.data.items.length === 0
-            ? "No Suggested Waypoints are currently available for this Explorer."
-            : `Loaded ${result.data.items.length} ${result.data.items.length === 1 ? "suggestion" : "suggestions"}.`,
-        );
       } catch {
         if (
           sequence !== requestSequence.current ||

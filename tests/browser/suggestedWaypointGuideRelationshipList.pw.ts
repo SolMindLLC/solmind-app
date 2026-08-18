@@ -128,6 +128,89 @@ test.describe("relationship-scoped Guide Suggested Waypoint list", () => {
     await expect(page.getByText("Protect one evening each week for recovery")).toBeVisible();
   });
 
+  test("recovers a stale later-page cursor once and clears pagination history", async ({ page }) => {
+    const requestUrls: URL[] = [];
+    let firstPageCalls = 0;
+    await page.route(`**/guide/waypoint-suggestions/${RELATIONSHIP_ID}/suggestions?**`, (route) => {
+      const url = new URL(route.request().url());
+      requestUrls.push(url);
+      if (url.searchParams.has("cursor")) {
+        return fulfillJson(route, { ok: false, data: null, error: "refresh_required" });
+      }
+      firstPageCalls += 1;
+      return fulfillJson(
+        route,
+        success(
+          [
+            draft(
+              DRAFT_ID,
+              firstPageCalls === 1
+                ? "Protect one evening each week for recovery"
+                : "Protect two quiet evenings this week",
+            ),
+          ],
+          firstPageCalls === 1 ? "bmV4dA==" : null,
+          firstPageCalls === 1 ? 6 : 1,
+        ),
+      );
+    });
+
+    await page.goto(`/guide/waypoint-suggestions/${RELATIONSHIP_ID}`);
+    await page.getByRole("button", { name: "Next" }).click();
+
+    await expect(page.getByRole("status")).toHaveText(
+      "This list changed, so the first page was refreshed.",
+    );
+    await expect(page.getByText("Protect two quiet evenings this week")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Previous" })).toBeDisabled();
+    expect(requestUrls).toHaveLength(3);
+    expect(requestUrls.map((url) => url.searchParams.get("pageSize"))).toEqual([
+      "10",
+      "10",
+      "10",
+    ]);
+    expect(requestUrls[1]?.searchParams.get("cursor")).toBe("bmV4dA==");
+    expect(requestUrls[2]?.searchParams.has("cursor")).toBe(false);
+  });
+
+  test("clears displayed suggestions when the current request is denied", async ({ page }) => {
+    let requestCount = 0;
+    await page.route(`**/guide/waypoint-suggestions/${RELATIONSHIP_ID}/suggestions?**`, (route) => {
+      requestCount += 1;
+      if (requestCount === 1) {
+        return fulfillJson(
+          route,
+          success([
+            draft(DRAFT_ID, "Protect one evening each week for recovery"),
+          ], "bmV4dA==", 6),
+        );
+      }
+      return fulfillJson(route, {
+        ok: false,
+        data: null,
+        error: "SolMind Suggested Waypoints are unavailable.",
+      });
+    });
+
+    await page.goto(`/guide/waypoint-suggestions/${RELATIONSHIP_ID}`);
+    await page.getByRole("button", { name: "Next" }).click();
+    await expect(page.getByRole("heading", { name: "Suggested Waypoints unavailable" })).toBeVisible();
+    await expect(page.getByText("Protect one evening each week for recovery")).toHaveCount(0);
+    expect(requestCount).toBe(2);
+  });
+
+  test("does not loop on page-one refresh-required", async ({ page }) => {
+    let requestCount = 0;
+    await page.route(`**/guide/waypoint-suggestions/${RELATIONSHIP_ID}/suggestions?**`, (route) => {
+      requestCount += 1;
+      return fulfillJson(route, { ok: false, data: null, error: "refresh_required" });
+    });
+
+    await page.goto(`/guide/waypoint-suggestions/${RELATIONSHIP_ID}`);
+    await expect(page.getByRole("heading", { name: "Could not load suggestions" })).toBeVisible();
+    expect(requestCount).toBe(1);
+  });
+
   test("renders empty, denied, and failed states without suggestion leakage", async ({ page }) => {
     let responseMode: "empty" | "denied" | "failed" = "empty";
     await page.route(`**/guide/waypoint-suggestions/${RELATIONSHIP_ID}/suggestions?**`, (route) => {

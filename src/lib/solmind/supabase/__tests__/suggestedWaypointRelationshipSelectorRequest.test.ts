@@ -10,6 +10,7 @@ import { SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_FUNCTION } from "../suggestedW
 import {
   SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_DENIED,
   SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_FAILED,
+  SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_REFRESH_REQUIRED,
   resolveSuggestedWaypointRelationshipSelectorRequest,
 } from "../suggestedWaypointRelationshipSelectorRequest";
 
@@ -180,6 +181,33 @@ describe("resolveSuggestedWaypointRelationshipSelectorRequest", () => {
       });
       expect(JSON.stringify(result)).not.toContain("private detail");
     }
+  });
+
+  it("preserves the value-free selector refresh-required result", async () => {
+    const executor = {
+      execute: vi.fn().mockResolvedValue({
+        data: null,
+        error:
+          "solmind_suggested_waypoint_relationship_selector_rpc_refresh_required",
+      }),
+    };
+
+    const result = await resolveSuggestedWaypointRelationshipSelectorRequest(
+      {
+        principalSource:
+          createInMemoryRequestAuthPrincipalSource(GUIDE_PRINCIPAL),
+        authSource: createInMemoryAuthSource(fixture()),
+        executor,
+      },
+      { pageSize: 10, cursor: "YWJjZA==" },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      data: null,
+      error: SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_REFRESH_REQUIRED,
+    });
+    expect(Object.isFrozen(result)).toBe(true);
   });
 
   it("denies a throwing proxy before auth IO", async () => {

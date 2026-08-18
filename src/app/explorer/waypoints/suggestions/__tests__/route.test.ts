@@ -150,4 +150,17 @@ describe("GET Explorer Suggested Waypoint inbox", () => {
     expect(rawText).not.toContain("service-role");
     expect(rawText).not.toContain(SECRET_COOKIE);
   });
+
+  it("maps the internal stale-cursor result to the one public recovery sentinel", async () => {
+    resolveRequestMock.mockResolvedValue({
+      ok: false,
+      data: null,
+      error: "solmind_suggested_waypoint_request_refresh_required",
+    });
+
+    const { body, rawText } = await invoke("?pageSize=20&cursor=YWJjZA==");
+    expect(body).toEqual({ ok: false, data: null, error: "refresh_required" });
+    expect(Object.keys(body)).toEqual(["ok", "data", "error"]);
+    expect(rawText).not.toContain("solmind_suggested_waypoint_request");
+  });
 });

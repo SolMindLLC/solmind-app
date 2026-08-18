@@ -94,6 +94,22 @@ describe("Explorer Suggested Waypoint list browser contract", () => {
       data: null,
       error: "private provider detail",
     })).toBeNull();
+    expect(parseSuggestedWaypointExplorerListBrowserResult({
+      ok: false,
+      data: null,
+      error: "refresh_required",
+    })).toEqual({ ok: false, data: null, error: "refresh_required" });
+    expect(parseSuggestedWaypointExplorerListBrowserResult({
+      ok: false,
+      data: { items: [] },
+      error: "refresh_required",
+    })).toBeNull();
+    expect(parseSuggestedWaypointExplorerListBrowserResult({
+      ok: false,
+      data: null,
+      error: "refresh_required",
+      reason: "database detail",
+    })).toBeNull();
   });
 
   it("implements progressive page-size choices without showing pagination at five or below", () => {

@@ -8,6 +8,7 @@ import {
 import {
   SUGGESTED_WAYPOINT_RPC_DENIED,
   SUGGESTED_WAYPOINT_RPC_FAILED,
+  SUGGESTED_WAYPOINT_RPC_REFRESH_REQUIRED,
   SUGGESTED_WAYPOINT_RPC_UNMAPPED_CALL,
   createSuggestedWaypointHumanRpcExecutor,
   createSuggestedWaypointWorkerRpcExecutor,
@@ -396,6 +397,67 @@ describe("Suggested Waypoint RPC fail-closed boundaries", () => {
       expect(Object.isFrozen(result)).toBe(true);
     },
   );
+
+  it.each([
+    ["Guide", 6],
+    ["Explorer", 8],
+  ] as const)(
+    "maps only the exact %s list invalid-cursor error to a function-bound refresh result",
+    async (_role, caseIndex) => {
+      const testCase = DISPATCH_CASES[caseIndex];
+      const { client } = fakeClient({
+        data: null,
+        error: {
+          code: "P0001",
+          message: "solmind_suggested_waypoint_invalid_cursor",
+        },
+      });
+      const result = await createSuggestedWaypointHumanRpcExecutor(
+        client,
+      ).execute({
+        functionName: testCase.functionName,
+        args: testCase.args,
+      });
+
+      expect(result).toEqual({
+        functionName: testCase.functionName,
+        data: null,
+        error: SUGGESTED_WAYPOINT_RPC_REFRESH_REQUIRED,
+      });
+      expect(Object.isFrozen(result)).toBe(true);
+    },
+  );
+
+  it.each([
+    [
+      "same message on a non-list function",
+      0,
+      { code: "P0001", message: "solmind_suggested_waypoint_invalid_cursor" },
+    ],
+    [
+      "wrong code on a list function",
+      6,
+      { code: "22023", message: "solmind_suggested_waypoint_invalid_cursor" },
+    ],
+    [
+      "wrong message on a list function",
+      6,
+      { code: "P0001", message: "solmind_suggested_waypoint_denied" },
+    ],
+  ] as const)("keeps %s on the generic value-free failure path", async (_name, caseIndex, error) => {
+    const testCase = DISPATCH_CASES[caseIndex];
+    const { client } = fakeClient({ data: null, error });
+    const result = await createSuggestedWaypointHumanRpcExecutor(client).execute({
+      functionName: testCase.functionName,
+      args: testCase.args,
+    });
+
+    expect(result).toEqual({
+      functionName: null,
+      data: null,
+      error: SUGGESTED_WAYPOINT_RPC_FAILED,
+    });
+  });
 
   it.each([
     ["empty result", []],

@@ -8,6 +8,7 @@ import {
 } from "../suggestedWaypointRelationshipSelectorContract";
 import {
   SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_RPC_FAILED,
+  SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_RPC_REFRESH_REQUIRED,
   createSuggestedWaypointRelationshipSelectorExecutor,
 } from "../suggestedWaypointRelationshipSelectorExecutor";
 
@@ -159,6 +160,62 @@ describe("createSuggestedWaypointRelationshipSelectorExecutor", () => {
     const executor = createSuggestedWaypointRelationshipSelectorExecutor({ rpc } as never);
 
     await expect(executor.execute(CALL)).resolves.toEqual({
+      data: null,
+      error: SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_RPC_FAILED,
+    });
+  });
+
+  it("maps only the exact selector invalid-cursor error to refresh-required", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: {
+        code: "P0001",
+        message:
+          "solmind_suggested_waypoint_relationship_selector_invalid_cursor",
+      },
+    });
+    const result = await createSuggestedWaypointRelationshipSelectorExecutor({
+      rpc,
+    } as never).execute(CALL);
+
+    expect(result).toEqual({
+      data: null,
+      error: SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_RPC_REFRESH_REQUIRED,
+    });
+    expect(Object.isFrozen(result)).toBe(true);
+  });
+
+  it.each([
+    {
+      code: "22023",
+      message:
+        "solmind_suggested_waypoint_relationship_selector_invalid_cursor",
+    },
+    { code: "P0001", message: "solmind_suggested_waypoint_invalid_cursor" },
+  ])("keeps near-match selector errors on the generic failure path", async (error) => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error });
+    const result = await createSuggestedWaypointRelationshipSelectorExecutor({
+      rpc,
+    } as never).execute(CALL);
+
+    expect(result).toEqual({
+      data: null,
+      error: SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_RPC_FAILED,
+    });
+  });
+
+  it("fails closed when a hostile transport error throws while exposing its code", async () => {
+    const hostileError = Object.defineProperty({}, "code", {
+      get: () => {
+        throw new Error("hostile error getter");
+      },
+    });
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: hostileError });
+    const result = await createSuggestedWaypointRelationshipSelectorExecutor({
+      rpc,
+    } as never).execute(CALL);
+
+    expect(result).toEqual({
       data: null,
       error: SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_RPC_FAILED,
     });

@@ -113,4 +113,83 @@ test.describe("authenticated Guide Suggested Waypoint relationship entry", () =>
     );
     await expect(page.getByRole("link", { name: /Avery Suggested Waypoints Open/ })).toBeVisible();
   });
+
+  test("recovers a stale later-page cursor once and clears pagination history", async ({ page }) => {
+    const requestUrls: URL[] = [];
+    let firstPageCalls = 0;
+    await page.route("**/guide/waypoint-suggestions/relationships?**", (route) => {
+      const url = new URL(route.request().url());
+      requestUrls.push(url);
+      if (url.searchParams.has("cursor")) {
+        return fulfillJson(route, { ok: false, data: null, error: "refresh_required" });
+      }
+      firstPageCalls += 1;
+      return fulfillJson(
+        route,
+        success(
+          [
+            item(
+              RELATIONSHIP_ID,
+              firstPageCalls === 1 ? "Avery" : "Avery Chen",
+            ),
+          ],
+          firstPageCalls === 1 ? "bmV4dA==" : null,
+          firstPageCalls === 1 ? 6 : 1,
+        ),
+      );
+    });
+
+    await page.goto("/guide/waypoint-suggestions");
+    await page.getByRole("button", { name: "Next" }).click();
+
+    await expect(page.getByRole("status")).toHaveText(
+      "This list changed, so the first page was refreshed.",
+    );
+    await expect(page.getByRole("link", { name: /Avery Chen Suggested Waypoints Open/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Previous" })).toBeDisabled();
+    expect(requestUrls).toHaveLength(3);
+    expect(requestUrls.map((url) => url.searchParams.get("pageSize"))).toEqual([
+      "10",
+      "10",
+      "10",
+    ]);
+    expect(requestUrls[1]?.searchParams.get("cursor")).toBe("bmV4dA==");
+    expect(requestUrls[2]?.searchParams.has("cursor")).toBe(false);
+  });
+
+  test("clears displayed relationships when the current request is denied", async ({ page }) => {
+    let requestCount = 0;
+    await page.route("**/guide/waypoint-suggestions/relationships?**", (route) => {
+      requestCount += 1;
+      if (requestCount === 1) {
+        return fulfillJson(
+          route,
+          success([item(RELATIONSHIP_ID, "Avery")], "bmV4dA==", 6),
+        );
+      }
+      return fulfillJson(route, {
+        ok: false,
+        data: null,
+        error: "SolMind Suggested Waypoint relationships are unavailable.",
+      });
+    });
+
+    await page.goto("/guide/waypoint-suggestions");
+    await page.getByRole("button", { name: "Next" }).click();
+    await expect(page.getByRole("heading", { name: "Suggested Waypoints unavailable" })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Avery Suggested Waypoints Open/ })).toHaveCount(0);
+    expect(requestCount).toBe(2);
+  });
+
+  test("does not loop on page-one refresh-required", async ({ page }) => {
+    let requestCount = 0;
+    await page.route("**/guide/waypoint-suggestions/relationships?**", (route) => {
+      requestCount += 1;
+      return fulfillJson(route, { ok: false, data: null, error: "refresh_required" });
+    });
+
+    await page.goto("/guide/waypoint-suggestions");
+    await expect(page.getByRole("heading", { name: "Could not load Explorers" })).toBeVisible();
+    expect(requestCount).toBe(1);
+  });
 });

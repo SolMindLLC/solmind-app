@@ -93,6 +93,31 @@ describe("Suggested Waypoint Guide list browser contract", () => {
     ).toBeNull();
   });
 
+  it("accepts only the exact recoverable stale-cursor result", () => {
+    expect(
+      parseSuggestedWaypointGuideListBrowserResult({
+        ok: false,
+        data: null,
+        error: "refresh_required",
+      }),
+    ).toEqual({ ok: false, data: null, error: "refresh_required" });
+    expect(
+      parseSuggestedWaypointGuideListBrowserResult({
+        ok: false,
+        data: { items: [] },
+        error: "refresh_required",
+      }),
+    ).toBeNull();
+    expect(
+      parseSuggestedWaypointGuideListBrowserResult({
+        ok: false,
+        data: null,
+        error: "refresh_required",
+        reason: "database detail",
+      }),
+    ).toBeNull();
+  });
+
   it("exposes only useful progressive page sizes", () => {
     expect(availableSuggestedWaypointGuideListPageSizes(5)).toEqual([]);
     expect(availableSuggestedWaypointGuideListPageSizes(6)).toEqual([5, 10]);

@@ -3,17 +3,22 @@
 // The server route remains authoritative. This narrow parser prevents a
 // malformed or widened response from entering the Guide UI.
 
+import {
+  SUGGESTED_WAYPOINT_PAGE_SIZES,
+  SUGGESTED_WAYPOINT_REFRESH_REQUIRED,
+  isSuggestedWaypointOptionalCursor,
+  type SuggestedWaypointPageSize,
+} from "./suggestedWaypointPaginationSharedContract";
+
 export const SUGGESTED_WAYPOINT_RELATIONSHIP_DENIED =
   "SolMind Suggested Waypoint relationships are unavailable." as const;
 export const SUGGESTED_WAYPOINT_RELATIONSHIP_FAILED =
   "SolMind Suggested Waypoint relationships could not be loaded." as const;
 
-export const SUGGESTED_WAYPOINT_RELATIONSHIP_PAGE_SIZES = Object.freeze([
-  5, 10, 20, 50, 100,
-] as const);
+export const SUGGESTED_WAYPOINT_RELATIONSHIP_PAGE_SIZES =
+  SUGGESTED_WAYPOINT_PAGE_SIZES;
 
-export type SuggestedWaypointRelationshipPageSize =
-  (typeof SUGGESTED_WAYPOINT_RELATIONSHIP_PAGE_SIZES)[number];
+export type SuggestedWaypointRelationshipPageSize = SuggestedWaypointPageSize;
 
 export type SuggestedWaypointRelationshipBrowserItem = Readonly<{
   guide_explorer_relationship_id: string;
@@ -38,12 +43,12 @@ export type SuggestedWaypointRelationshipBrowserResult =
       data: null;
       error:
         | typeof SUGGESTED_WAYPOINT_RELATIONSHIP_DENIED
-        | typeof SUGGESTED_WAYPOINT_RELATIONSHIP_FAILED;
+        | typeof SUGGESTED_WAYPOINT_RELATIONSHIP_FAILED
+        | typeof SUGGESTED_WAYPOINT_REFRESH_REQUIRED;
     }>;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
 const RFC3339_TIMESTAMP_PATTERN =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/;
 
@@ -98,17 +103,6 @@ function isDisplayName(value: unknown): value is string {
   );
 }
 
-function isCursor(value: unknown): value is string | null {
-  return (
-    value === null ||
-    (typeof value === "string" &&
-      value.length > 0 &&
-      value.length <= 512 &&
-      value.length % 4 === 0 &&
-      BASE64_PATTERN.test(value))
-  );
-}
-
 function isTimestamp(value: unknown): value is string {
   return (
     typeof value === "string" &&
@@ -140,7 +134,8 @@ export function parseSuggestedWaypointRelationshipBrowserResult(
     if (
       value.data !== null ||
       (value.error !== SUGGESTED_WAYPOINT_RELATIONSHIP_DENIED &&
-        value.error !== SUGGESTED_WAYPOINT_RELATIONSHIP_FAILED)
+        value.error !== SUGGESTED_WAYPOINT_RELATIONSHIP_FAILED &&
+        value.error !== SUGGESTED_WAYPOINT_REFRESH_REQUIRED)
     ) {
       return null;
     }
@@ -153,7 +148,7 @@ export function parseSuggestedWaypointRelationshipBrowserResult(
     !isPlainObject(value.data) ||
     !hasExactKeys(value.data, ["items", "next_cursor", "total_count"]) ||
     !Array.isArray(value.data.items) ||
-    !isCursor(value.data.next_cursor) ||
+    !isSuggestedWaypointOptionalCursor(value.data.next_cursor) ||
     typeof value.data.total_count !== "number" ||
     !Number.isSafeInteger(value.data.total_count) ||
     value.data.total_count < value.data.items.length ||

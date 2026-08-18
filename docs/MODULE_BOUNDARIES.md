@@ -486,10 +486,16 @@ The request composition wraps only the human executor and derives authority
 from injected request-auth and server-loaded records. It accepts only
 single-line Guide-authored destinations, while the executor classifies an
 exact-function-bound zero-row Guide or Explorer detail result as denied and
-keeps every other zero-row result failed. Later concrete request-
-cookie, route/server-action, page/data-adapter, and worker composition must wrap
-these boundaries rather than weakening or bypassing their exact allowlists,
-validators, role separation, or result binding.
+keeps every other zero-row result failed. The shared browser-safe
+`suggestedWaypointPaginationSharedContract.ts` owns only the exact page sizes,
+strict padded-Base64 cursor grammar, and closed query syntax. The server-only
+`suggestedWaypointPaginationRpcError.ts` maps the exact database invalid-cursor
+code/message only when it came from the corresponding Guide list, Explorer
+list, or relationship-selector function; every near match remains a generic
+value-free failure. Later command route/server-action, page/data-adapter, and
+worker composition must wrap these boundaries rather than weakening or
+bypassing their exact allowlists, validators, role separation, or result
+binding.
 
 The concrete `suggestedWaypointRequestDependencies.ts` request factory now
 wires the request-auth principal source, enumerated auth-record loader, closed
@@ -520,7 +526,13 @@ src/app/guide/waypoint-suggestions/relationships/route.ts
 It is a thin, dynamic, uncached Route Handler. It accepts validated pagination
 only, builds the read-only request-cookie accessor, delegates trusted
 actor/role derivation and the database relationship recheck, and serializes
-only the fixed selector result. It does not protect the Guide page, replace
+only the fixed selector result. This route and the Guide/Explorer suggestion
+list routes expose the same value-free `refresh_required` result for an exact
+stale cursor. Their three client owners may retry only a non-first page, once,
+with the same page size and no cursor, under the same request sequence,
+controller, and timeout. A successful reset clears cursor history; malformed or
+operational failure keeps the last safe page; and a current authority denial
+clears it. None of those states loops. It does not protect the Guide page, replace
 fixture UI, invoke human commands, mutate Suggested Waypoints, schedule
 delivery, call a provider, deploy, or activate a real-user path.
 

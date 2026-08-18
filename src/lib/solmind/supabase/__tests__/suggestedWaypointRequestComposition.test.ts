@@ -9,11 +9,13 @@ import { createInMemoryRequestAuthPrincipalSource } from "../../auth/requestAuth
 import { type SupabaseAuthenticatedUser } from "../../auth/serverAuthContext";
 import {
   SUGGESTED_WAYPOINT_RPC_DENIED,
+  SUGGESTED_WAYPOINT_RPC_REFRESH_REQUIRED,
   type SuggestedWaypointRpcResult,
 } from "../suggestedWaypointRpcExecutor";
 import {
   SUGGESTED_WAYPOINT_REQUEST_DENIED,
   SUGGESTED_WAYPOINT_REQUEST_FAILED,
+  SUGGESTED_WAYPOINT_REQUEST_REFRESH_REQUIRED,
   resolveSuggestedWaypointRequest,
 } from "../suggestedWaypointRequestComposition";
 
@@ -754,6 +756,88 @@ describe("resolveSuggestedWaypointRequest - fail closed", () => {
     );
 
     expect(result.error).toBe(SUGGESTED_WAYPOINT_REQUEST_FAILED);
+  });
+
+  it.each([
+    {
+      role: "Guide",
+      principal: GUIDE_PRINCIPAL,
+      request: {
+        kind: "guide.list" as const,
+        relationshipId: RELATIONSHIP_ID,
+        pageSize: 10 as const,
+        cursor: "YWJjZA==",
+      },
+      functionName: "solmind_list_guide_suggested_waypoints" as const,
+    },
+    {
+      role: "Explorer",
+      principal: EXPLORER_PRINCIPAL,
+      request: {
+        kind: "explorer.list" as const,
+        pageSize: 10 as const,
+        cursor: "YWJjZA==",
+      },
+      functionName: "solmind_list_explorer_suggested_waypoints" as const,
+    },
+  ])(
+    "maps a function-bound $role stale cursor to the browser-safe request result",
+    async ({ principal, request, functionName }) => {
+      const executor = {
+        execute: vi.fn().mockResolvedValue({
+          functionName,
+          data: null,
+          error: SUGGESTED_WAYPOINT_RPC_REFRESH_REQUIRED,
+        }),
+      };
+
+      const result = await resolveSuggestedWaypointRequest(
+        {
+          principalSource: createInMemoryRequestAuthPrincipalSource(principal),
+          authSource: createInMemoryAuthSource(fixture()),
+          executor,
+        },
+        request,
+      );
+
+      expect(result).toEqual({
+        ok: false,
+        data: null,
+        error: SUGGESTED_WAYPOINT_REQUEST_REFRESH_REQUIRED,
+      });
+      expect(Object.isFrozen(result)).toBe(true);
+    },
+  );
+
+  it("fails closed when a refresh-required result names a different list function", async () => {
+    const executor = {
+      execute: vi.fn().mockResolvedValue({
+        functionName: "solmind_list_explorer_suggested_waypoints",
+        data: null,
+        error: SUGGESTED_WAYPOINT_RPC_REFRESH_REQUIRED,
+      }),
+    };
+
+    const result = await resolveSuggestedWaypointRequest(
+      {
+        principalSource:
+          createInMemoryRequestAuthPrincipalSource(GUIDE_PRINCIPAL),
+        authSource: createInMemoryAuthSource(fixture()),
+        executor,
+      },
+      {
+        kind: "guide.list",
+        relationshipId: RELATIONSHIP_ID,
+        pageSize: 10,
+        cursor: "YWJjZA==",
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      data: null,
+      error: SUGGESTED_WAYPOINT_REQUEST_FAILED,
+    });
   });
 
   it("fails closed when the executor result names a different function", async () => {

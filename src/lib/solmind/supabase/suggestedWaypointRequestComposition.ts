@@ -9,6 +9,11 @@
 import "server-only";
 
 import { SOLMIND_ROLES } from "../roles";
+import {
+  isSuggestedWaypointOptionalCursor,
+  isSuggestedWaypointPageSize,
+  type SuggestedWaypointPageSize,
+} from "../suggestedWaypointPaginationSharedContract";
 import { decideGuideRelationshipAccess } from "../auth/accessBoundary";
 import { type SolMindAuthSource } from "../auth/authSource";
 import { type SolMindRequestAuthPrincipalSource } from "../auth/requestAuthPrincipalSource";
@@ -19,6 +24,7 @@ import {
 } from "./suggestedWaypointRpcContract";
 import {
   SUGGESTED_WAYPOINT_RPC_DENIED,
+  SUGGESTED_WAYPOINT_RPC_REFRESH_REQUIRED,
   type SuggestedWaypointHumanRpcExecutor,
   type SuggestedWaypointRpcResult,
 } from "./suggestedWaypointRpcExecutor";
@@ -31,18 +37,18 @@ if (typeof window !== "undefined") {
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const BASE64_PATTERN =
-  /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
-const PAGE_SIZES = new Set([5, 10, 20, 50, 100]);
 
 export const SUGGESTED_WAYPOINT_REQUEST_DENIED =
   "solmind_suggested_waypoint_request_denied" as const;
 export const SUGGESTED_WAYPOINT_REQUEST_FAILED =
   "solmind_suggested_waypoint_request_failed" as const;
+export const SUGGESTED_WAYPOINT_REQUEST_REFRESH_REQUIRED =
+  "solmind_suggested_waypoint_request_refresh_required" as const;
 
 export type SuggestedWaypointRequestError =
   | typeof SUGGESTED_WAYPOINT_REQUEST_DENIED
-  | typeof SUGGESTED_WAYPOINT_REQUEST_FAILED;
+  | typeof SUGGESTED_WAYPOINT_REQUEST_FAILED
+  | typeof SUGGESTED_WAYPOINT_REQUEST_REFRESH_REQUIRED;
 
 export type SuggestedWaypointRequestResult =
   | Readonly<{
@@ -56,7 +62,7 @@ export type SuggestedWaypointRequestResult =
       error: SuggestedWaypointRequestError;
     }>;
 
-type PageSize = 5 | 10 | 20 | 50 | 100;
+type PageSize = SuggestedWaypointPageSize;
 
 type CreateDraftRequest = Readonly<{
   kind: "guide.create_draft";
@@ -252,18 +258,7 @@ function isArrivalSignals(value: unknown): value is readonly string[] {
 }
 
 function isPageSize(value: unknown): value is PageSize {
-  return typeof value === "number" && PAGE_SIZES.has(value);
-}
-
-function isCursor(value: unknown): value is string | null {
-  return (
-    value === null ||
-    (typeof value === "string" &&
-      value.length > 0 &&
-      value.length <= 512 &&
-      value.length % 4 === 0 &&
-      BASE64_PATTERN.test(value))
-  );
+  return isSuggestedWaypointPageSize(value);
 }
 
 function validateClientRequest(
@@ -362,7 +357,7 @@ function validateClientRequest(
         ]) ||
         !isUuid(value.relationshipId) ||
         !isPageSize(value.pageSize) ||
-        !isCursor(value.cursor)
+        !isSuggestedWaypointOptionalCursor(value.cursor)
       ) {
         return null;
       }
@@ -414,7 +409,7 @@ function validateClientRequest(
       if (
         !hasExactKeys(value, ["kind", "pageSize", "cursor"]) ||
         !isPageSize(value.pageSize) ||
-        !isCursor(value.cursor)
+        !isSuggestedWaypointOptionalCursor(value.cursor)
       ) {
         return null;
       }
@@ -647,6 +642,14 @@ function fail(): SuggestedWaypointRequestResult {
   });
 }
 
+function refreshRequired(): SuggestedWaypointRequestResult {
+  return Object.freeze({
+    ok: false,
+    data: null,
+    error: SUGGESTED_WAYPOINT_REQUEST_REFRESH_REQUIRED,
+  });
+}
+
 export async function resolveSuggestedWaypointRequest(
   deps: SuggestedWaypointRequestCompositionDependencies,
   input: unknown,
@@ -738,6 +741,11 @@ export async function resolveSuggestedWaypointRequest(
   }
   if (rpcResult.error === SUGGESTED_WAYPOINT_RPC_DENIED) {
     return rpcResult.functionName === builtCall.functionName ? deny() : fail();
+  }
+  if (rpcResult.error === SUGGESTED_WAYPOINT_RPC_REFRESH_REQUIRED) {
+    return rpcResult.functionName === builtCall.functionName
+      ? refreshRequired()
+      : fail();
   }
   if (
     rpcResult.error !== null ||
