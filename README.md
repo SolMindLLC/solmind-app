@@ -136,8 +136,9 @@ Backend foundations present in the repository (high level):
 - Suggested Waypoint S03 authenticated composition primitive: exact
   client-safe Guide/Explorer request validation, request-auth actor/role
   derivation, Guide relationship enforcement, server-derived actor injection,
-  server-resolved initial suggestion/version identifiers, and fixed
-  browser-safe results. It remains a direct-import server-only dependency;
+  server-resolved initial suggestion/version identifiers, single-line
+  Guide-authored destinations, exact-function-bound zero-row detail denial,
+  and fixed browser-safe results. It remains a direct-import server-only dependency;
   separately reviewed thin read routes call it without adding a Server Action,
   hosted worker, provider, deployment, or real-user activation.
 - Suggested Waypoint S03 concrete request dependencies: one request-scoped,

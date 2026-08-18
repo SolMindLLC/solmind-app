@@ -7,7 +7,10 @@ import {
 } from "../../auth/authSource";
 import { createInMemoryRequestAuthPrincipalSource } from "../../auth/requestAuthPrincipalSource";
 import { type SupabaseAuthenticatedUser } from "../../auth/serverAuthContext";
-import { type SuggestedWaypointRpcResult } from "../suggestedWaypointRpcExecutor";
+import {
+  SUGGESTED_WAYPOINT_RPC_DENIED,
+  type SuggestedWaypointRpcResult,
+} from "../suggestedWaypointRpcExecutor";
 import {
   SUGGESTED_WAYPOINT_REQUEST_DENIED,
   SUGGESTED_WAYPOINT_REQUEST_FAILED,
@@ -419,6 +422,54 @@ describe("resolveSuggestedWaypointRequest - fail closed", () => {
     expect(executor.execute).not.toHaveBeenCalled();
   });
 
+  it.each([
+    [
+      "create",
+      {
+        ...GUIDE_CREATE_REQUEST,
+        destination: "Protect one evening\nfor recovery",
+      },
+    ],
+    [
+      "save",
+      {
+        kind: "guide.save_draft",
+        relationshipId: RELATIONSHIP_ID,
+        operationId: OPERATION_ID,
+        suggestedWaypointId: SUGGESTION_ID,
+        expectedRevision: 1,
+        destination: "Protect one evening\nfor recovery",
+        why: "Create dependable recovery space.",
+        arrivalSignals: ["One evening remains unscheduled."],
+      },
+    ],
+  ])(
+    "denies a multiline destination in the Guide %s request before auth IO",
+    async (_operation, request) => {
+      const principalSource =
+        createInMemoryRequestAuthPrincipalSource(GUIDE_PRINCIPAL);
+      const principalSpy = vi.spyOn(
+        principalSource,
+        "resolveAuthenticatedUser",
+      );
+      const executor = makeExecutor();
+
+      const result = await resolveSuggestedWaypointRequest(
+        {
+          principalSource,
+          authSource: createInMemoryAuthSource(fixture()),
+          executor,
+          identifiers: IDENTIFIERS,
+        },
+        request,
+      );
+
+      expect(result.error).toBe(SUGGESTED_WAYPOINT_REQUEST_DENIED);
+      expect(principalSpy).not.toHaveBeenCalled();
+      expect(executor.execute).not.toHaveBeenCalled();
+    },
+  );
+
   it("snapshots mutable client input before the first asynchronous boundary", async () => {
     let releasePrincipal!: (value: SupabaseAuthenticatedUser) => void;
     const principalPromise = new Promise<SupabaseAuthenticatedUser>((resolve) => {
@@ -629,6 +680,80 @@ describe("resolveSuggestedWaypointRequest - fail closed", () => {
       data: null,
       error: SUGGESTED_WAYPOINT_REQUEST_FAILED,
     });
+  });
+
+  it.each([
+    {
+      role: "Guide",
+      principal: GUIDE_PRINCIPAL,
+      request: {
+        kind: "guide.get" as const,
+        relationshipId: RELATIONSHIP_ID,
+        suggestedWaypointId: SUGGESTION_ID,
+      },
+      functionName: "solmind_get_guide_suggested_waypoint" as const,
+    },
+    {
+      role: "Explorer",
+      principal: EXPLORER_PRINCIPAL,
+      request: {
+        kind: "explorer.get" as const,
+        suggestedWaypointId: SUGGESTION_ID,
+      },
+      functionName: "solmind_get_explorer_suggested_waypoint" as const,
+    },
+  ])(
+    "maps a bound zero-row $role detail denial to the browser-safe request denial",
+    async ({ principal, request, functionName }) => {
+      const executor = {
+        execute: vi.fn().mockResolvedValue({
+          functionName,
+          data: null,
+          error: SUGGESTED_WAYPOINT_RPC_DENIED,
+        }),
+      };
+
+      const result = await resolveSuggestedWaypointRequest(
+        {
+          principalSource: createInMemoryRequestAuthPrincipalSource(principal),
+          authSource: createInMemoryAuthSource(fixture()),
+          executor,
+        },
+        request,
+      );
+
+      expect(result).toEqual({
+        ok: false,
+        data: null,
+        error: SUGGESTED_WAYPOINT_REQUEST_DENIED,
+      });
+    },
+  );
+
+  it("fails closed when a detail denial names a different function", async () => {
+    const executor = {
+      execute: vi.fn().mockResolvedValue({
+        functionName: "solmind_get_explorer_suggested_waypoint",
+        data: null,
+        error: SUGGESTED_WAYPOINT_RPC_DENIED,
+      }),
+    };
+
+    const result = await resolveSuggestedWaypointRequest(
+      {
+        principalSource:
+          createInMemoryRequestAuthPrincipalSource(GUIDE_PRINCIPAL),
+        authSource: createInMemoryAuthSource(fixture()),
+        executor,
+      },
+      {
+        kind: "guide.get",
+        relationshipId: RELATIONSHIP_ID,
+        suggestedWaypointId: SUGGESTION_ID,
+      },
+    );
+
+    expect(result.error).toBe(SUGGESTED_WAYPOINT_REQUEST_FAILED);
   });
 
   it("fails closed when the executor result names a different function", async () => {

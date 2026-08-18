@@ -18,6 +18,7 @@ import {
   type SuggestedWaypointRpcPayload,
 } from "./suggestedWaypointRpcContract";
 import {
+  SUGGESTED_WAYPOINT_RPC_DENIED,
   type SuggestedWaypointHumanRpcExecutor,
   type SuggestedWaypointRpcResult,
 } from "./suggestedWaypointRpcExecutor";
@@ -228,6 +229,14 @@ function isBoundedText(
   );
 }
 
+function isSingleLineBoundedText(
+  value: unknown,
+  minimum: number,
+  maximum: number,
+): value is string {
+  return isBoundedText(value, minimum, maximum) && !value.includes("\n");
+}
+
 function isArrivalSignals(value: unknown): value is readonly string[] {
   if (!Array.isArray(value) || value.length < 1 || value.length > 8) {
     return false;
@@ -277,7 +286,7 @@ function validateClientRequest(
         ]) ||
         !isUuid(value.relationshipId) ||
         !isUuid(value.operationId) ||
-        !isBoundedText(value.destination, 1, 160) ||
+        !isSingleLineBoundedText(value.destination, 1, 160) ||
         !isBoundedText(value.why, 1, 1000) ||
         !isArrivalSignals(value.arrivalSignals)
       ) {
@@ -300,7 +309,7 @@ function validateClientRequest(
         !isUuid(value.operationId) ||
         !isUuid(value.suggestedWaypointId) ||
         !isSafeInteger(value.expectedRevision, 1) ||
-        !isBoundedText(value.destination, 1, 160) ||
+        !isSingleLineBoundedText(value.destination, 1, 160) ||
         !isBoundedText(value.why, 1, 1000) ||
         !isArrivalSignals(value.arrivalSignals)
       ) {
@@ -726,6 +735,9 @@ export async function resolveSuggestedWaypointRequest(
     rpcResult = await deps.executor.execute(builtCall.call);
   } catch {
     return fail();
+  }
+  if (rpcResult.error === SUGGESTED_WAYPOINT_RPC_DENIED) {
+    return rpcResult.functionName === builtCall.functionName ? deny() : fail();
   }
   if (
     rpcResult.error !== null ||

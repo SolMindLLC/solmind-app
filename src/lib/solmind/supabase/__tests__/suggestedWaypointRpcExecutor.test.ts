@@ -6,6 +6,7 @@ import {
   SUGGESTED_WAYPOINT_WORKER_RPC_FUNCTIONS,
 } from "../suggestedWaypointRpcContract";
 import {
+  SUGGESTED_WAYPOINT_RPC_DENIED,
   SUGGESTED_WAYPOINT_RPC_FAILED,
   SUGGESTED_WAYPOINT_RPC_UNMAPPED_CALL,
   createSuggestedWaypointHumanRpcExecutor,
@@ -371,6 +372,30 @@ describe("Suggested Waypoint RPC fail-closed boundaries", () => {
     expect(rpc).not.toHaveBeenCalled();
     expect(result.error).toBe(SUGGESTED_WAYPOINT_RPC_UNMAPPED_CALL);
   });
+
+  it.each([
+    ["Guide", 7],
+    ["Explorer", 9],
+  ] as const)(
+    "maps a zero-row %s detail result to an explicit value-free denial",
+    async (_role, caseIndex) => {
+      const testCase = DISPATCH_CASES[caseIndex];
+      const { client } = fakeClient({ data: [], error: null });
+      const result = await createSuggestedWaypointHumanRpcExecutor(
+        client,
+      ).execute({
+        functionName: testCase.functionName,
+        args: testCase.args,
+      });
+
+      expect(result).toEqual({
+        functionName: testCase.functionName,
+        data: null,
+        error: SUGGESTED_WAYPOINT_RPC_DENIED,
+      });
+      expect(Object.isFrozen(result)).toBe(true);
+    },
+  );
 
   it.each([
     ["empty result", []],

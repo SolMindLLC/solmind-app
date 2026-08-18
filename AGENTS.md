@@ -139,14 +139,18 @@ delivery-worker call. Keep those capabilities in separate executors, keep both
 modules off the shared Supabase barrel, and omit the dormant Admin operational
 query. Validate exact call and response keys, UUIDs, page sizes, cursors,
 bounded text, lifecycle coherence, and the protected 60-3600 second send-grace
-shape before returning a frozen copy. Map all failures to value-free sentinels.
+shape before returning a frozen copy. A zero-row Guide or Explorer detail read
+is a value-free denied outcome bound to the exact get function; zero rows for
+every other function remain failures. Map all failures to value-free sentinels.
 
 The banked `suggestedWaypointRequestComposition.ts` is the direct-import
 server-only human-request boundary. It validates exact
 client-safe Guide/Explorer shapes, derives actor identity and role from the
 injected request-auth and record sources, rechecks Guide relationship access,
 injects only the server-derived actor, and maps transport detail to fixed
-browser-safe results. Initial suggestion/version identifiers come only from an
+browser-safe results. Guide-authored destinations are single-line at this
+boundary so accepted writes remain valid for both list projections. Initial
+suggestion/version identifiers come only from an
 injected server resolver, never a browser form. Keep the module and test off
 shared barrels. It does not itself own a route, Server Action, worker, UI,
 hosted scheduler, provider integration, deployment, or real-user activation;

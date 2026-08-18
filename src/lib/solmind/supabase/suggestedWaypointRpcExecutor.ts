@@ -29,10 +29,17 @@ export const SUGGESTED_WAYPOINT_RPC_UNMAPPED_CALL =
   "solmind_suggested_waypoint_rpc_unmapped_call";
 export const SUGGESTED_WAYPOINT_RPC_FAILED =
   "solmind_suggested_waypoint_rpc_failed";
+export const SUGGESTED_WAYPOINT_RPC_DENIED =
+  "solmind_suggested_waypoint_rpc_denied";
+
+type SuggestedWaypointDetailRpcFunction =
+  | "solmind_get_guide_suggested_waypoint"
+  | "solmind_get_explorer_suggested_waypoint";
 
 export type SuggestedWaypointRpcError =
   | typeof SUGGESTED_WAYPOINT_RPC_UNMAPPED_CALL
-  | typeof SUGGESTED_WAYPOINT_RPC_FAILED;
+  | typeof SUGGESTED_WAYPOINT_RPC_FAILED
+  | typeof SUGGESTED_WAYPOINT_RPC_DENIED;
 
 export type SuggestedWaypointRpcResult =
   | Readonly<{
@@ -41,9 +48,16 @@ export type SuggestedWaypointRpcResult =
       error: null;
     }>
   | Readonly<{
+      functionName: SuggestedWaypointDetailRpcFunction;
+      data: null;
+      error: typeof SUGGESTED_WAYPOINT_RPC_DENIED;
+    }>
+  | Readonly<{
       functionName: null;
       data: null;
-      error: SuggestedWaypointRpcError;
+      error:
+        | typeof SUGGESTED_WAYPOINT_RPC_UNMAPPED_CALL
+        | typeof SUGGESTED_WAYPOINT_RPC_FAILED;
     }>;
 
 export type SuggestedWaypointHumanRpcExecutor = Readonly<{
@@ -53,6 +67,18 @@ export type SuggestedWaypointHumanRpcExecutor = Readonly<{
 export type SuggestedWaypointWorkerRpcExecutor = Readonly<{
   execute(call: SuggestedWaypointWorkerRpcCall | unknown): Promise<SuggestedWaypointRpcResult>;
 }>;
+
+function isZeroRowDetailDenial(
+  functionName: SuggestedWaypointRpcFunction,
+  data: unknown,
+): functionName is SuggestedWaypointDetailRpcFunction {
+  return (
+    Array.isArray(data) &&
+    data.length === 0 &&
+    (functionName === "solmind_get_guide_suggested_waypoint" ||
+      functionName === "solmind_get_explorer_suggested_waypoint")
+  );
+}
 
 async function dispatch(
   client: SupabaseClient,
@@ -65,6 +91,13 @@ async function dispatch(
         functionName: null,
         data: null,
         error: SUGGESTED_WAYPOINT_RPC_FAILED,
+      });
+    }
+    if (isZeroRowDetailDenial(call.functionName, data)) {
+      return Object.freeze({
+        functionName: call.functionName,
+        data: null,
+        error: SUGGESTED_WAYPOINT_RPC_DENIED,
       });
     }
     const payload = validateSuggestedWaypointRpcPayload(call.functionName, data);

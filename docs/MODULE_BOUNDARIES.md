@@ -483,7 +483,10 @@ The closed Suggested Waypoint S03 transport and authenticated human-request
 composition also live here. Their contract, human/worker executors, and request
 composition are direct-import server-only modules kept off the shared barrel.
 The request composition wraps only the human executor and derives authority
-from injected request-auth and server-loaded records. Later concrete request-
+from injected request-auth and server-loaded records. It accepts only
+single-line Guide-authored destinations, while the executor classifies an
+exact-function-bound zero-row Guide or Explorer detail result as denied and
+keeps every other zero-row result failed. Later concrete request-
 cookie, route/server-action, page/data-adapter, and worker composition must wrap
 these boundaries rather than weakening or bypassing their exact allowlists,
 validators, role separation, or result binding.
