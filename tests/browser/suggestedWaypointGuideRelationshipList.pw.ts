@@ -30,6 +30,8 @@ const draft = (id: string, destination: string) => ({
 const fulfillJson = (route: Route, body: unknown) =>
   route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
 
+test.use({ timezoneId: "America/Chicago" });
+
 const expectNoSeriousAxeViolations = async (page: Page) => {
   const result = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
@@ -91,7 +93,10 @@ test.describe("relationship-scoped Guide Suggested Waypoint list", () => {
     await page.goto(`/guide/waypoint-suggestions/${RELATIONSHIP_ID}`);
     await expect(page.getByText(/Draft$/, { exact: false })).toBeVisible();
     await expect(page.getByText("Pull Back available", { exact: false })).toBeVisible();
-    await expect(page.getByText("Receipt acknowledged Aug 16", { exact: false })).toBeVisible();
+    await expect(page.getByText("Receipt acknowledged Aug 16, 2026", { exact: false })).toBeVisible();
+    await expect(page.getByText("Scheduled for Aug 16, 2026", { exact: true })).toBeVisible();
+    await expect(page.getByText("Sent Aug 16, 2026", { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 
     const row = page.getByRole("link", { name: /Protect one evening each week for recovery/ });
     await row.focus();

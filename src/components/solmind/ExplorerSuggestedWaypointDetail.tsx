@@ -7,17 +7,10 @@ import {
   parseSuggestedWaypointExplorerDetailBrowserResult,
   type SuggestedWaypointExplorerDetail as Detail,
 } from "@/lib/solmind/suggestedWaypointExplorerDetailBrowserContract";
+import { formatSuggestedWaypointDate } from "@/lib/solmind/suggestedWaypointDisplayDate";
 import { SuggestedWaypointStatusPill } from "./SuggestedWaypointStatusPill";
 
 type ViewState = "loading" | "ready" | "denied" | "failed";
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(value));
-}
 
 function StatusPills({ detail }: { detail: Detail }) {
   return (
@@ -27,7 +20,7 @@ function StatusPills({ detail }: { detail: Detail }) {
       </SuggestedWaypointStatusPill>
       {detail.receipt_acknowledged && detail.acknowledged_at !== null && (
         <SuggestedWaypointStatusPill tone="positive">
-          ☑ You acknowledged receipt {formatDate(detail.acknowledged_at)}
+          ☑ You acknowledged receipt {formatSuggestedWaypointDate(detail.acknowledged_at)}
         </SuggestedWaypointStatusPill>
       )}
     </>
@@ -147,7 +140,7 @@ export function ExplorerSuggestedWaypointDetail({
           <section className="rounded-xl border border-slate-300 bg-white p-6 shadow-sm">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <p className="text-sm font-semibold text-[#1d6768]">Received {formatDate(detail.received_at)} as a suggestion, not an assignment.</p>
+                <p className="text-sm font-semibold text-[#1d6768]">Received {formatSuggestedWaypointDate(detail.received_at)} as a suggestion, not an assignment.</p>
                 <h1 className="mt-3 text-3xl font-semibold">{detail.destination}</h1>
               </div>
               <div className="flex flex-wrap gap-2 sm:max-w-md sm:justify-end"><StatusPills detail={detail} /></div>

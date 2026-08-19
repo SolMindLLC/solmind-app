@@ -20,6 +20,7 @@ import {
   type SuggestedWaypointExplorerListPage,
   type SuggestedWaypointExplorerListPageSize,
 } from "@/lib/solmind/suggestedWaypointExplorerListBrowserContract";
+import { formatSuggestedWaypointDate } from "@/lib/solmind/suggestedWaypointDisplayDate";
 import { SUGGESTED_WAYPOINT_REFRESH_REQUIRED } from "@/lib/solmind/suggestedWaypointPaginationSharedContract";
 import { SuggestedWaypointStatusPill } from "./SuggestedWaypointStatusPill";
 
@@ -37,14 +38,6 @@ const INITIAL_REQUEST: RequestState = Object.freeze({
   pageSize: 10,
 });
 
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(value));
-}
-
 function StatusPills({ item }: { item: SuggestedWaypointExplorerListItem }) {
   return (
     <>
@@ -53,7 +46,7 @@ function StatusPills({ item }: { item: SuggestedWaypointExplorerListItem }) {
       </SuggestedWaypointStatusPill>
       {item.receipt_acknowledged && item.acknowledged_at !== null && (
         <SuggestedWaypointStatusPill tone="positive">
-          ☑ You acknowledged receipt {formatDate(item.acknowledged_at)}
+          ☑ You acknowledged receipt {formatSuggestedWaypointDate(item.acknowledged_at)}
         </SuggestedWaypointStatusPill>
       )}
     </>
@@ -347,7 +340,7 @@ export function ExplorerSuggestedWaypointInbox() {
                           <span className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                             <span>
                               <span className="block text-lg font-semibold">{item.destination_preview}</span>
-                              <span className="mt-2 block text-sm text-slate-600">Received {formatDate(item.received_at)} as a suggestion, not an assignment.</span>
+                              <span className="mt-2 block text-sm text-slate-600">Received {formatSuggestedWaypointDate(item.received_at)} as a suggestion, not an assignment.</span>
                             </span>
                             <span className="flex flex-wrap gap-2 sm:max-w-md sm:justify-end"><StatusPills item={item} /></span>
                           </span>

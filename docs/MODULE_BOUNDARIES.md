@@ -168,6 +168,13 @@ server-derived request authority and exact role-safe projections. No current
 Suggested Waypoint UI invokes a human command, worker, provider, deployment, or
 real-user activation.
 
+`suggestedWaypointDisplayDate.ts` is the shared browser-safe presentation owner
+for those authenticated Explorer and Guide list/detail components. It renders
+year-complete `en-US` dates and date-times in the viewer's local time zone. Its
+optional explicit IANA time zone is a test seam only; production consumers do
+not pass one or force UTC. The helper does not change exact timestamps, browser
+contracts, persistence, locale preferences, or an application-wide date system.
+
 Dormant `PRJ01_V-WS05-WI022-S02` adds a database-only Suggested Waypoint
 boundary under `supabase/migrations/` and `supabase/tests/`. Eight owners keep
 Guide draft content, pending outbound content, immutable delivered versions,

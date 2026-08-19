@@ -28,6 +28,8 @@ const base = {
   effective_seconds: null,
 };
 
+test.use({ timezoneId: "America/Chicago" });
+
 const fulfillJson = (route: Route, body: unknown) =>
   route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
 
@@ -88,13 +90,16 @@ test.describe("Guide Suggested Waypoint detail", () => {
     await page.reload();
     await expect(page.getByText("Pull Back available", { exact: false })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Pending-send window" })).toBeVisible();
+    await expect(page.getByText("Explorer visibility is scheduled after Aug 16, 2026, 1:30 AM CDT.", { exact: false })).toBeVisible();
     await expect(page.getByText("300 seconds", { exact: false })).toBeVisible();
 
     state = "delivered";
     await page.reload();
     await expect(page.getByRole("heading", { name: "Version sent to Explorer" })).toBeVisible();
-    await expect(page.getByText("Receipt acknowledged", { exact: false })).toBeVisible();
+    await expect(page.getByText("Receipt acknowledged Aug 16, 2026, 1:35 AM CDT", { exact: false })).toBeVisible();
+    await expect(page.getByText("Sent Aug 16, 2026, 1:30 AM CDT", { exact: false })).toBeVisible();
     await expect(page.getByText("Explorer-private open and read activity is not shown here.", { exact: false })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     await expect(page.locator("body")).not.toContainText("Explorer opened");
     await expectNoSeriousAxeViolations(page);
   });

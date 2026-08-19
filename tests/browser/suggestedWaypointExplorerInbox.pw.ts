@@ -42,6 +42,8 @@ const detail = (overrides: Record<string, unknown> = {}) => ({
 const fulfillJson = (route: Route, body: unknown) =>
   route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
 
+test.use({ timezoneId: "America/Chicago" });
+
 const expectNoSeriousAxeViolations = async (page: Page) => {
   const result = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
@@ -72,7 +74,7 @@ test.describe("authenticated Explorer Suggested Waypoint inbox", () => {
 
     await page.goto("/explorer/waypoints");
     await expect(page.getByText("Unread", { exact: false })).toBeVisible();
-    await expect(page.getByText("You acknowledged receipt Aug 16", { exact: false })).toBeVisible();
+    await expect(page.getByText("You acknowledged receipt Aug 16, 2026", { exact: false })).toBeVisible();
     await expect(page.locator("body")).not.toContainText("Pull Back");
     await expect(page.locator("body")).not.toContainText("Pending send");
 
@@ -85,9 +87,10 @@ test.describe("authenticated Explorer Suggested Waypoint inbox", () => {
         name: "Protect one evening each week for recovery",
       }),
     ).toBeVisible();
-    await expect(page.getByText("Received Aug 16 as a suggestion, not an assignment.")).toBeVisible();
+    await expect(page.getByText("Received Aug 16, 2026 as a suggestion, not an assignment.")).toBeVisible();
     await expect(page.getByText("One evening stays unscheduled.")).toBeVisible();
     await expect(page.getByText("Private Explorer view", { exact: false })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     await page.getByRole("link", { name: "Back to Waypoint Suggestions" }).click();
     await expect(page).toHaveURL(new RegExp(`/explorer/waypoints\\?focus=${UNREAD_ID}$`));
     await expect(row).toBeFocused();
@@ -110,7 +113,7 @@ test.describe("authenticated Explorer Suggested Waypoint inbox", () => {
 
     await page.goto(`/explorer/waypoints/${UNREAD_ID}`);
     await expect(page.getByText("✓ Read", { exact: true })).toBeVisible();
-    await expect(page.getByText("You acknowledged receipt Aug 16", { exact: false })).toBeVisible();
+    await expect(page.getByText("You acknowledged receipt Aug 16, 2026", { exact: false })).toBeVisible();
     await expect(page.locator("body")).not.toContainText("Pull Back");
     await expect(page.locator("body")).not.toContainText("Pending send");
     await expect(page.locator("body")).not.toContainText("Kairos");

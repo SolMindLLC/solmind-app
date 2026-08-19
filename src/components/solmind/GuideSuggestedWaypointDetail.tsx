@@ -7,20 +7,10 @@ import {
   parseSuggestedWaypointGuideDetailBrowserResult,
   type SuggestedWaypointGuideDetail as Detail,
 } from "@/lib/solmind/suggestedWaypointGuideDetailBrowserContract";
+import { formatSuggestedWaypointDateTime } from "@/lib/solmind/suggestedWaypointDisplayDate";
 import { SuggestedWaypointStatusPill } from "./SuggestedWaypointStatusPill";
 
 type ViewState = "loading" | "ready" | "denied" | "failed";
-
-function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZone: "UTC",
-    timeZoneName: "short",
-  }).format(new Date(value));
-}
 
 function StatusPills({ detail }: { detail: Detail }) {
   if (detail.authoring_mode === "draft") {
@@ -48,7 +38,7 @@ function StatusPills({ detail }: { detail: Detail }) {
         <SuggestedWaypointStatusPill tone="neutral">○ No response</SuggestedWaypointStatusPill>
       ) : (
         <SuggestedWaypointStatusPill tone="positive">
-          ☑ Receipt acknowledged {formatDateTime(detail.acknowledged_at)}
+          ☑ Receipt acknowledged {formatSuggestedWaypointDateTime(detail.acknowledged_at)}
         </SuggestedWaypointStatusPill>
       )}
     </>
@@ -233,7 +223,7 @@ export function GuideSuggestedWaypointDetail({
                   Authoring revision {detail.authoring_revision}
                   {detail.delivered_at === null
                     ? ""
-                    : ` · Sent ${formatDateTime(detail.delivered_at)}`}
+                    : ` · Sent ${formatSuggestedWaypointDateTime(detail.delivered_at)}`}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2 lg:max-w-md lg:justify-end">
@@ -272,7 +262,7 @@ export function GuideSuggestedWaypointDetail({
               <section className="rounded-2xl border border-amber-700/70 bg-amber-950/25 p-6">
                 <h2 className="text-xl font-semibold">Pending-send window</h2>
                 <p className="mt-2 text-slate-200">
-                  Explorer visibility is scheduled after {formatDateTime(detail.pending_deadline_at)}.
+                  Explorer visibility is scheduled after {formatSuggestedWaypointDateTime(detail.pending_deadline_at)}.
                   The applied grace setting is {detail.effective_seconds} seconds.
                 </p>
                 <p className="mt-2 text-sm text-slate-400">

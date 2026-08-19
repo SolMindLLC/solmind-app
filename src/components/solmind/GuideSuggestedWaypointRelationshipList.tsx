@@ -19,6 +19,7 @@ import {
   type SuggestedWaypointGuideListPage,
   type SuggestedWaypointGuideListPageSize,
 } from "@/lib/solmind/suggestedWaypointGuideListBrowserContract";
+import { formatSuggestedWaypointDate } from "@/lib/solmind/suggestedWaypointDisplayDate";
 import { SUGGESTED_WAYPOINT_REFRESH_REQUIRED } from "@/lib/solmind/suggestedWaypointPaginationSharedContract";
 import { SuggestedWaypointStatusPill } from "./SuggestedWaypointStatusPill";
 
@@ -35,14 +36,6 @@ const INITIAL_REQUEST: RequestState = Object.freeze({
   cursorHistory: Object.freeze([]),
   pageSize: 10,
 });
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(value));
-}
 
 function StatusPills({ item }: { item: SuggestedWaypointGuideListItem }) {
   if (item.authoring_mode === "draft") {
@@ -70,7 +63,7 @@ function StatusPills({ item }: { item: SuggestedWaypointGuideListItem }) {
         <SuggestedWaypointStatusPill tone="neutral">○ No response</SuggestedWaypointStatusPill>
       ) : (
         <SuggestedWaypointStatusPill tone="positive">
-          ☑ Receipt acknowledged {formatDate(item.acknowledged_at)}
+          ☑ Receipt acknowledged {formatSuggestedWaypointDate(item.acknowledged_at)}
         </SuggestedWaypointStatusPill>
       )}
     </>
@@ -355,9 +348,9 @@ export function GuideSuggestedWaypointRelationshipList({
                         </span>
                         <span className="mt-1 block text-sm text-slate-400">
                           {item.authoring_mode === "delivered" && item.delivered_at !== null
-                            ? `Sent ${formatDate(item.delivered_at)}`
+                            ? `Sent ${formatSuggestedWaypointDate(item.delivered_at)}`
                             : item.authoring_mode === "pending" && item.pending_deadline_at !== null
-                              ? `Scheduled for ${formatDate(item.pending_deadline_at)}`
+                              ? `Scheduled for ${formatSuggestedWaypointDate(item.pending_deadline_at)}`
                               : `Draft revision ${item.authoring_revision}`}
                         </span>
                       </span>
