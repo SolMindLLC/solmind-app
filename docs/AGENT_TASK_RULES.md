@@ -342,7 +342,9 @@ If a task adds tests, also run the relevant test command.
 
 ## Git and Commit Boundary
 
-Commit message suggestions are allowed, but Claude Code must stop before `git add`, `git commit`, and `git push` unless Paul explicitly approves those actions in the current task. Paul remains the default approval gate for staging, commits, pushes, merges, deploys, and production/cloud changes.
+Routine proposal application and Git banking follow the current canonical SolMind assurance chain: source-current freeze, mode-appropriate adversarial review, finding reconciliation, complete applicable validation, and no more than two bounded substantive correction cycles. Claude or another external reviewer or proposal author remains review-only and never self-applies. When that chain passes, the operating Codex executor may apply the exact frozen payload RIGHT to LEFT, stage the disclosed scope, commit, push, and prove synchronization without a routine Paul checkpoint. If two substantive correction cycles do not pass, stop and open the live-LEFT/proposal-RIGHT Beyond Compare folder review for Paul before continuing.
+
+Paul still retains every external-AI transmission/run, product-decision, cleanup/deletion, hosted-database, merge outside the approved repository flow, deployment, cloud/production, provider-activation, and real-user gate. Never infer those effects from automatic application or Git-banking authority.
 
 ## Preferred Commit Style
 

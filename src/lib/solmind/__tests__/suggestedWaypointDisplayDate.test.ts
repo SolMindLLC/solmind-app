@@ -36,8 +36,8 @@ describe("Suggested Waypoint display dates", () => {
       timeZone: CENTRAL_TIME_ZONE,
     });
 
-    expect(summer).toMatch(/^Aug 18, 2026, 9:30 AM (?:CDT|GMT-5)$/);
-    expect(winter).toMatch(/^Jan 18, 2026, 9:30 AM (?:CST|GMT-6)$/);
+    expect(summer).toMatch(/^Aug 18, 2026, 9:30[ \u202F]AM (?:CDT|GMT-5)$/);
+    expect(winter).toMatch(/^Jan 18, 2026, 9:30[ \u202F]AM (?:CST|GMT-6)$/);
     expect(summer.startsWith(formatSuggestedWaypointDate("2026-08-18T14:30:00.000Z", {
       timeZone: CENTRAL_TIME_ZONE,
     }))).toBe(true);
