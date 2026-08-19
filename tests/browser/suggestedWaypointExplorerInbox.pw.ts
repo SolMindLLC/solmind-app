@@ -445,7 +445,7 @@ test.describe("authenticated Explorer Suggested Waypoint inbox", () => {
     expect(requestCount).toBe(3);
   });
 
-  test("renders empty, denied, and failed states without suggestion leakage", async ({ page }) => {
+  test("keeps a legitimate empty inbox distinct from relationship denial without leakage", async ({ page }) => {
     let responseMode: "empty" | "denied" | "failed" = "empty";
     await page.route("**/explorer/waypoints/suggestions?**", (route) => {
       if (responseMode === "empty") return fulfillJson(route, success([], null, 0));
@@ -462,6 +462,8 @@ test.describe("authenticated Explorer Suggested Waypoint inbox", () => {
     responseMode = "denied";
     await page.reload();
     await expect(page.getByRole("heading", { name: "Waypoint Suggestions unavailable" })).toBeVisible();
+    await expect(page.locator("body")).not.toContainText("relationship");
+    await expect(page.locator("body")).not.toContainText("Guide count");
     responseMode = "failed";
     await page.reload();
     await expect(page.getByRole("heading", { name: "Could not load Waypoint Suggestions" })).toBeVisible();

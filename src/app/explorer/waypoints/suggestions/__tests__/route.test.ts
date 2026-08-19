@@ -85,6 +85,30 @@ describe("GET Explorer Suggested Waypoint inbox", () => {
     });
   });
 
+  it("keeps a legitimate empty inbox distinct from relationship unavailability", async () => {
+    resolveRequestMock.mockResolvedValueOnce({
+      ok: true,
+      data: { items: [], next_cursor: null, total_count: 0 },
+      error: null,
+    });
+    expect((await invoke()).body).toEqual({
+      ok: true,
+      data: { items: [], next_cursor: null, total_count: 0 },
+      error: null,
+    });
+
+    resolveRequestMock.mockResolvedValueOnce({
+      ok: false,
+      data: null,
+      error: "solmind_suggested_waypoint_request_denied",
+    });
+    expect((await invoke()).body).toEqual({
+      ok: false,
+      data: null,
+      error: "SolMind Waypoint Suggestions are unavailable.",
+    });
+  });
+
   it("accepts only a closed page size and one optional opaque cursor", async () => {
     await invoke("?pageSize=50&cursor=YWJjZA==");
     expect(resolveRequestMock).toHaveBeenCalledWith(

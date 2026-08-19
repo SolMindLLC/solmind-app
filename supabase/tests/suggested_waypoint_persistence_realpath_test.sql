@@ -1,6 +1,6 @@
 -- Local ephemeral database only. All synthetic rows are transaction-scoped.
 begin;
-select plan(60);
+select plan(67);
 
 insert into identity.user_account (
   user_account_id,
@@ -15,7 +15,9 @@ insert into identity.user_account (
   ('a3220210-1000-4000-8000-000000000003', 'S02 SW Admin',
    's02_sw_admin', 'active'),
   ('a3220210-1000-4000-8000-000000000004', 'S02 SW Explorer Two',
-   's02_sw_explorer_two', 'active');
+   's02_sw_explorer_two', 'active'),
+  ('a3220210-1000-4000-8000-000000000005', 'S02 SW Guide Two',
+   's02_sw_guide_two', 'active');
 
 insert into identity.user_role_assignment (
   user_role_assignment_id,
@@ -30,7 +32,9 @@ insert into identity.user_role_assignment (
   ('a3220210-1050-4000-8000-000000000003',
    'a3220210-1000-4000-8000-000000000003', 'admin', 'active'),
   ('a3220210-1050-4000-8000-000000000004',
-   'a3220210-1000-4000-8000-000000000004', 'explorer', 'active');
+   'a3220210-1000-4000-8000-000000000004', 'explorer', 'active'),
+  ('a3220210-1050-4000-8000-000000000005',
+   'a3220210-1000-4000-8000-000000000005', 'guide', 'active');
 
 insert into core.organization (organization_id, organization_name)
 values ('a3220210-1100-4000-8000-000000000001',
@@ -41,11 +45,17 @@ values ('a3220210-1200-4000-8000-000000000001',
         'S02 Suggested Waypoint Practice');
 insert into core.guide_profile (
   guide_profile_id, user_account_id, guide_display_name
-) values (
-  'a3220210-1300-4000-8000-000000000001',
-  'a3220210-1000-4000-8000-000000000001',
-  'Morgan'
-);
+) values
+  (
+    'a3220210-1300-4000-8000-000000000001',
+    'a3220210-1000-4000-8000-000000000001',
+    'Morgan'
+  ),
+  (
+    'a3220210-1300-4000-8000-000000000002',
+    'a3220210-1000-4000-8000-000000000005',
+    'Taylor'
+  );
 insert into core.explorer_profile (
   explorer_profile_id, user_account_id, explorer_display_name, onboarding_status
 ) values
@@ -84,8 +94,143 @@ insert into core.guide_explorer_relationship (
     'a3220210-1200-4000-8000-000000000001',
     'active',
     now() - interval '1 day'
+  ),
+  (
+    'a3220210-1500-4000-8000-000000000003',
+    'a3220210-1300-4000-8000-000000000002',
+    'a3220210-1400-4000-8000-000000000002',
+    'a3220210-1200-4000-8000-000000000001',
+    'paused',
+    now() - interval '2 days'
   );
 
+set local role service_role;
+
+create temp table s02_sw_explorer_legitimate_empty as
+select *
+  from public.solmind_list_explorer_suggested_waypoints(
+    'a3220210-1000-4000-8000-000000000004', 5, null
+  );
+select is(
+  (select total_count from s02_sw_explorer_legitimate_empty),
+  0::bigint,
+  'one authorized active relationship with no delivery remains a successful empty inbox'
+);
+
+reset role;
+update core.guide_explorer_relationship
+   set relationship_status = 'paused'
+ where guide_explorer_relationship_id =
+       'a3220210-1500-4000-8000-000000000002';
+set local role service_role;
+select throws_ok(
+  $$
+    select *
+      from public.solmind_list_explorer_suggested_waypoints(
+        'a3220210-1000-4000-8000-000000000004', 5, null
+      )
+  $$,
+  'P0001',
+  'solmind_suggested_waypoint_explorer_relationship_unavailable',
+  'a paused-only relationship is unavailable rather than an empty inbox'
+);
+
+reset role;
+update core.guide_explorer_relationship
+   set relationship_status = 'ended', ended_at = pg_catalog.now()
+ where guide_explorer_relationship_id =
+       'a3220210-1500-4000-8000-000000000002';
+set local role service_role;
+select throws_ok(
+  $$
+    select *
+      from public.solmind_list_explorer_suggested_waypoints(
+        'a3220210-1000-4000-8000-000000000004', 5, null
+      )
+  $$,
+  'P0001',
+  'solmind_suggested_waypoint_explorer_relationship_unavailable',
+  'an ended-only relationship is unavailable rather than an empty inbox'
+);
+
+reset role;
+update core.guide_explorer_relationship
+   set relationship_status = 'transferred'
+ where guide_explorer_relationship_id =
+       'a3220210-1500-4000-8000-000000000002';
+set local role service_role;
+select throws_ok(
+  $$
+    select *
+      from public.solmind_list_explorer_suggested_waypoints(
+        'a3220210-1000-4000-8000-000000000004', 5, null
+      )
+  $$,
+  'P0001',
+  'solmind_suggested_waypoint_explorer_relationship_unavailable',
+  'a transferred-only relationship is unavailable rather than an empty inbox'
+);
+
+reset role;
+update core.guide_explorer_relationship
+   set relationship_status = 'active', ended_at = null
+ where guide_explorer_relationship_id =
+       'a3220210-1500-4000-8000-000000000002';
+update core.guide_explorer_relationship
+   set relationship_status = 'active'
+ where guide_explorer_relationship_id =
+       'a3220210-1500-4000-8000-000000000003';
+set local role service_role;
+select throws_ok(
+  $$
+    select *
+      from public.solmind_list_explorer_suggested_waypoints(
+        'a3220210-1000-4000-8000-000000000004', 5, null
+      )
+  $$,
+  'P0001',
+  'solmind_suggested_waypoint_explorer_relationship_unavailable',
+  'multiple active relationships are unavailable without revealing their count'
+);
+reset role;
+update core.guide_explorer_relationship
+   set relationship_status = 'paused'
+ where guide_explorer_relationship_id =
+       'a3220210-1500-4000-8000-000000000003';
+set local role service_role;
+
+select throws_ok(
+  $$
+    select *
+      from public.solmind_list_explorer_suggested_waypoints(
+        'a3220210-1000-4000-8000-000000000003', 5, null
+      )
+  $$,
+  'P0001',
+  'solmind_suggested_waypoint_explorer_relationship_unavailable',
+  'an actor with no Explorer relationship receives the same value-free denial'
+);
+
+reset role;
+update identity.user_account
+   set account_status = 'suspended'
+ where user_account_id = 'a3220210-1000-4000-8000-000000000004';
+set local role service_role;
+select throws_ok(
+  $$
+    select *
+      from public.solmind_list_explorer_suggested_waypoints(
+        'a3220210-1000-4000-8000-000000000004', 5, null
+      )
+  $$,
+  'P0001',
+  'solmind_suggested_waypoint_explorer_relationship_unavailable',
+  'derived Explorer authorization failure receives the same value-free denial'
+);
+reset role;
+update identity.user_account
+   set account_status = 'active'
+ where user_account_id = 'a3220210-1000-4000-8000-000000000004';
 set local role service_role;
 
 select throws_ok(

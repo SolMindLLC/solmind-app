@@ -704,8 +704,18 @@ describe("resolveSuggestedWaypointRequest - fail closed", () => {
       },
       functionName: "solmind_get_explorer_suggested_waypoint" as const,
     },
+    {
+      role: "Explorer list relationship invariant",
+      principal: EXPLORER_PRINCIPAL,
+      request: {
+        kind: "explorer.list" as const,
+        pageSize: 10 as const,
+        cursor: null,
+      },
+      functionName: "solmind_list_explorer_suggested_waypoints" as const,
+    },
   ])(
-    "maps a bound zero-row $role detail denial to the browser-safe request denial",
+    "maps a function-bound $role denial to the browser-safe request denial",
     async ({ principal, request, functionName }) => {
       const executor = {
         execute: vi.fn().mockResolvedValue({

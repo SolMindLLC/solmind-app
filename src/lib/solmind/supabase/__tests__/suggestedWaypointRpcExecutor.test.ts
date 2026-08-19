@@ -398,6 +398,115 @@ describe("Suggested Waypoint RPC fail-closed boundaries", () => {
     },
   );
 
+  it("maps only the exact Explorer-list relationship exception to a function-bound denial", async () => {
+    const testCase = DISPATCH_CASES[8];
+    const { client } = fakeClient({
+      data: null,
+      error: {
+        code: "P0001",
+        message: "solmind_suggested_waypoint_explorer_relationship_unavailable",
+      },
+    });
+    const result = await createSuggestedWaypointHumanRpcExecutor(client).execute({
+      functionName: testCase.functionName,
+      args: testCase.args,
+    });
+
+    expect(result).toEqual({
+      functionName: "solmind_list_explorer_suggested_waypoints",
+      data: null,
+      error: SUGGESTED_WAYPOINT_RPC_DENIED,
+    });
+    expect(Object.isFrozen(result)).toBe(true);
+  });
+
+  it.each([
+    [
+      "the same message on the Guide list",
+      6,
+      { code: "P0001", message: "solmind_suggested_waypoint_explorer_relationship_unavailable" },
+    ],
+    [
+      "the same message on Explorer detail",
+      9,
+      { code: "P0001", message: "solmind_suggested_waypoint_explorer_relationship_unavailable" },
+    ],
+    [
+      "a wrong code on the Explorer list",
+      8,
+      { code: "22023", message: "solmind_suggested_waypoint_explorer_relationship_unavailable" },
+    ],
+    [
+      "a near-match message on the Explorer list",
+      8,
+      { code: "P0001", message: "solmind_suggested_waypoint_explorer_relationship_unavailable_extra" },
+    ],
+  ] as const)("keeps %s on the generic failure path", async (_name, caseIndex, error) => {
+    const testCase = DISPATCH_CASES[caseIndex];
+    const { client } = fakeClient({ data: null, error });
+    const result = await createSuggestedWaypointHumanRpcExecutor(client).execute({
+      functionName: testCase.functionName,
+      args: testCase.args,
+    });
+
+    expect(result).toEqual({
+      functionName: null,
+      data: null,
+      error: SUGGESTED_WAYPOINT_RPC_FAILED,
+    });
+  });
+
+  it("keeps the Explorer relationship error on the worker generic failure path", async () => {
+    const testCase = DISPATCH_CASES[3];
+    const { client } = fakeClient({
+      data: null,
+      error: {
+        code: "P0001",
+        message: "solmind_suggested_waypoint_explorer_relationship_unavailable",
+      },
+    });
+    const result = await createSuggestedWaypointWorkerRpcExecutor(client).execute({
+      functionName: testCase.functionName,
+      args: testCase.args,
+    });
+
+    expect(result).toEqual({
+      functionName: null,
+      data: null,
+      error: SUGGESTED_WAYPOINT_RPC_FAILED,
+    });
+  });
+
+  it.each(["code", "message"] as const)(
+    "fails closed when the Explorer relationship error object has a hostile %s getter",
+    async (hostileField) => {
+      const testCase = DISPATCH_CASES[8];
+      const error = Object.defineProperty(
+        {
+          code: "P0001",
+          message: "solmind_suggested_waypoint_explorer_relationship_unavailable",
+        },
+        hostileField,
+        {
+          get() {
+            throw new Error("private relationship detail");
+          },
+        },
+      );
+      const { client } = fakeClient({ data: null, error });
+      const result = await createSuggestedWaypointHumanRpcExecutor(client).execute({
+        functionName: testCase.functionName,
+        args: testCase.args,
+      });
+
+      expect(result).toEqual({
+        functionName: null,
+        data: null,
+        error: SUGGESTED_WAYPOINT_RPC_FAILED,
+      });
+    },
+  );
+
   it.each([
     ["Guide", 6],
     ["Explorer", 8],

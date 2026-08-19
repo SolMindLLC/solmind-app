@@ -486,7 +486,14 @@ The request composition wraps only the human executor and derives authority
 from injected request-auth and server-loaded records. It accepts only
 single-line Guide-authored destinations, while the executor classifies an
 exact-function-bound zero-row Guide or Explorer detail result as denied and
-keeps every other zero-row result failed. The shared browser-safe
+keeps every other zero-row result failed. The forward-only Explorer-list
+relationship-invariant migration makes a successful empty page mean exactly
+one authorized active Guide relationship with no delivered suggestions. Zero
+or multiple active Guide relationships and derived authorization failure raise
+one fixed value-free exception. The direct-import server-only
+`suggestedWaypointExplorerRelationshipRpcError.ts` maps only that exact
+Explorer-list function/code/message tuple to the existing denied result; every
+near match and every other function remains failed. The shared browser-safe
 `suggestedWaypointPaginationSharedContract.ts` owns only the exact page sizes,
 strict padded-Base64 cursor grammar, and closed query syntax. The server-only
 `suggestedWaypointPaginationRpcError.ts` maps the exact database invalid-cursor

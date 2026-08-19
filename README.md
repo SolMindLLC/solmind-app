@@ -124,7 +124,7 @@ Backend foundations present in the repository (high level):
 - Dormant Explorer invitation foundations: the protected invitation-acceptance preparation helper, capacity and lock-key behavior, shared invited-identity provisioning, Guide-to-Explorer invitation issuance, replacement, revocation, and Explorer invitation acceptance with one `intake_pending` relationship.
 - Dormant Explorer S02 foundations: a protected 1-100 day Shared Snapshot sendability setting (default 7), a server-only fixed-key reader, a service-role-only audited mutation, and a manually invoked local synthetic Guide/Explorer fixture.
 - Dormant Summary and Shared Snapshot persistence foundation: immutable Guide-authored Summary revisions and sections, an authoritative publication record and fail-closed Explorer projection, Explorer-private exact-review drafts, immutable Explorer-confirmed Shared Snapshots with preserved lineage, and bounded service-role-only publication, unpublication, confirmation, and integrity surfaces. It has no application caller, permissive RLS policy, direct-table role grant, hosted data, provider action, deployment, or real-user path.
-- Dormant Suggested Waypoint persistence and security foundation: distinct Guide draft, pending outbound, immutable delivered-version, Explorer-private read, shared receipt, protected preference, and replay-proof owners; a closed six-command/five-query service-role-only catalog; and the protected 60-3600 second send-grace policy (default 300). Separately banked authenticated read callers now reach minimized Guide and Explorer projections; commands, hosted scheduling, providers, deployment, and real-user activation remain absent.
+- Dormant Suggested Waypoint persistence and security foundation: distinct Guide draft, pending outbound, immutable delivered-version, Explorer-private read, shared receipt, protected preference, and replay-proof owners; a closed six-command/five-query service-role-only catalog; and the protected 60-3600 second send-grace policy (default 300). A forward-only Explorer-list correction now distinguishes a legitimate empty inbox under exactly one authorized active Guide relationship from one value-free unavailable result for zero, multiple, or unauthorized relationship derivation. Separately banked authenticated read callers reach minimized Guide and Explorer projections; commands, hosted scheduling, providers, deployment, and real-user activation remain absent.
 - Closed Suggested Waypoint S03 RPC transport: server-only exact-call and
   exact-response validation over nine human functions and one separately
   constructed delivery-worker function. The dormant Admin operational query is
@@ -138,7 +138,8 @@ Backend foundations present in the repository (high level):
   derivation, Guide relationship enforcement, server-derived actor injection,
   server-resolved initial suggestion/version identifiers, single-line
   Guide-authored destinations, exact-function-bound zero-row detail denial,
-  and fixed browser-safe results. It remains a direct-import server-only dependency;
+  exact Explorer-list relationship-invariant denial, and fixed browser-safe
+  results. It remains a direct-import server-only dependency;
   separately reviewed thin read routes call it without adding a Server Action,
   hosted worker, provider, deployment, or real-user activation.
 - Suggested Waypoint S03 concrete request dependencies: one request-scoped,

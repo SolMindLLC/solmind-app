@@ -18,6 +18,7 @@ import {
   validateSuggestedWaypointRpcPayload,
   validateSuggestedWaypointWorkerRpcCall,
 } from "./suggestedWaypointRpcContract";
+import { isSuggestedWaypointExplorerRelationshipUnavailableRpcError } from "./suggestedWaypointExplorerRelationshipRpcError";
 import { isSuggestedWaypointRefreshRequiredRpcError } from "./suggestedWaypointPaginationRpcError";
 
 if (typeof window !== "undefined") {
@@ -39,6 +40,10 @@ type SuggestedWaypointDetailRpcFunction =
   | "solmind_get_guide_suggested_waypoint"
   | "solmind_get_explorer_suggested_waypoint";
 
+type SuggestedWaypointDeniedRpcFunction =
+  | SuggestedWaypointDetailRpcFunction
+  | "solmind_list_explorer_suggested_waypoints";
+
 type SuggestedWaypointListRpcFunction =
   | "solmind_list_guide_suggested_waypoints"
   | "solmind_list_explorer_suggested_waypoints";
@@ -56,7 +61,7 @@ export type SuggestedWaypointRpcResult =
       error: null;
     }>
   | Readonly<{
-      functionName: SuggestedWaypointDetailRpcFunction;
+      functionName: SuggestedWaypointDeniedRpcFunction;
       data: null;
       error: typeof SUGGESTED_WAYPOINT_RPC_DENIED;
     }>
@@ -100,6 +105,19 @@ async function dispatch(
   try {
     const { data, error } = await client.rpc(call.functionName, call.args);
     if (error !== null && error !== undefined) {
+      if (
+        call.functionName === "solmind_list_explorer_suggested_waypoints" &&
+        isSuggestedWaypointExplorerRelationshipUnavailableRpcError(
+          call.functionName,
+          error,
+        )
+      ) {
+        return Object.freeze({
+          functionName: call.functionName,
+          data: null,
+          error: SUGGESTED_WAYPOINT_RPC_DENIED,
+        });
+      }
       if (
         (call.functionName === "solmind_list_guide_suggested_waypoints" ||
           call.functionName === "solmind_list_explorer_suggested_waypoints") &&
