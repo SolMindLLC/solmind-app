@@ -175,6 +175,22 @@ optional explicit IANA time zone is a test seam only; production consumers do
 not pass one or force UTC. The helper does not change exact timestamps, browser
 contracts, persistence, locale preferences, or an application-wide date system.
 
+`suggestedWaypointCommandBrowserContract.ts` and
+`suggestedWaypointCommandOperation.ts` are shared browser-safe predecessors for
+later role-specific command edges. The contract accepts only exact data-property
+results and the expected-outcome subset supplied by the owning route, then
+returns frozen success, expected non-success, or value-free denied/failed
+results. The operation owner is pure state: it suppresses double activation,
+retains one exact serialized request and UUIDv4 operation identity across a
+transport-uncertain retry, ignores stale generations, supports authoritative-
+read settlement, and emits semantic busy, retry, announcement, and focus
+intents. Neither module imports server-only code, invokes a route or RPC, reads
+authority, owns command validation, or creates a database, worker, provider,
+deployment, or real-user effect. The role lane retains the parsed result so its
+copy and recovery path still distinguish expected concurrency from a value-free
+denial or operational failure; the pure operation owner carries only their
+shared focus and retry semantics.
+
 Dormant `PRJ01_V-WS05-WI022-S02` adds a database-only Suggested Waypoint
 boundary under `supabase/migrations/` and `supabase/tests/`. Eight owners keep
 Guide draft content, pending outbound content, immutable delivered versions,
@@ -510,6 +526,13 @@ value-free failure. Later command route/server-action, page/data-adapter, and
 worker composition must wrap these boundaries rather than weakening or
 bypassing their exact allowlists, validators, role separation, or result
 binding.
+
+The browser side of those later command edges must also wrap
+`suggestedWaypointCommandBrowserContract.ts` and
+`suggestedWaypointCommandOperation.ts`. Route owners keep their exact action and
+expected-outcome allowlists; the shared parser must not infer those values. A
+transport-uncertain retry reuses the retained operation ID and exact serialized
+bytes, while deliberate changed bytes require a new operation ID and generation.
 
 The concrete `suggestedWaypointRequestDependencies.ts` request factory now
 wires the request-auth principal source, enumerated auth-record loader, closed

@@ -15,8 +15,10 @@ feature-specific Guide relationship selector, its first read-only authenticated
 route, and the first production Guide relationship-entry page that consumes the
 route. The production Guide relationship path also has exact read-only list and
 detail browser boundaries over the banked Guide projections. No human command
-edge, operational delivery worker, hosted worker, provider path, deployment, or
-real-user activation exists.
+edge exists yet. A shared browser-safe command-result parser and pure command-
+operation state owner are banked as route-independent predecessors for those
+future edges. No operational delivery worker, hosted worker, provider path,
+deployment, or real-user activation exists.
 
 User-facing routes:
 
@@ -280,6 +282,7 @@ The `auth/`, `context/`, and `supabase/` directories hold server-only modules ke
 | Guide Suggested Waypoint relationship list | `src/app/guide/waypoint-suggestions/[relationshipId]/page.tsx`; `src/app/guide/waypoint-suggestions/[relationshipId]/suggestions/route.ts`; `src/components/solmind/GuideSuggestedWaypointRelationshipList.tsx`; `src/lib/solmind/suggestedWaypoint{GuideListBrowser,GuideListShared,PaginationShared}Contract.ts` | Authenticated, relationship-scoped, read-only Guide list over the banked `guide.list` request composition; exact browser validation, privacy-minimized lifecycle/status projection, progressive opaque-cursor pagination, one bounded later-page stale-cursor reset to page one with the same page size, safe-page retention after malformed or operationally failed reset, authority-denial clearing, and suggestion-scoped navigation into the separately owned detail read. It adds no command, worker, provider, database, deployment, or real-user activation. |
 | Guide Suggested Waypoint relationship detail | `src/app/guide/waypoint-suggestions/[relationshipId]/[suggestedWaypointId]/page.tsx`; `src/app/guide/waypoint-suggestions/[relationshipId]/[suggestedWaypointId]/detail/route.ts`; `src/components/solmind/GuideSuggestedWaypointDetail.tsx`; `src/lib/solmind/suggestedWaypointGuideDetailBrowserContract.ts`; co-located focused and browser tests | Authenticated, relationship-scoped, read-only Guide detail over the banked `guide.get` request composition; exact browser validation, Guide-only draft/pending content, immutable delivered content, pending-policy facts, deliberate dated receipt acknowledgement, fixed denied/failure states, and structural omission of Explorer-private engagement, Waypoint, conversation, evidence, and inference data. It adds no command, worker, provider, database, deployment, or real-user activation. |
 | Suggested Waypoint display dates | `src/lib/solmind/suggestedWaypointDisplayDate.ts`; co-located focused test; Explorer and Guide list/detail consumers | Shared browser-safe `en-US` presentation for year-complete dates and date-times in the viewer's local time zone. An explicit IANA zone is a deterministic test seam only; production callers do not force UTC or another zone. This owner changes no persisted timestamp, route contract, locale preference, schema, or application-wide date design. |
+| Suggested Waypoint shared command predecessor | `src/lib/solmind/suggestedWaypointCommandBrowserContract.ts`; `src/lib/solmind/suggestedWaypointCommandOperation.ts`; co-located focused tests | Browser-safe exact result parsing plus pure retry/settlement state for future Guide and Explorer command edges. It accepts only route-permitted expected outcomes, exposes value-free denied/failed results, snapshots each exact data property once, suppresses double activation, preserves one immutable serialized request and operation ID across transport-uncertain retry, ignores stale generations, and exposes semantic busy, announcement, retry, and focus intents. It adds no route, Server Action, RPC invocation, database write, worker, provider, deployment, or real-user activation. |
 | Shared UI | `src/components/solmind/*.tsx` | Reusable presentational components |
 | Role model | `src/lib/solmind/roles.ts` | Canonical role strings, labels, and home routes |
 | Route metadata | `src/lib/solmind/pages.ts` | Page titles, descriptions, and hrefs |
@@ -377,6 +380,9 @@ Earlier guidance told agents not to start Supabase, auth, or RLS. That is no lon
 
 - Supabase schema foundations: MVP0 schemas and tables exist through migrations under `supabase/migrations`, with Row Level Security enabled deny-by-default on application tables.
 - The Auth/RLS request-auth boundary, real Admin auth-source loading, and server-only hardening under `src/lib/solmind/auth` and `src/lib/solmind/supabase`.
+- The browser-safe Suggested Waypoint shared command predecessor under
+  `src/lib/solmind/suggestedWaypointCommand*.ts`; it owns exact result parsing
+  and pure transport-uncertain retry state only, not a route or write caller.
 - The `/admin/access` server route handler: an opaque probe returning only `{ allowed }`. It is read-only and does not protect the `/admin`, `/guide`, or `/explorer` pages.
 - Auth/RLS audit persistence for `/admin/access`: the bounded event model (`src/lib/solmind/auth/authRlsAuditEvent.ts`), the enumerated `public.solmind_record_audit_event` writer function (migration `20260708000000_audit_event_writer_function.sql`), the closed-allowlist app writer chain (`auditEventWriter.ts`, `auditEventWriteExecutor.ts`, `adminAuditEventWriter.ts`), and the runtime wiring in `adminAccessRequest.ts` (AUD-1/AUD-2/AUD-3). On an allow the guarded-read row is written first, then the allow decision row, and both must persist before the outward allow (fail-closed); deny and resolution-failure rows are best-effort.
 - Dormant invitation foundations through `PRJ01_F-WS06-WI008-S02D` - Guide-to-Explorer invitation issuance, same-Guide replacement, and revocation - are banked through synchronized app commit `a9944f1`. The S02D functions remain dormant over the earlier capacity, lock, and helper substrate; none has an application caller or real-user path.
@@ -413,8 +419,8 @@ Extend these modules deliberately and in small slices. Keep server-only modules 
 - Guide Assistant context from these Explorer artifacts.
 - Suggested Waypoint five human command route/action edges, operational local
   delivery-worker invocation, and hosted delivery-worker caller beyond the
-  banked authenticated composition, Guide relationship selector, and read-only
-  Guide and Explorer list/detail paths.
+  banked authenticated composition, shared command predecessor, Guide
+  relationship selector, and read-only Guide and Explorer list/detail paths.
 - Production Guide dashboard integration.
 - Runtime safety classification and escalation.
 - Reflection storage beyond approved future slices.
