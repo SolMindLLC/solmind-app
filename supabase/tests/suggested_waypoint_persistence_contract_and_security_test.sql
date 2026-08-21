@@ -1,5 +1,5 @@
 begin;
-select plan(31);
+select plan(34);
 
 create temp table s02_sw_tables(table_schema text, table_name text) on commit drop;
 insert into s02_sw_tables values
@@ -330,6 +330,54 @@ select is(
   ),
   3,
   'deferred guards enforce exactly one mode-appropriate mutable owner'
+);
+select is(
+  (
+    select pg_catalog.count(*)::integer
+      from pg_catalog.pg_proc function_record
+      join pg_catalog.pg_namespace namespace
+        on namespace.oid = function_record.pronamespace
+     where namespace.nspname = 'content'
+       and function_record.proname =
+           'solmind_normalize_suggested_waypoint_destination'
+       and pg_catalog.oidvectortypes(function_record.proargtypes) = 'text'
+       and function_record.provolatile = 'i'
+       and function_record.proisstrict
+       and pg_catalog.pg_get_userbyid(function_record.proowner) = 'postgres'
+       and 'search_path=""' = any(function_record.proconfig)
+  ),
+  1,
+  'destination normalizer is one immutable strict protected owner'
+);
+select is(
+  (
+    select pg_catalog.count(*)::integer
+      from pg_catalog.pg_proc function_record
+      join pg_catalog.pg_namespace namespace
+        on namespace.oid = function_record.pronamespace
+     where namespace.nspname = 'content'
+       and function_record.proname =
+           'solmind_suggested_waypoint_content_guard'
+       and pg_catalog.pg_get_functiondef(function_record.oid) like
+           '%solmind_normalize_suggested_waypoint_destination%'
+  ),
+  1,
+  'all three content triggers share the destination-specific invariant'
+);
+select is(
+  (
+    select pg_catalog.count(*)::integer
+      from pg_catalog.pg_proc function_record
+      join pg_catalog.pg_namespace namespace
+        on namespace.oid = function_record.pronamespace
+     where namespace.nspname = 'public'
+       and function_record.proname =
+           'solmind_save_suggested_waypoint_draft'
+       and pg_catalog.pg_get_functiondef(function_record.oid) like
+           '%solmind_normalize_suggested_waypoint_destination%'
+  ),
+  1,
+  'save-draft applies the destination-specific invariant before digest and write'
 );
 select is(
   (

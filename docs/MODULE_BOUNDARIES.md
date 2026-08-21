@@ -164,9 +164,10 @@ projection returned by `createNonLiveGuideProjection`.
 The retained fixture UIs do not access a provider, database owner, Server
 Action, Route Handler, cookie, browser storage, notification, or real Guide
 record. The authenticated S03 read components use thin same-origin routes over
-server-derived request authority and exact role-safe projections. No current
-Suggested Waypoint UI invokes a human command, worker, provider, deployment, or
-real-user activation.
+server-derived request authority and exact role-safe projections. The first
+Guide command Route Handler is maintained as a separately gated increment, but
+no current Suggested Waypoint UI invokes it or any other human command, worker,
+provider, deployment, or real-user activation.
 
 `auth/trustedApplicationOrigin.ts` and
 `auth/sameOriginJsonWriteRequest.ts` are server-only first-write predecessors
@@ -181,9 +182,9 @@ role choice, command parsing, RPC, or response projection. The existing
 server-only Suggested Waypoint request composition remains the command-shape
 owner and now rejects isolated UTF-16 surrogates plus Unicode line and
 paragraph separators so the byte cap and text validator describe one coherent
-accepted-input set. A later Guide or Explorer POST route must call this guard
-before auth or executor IO and must still use the existing request-dependency
-and composition owners.
+accepted-input set. The Guide command POST route calls this guard before auth
+or executor IO and then uses the existing request-dependency and composition
+owners; every later Explorer write edge must preserve the same order.
 
 `suggestedWaypointDisplayDate.ts` is the shared browser-safe presentation owner
 for those authenticated Explorer and Guide list/detail components. It renders
@@ -219,6 +220,15 @@ direct role grants. No `src/` caller, browser path, hosted delivery worker,
 provider, or real-user activation is part of S02. Do not wire these functions
 through a generic RPC executor or the shared Supabase barrel; the separately
 gated S03 composition must introduce narrow human and worker allowlists.
+
+The forward-only destination correction gives `destination` its own protected
+single-line normalizer. Save-draft applies it before request-digest or write
+work, and the shared content trigger applies it to Guide draft, pending, and
+immutable version rows so a privileged or later internal caller cannot bypass
+the invariant. The reusable text normalizer remains multiline for `why` and
+arrival signals; its CRLF-to-LF canonicalization remains part of idempotent
+replay. The correction adds no public function, caller, worker, provider,
+deployment, hosted data, or real-user effect.
 
 The first S03 increment adds those narrow allowlists in
 `suggestedWaypointRpcContract.ts` and `suggestedWaypointRpcExecutor.ts`, with
@@ -556,8 +566,28 @@ wires the request-auth principal source, enumerated auth-record loader, closed
 human executor, and `suggestedWaypointScopedIdentifiers.ts` UUIDv5 owner. Both
 remain direct-import server-only modules off the shared barrel. This dependency
 root remains the only concrete assembly owner. The relationship-selector route
-uses its selector subset; the human command composition remains dormant until a
-later route or Server Action invokes it without widening browser authority.
+uses its selector subset; the Guide command route invokes the human composition
+without widening browser authority.
+
+The first Guide command caller lives at:
+
+```text
+src/app/guide/waypoint-suggestions/[relationshipId]/commands/route.ts
+```
+
+It is a thin, dynamic, uncached POST Route Handler over the direct-import
+server-only `suggestedWaypointGuideCommandRouteContract.ts`. Query and path
+validation run before body, cookie, auth, or dependency IO. The route then
+loads only `SOLMIND_TRUSTED_APP_ORIGIN`, applies the bounded same-origin JSON
+guard once, validates the exact role body, and injects the path relationship
+once. The existing request composition derives actor and role, rechecks the
+active Guide relationship, and executes exactly one closed create/save draft,
+schedule-send, or Pull-Back RPC. Final projection revalidates the exact
+function-bound row and returns only `ok`, `outcome`, `suggestedWaypointId`, and
+`error`, with expected failures value-free. The route does not expose policy,
+deadline, lifecycle, version, relationship, profile, actor, audit, or private
+Explorer values. No current UI calls it; it adds no delivery worker or
+scheduler, Explorer command, provider, deployment, or real-user activation.
 
 The S03 Guide entry boundary also owns one feature-specific Suggested Waypoint
 relationship selector. Its forward-only migration exposes only active

@@ -1,6 +1,6 @@
 -- Local ephemeral database only. All synthetic rows are transaction-scoped.
 begin;
-select plan(67);
+select plan(71);
 
 insert into identity.user_account (
   user_account_id,
@@ -263,6 +263,60 @@ select throws_ok(
   'solmind_suggested_waypoint_invalid_content',
   'C0 content fails before storage'
 );
+select throws_ok(
+  $$
+    select *
+      from public.solmind_save_suggested_waypoint_draft(
+        'a3220210-1000-4000-8000-000000000001',
+        'a3220210-2000-4000-8000-000000000091',
+        'a3220210-1500-4000-8000-000000000001',
+        'a3220210-3000-4000-8000-000000000091',
+        0,
+        E'Line one\nLine two',
+        'Why',
+        '["Signal"]'::jsonb
+      )
+  $$,
+  'P0001',
+  'solmind_suggested_waypoint_invalid_content',
+  'save-draft rejects an LF destination before storage'
+);
+select throws_ok(
+  $$
+    select *
+      from public.solmind_save_suggested_waypoint_draft(
+        'a3220210-1000-4000-8000-000000000001',
+        'a3220210-2000-4000-8000-000000000092',
+        'a3220210-1500-4000-8000-000000000001',
+        'a3220210-3000-4000-8000-000000000092',
+        0,
+        'Line one' || pg_catalog.chr(8232) || 'Line two',
+        'Why',
+        '["Signal"]'::jsonb
+      )
+  $$,
+  'P0001',
+  'solmind_suggested_waypoint_invalid_content',
+  'save-draft rejects a Unicode line-separator destination'
+);
+select throws_ok(
+  $$
+    select *
+      from public.solmind_save_suggested_waypoint_draft(
+        'a3220210-1000-4000-8000-000000000001',
+        'a3220210-2000-4000-8000-000000000093',
+        'a3220210-1500-4000-8000-000000000001',
+        'a3220210-3000-4000-8000-000000000093',
+        0,
+        'Line one' || pg_catalog.chr(8233) || 'Line two',
+        'Why',
+        '["Signal"]'::jsonb
+      )
+  $$,
+  'P0001',
+  'solmind_suggested_waypoint_invalid_content',
+  'save-draft rejects a Unicode paragraph-separator destination'
+);
 
 create temp table s02_sw_save as
 select *
@@ -382,6 +436,19 @@ select is((select authoring_mode from s02_sw_guide_draft_detail), 'draft',
 select is((select draft_or_pending_destination from s02_sw_guide_draft_detail),
           'Protect one evening each week for recovery',
           'Guide detail returns normalized Guide-owned draft content');
+reset role;
+select throws_ok(
+  $$
+    update content.suggested_waypoint_guide_draft
+       set destination = E'Bypass\nattempt'
+     where suggested_waypoint_id =
+           'a3220210-3000-4000-8000-000000000001'
+  $$,
+  'P0001',
+  'solmind_suggested_waypoint_invalid_content',
+  'content trigger rejects a privileged multiline destination bypass'
+);
+set local role service_role;
 
 create temp table s02_sw_pagination_saves as
 select *
