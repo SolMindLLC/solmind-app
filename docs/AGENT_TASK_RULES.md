@@ -1,6 +1,6 @@
 # SolMind App Agent Task Rules
 
-Version: 0.2.1
+Version: 0.2.2
 Repo: solmind-app  
 Purpose: Define safe rules for AI coding agents and AI assistants working on the SolMind MVP0 application.
 
@@ -292,6 +292,17 @@ minimized projections and fail closed on widened authoring, pending, policy,
 Assistant, relationship, private Waypoint, conversation, evidence, or inference
 data. These routes remain read-only and authorize no command, delivery worker,
 provider, deployment, or real-user activation.
+
+The authenticated Guide detail may call only the separately banked
+`guide.pull_back` command. Build its body from the exact pending detail row,
+keep the pending-version selector opaque, and preserve one serialized body and
+operation ID across transport-uncertain retry. A positive browser countdown is
+never command authority; the server decides the deadline. After a conclusive
+command result, refresh the authoritative detail and never retry the command
+merely because that read failed. Value-free denial and failure copy must not
+reveal relationship, lifecycle, deadline, version, or Explorer data. Save,
+schedule, correction, withdrawal, delivery, provider, deployment, and real-user
+UI callers remain separate slices.
 
 All three Suggested Waypoint paginated list routes and clients reuse
 `suggestedWaypointPaginationSharedContract.ts`; do not recreate page-size,

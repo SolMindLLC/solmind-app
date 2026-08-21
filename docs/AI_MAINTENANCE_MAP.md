@@ -1,6 +1,6 @@
 # SolMind App AI Maintenance Map
 
-Version: 0.3.2
+Version: 0.3.3
 Repo: solmind-app  
 Purpose: Help AI coding assistants safely understand, maintain, and extend the SolMind MVP0 application.
 
@@ -13,14 +13,15 @@ Suggested Waypoint RPC transport, authenticated human-request composition,
 concrete server-only dependencies and stable scoped identities, a
 feature-specific Guide relationship selector, its first read-only authenticated
 route, and the first production Guide relationship-entry page that consumes the
-route. The production Guide relationship path also has exact read-only list and
-detail browser boundaries over the banked Guide projections. No human command
-edge exists yet. A shared browser-safe command-result parser and pure command-
-operation state owner are banked as route-independent predecessors for those
-future edges. A server-only first-write security predecessor now owns one
+route. The production Guide relationship path also has exact list and detail
+browser boundaries over the banked Guide projections. The first authenticated
+Guide command route is banked, and the Guide detail calls only its Pull Back
+operation for one exact protected pending version. A shared browser-safe
+command-result parser and pure command-operation state owner provide identical-
+byte transport-uncertain retry behavior. A server-only first-write security predecessor owns one
 trusted application-origin configuration, a same-origin JSON request guard,
 the exact 16,384-byte stream cap, and Unicode-scalar integrity at the existing
-command composition boundary. It still adds no command route. No operational
+command composition boundary. No operational
 delivery worker, hosted worker, provider path, deployment, or real-user
 activation exists.
 
@@ -35,7 +36,8 @@ User-facing routes:
 - `/guide/waypoint-suggestions/[relationshipId]` - authenticated,
   relationship-scoped Guide Suggested Waypoint list
 - `/guide/waypoint-suggestions/[relationshipId]/[suggestedWaypointId]` -
-  authenticated, relationship-scoped Guide Suggested Waypoint detail
+  authenticated, relationship-scoped Guide Suggested Waypoint detail with
+  bounded pending-version Pull Back
 - `/guide/explorers/avery/waypoint-suggestions` - deterministic, fixture-backed
   Human Guide Suggested Waypoint review surface; no persistence or real delivery
 - `/explorer` - deterministic, browser-memory Explorer S01 experience
@@ -62,6 +64,8 @@ Server route handlers:
   relationship-scoped Guide list read
 - `/guide/waypoint-suggestions/[relationshipId]/[suggestedWaypointId]/detail` -
   authenticated, relationship-scoped Guide detail read
+- `/guide/waypoint-suggestions/[relationshipId]/commands` - authenticated,
+  same-origin Guide command route; the current UI calls only Pull Back
 - `/explorer/waypoints/suggestions` - authenticated Explorer list read
 - `/explorer/waypoints/[suggestedWaypointId]/detail` - authenticated Explorer
   detail read
@@ -284,11 +288,12 @@ The `auth/`, `context/`, and `supabase/` directories hold server-only modules ke
 | Guide Suggested Waypoint fixture UI | `src/app/guide/explorers/avery/waypoint-suggestions/page.tsx`; `src/components/solmind/GuideSuggestedWaypointWorkspace.tsx`; `src/lib/solmind/guideSuggestedWaypointFixtures.ts` | Thin deterministic Explorer-context list/detail presentation over Guide-only draft, pending-send, Pull Back, open, and acknowledged states; no persistence, provider, passive Explorer telemetry, or authenticated runtime |
 | Guide Suggested Waypoint relationship entry | `src/app/guide/waypoint-suggestions/page.tsx`; `src/app/guide/waypoint-suggestions/[relationshipId]/page.tsx`; `src/components/solmind/GuideSuggestedWaypointRelationshipEntry.tsx`; `src/lib/solmind/suggestedWaypoint{RelationshipBrowser,PaginationShared}Contract.ts` | Authenticated, read-only feature entry over the banked relationship-selector route; exact browser response validation, opaque-cursor pagination, one bounded later-page stale-cursor reset to page one with the same page size, distinct empty/denied/failed states, safe-page retention after malformed or operationally failed reset, authority-denial clearing, and relationship-scoped navigation without suggestion data or commands |
 | Guide Suggested Waypoint relationship list | `src/app/guide/waypoint-suggestions/[relationshipId]/page.tsx`; `src/app/guide/waypoint-suggestions/[relationshipId]/suggestions/route.ts`; `src/components/solmind/GuideSuggestedWaypointRelationshipList.tsx`; `src/lib/solmind/suggestedWaypoint{GuideListBrowser,GuideListShared,PaginationShared}Contract.ts` | Authenticated, relationship-scoped, read-only Guide list over the banked `guide.list` request composition; exact browser validation, privacy-minimized lifecycle/status projection, progressive opaque-cursor pagination, one bounded later-page stale-cursor reset to page one with the same page size, safe-page retention after malformed or operationally failed reset, authority-denial clearing, and suggestion-scoped navigation into the separately owned detail read. It adds no command, worker, provider, database, deployment, or real-user activation. |
-| Guide Suggested Waypoint relationship detail | `src/app/guide/waypoint-suggestions/[relationshipId]/[suggestedWaypointId]/page.tsx`; `src/app/guide/waypoint-suggestions/[relationshipId]/[suggestedWaypointId]/detail/route.ts`; `src/components/solmind/GuideSuggestedWaypointDetail.tsx`; `src/lib/solmind/suggestedWaypointGuideDetailBrowserContract.ts`; co-located focused and browser tests | Authenticated, relationship-scoped, read-only Guide detail over the banked `guide.get` request composition; exact browser validation, Guide-only draft/pending content, immutable delivered content, pending-policy facts, and the exact opaque pending-version selector needed by a later Pull Back request. The selector is accepted only in pending mode, never rendered or announced, and absent from Guide lists and every Explorer projection. Deliberate dated receipt acknowledgement, fixed denied/failure states, and structural omission of Explorer-private engagement, Waypoint, conversation, evidence, and inference data remain unchanged. It adds no command invocation, worker, provider, deployment, or real-user activation. |
+| Guide Suggested Waypoint relationship detail | `src/app/guide/waypoint-suggestions/[relationshipId]/[suggestedWaypointId]/page.tsx`; `src/app/guide/waypoint-suggestions/[relationshipId]/[suggestedWaypointId]/detail/route.ts`; `src/components/solmind/GuideSuggestedWaypointDetail.tsx`; `src/lib/solmind/suggestedWaypointGuideDetailBrowserContract.ts`; co-located focused and browser tests | Authenticated, relationship-scoped Guide detail over the banked `guide.get` request composition; exact browser validation, Guide-only draft/pending content, immutable delivered content, pending-policy facts, and one opaque pending-version selector. Only pending mode may invoke the separately owned Pull Back client. The selector is never rendered or announced and remains absent from Guide lists and every Explorer projection. Deliberate dated receipt acknowledgement, fixed denied/failure states, and structural omission of Explorer-private engagement, Waypoint, conversation, evidence, and inference data remain unchanged. It adds no save, schedule, correction, withdrawal, worker, provider, deployment, or real-user activation. |
 | Suggested Waypoint display dates | `src/lib/solmind/suggestedWaypointDisplayDate.ts`; co-located focused test; Explorer and Guide list/detail consumers | Shared browser-safe `en-US` presentation for year-complete dates and date-times in the viewer's local time zone. An explicit IANA zone is a deterministic test seam only; production callers do not force UTC or another zone. This owner changes no persisted timestamp, route contract, locale preference, schema, or application-wide date design. |
 | Suggested Waypoint shared command predecessor | `src/lib/solmind/suggestedWaypointCommandBrowserContract.ts`; `src/lib/solmind/suggestedWaypointCommandOperation.ts`; co-located focused tests | Browser-safe exact result parsing plus pure retry/settlement state for future Guide and Explorer command edges. It accepts only route-permitted expected outcomes, exposes value-free denied/failed results, snapshots each exact data property once, suppresses double activation, preserves one immutable serialized request and operation ID across transport-uncertain retry, ignores stale generations, and exposes semantic busy, announcement, retry, and focus intents. It adds no route, Server Action, RPC invocation, database write, worker, provider, deployment, or real-user activation. |
 | Suggested Waypoint first-write security predecessor | `src/lib/solmind/auth/trustedApplicationOrigin.ts`; `src/lib/solmind/auth/sameOriginJsonWriteRequest.ts`; co-located focused tests; scalar-integrity validation in `src/lib/solmind/supabase/suggestedWaypointRequestComposition.ts` | Server-only fail-closed preparation for future Guide and Explorer command routes. One validated `SOLMIND_TRUSTED_APP_ORIGIN` value supplies authority without trusting Host or forwarded headers. The request guard requires POST, exact JSON media type, same-origin Origin plus Fetch Metadata, identity/no content encoding, canonical optional length, a bounded 16,384-byte stream, strict UTF-8 without BOM, and one frozen plain JSON object. Shared command text rejects isolated UTF-16 surrogates and Unicode line or paragraph separators while accepting valid Unicode scalar pairs. It performs no auth, RPC, database write, route, worker, provider, deployment, or real-user effect by itself. |
-| Suggested Waypoint Guide command route | `src/app/guide/waypoint-suggestions/[relationshipId]/commands/route.ts`; `src/lib/solmind/supabase/suggestedWaypointGuideCommandRouteContract.ts`; co-located focused and route tests; `.env.example` | First authenticated same-origin browser write edge for Guide create/save draft, schedule send, and Pull Back. It rejects query/path and exact-body authority before cookie/auth/dependency IO, loads one configured trusted origin, applies the shared bounded JSON guard once, injects the path relationship once, delegates actor/role/relationship derivation and the closed RPC to the banked composition once, revalidates the exact function-bound command row, and emits only the shared four-field value-free browser result. It adds no UI control, delivery worker or scheduler, Explorer command edge, provider, deployment, hosted data, or real-user activation. |
+| Suggested Waypoint Guide command route | `src/app/guide/waypoint-suggestions/[relationshipId]/commands/route.ts`; `src/lib/solmind/supabase/suggestedWaypointGuideCommandRouteContract.ts`; co-located focused and route tests; `.env.example` | First authenticated same-origin browser write edge for Guide create/save draft, schedule send, and Pull Back. It rejects query/path and exact-body authority before cookie/auth/dependency IO, loads one configured trusted origin, applies the shared bounded JSON guard once, injects the path relationship once, delegates actor/role/relationship derivation and the closed RPC to the banked composition once, revalidates the exact function-bound command row, and emits only the shared four-field value-free browser result. The current UI invokes only Pull Back. It adds no delivery worker or scheduler, Explorer command edge, provider, deployment, hosted data, or real-user activation. |
+| Suggested Waypoint Guide Pull Back browser edge | `src/lib/solmind/suggestedWaypointGuideCommandClient.ts`; `src/lib/solmind/suggestedWaypointPullBackCountdown.ts`; `src/components/solmind/GuideSuggestedWaypointDetail.tsx`; co-located focused and browser tests | First production Guide command UI caller. It builds one exact Pull Back snapshot from the already-authorized pending detail, preserves identical bytes and operation identity across transport-uncertain retry, exposes explicit check-status recovery, and reloads the authoritative detail after conclusive results. Its countdown is display-only, never command authority. The protected pending-version selector never appears in visible copy, announcements, logs, or URLs. It adds no Guide save/schedule/correction/withdrawal caller, Explorer command, worker, provider, deployment, or real-user activation. |
 | Shared UI | `src/components/solmind/*.tsx` | Reusable presentational components |
 | Role model | `src/lib/solmind/roles.ts` | Canonical role strings, labels, and home routes |
 | Route metadata | `src/lib/solmind/pages.ts` | Page titles, descriptions, and hrefs |
@@ -398,7 +403,8 @@ Earlier guidance told agents not to start Supabase, auth, or RLS. That is no lon
   `src/app/guide/waypoint-suggestions/[relationshipId]/commands/route.ts` and
   its direct-import server-only route contract. It binds create/save draft,
   schedule send, and Pull Back to the existing authenticated composition and
-  exact role-safe result projection. No current Guide UI calls it.
+  exact role-safe result projection. The current Guide detail calls only Pull
+  Back and then refreshes the authoritative read.
 - The `/admin/access` server route handler: an opaque probe returning only `{ allowed }`. It is read-only and does not protect the `/admin`, `/guide`, or `/explorer` pages.
 - Auth/RLS audit persistence for `/admin/access`: the bounded event model (`src/lib/solmind/auth/authRlsAuditEvent.ts`), the enumerated `public.solmind_record_audit_event` writer function (migration `20260708000000_audit_event_writer_function.sql`), the closed-allowlist app writer chain (`auditEventWriter.ts`, `auditEventWriteExecutor.ts`, `adminAuditEventWriter.ts`), and the runtime wiring in `adminAccessRequest.ts` (AUD-1/AUD-2/AUD-3). On an allow the guarded-read row is written first, then the allow decision row, and both must persist before the outward allow (fail-closed); deny and resolution-failure rows are best-effort.
 - Dormant invitation foundations through `PRJ01_F-WS06-WI008-S02D` - Guide-to-Explorer invitation issuance, same-Guide replacement, and revocation - are banked through synchronized app commit `a9944f1`. The S02D functions remain dormant over the earlier capacity, lock, and helper substrate; none has an application caller or real-user path.
@@ -433,8 +439,9 @@ Extend these modules deliberately and in small slices. Keep server-only modules 
   snapshot and audit/fingerprint enforcement, context budgeting, provider
   selection/dispatch, session/message persistence, safety response, and UI.
 - Guide Assistant context from these Explorer artifacts.
-- Suggested Waypoint Explorer read/acknowledge command edge, all Guide and
-  Explorer command UI callers, operational local delivery-worker invocation,
+- Suggested Waypoint Explorer read/acknowledge command edge, Guide save,
+  schedule, correction, and withdrawal UI callers, all remaining Explorer
+  command UI callers, operational local delivery-worker invocation,
   and hosted delivery-worker caller beyond the banked authenticated
   composition, shared command predecessor, relationship-scoped Guide command
   route, Guide relationship selector, and read-only role list/detail paths.

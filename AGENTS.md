@@ -200,6 +200,18 @@ policy, Assistant, private Waypoint, conversation, evidence, or inference data.
 These read paths do not authorize command routes, delivery, providers,
 deployment, or real-user activation.
 
+The authenticated Guide detail is the first browser command caller and may
+invoke only `guide.pull_back` through the existing relationship-scoped command
+route. It must construct one exact request from the protected pending-version
+selector, retain identical bytes and the same UUIDv4 operation identity across
+a transport-uncertain retry, and reload the authoritative detail after every
+conclusive response. A browser countdown is display-only and never authorizes
+Pull Back. If a conclusive command is followed by a failed detail read, retry
+the read, not the command. Never render, announce, log, or put the pending
+version identifier in a URL, and never widen Explorer projections. Guide save,
+schedule, correction, withdrawal, worker, provider, deployment, and real-user
+edges remain separately gated.
+
 ## Secrets Boundary
 
 Never expose server secrets through `NEXT_PUBLIC_` variables.

@@ -1,6 +1,6 @@
 # SolMind App Module Boundaries
 
-Version: 0.2.2
+Version: 0.2.3
 Repo: solmind-app  
 Purpose: Define where code should live as the SolMind MVP0 application grows.
 
@@ -163,11 +163,12 @@ projection returned by `createNonLiveGuideProjection`.
 
 The retained fixture UIs do not access a provider, database owner, Server
 Action, Route Handler, cookie, browser storage, notification, or real Guide
-record. The authenticated S03 read components use thin same-origin routes over
-server-derived request authority and exact role-safe projections. The first
-Guide command Route Handler is maintained as a separately gated increment, but
-no current Suggested Waypoint UI invokes it or any other human command, worker,
-provider, deployment, or real-user activation.
+record. The authenticated S03 components use thin same-origin routes over
+server-derived request authority and exact role-safe projections. The Guide
+detail invokes only Pull Back through the separately owned Guide command Route
+Handler. No current Suggested Waypoint UI invokes Guide save, schedule,
+correction, withdrawal, an Explorer command, worker, provider, deployment, or
+real-user activation.
 
 `auth/trustedApplicationOrigin.ts` and
 `auth/sameOriginJsonWriteRequest.ts` are server-only first-write predecessors
@@ -208,6 +209,17 @@ deployment, or real-user effect. The role lane retains the parsed result so its
 copy and recovery path still distinguish expected concurrency from a value-free
 denial or operational failure; the pure operation owner carries only their
 shared focus and retry semantics.
+
+`suggestedWaypointGuideCommandClient.ts` is the first role-lane command caller.
+It owns only the exact Guide Pull Back body, relationship-scoped route URL,
+closed permitted outcomes, same-origin fetch, and conclusive versus transport-
+uncertain classification. It creates no authority and receives no actor, role,
+policy, deadline, lifecycle, or Explorer value from the browser. The companion
+`suggestedWaypointPullBackCountdown.ts` is display-only. The Guide detail owns
+the role result and recovery copy, preserves exact request bytes and operation
+identity on retry, checks the authoritative detail after uncertainty, and
+retries only the read after a conclusive command. Neither client owner may
+render, announce, log, or place the pending-version selector in a URL.
 
 Dormant `PRJ01_V-WS05-WI022-S02` adds a database-only Suggested Waypoint
 boundary under `supabase/migrations/` and `supabase/tests/`. Eight owners keep
@@ -596,7 +608,8 @@ schedule-send, or Pull-Back RPC. Final projection revalidates the exact
 function-bound row and returns only `ok`, `outcome`, `suggestedWaypointId`, and
 `error`, with expected failures value-free. The route does not expose policy,
 deadline, lifecycle, version, relationship, profile, actor, audit, or private
-Explorer values. No current UI calls it; it adds no delivery worker or
+Explorer values. The Guide detail calls only Pull Back; it adds no Guide
+save, schedule, correction, or withdrawal caller, delivery worker or
 scheduler, Explorer command, provider, deployment, or real-user activation.
 
 The S03 Guide entry boundary also owns one feature-specific Suggested Waypoint

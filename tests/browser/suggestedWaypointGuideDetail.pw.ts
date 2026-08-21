@@ -47,6 +47,7 @@ const expectNoSeriousAxeViolations = async (page: Page) => {
 
 const detailUrl = `/guide/waypoint-suggestions/${RELATIONSHIP_ID}/${SUGGESTION_ID}`;
 const detailPattern = `**${detailUrl}/detail`;
+const commandPattern = `**/guide/waypoint-suggestions/${RELATIONSHIP_ID}/commands`;
 
 test.describe("Guide Suggested Waypoint detail", () => {
   test("shows exact draft, pending, and delivered Guide projections without private engagement", async ({ page }) => {
@@ -131,5 +132,321 @@ test.describe("Guide Suggested Waypoint detail", () => {
     await page.getByRole("button", { name: "Try again" }).click();
     await expect(page.getByRole("heading", { name: "Guide-only draft" })).toBeVisible();
     await expectNoSeriousAxeViolations(page);
+  });
+
+  test("pulls a pending version back and refreshes the authoritative Guide-only draft", async ({ page }) => {
+    let state: "pending" | "draft" = "pending";
+    const requestBodies: string[] = [];
+    await page.route(detailPattern, (route) => fulfillJson(route, {
+      ok: true,
+      data: state === "pending"
+        ? {
+            ...base,
+            authoring_mode: "pending",
+            authoring_revision: 3,
+            channel_category: "pending",
+            pending_deadline_at: "2099-08-21T17:05:00.000Z",
+            pull_back_available: true,
+            pending_version_id: VERSION_ID,
+            policy_key: "suggested_waypoint_send_grace_seconds",
+            policy_version: 3,
+            effective_seconds: 300,
+          }
+        : { ...base, authoring_revision: 4 },
+      error: null,
+    }));
+    await page.route(commandPattern, async (route) => {
+      requestBodies.push(route.request().postData() ?? "");
+      state = "draft";
+      return fulfillJson(route, {
+        ok: true,
+        outcome: "applied",
+        suggestedWaypointId: SUGGESTION_ID,
+        error: null,
+      });
+    });
+
+    await page.goto(detailUrl);
+    await expect(page.getByRole("button", { name: "Pull Back", exact: true })).toBeVisible();
+    await expect(page.getByRole("timer")).toContainText("Estimated Pull Back time remaining");
+    await page.getByRole("button", { name: "Pull Back", exact: true }).click();
+
+    await expect(page.getByRole("heading", { name: "Guide-only draft" })).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "Pull Back completed" })).toBeFocused();
+    expect(requestBodies).toHaveLength(1);
+    expect(JSON.parse(requestBodies[0] ?? "{}")).toEqual({
+      kind: "guide.pull_back",
+      operationId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+      suggestedWaypointId: SUGGESTION_ID,
+      expectedRevision: 3,
+      expectedPendingVersionId: VERSION_ID,
+    });
+    await expect(page.locator("body")).not.toContainText(VERSION_ID);
+    await expectNoSeriousAxeViolations(page);
+  });
+
+  test("keeps a conclusive success non-retriable when the authoritative refresh fails", async ({ page }) => {
+    let detailMode: "pending" | "failed" = "pending";
+    let commandCount = 0;
+    await page.route(detailPattern, (route) => {
+      if (detailMode === "failed") {
+        return fulfillJson(route, {
+          ok: false,
+          data: null,
+          error: "SolMind Suggested Waypoints could not be loaded.",
+        });
+      }
+      return fulfillJson(route, {
+        ok: true,
+        data: {
+          ...base,
+          authoring_mode: "pending",
+          authoring_revision: 3,
+          channel_category: "pending",
+          pending_deadline_at: "2099-08-21T17:05:00.000Z",
+          pull_back_available: true,
+          pending_version_id: VERSION_ID,
+          policy_key: "suggested_waypoint_send_grace_seconds",
+          policy_version: 3,
+          effective_seconds: 300,
+        },
+        error: null,
+      });
+    });
+    await page.route(commandPattern, (route) => {
+      commandCount += 1;
+      detailMode = "failed";
+      return fulfillJson(route, {
+        ok: true,
+        outcome: "applied",
+        suggestedWaypointId: SUGGESTION_ID,
+        error: null,
+      });
+    });
+
+    await page.goto(detailUrl);
+    await page.getByRole("button", { name: "Pull Back", exact: true }).click();
+
+    await expect(page.getByRole("heading", { name: "Could not load suggestion" })).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "do not submit Pull Back again" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Retry same request" })).toHaveCount(0);
+    expect(commandCount).toBe(1);
+  });
+
+  test("keeps expected non-success guidance focused after the authoritative refresh", async ({ page }) => {
+    let pullBackAvailable = true;
+    let commandCount = 0;
+    await page.route(detailPattern, (route) => fulfillJson(route, {
+      ok: true,
+      data: {
+        ...base,
+        authoring_mode: "pending",
+        authoring_revision: 3,
+        channel_category: "pending",
+        pending_deadline_at: "2099-08-21T17:05:00.000Z",
+        pull_back_available: pullBackAvailable,
+        pending_version_id: VERSION_ID,
+        policy_key: "suggested_waypoint_send_grace_seconds",
+        policy_version: 3,
+        effective_seconds: 300,
+      },
+      error: null,
+    }));
+    await page.route(commandPattern, (route) => {
+      commandCount += 1;
+      pullBackAvailable = false;
+      return fulfillJson(route, {
+        ok: false,
+        outcome: "too_late",
+        suggestedWaypointId: null,
+        error: null,
+      });
+    });
+
+    await page.goto(detailUrl);
+    await page.getByRole("button", { name: "Pull Back", exact: true }).click();
+
+    const status = page.getByRole("status").filter({ hasText: "Pull Back period ended" });
+    await expect(status).toContainText("before the command reached the server");
+    await expect(status).toBeFocused();
+    await expect(page.getByRole("button", { name: "Pull Back", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Retry same request" })).toHaveCount(0);
+    expect(commandCount).toBe(1);
+  });
+
+  test("checks status and retries identical bytes after a transport-uncertain Pull Back", async ({ page }) => {
+    let state: "pending" | "draft" = "pending";
+    let commandCount = 0;
+    const requestBodies: string[] = [];
+    await page.route(detailPattern, (route) => fulfillJson(route, {
+      ok: true,
+      data: state === "pending"
+        ? {
+            ...base,
+            authoring_mode: "pending",
+            authoring_revision: 3,
+            channel_category: "pending",
+            pending_deadline_at: "2099-08-21T17:05:00.000Z",
+            pull_back_available: true,
+            pending_version_id: VERSION_ID,
+            policy_key: "suggested_waypoint_send_grace_seconds",
+            policy_version: 3,
+            effective_seconds: 300,
+          }
+        : { ...base, authoring_revision: 4 },
+      error: null,
+    }));
+    await page.route(commandPattern, async (route) => {
+      commandCount += 1;
+      requestBodies.push(route.request().postData() ?? "");
+      if (commandCount === 1) {
+        return route.abort("failed");
+      }
+      state = "draft";
+      return fulfillJson(route, {
+        ok: true,
+        outcome: "idempotent",
+        suggestedWaypointId: SUGGESTION_ID,
+        error: null,
+      });
+    });
+
+    await page.goto(detailUrl);
+    await page.getByRole("button", { name: "Pull Back", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Check current status" })).toBeVisible();
+    await page.getByRole("button", { name: "Check current status" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "still pending" })).toBeVisible();
+    await page.getByRole("button", { name: "Retry same request" }).click();
+
+    await expect(page.getByRole("heading", { name: "Guide-only draft" })).toBeVisible();
+    expect(requestBodies).toHaveLength(2);
+    expect(requestBodies[1]).toBe(requestBodies[0]);
+    await expect(page.locator("body")).not.toContainText(VERSION_ID);
+  });
+
+  test("keeps recovery after a failed status read and clears retry after denial", async ({ page }) => {
+    let detailMode: "pending" | "failed" | "denied" = "pending";
+    let commandCount = 0;
+    await page.route(detailPattern, (route) => {
+      if (detailMode !== "pending") {
+        return fulfillJson(route, {
+          ok: false,
+          data: null,
+          error: detailMode === "denied"
+            ? "SolMind Suggested Waypoints are unavailable."
+            : "SolMind Suggested Waypoints could not be loaded.",
+        });
+      }
+      return fulfillJson(route, {
+        ok: true,
+        data: {
+          ...base,
+          authoring_mode: "pending",
+          authoring_revision: 3,
+          channel_category: "pending",
+          pending_deadline_at: "2099-08-21T17:05:00.000Z",
+          pull_back_available: true,
+          pending_version_id: VERSION_ID,
+          policy_key: "suggested_waypoint_send_grace_seconds",
+          policy_version: 3,
+          effective_seconds: 300,
+        },
+        error: null,
+      });
+    });
+    await page.route(commandPattern, (route) => {
+      commandCount += 1;
+      return route.abort("failed");
+    });
+
+    await page.goto(detailUrl);
+    await page.getByRole("button", { name: "Pull Back", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Check current status" })).toBeVisible();
+
+    detailMode = "failed";
+    await page.getByRole("button", { name: "Check current status" }).click();
+    await expect(page.getByRole("heading", { name: "Could not load suggestion" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Retry same request" })).toBeVisible();
+
+    detailMode = "denied";
+    await page.getByRole("button", { name: "Check current status" }).click();
+    await expect(page.getByRole("heading", { name: "Suggestion unavailable" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Retry same request" })).toHaveCount(0);
+    await expect(page.getByRole("status").filter({ hasText: "Do not retry Pull Back" })).toBeVisible();
+    expect(commandCount).toBe(1);
+    await expect(page.locator("body")).not.toContainText(VERSION_ID);
+    await expectNoSeriousAxeViolations(page);
+  });
+
+  test("does not let a late retry overwrite a newer authoritative denial", async ({ page }) => {
+    let detailMode: "pending" | "delayed_denied" = "pending";
+    let releaseDeniedDetail = () => {};
+    let releaseRetry = () => {};
+    const deniedDetailGate = new Promise<void>((resolve) => {
+      releaseDeniedDetail = resolve;
+    });
+    const retryGate = new Promise<void>((resolve) => {
+      releaseRetry = resolve;
+    });
+    let commandCount = 0;
+    let detailCount = 0;
+
+    await page.route(detailPattern, async (route) => {
+      detailCount += 1;
+      if (detailMode === "delayed_denied") {
+        await deniedDetailGate;
+        return fulfillJson(route, {
+          ok: false,
+          data: null,
+          error: "SolMind Suggested Waypoints are unavailable.",
+        });
+      }
+      return fulfillJson(route, {
+        ok: true,
+        data: {
+          ...base,
+          authoring_mode: "pending",
+          authoring_revision: 3,
+          channel_category: "pending",
+          pending_deadline_at: "2099-08-21T17:05:00.000Z",
+          pull_back_available: true,
+          pending_version_id: VERSION_ID,
+          policy_key: "suggested_waypoint_send_grace_seconds",
+          policy_version: 3,
+          effective_seconds: 300,
+        },
+        error: null,
+      });
+    });
+    await page.route(commandPattern, async (route) => {
+      commandCount += 1;
+      if (commandCount === 1) {
+        return route.abort("failed");
+      }
+      await retryGate;
+      return fulfillJson(route, {
+        ok: true,
+        outcome: "idempotent",
+        suggestedWaypointId: SUGGESTION_ID,
+        error: null,
+      });
+    });
+
+    await page.goto(detailUrl);
+    await page.getByRole("button", { name: "Pull Back", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Check current status" })).toBeVisible();
+
+    detailMode = "delayed_denied";
+    await page.getByRole("button", { name: "Check current status" }).click();
+    await page.getByRole("button", { name: "Retry same request" }).click();
+    releaseDeniedDetail();
+    await expect(page.getByRole("status").filter({ hasText: "Do not retry Pull Back" })).toBeVisible();
+
+    releaseRetry();
+    await expect(page.getByRole("status").filter({ hasText: "Do not retry Pull Back" })).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "Pull Back completed" })).toHaveCount(0);
+    await page.waitForTimeout(100);
+    expect(commandCount).toBe(2);
+    expect(detailCount).toBe(2);
   });
 });

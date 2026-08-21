@@ -73,7 +73,8 @@ Current route purpose:
 | `/guide/waypoint-suggestions/relationships` | Read-only authenticated Guide entry selector for Suggested Waypoints; returns only relationship ID, Explorer display name, relationship creation time, cursor, and count |
 | `/guide/waypoint-suggestions` | Authenticated read-only Guide relationship entry page |
 | `/guide/waypoint-suggestions/[relationshipId]` | Authenticated relationship-scoped Guide Suggested Waypoint list |
-| `/guide/waypoint-suggestions/[relationshipId]/[suggestedWaypointId]` | Authenticated relationship-scoped Guide Suggested Waypoint detail |
+| `/guide/waypoint-suggestions/[relationshipId]/[suggestedWaypointId]` | Authenticated relationship-scoped Guide Suggested Waypoint detail with bounded pending-version Pull Back |
+| `/guide/waypoint-suggestions/[relationshipId]/commands` | Authenticated same-origin Guide command route; the current detail UI calls only Pull Back |
 
 The `/explorer` route hosts a browser-memory-only deterministic prototype. It:
 
@@ -114,6 +115,17 @@ detail, and a deliberately supplied receipt acknowledgement. It reports no
 passive Explorer opens, private comparison, private question, or use in an
 Explorer-owned Waypoint, and it performs no real save, send, provider, database,
 notification, or user action.
+
+The authenticated Guide suggestion detail adds the first production command UI
+caller: Pull Back for an exact pending version. The browser preserves one exact
+serialized request and operation ID across a transport-uncertain retry, then
+reloads the authoritative detail. Its visible countdown is orientation only;
+the server and database deadline decide availability. A successful Pull Back
+returns the suggestion to Guide-only draft state and does not delete it. The
+pending version identifier is never rendered, announced, logged, or placed in a
+URL, and Explorer projections remain unchanged. Save, schedule, correction,
+withdrawal, delivery-worker, provider, deployment, and real-user activation
+remain separately gated.
 
 Backend foundations present in the repository (high level):
 
