@@ -37,6 +37,7 @@ const DETAIL = Object.freeze({
   pull_back_available: false,
   channel_category: "not_delivered",
   current_version_id: null,
+  pending_version_id: null,
   delivered_at: null,
   acknowledged_version_id: null,
   acknowledged_at: null,
@@ -94,6 +95,27 @@ describe("GET relationship-scoped Guide Suggested Waypoint detail", () => {
       relationshipId: RELATIONSHIP_ID,
       suggestedWaypointId: SUGGESTION_ID,
     });
+  });
+
+  it("projects the opaque pending selector only on an authorized pending detail", async () => {
+    const pending = Object.freeze({
+      ...DETAIL,
+      authoring_mode: "pending",
+      channel_category: "pending",
+      pending_deadline_at: "2026-08-16T06:30:00.000Z",
+      pull_back_available: true,
+      pending_version_id: "77777777-7777-4777-8777-777777777777",
+      policy_key: "suggested_waypoint_send_grace_seconds",
+      policy_version: 3,
+      effective_seconds: 300,
+    });
+    resolveRequestMock.mockResolvedValue(
+      Object.freeze({ ok: true, data: pending, error: null }),
+    );
+
+    const { response, body } = await invoke();
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ ok: true, data: pending, error: null });
   });
 
   it.each([

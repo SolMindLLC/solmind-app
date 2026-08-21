@@ -25,6 +25,7 @@ export type SuggestedWaypointGuideDetail = SuggestedWaypointGuideListItem &
     delivered_destination: string | null;
     delivered_why: string | null;
     delivered_arrival_signals: readonly string[] | null;
+    pending_version_id: string | null;
     policy_key: "suggested_waypoint_send_grace_seconds" | null;
     policy_version: number | null;
     effective_seconds: number | null;
@@ -49,6 +50,7 @@ const DETAIL_KEYS = Object.freeze([
   "pull_back_available",
   "channel_category",
   "current_version_id",
+  "pending_version_id",
   "delivered_at",
   "acknowledged_version_id",
   "acknowledged_at",
@@ -62,6 +64,9 @@ const DETAIL_KEYS = Object.freeze([
   "policy_version",
   "effective_seconds",
 ] as const);
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const LIST_KEYS = Object.freeze([
   "suggested_waypoint_id",
@@ -79,6 +84,10 @@ const LIST_KEYS = Object.freeze([
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isUuid(value: unknown): value is string {
+  return typeof value === "string" && UUID_PATTERN.test(value);
 }
 
 function hasExactKeys(
@@ -168,6 +177,7 @@ function parseDetail(value: unknown): SuggestedWaypointGuideDetail | null {
     !isNullableText(value.delivered_destination, 160) ||
     !isNullableText(value.delivered_why, 1000) ||
     !isNullableSignals(value.delivered_arrival_signals) ||
+    (value.pending_version_id !== null && !isUuid(value.pending_version_id)) ||
     (value.policy_key !== null &&
       value.policy_key !== "suggested_waypoint_send_grace_seconds") ||
     (value.policy_version !== null &&
@@ -212,10 +222,13 @@ function parseDetail(value: unknown): SuggestedWaypointGuideDetail | null {
   const coherent =
     deliveredContentCoherent &&
     (base.authoring_mode === "draft"
-      ? privateContentPresent && policyAbsent
+      ? value.pending_version_id === null && privateContentPresent && policyAbsent
       : base.authoring_mode === "pending"
-        ? privateContentPresent && policyPresent
-        : privateContentAbsent && deliveredContentPresent && policyAbsent);
+        ? isUuid(value.pending_version_id) && privateContentPresent && policyPresent
+        : value.pending_version_id === null &&
+          privateContentAbsent &&
+          deliveredContentPresent &&
+          policyAbsent);
   if (!coherent) {
     return null;
   }
@@ -232,6 +245,7 @@ function parseDetail(value: unknown): SuggestedWaypointGuideDetail | null {
     delivered_arrival_signals: value.delivered_arrival_signals === null
       ? null
       : Object.freeze([...value.delivered_arrival_signals] as string[]),
+    pending_version_id: value.pending_version_id as string | null,
     policy_key: value.policy_key as SuggestedWaypointGuideDetail["policy_key"],
     policy_version: value.policy_version as number | null,
     effective_seconds: value.effective_seconds as number | null,

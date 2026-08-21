@@ -1,6 +1,6 @@
 -- Local ephemeral database only. All synthetic rows are transaction-scoped.
 begin;
-select plan(71);
+select plan(80);
 
 insert into identity.user_account (
   user_account_id,
@@ -436,6 +436,20 @@ select is((select authoring_mode from s02_sw_guide_draft_detail), 'draft',
 select is((select draft_or_pending_destination from s02_sw_guide_draft_detail),
           'Protect one evening each week for recovery',
           'Guide detail returns normalized Guide-owned draft content');
+select is((select pending_version_id from s02_sw_guide_draft_detail), null::uuid,
+          'Guide draft detail carries no pending-version selector');
+select is(
+  (
+    select pg_catalog.count(*)::integer
+      from public.solmind_get_guide_suggested_waypoint(
+        'a3220210-1000-4000-8000-000000000005',
+        'a3220210-1500-4000-8000-000000000001',
+        'a3220210-3000-4000-8000-000000000001'
+      )
+  ),
+  0,
+  'unrelated Guide receives no pending-version oracle'
+);
 reset role;
 select throws_ok(
   $$
@@ -584,6 +598,19 @@ select is((select effective_seconds from s02_sw_schedule_one), 300,
 select is((select policy_version from s02_sw_schedule_one), 1::bigint,
           'schedule freezes the policy version');
 
+create temp table s02_sw_guide_pending_one as
+select *
+  from public.solmind_get_guide_suggested_waypoint(
+    'a3220210-1000-4000-8000-000000000001',
+    'a3220210-1500-4000-8000-000000000001',
+    'a3220210-3000-4000-8000-000000000001'
+  );
+select is((select pending_version_id from s02_sw_guide_pending_one),
+          'a3220210-3100-4000-8000-000000000001'::uuid,
+          'Guide pending detail returns the exact protected selector');
+select is((select pull_back_available from s02_sw_guide_pending_one), true,
+          'pending selector and deadline-derived Pull Back availability coexist');
+
 create temp table s02_sw_early_delivery as
 select *
   from public.solmind_deliver_suggested_waypoint(
@@ -629,6 +656,17 @@ select is((select outcome_code from s02_sw_pull_back), 'applied',
 select is((select authoring_revision from s02_sw_pull_back), 2::bigint,
           'Pull Back restores bytes into a new draft revision');
 
+create temp table s02_sw_guide_after_pull_back as
+select *
+  from public.solmind_get_guide_suggested_waypoint(
+    'a3220210-1000-4000-8000-000000000001',
+    'a3220210-1500-4000-8000-000000000001',
+    'a3220210-3000-4000-8000-000000000001'
+  );
+select is((select pending_version_id from s02_sw_guide_after_pull_back),
+          null::uuid,
+          'successful Pull Back removes the pending selector from detail');
+
 create temp table s02_sw_save_two as
 select *
   from public.solmind_save_suggested_waypoint_draft(
@@ -658,12 +696,37 @@ select *
 select is((select outcome_code from s02_sw_schedule_two), 'applied',
           'revised draft can be scheduled once');
 
+create temp table s02_sw_guide_pending_two as
+select *
+  from public.solmind_get_guide_suggested_waypoint(
+    'a3220210-1000-4000-8000-000000000001',
+    'a3220210-1500-4000-8000-000000000001',
+    'a3220210-3000-4000-8000-000000000001'
+  );
+select is((select pending_version_id from s02_sw_guide_pending_two),
+          'a3220210-3100-4000-8000-000000000002'::uuid,
+          'rescheduled detail binds the new pending selector');
+
 reset role;
 update content.suggested_waypoint_pending_outbound
    set scheduled_at = scheduled_at - interval '10 minutes',
        deadline_at = deadline_at - interval '10 minutes'
  where suggested_waypoint_id = 'a3220210-3000-4000-8000-000000000001';
 set local role service_role;
+
+create temp table s02_sw_guide_pending_after_deadline as
+select *
+  from public.solmind_get_guide_suggested_waypoint(
+    'a3220210-1000-4000-8000-000000000001',
+    'a3220210-1500-4000-8000-000000000001',
+    'a3220210-3000-4000-8000-000000000001'
+  );
+select is((select pending_version_id from s02_sw_guide_pending_after_deadline),
+          'a3220210-3100-4000-8000-000000000002'::uuid,
+          'pending selector remains authoritative after the deadline');
+select is((select pull_back_available from s02_sw_guide_pending_after_deadline),
+          false,
+          'deadline independently closes Pull Back availability');
 
 create temp table s02_sw_delivery as
 select *
@@ -677,6 +740,17 @@ select is((select outcome_code from s02_sw_delivery), 'applied',
 select is((select delivered_version_id from s02_sw_delivery),
           'a3220210-3100-4000-8000-000000000002'::uuid,
           'delivery returns the exact immutable version identity');
+
+create temp table s02_sw_guide_after_delivery as
+select *
+  from public.solmind_get_guide_suggested_waypoint(
+    'a3220210-1000-4000-8000-000000000001',
+    'a3220210-1500-4000-8000-000000000001',
+    'a3220210-3000-4000-8000-000000000001'
+  );
+select is((select pending_version_id from s02_sw_guide_after_delivery),
+          null::uuid,
+          'delivered detail carries no stale pending selector');
 
 create temp table s02_sw_explorer_list as
 select *

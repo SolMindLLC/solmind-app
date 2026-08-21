@@ -569,6 +569,16 @@ root remains the only concrete assembly owner. The relationship-selector route
 uses its selector subset; the Guide command route invokes the human composition
 without widening browser authority.
 
+The Guide detail row has one deliberately narrower extension for the later Pull
+Back interaction: `pending_version_id`. The service-role-only database function
+projects the exact protected pending row identity only for the already
+authorized Guide detail. Both the server RPC parser and browser-safe detail
+parser require a canonical UUID exactly in pending mode and require null in
+draft or delivered mode. Guide lists and every Explorer contract remain
+structurally unchanged. The identifier is an opaque concurrency selector: no
+current component renders, announces, logs, or places it in a URL, and all
+denied or failed results remain value-free.
+
 The first Guide command caller lives at:
 
 ```text

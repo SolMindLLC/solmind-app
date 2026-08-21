@@ -76,6 +76,7 @@ test.describe("relationship-scoped Guide Suggested Waypoint list", () => {
         ok: true,
         data: {
           ...draft(DRAFT_ID, "Protect one evening each week for recovery"),
+          pending_version_id: null,
           draft_or_pending_destination: "Protect one evening each week for recovery",
           draft_or_pending_why: "A protected evening may support recovery.",
           draft_or_pending_arrival_signals: ["One evening stays unscheduled."],

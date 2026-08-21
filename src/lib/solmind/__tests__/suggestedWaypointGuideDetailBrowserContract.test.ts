@@ -16,6 +16,7 @@ const draft = Object.freeze({
   pull_back_available: false,
   channel_category: "not_delivered",
   current_version_id: null,
+  pending_version_id: null,
   delivered_at: null,
   acknowledged_version_id: null,
   acknowledged_at: null,
@@ -53,6 +54,7 @@ describe("Suggested Waypoint Guide detail browser contract", () => {
       channel_category: "pending",
       pending_deadline_at: "2026-08-16T06:30:00.000Z",
       pull_back_available: true,
+      pending_version_id: VERSION_ID,
       policy_key: "suggested_waypoint_send_grace_seconds",
       policy_version: 3,
       effective_seconds: 300,
@@ -95,6 +97,8 @@ describe("Suggested Waypoint Guide detail browser contract", () => {
     [{ ...draft, draft_or_pending_arrival_signals: ["Same", "Same"] }],
     [{ ...draft, policy_key: "suggested_waypoint_send_grace_seconds", policy_version: 1, effective_seconds: 300 }],
     [{ ...draft, authoring_mode: "pending", channel_category: "pending", pending_deadline_at: "2026-08-16T06:30:00.000Z", pull_back_available: true }],
+    [{ ...draft, pending_version_id: VERSION_ID }],
+    [{ ...draft, authoring_mode: "pending", channel_category: "pending", pending_deadline_at: "2026-08-16T06:30:00.000Z", pull_back_available: true, pending_version_id: "not-a-uuid", policy_key: "suggested_waypoint_send_grace_seconds", policy_version: 1, effective_seconds: 300 }],
   ])("rejects widened or lifecycle-incoherent detail", (data) => {
     expect(
       parseSuggestedWaypointGuideDetailBrowserResult({ ok: true, data, error: null }),

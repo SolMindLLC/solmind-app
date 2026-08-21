@@ -194,6 +194,7 @@ function successFor(call: unknown): SuggestedWaypointRpcResult {
           pull_back_available: false,
           channel_category: "not_delivered" as const,
           current_version_id: null,
+          pending_version_id: null,
           delivered_at: null,
           acknowledged_version_id: null,
           acknowledged_at: null,

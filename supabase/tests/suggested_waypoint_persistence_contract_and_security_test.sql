@@ -1,5 +1,5 @@
 begin;
-select plan(34);
+select plan(35);
 
 create temp table s02_sw_tables(table_schema text, table_name text) on commit drop;
 insert into s02_sw_tables values
@@ -463,6 +463,19 @@ select is(
   ),
   'TABLE(items jsonb, next_cursor text, total_count bigint)',
   'Explorer list envelope shape is exact'
+);
+select is(
+  (
+    select pg_catalog.pg_get_function_result(function_record.oid)
+      from pg_catalog.pg_proc function_record
+      join pg_catalog.pg_namespace namespace
+        on namespace.oid = function_record.pronamespace
+     where namespace.nspname = 'public'
+       and function_record.proname =
+           'solmind_get_guide_suggested_waypoint'
+  ),
+  'TABLE(suggested_waypoint_id uuid, authoring_mode text, authoring_revision bigint, destination_preview text, pending_deadline_at timestamp with time zone, pull_back_available boolean, channel_category text, current_version_id uuid, pending_version_id uuid, delivered_at timestamp with time zone, acknowledged_version_id uuid, acknowledged_at timestamp with time zone, draft_or_pending_destination text, draft_or_pending_why text, draft_or_pending_arrival_signals jsonb, delivered_destination text, delivered_why text, delivered_arrival_signals jsonb, policy_key text, policy_version bigint, effective_seconds integer)',
+  'Guide detail exposes the pending selector in one exact ordinal position'
 );
 select is(
   (

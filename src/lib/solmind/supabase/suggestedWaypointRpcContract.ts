@@ -311,6 +311,7 @@ export type GuideSuggestedWaypointDetailRow = Readonly<{
   pull_back_available: boolean;
   channel_category: "not_delivered" | "pending" | "open";
   current_version_id: string | null;
+  pending_version_id: string | null;
   delivered_at: string | null;
   acknowledged_version_id: string | null;
   acknowledged_at: string | null;
@@ -968,6 +969,7 @@ function isGuideDetailRow(value: unknown): boolean {
       "pull_back_available",
       "channel_category",
       "current_version_id",
+      "pending_version_id",
       "delivered_at",
       "acknowledged_version_id",
       "acknowledged_at",
@@ -998,6 +1000,7 @@ function isGuideDetailRow(value: unknown): boolean {
     return false;
   }
   const shapeIsValid = (
+    (value.pending_version_id === null || isUuid(value.pending_version_id)) &&
     isNullableBoundedText(value.draft_or_pending_destination, 160) &&
     isNullableBoundedText(value.draft_or_pending_why, 1000) &&
     isNullableSignals(value.draft_or_pending_arrival_signals) &&
@@ -1052,11 +1055,26 @@ function isGuideDetailRow(value: unknown): boolean {
 
   switch (value.authoring_mode) {
     case "draft":
-      return draftOrPendingPresent && deliveredContentCoherent && policyAbsent;
+      return (
+        value.pending_version_id === null &&
+        draftOrPendingPresent &&
+        deliveredContentCoherent &&
+        policyAbsent
+      );
     case "pending":
-      return draftOrPendingPresent && deliveredContentCoherent && policyPresent;
+      return (
+        isUuid(value.pending_version_id) &&
+        draftOrPendingPresent &&
+        deliveredContentCoherent &&
+        policyPresent
+      );
     case "delivered":
-      return draftOrPendingAbsent && deliveredPresent && policyAbsent;
+      return (
+        value.pending_version_id === null &&
+        draftOrPendingAbsent &&
+        deliveredPresent &&
+        policyAbsent
+      );
     default:
       return false;
   }

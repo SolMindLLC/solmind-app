@@ -14,6 +14,7 @@ const base = {
   pull_back_available: false,
   channel_category: "not_delivered",
   current_version_id: null,
+  pending_version_id: null,
   delivered_at: null,
   acknowledged_version_id: null,
   acknowledged_at: null,
@@ -60,6 +61,7 @@ test.describe("Guide Suggested Waypoint detail", () => {
               channel_category: "pending",
               pending_deadline_at: "2026-08-16T06:30:00.000Z",
               pull_back_available: true,
+              pending_version_id: VERSION_ID,
               policy_key: "suggested_waypoint_send_grace_seconds",
               policy_version: 3,
               effective_seconds: 300,
@@ -92,6 +94,7 @@ test.describe("Guide Suggested Waypoint detail", () => {
     await expect(page.getByRole("heading", { name: "Pending-send window" })).toBeVisible();
     await expect(page.getByText("Explorer visibility is scheduled after Aug 16, 2026, 1:30 AM CDT.", { exact: false })).toBeVisible();
     await expect(page.getByText("300 seconds", { exact: false })).toBeVisible();
+    await expect(page.locator("body")).not.toContainText(VERSION_ID);
 
     state = "delivered";
     await page.reload();
