@@ -208,8 +208,26 @@ function hasForbiddenControl(value: string): boolean {
       (code >= 1 && code <= 8) ||
       (code >= 11 && code <= 12) ||
       (code >= 14 && code <= 31) ||
-      (code >= 127 && code <= 159)
+      (code >= 127 && code <= 159) ||
+      code === 0x2028 ||
+      code === 0x2029
     ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasIsolatedSurrogate(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) {
+        return true;
+      }
+      index += 1;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
       return true;
     }
   }
@@ -231,6 +249,7 @@ function isBoundedText(
     value === value.trim() &&
     value === value.normalize("NFC") &&
     !value.includes("\r") &&
+    !hasIsolatedSurrogate(value) &&
     !hasForbiddenControl(value)
   );
 }

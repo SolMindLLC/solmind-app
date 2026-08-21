@@ -119,6 +119,10 @@ Backend foundations present in the repository (high level):
 
 - Supabase schema foundations: MVP0 schemas and tables exist through migrations under `supabase/migrations`, with Row Level Security enabled deny-by-default on application tables.
 - Auth/RLS request-auth boundary, real Admin auth-source loading, server-only hardening, and enumerated RPC transport under `src/lib/solmind/auth` and `src/lib/solmind/supabase`.
+- Suggested Waypoint first-write security predecessor: one server-only trusted
+  application-origin configuration, one same-origin JSON request guard with a
+  16,384-byte bounded stream, and Unicode-scalar integrity at the existing
+  command-composition boundary. It adds no POST route or database caller.
 - Auth/RLS audit persistence for `/admin/access`: the bounded audit event model, the `public.solmind_record_audit_event` database writer function, the closed-allowlist app writer chain, and the runtime wiring.
 - Dormant verification and session database primitives: verification-challenge redemption and issuance, account-bound session creation, and the all-history chronology correction.
 - Dormant Explorer invitation foundations: the protected invitation-acceptance preparation helper, capacity and lock-key behavior, shared invited-identity provisioning, Guide-to-Explorer invitation issuance, replacement, revocation, and Explorer invitation acceptance with one `intake_pending` relationship.

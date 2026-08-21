@@ -242,6 +242,17 @@ function makeExecutor() {
   return { execute: vi.fn(async (call: unknown) => successFor(call)) };
 }
 
+function makeGuideDependencies() {
+  return {
+    principalSource: {
+      resolveAuthenticatedUser: vi.fn(async () => GUIDE_PRINCIPAL),
+    },
+    authSource: createInMemoryAuthSource(fixture()),
+    executor: makeExecutor(),
+    identifiers: IDENTIFIERS,
+  };
+}
+
 const GUIDE_CREATE_REQUEST = {
   kind: "guide.create_draft",
   relationshipId: RELATIONSHIP_ID,
@@ -471,6 +482,120 @@ describe("resolveSuggestedWaypointRequest - fail closed", () => {
       expect(executor.execute).not.toHaveBeenCalled();
     },
   );
+
+  it.each([
+    ["create destination U+2028", { ...GUIDE_CREATE_REQUEST, destination: "Protect one\u2028evening" }],
+    ["create why U+2029", { ...GUIDE_CREATE_REQUEST, why: "Create recovery\u2029space." }],
+    [
+      "create arrival signal U+2028",
+      { ...GUIDE_CREATE_REQUEST, arrivalSignals: ["One evening\u2028remains open."] },
+    ],
+    [
+      "save destination U+2029",
+      {
+        kind: "guide.save_draft",
+        relationshipId: RELATIONSHIP_ID,
+        operationId: OPERATION_ID,
+        suggestedWaypointId: SUGGESTION_ID,
+        expectedRevision: 1,
+        destination: "Protect one\u2029evening",
+        why: "Create dependable recovery space.",
+        arrivalSignals: ["One evening remains unscheduled."],
+      },
+    ],
+    [
+      "save why U+2028",
+      {
+        kind: "guide.save_draft",
+        relationshipId: RELATIONSHIP_ID,
+        operationId: OPERATION_ID,
+        suggestedWaypointId: SUGGESTION_ID,
+        expectedRevision: 1,
+        destination: "Protect one evening",
+        why: "Create recovery\u2028space.",
+        arrivalSignals: ["One evening remains unscheduled."],
+      },
+    ],
+    [
+      "save arrival signal U+2029",
+      {
+        kind: "guide.save_draft",
+        relationshipId: RELATIONSHIP_ID,
+        operationId: OPERATION_ID,
+        suggestedWaypointId: SUGGESTION_ID,
+        expectedRevision: 1,
+        destination: "Protect one evening",
+        why: "Create dependable recovery space.",
+        arrivalSignals: ["One evening\u2029remains open."],
+      },
+    ],
+  ])(
+    "denies Unicode line or paragraph separators in %s before auth IO",
+    async (_caseName, request) => {
+      const principalSource =
+        createInMemoryRequestAuthPrincipalSource(GUIDE_PRINCIPAL);
+      const principalSpy = vi.spyOn(
+        principalSource,
+        "resolveAuthenticatedUser",
+      );
+      const executor = makeExecutor();
+
+      await expect(
+        resolveSuggestedWaypointRequest(
+          {
+            principalSource,
+            authSource: createInMemoryAuthSource(fixture()),
+            executor,
+            identifiers: IDENTIFIERS,
+          },
+          request,
+        ),
+      ).resolves.toEqual({
+        ok: false,
+        data: null,
+        error: SUGGESTED_WAYPOINT_REQUEST_DENIED,
+      });
+      expect(principalSpy).not.toHaveBeenCalled();
+      expect(executor.execute).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["destination", "Protect \ud800 recovery"],
+    ["destination", "Protect \udc00 recovery"],
+    ["why", "Make space for \ud800 recovery."],
+    ["arrivalSignals", ["One \udc00 evening remains unscheduled."]],
+  ])(
+    "denies isolated surrogate text in %s before auth IO",
+    async (field, invalidValue) => {
+      const deps = makeGuideDependencies();
+      const request = {
+        ...GUIDE_CREATE_REQUEST,
+        [field]: invalidValue,
+      };
+
+      await expect(resolveSuggestedWaypointRequest(deps, request)).resolves.toEqual({
+        ok: false,
+        data: null,
+        error: SUGGESTED_WAYPOINT_REQUEST_DENIED,
+      });
+      expect(deps.principalSource.resolveAuthenticatedUser).not.toHaveBeenCalled();
+      expect(deps.executor.execute).not.toHaveBeenCalled();
+    },
+  );
+
+  it("accepts valid paired surrogate and ordinary four-byte scalar text", async () => {
+    const deps = makeGuideDependencies();
+    await expect(
+      resolveSuggestedWaypointRequest(deps, {
+        ...GUIDE_CREATE_REQUEST,
+        destination: "Protect one evening for recovery \ud83d\ude0a",
+        why: "Make space for recovery \ud83d\ude80.",
+        arrivalSignals: ["One evening remains unscheduled \ud83c\udf1f."],
+      }),
+    ).resolves.toMatchObject({ ok: true, error: null });
+    expect(deps.executor.execute).toHaveBeenCalledTimes(1);
+  });
 
   it("snapshots mutable client input before the first asynchronous boundary", async () => {
     let releasePrincipal!: (value: SupabaseAuthenticatedUser) => void;

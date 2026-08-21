@@ -168,6 +168,23 @@ server-derived request authority and exact role-safe projections. No current
 Suggested Waypoint UI invokes a human command, worker, provider, deployment, or
 real-user activation.
 
+`auth/trustedApplicationOrigin.ts` and
+`auth/sameOriginJsonWriteRequest.ts` are server-only first-write predecessors
+for both role lanes. The configuration owner accepts one absolute HTTP(S)
+origin from `SOLMIND_TRUSTED_APP_ORIGIN`; it never derives trust from Host,
+forwarded headers, Supabase, or a public environment variable. The request
+guard requires POST, exact JSON media type, exact Origin equality, Fetch
+Metadata `same-origin`, identity or absent content encoding, one canonical
+optional content length, a bounded 16,384-byte stream, strict UTF-8 without a
+BOM, and one deeply frozen plain JSON object. It performs no authentication,
+role choice, command parsing, RPC, or response projection. The existing
+server-only Suggested Waypoint request composition remains the command-shape
+owner and now rejects isolated UTF-16 surrogates plus Unicode line and
+paragraph separators so the byte cap and text validator describe one coherent
+accepted-input set. A later Guide or Explorer POST route must call this guard
+before auth or executor IO and must still use the existing request-dependency
+and composition owners.
+
 `suggestedWaypointDisplayDate.ts` is the shared browser-safe presentation owner
 for those authenticated Explorer and Guide list/detail components. It renders
 year-complete `en-US` dates and date-times in the viewer's local time zone. Its

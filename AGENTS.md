@@ -149,12 +149,24 @@ client-safe Guide/Explorer shapes, derives actor identity and role from the
 injected request-auth and record sources, rechecks Guide relationship access,
 injects only the server-derived actor, and maps transport detail to fixed
 browser-safe results. Guide-authored destinations are single-line at this
-boundary so accepted writes remain valid for both list projections. Initial
+boundary, and every bounded command text field rejects isolated UTF-16
+surrogates plus Unicode line and paragraph separators, so accepted writes
+remain valid for both list projections and the first-write byte cap. Initial
 suggestion/version identifiers come only from an
 injected server resolver, never a browser form. Keep the module and test off
 shared barrels. It does not itself own a route, Server Action, worker, UI,
 hosted scheduler, provider integration, deployment, or real-user activation;
 separately reviewed thin read routes call it.
+
+The server-only first-write security predecessors are
+`auth/trustedApplicationOrigin.ts` and
+`auth/sameOriginJsonWriteRequest.ts`. Keep them direct-import and off the auth
+barrel. Future Guide and Explorer command routes must use the exact trusted
+server origin, same-origin Fetch Metadata, strict JSON media/framing checks,
+and the bounded 16,384-byte stream before auth or executor IO. Never derive
+write authority from Host, forwarded headers, Supabase URL, or a
+`NEXT_PUBLIC_*` value. These helpers do not themselves authorize a POST route,
+choose a role action, authenticate a principal, or invoke the database.
 
 The banked concrete request-dependency owners are
 `suggestedWaypointRequestDependencies.ts` and
