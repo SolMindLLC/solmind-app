@@ -120,6 +120,376 @@ test.describe("authenticated Explorer Suggested Waypoint inbox", () => {
     await expectNoSeriousAxeViolations(page);
   });
 
+  test("does not write on open and marks the current version as read only after authoritative refresh", async ({ page }) => {
+    let read = false;
+    const posts: string[] = [];
+    let detailReads = 0;
+    await page.route(`**/explorer/waypoints/${UNREAD_ID}/detail`, (route) => {
+      detailReads += 1;
+      return fulfillJson(route, {
+        ok: true,
+        data: detail({
+          read,
+          read_at: read ? "2026-08-16T06:03:00.000Z" : null,
+        }),
+        error: null,
+      });
+    });
+    await page.route(`**/explorer/waypoints/${UNREAD_ID}/commands`, (route) => {
+      posts.push(route.request().postData() ?? "");
+      read = true;
+      return fulfillJson(route, {
+        ok: true,
+        outcome: "applied",
+        suggestedWaypointId: UNREAD_ID,
+        error: null,
+      });
+    });
+
+    await page.goto(`/explorer/waypoints/${UNREAD_ID}`);
+    await expect(page.getByRole("button", { name: "Mark as read" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Acknowledge receipt" })).toBeVisible();
+    expect(posts).toEqual([]);
+    expect(detailReads).toBe(1);
+
+    await page.getByRole("button", { name: "Mark as read" }).click();
+    await expect(page.getByText("✓ Read", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Marked as read" })).toBeDisabled();
+    await expect(page.getByText("Marked as read privately.", { exact: false })).toBeVisible();
+    expect(detailReads).toBe(2);
+    expect(posts).toHaveLength(1);
+    const body = JSON.parse(posts[0] ?? "{}") as Record<string, unknown>;
+    expect(Object.keys(body)).toEqual(["kind", "operationId", "versionId"]);
+    expect(body).toMatchObject({
+      kind: "explorer.mark_read",
+      versionId: VERSION_ID,
+    });
+    expect(body.operationId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+  });
+
+  test("acknowledges receipt deliberately without changing the private read state", async ({ page }) => {
+    let acknowledged = false;
+    const posts: string[] = [];
+    await page.route(`**/explorer/waypoints/${UNREAD_ID}/detail`, (route) =>
+      fulfillJson(route, {
+        ok: true,
+        data: detail({
+          receipt_acknowledged: acknowledged,
+          acknowledged_at: acknowledged ? "2026-08-16T06:04:00.000Z" : null,
+        }),
+        error: null,
+      }),
+    );
+    await page.route(`**/explorer/waypoints/${UNREAD_ID}/commands`, (route) => {
+      posts.push(route.request().postData() ?? "");
+      acknowledged = true;
+      return fulfillJson(route, {
+        ok: true,
+        outcome: "applied",
+        suggestedWaypointId: UNREAD_ID,
+        error: null,
+      });
+    });
+
+    await page.goto(`/explorer/waypoints/${UNREAD_ID}`);
+    await page.getByRole("button", { name: "Acknowledge receipt" }).click();
+    await expect(page.getByText("You acknowledged receipt Aug 16, 2026", { exact: false })).toBeVisible();
+    await expect(page.getByText("● Unread", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Receipt acknowledged" })).toBeDisabled();
+    expect(posts).toHaveLength(1);
+    const body = JSON.parse(posts[0] ?? "{}") as Record<string, unknown>;
+    expect(Object.keys(body)).toEqual([
+      "kind",
+      "operationId",
+      "expectedCurrentVersionId",
+    ]);
+    expect(body).toMatchObject({
+      kind: "explorer.acknowledge",
+      expectedCurrentVersionId: VERSION_ID,
+    });
+  });
+
+  test("suppresses a second action while one Explorer command is in flight", async ({ page }) => {
+    let releaseCommand!: () => void;
+    const commandGate = new Promise<void>((resolve) => {
+      releaseCommand = resolve;
+    });
+    let releaseRefresh!: () => void;
+    const refreshGate = new Promise<void>((resolve) => {
+      releaseRefresh = resolve;
+    });
+    let postCount = 0;
+    let read = false;
+    let detailReads = 0;
+    await page.route(`**/explorer/waypoints/${UNREAD_ID}/detail`, async (route) => {
+      detailReads += 1;
+      if (detailReads > 1) {
+        await refreshGate;
+      }
+      return fulfillJson(route, {
+        ok: true,
+        data: detail({
+          read,
+          read_at: read ? "2026-08-16T06:04:00.000Z" : null,
+        }),
+        error: null,
+      });
+    });
+    await page.route(`**/explorer/waypoints/${UNREAD_ID}/commands`, async (route) => {
+      postCount += 1;
+      await commandGate;
+      read = true;
+      return fulfillJson(route, {
+        ok: true,
+        outcome: "applied",
+        suggestedWaypointId: UNREAD_ID,
+        error: null,
+      });
+    });
+
+    await page.goto(`/explorer/waypoints/${UNREAD_ID}`);
+    const markRead = page.getByRole("button", { name: /Mark(?:ing)? as read/ });
+    await markRead.click();
+    await expect(markRead).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Acknowledge receipt" })).toBeDisabled();
+    await markRead.dispatchEvent("click");
+    expect(postCount).toBe(1);
+
+    releaseCommand();
+    await expect(markRead).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Acknowledge receipt" })).toBeDisabled();
+    await markRead.dispatchEvent("click");
+    expect(postCount).toBe(1);
+
+    read = true;
+    releaseRefresh();
+    await expect(page.getByText("✓ Read", { exact: true })).toBeVisible();
+    expect(postCount).toBe(1);
+  });
+
+  test("abandons a late Explorer command completion after leaving the detail", async ({ page }) => {
+    let releaseCommand!: () => void;
+    const commandGate = new Promise<void>((resolve) => {
+      releaseCommand = resolve;
+    });
+    let postCount = 0;
+    await page.route("**/explorer/waypoints/suggestions?**", (route) =>
+      fulfillJson(route, success([item()], null, 1)),
+    );
+    await page.route(`**/explorer/waypoints/${UNREAD_ID}/detail`, (route) =>
+      fulfillJson(route, { ok: true, data: detail(), error: null }),
+    );
+    await page.route(`**/explorer/waypoints/${UNREAD_ID}/commands`, async (route) => {
+      postCount += 1;
+      await commandGate;
+      try {
+        return await fulfillJson(route, {
+          ok: true,
+          outcome: "applied",
+          suggestedWaypointId: UNREAD_ID,
+          error: null,
+        });
+      } catch {
+        return undefined;
+      }
+    });
+
+    await page.goto(`/explorer/waypoints/${UNREAD_ID}`);
+    await page.getByRole("button", { name: "Mark as read" }).click();
+    await page.getByRole("link", { name: "Back to Waypoint Suggestions" }).click();
+    await expect(page).toHaveURL(/\/explorer\/waypoints\?focus=/);
+    await expect(page.getByRole("heading", { name: "Waypoint Suggestions" })).toBeVisible();
+
+    releaseCommand();
+    await page.waitForTimeout(50);
+    await expect(page).toHaveURL(/\/explorer\/waypoints\?focus=/);
+    await expect(page.getByText("Marked as read privately.", { exact: false })).toHaveCount(0);
+    expect(postCount).toBe(1);
+  });
+
+  test("retains the safe detail and offers read retry only after conclusive success plus failed refresh", async ({ page }) => {
+    let detailReads = 0;
+    let postCount = 0;
+    await page.route(`**/explorer/waypoints/${UNREAD_ID}/detail`, (route) => {
+      detailReads += 1;
+      return detailReads === 1
+        ? fulfillJson(route, { ok: true, data: detail(), error: null })
+        : fulfillJson(route, {
+            ok: false,
+            data: null,
+            error: "SolMind Waypoint Suggestions could not be loaded.",
+          });
+    });
+    await page.route(`**/explorer/waypoints/${UNREAD_ID}/commands`, (route) => {
+      postCount += 1;
+      return fulfillJson(route, {
+        ok: true,
+        outcome: "applied",
+        suggestedWaypointId: UNREAD_ID,
+        error: null,
+      });
+    });
+
+    await page.goto(`/explorer/waypoints/${UNREAD_ID}`);
+    await page.getByRole("button", { name: "Mark as read" }).click();
+    await expect(page.getByRole("heading", { name: "Protect one evening each week for recovery" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Refresh current status" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Retry exact request" })).toHaveCount(0);
+    await expect(page.getByText("do not submit the action again", { exact: false })).toBeVisible();
+    expect(postCount).toBe(1);
+  });
+
+  test("settles transport uncertainty through the authoritative acknowledgement read without another post", async ({ page }) => {
+    let acknowledged = false;
+    let postCount = 0;
+    let detailReads = 0;
+    let releaseStatusCheck!: () => void;
+    const statusCheckGate = new Promise<void>((resolve) => {
+      releaseStatusCheck = resolve;
+    });
+    await page.route(`**/explorer/waypoints/${UNREAD_ID}/detail`, async (route) => {
+      detailReads += 1;
+      if (detailReads > 1) {
+        await statusCheckGate;
+      }
+      return fulfillJson(route, {
+        ok: true,
+        data: detail({
+          receipt_acknowledged: acknowledged,
+          acknowledged_at: acknowledged ? "2026-08-16T06:05:00.000Z" : null,
+        }),
+        error: null,
+      });
+    });
+    await page.route(`**/explorer/waypoints/${UNREAD_ID}/commands`, (route) => {
+      postCount += 1;
+      acknowledged = true;
+      return route.fulfill({ status: 503, body: "unavailable" });
+    });
+
+    await page.goto(`/explorer/waypoints/${UNREAD_ID}`);
+    await page.getByRole("button", { name: "Acknowledge receipt" }).click();
+    await expect(page.getByRole("heading", { name: "Action status needs checking" })).toBeVisible();
+    const checkStatus = page.getByRole("button", { name: "Check current status" });
+    const retry = page.getByRole("button", { name: "Retry exact request" });
+    await checkStatus.click();
+    await expect(checkStatus).toBeDisabled();
+    await expect(retry).toBeDisabled();
+    await retry.dispatchEvent("click");
+    expect(postCount).toBe(1);
+    releaseStatusCheck();
+    await expect(page.getByText("Receipt acknowledged.", { exact: false })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Receipt acknowledged" })).toBeDisabled();
+    expect(postCount).toBe(1);
+  });
+
+  test("retries one transport-uncertain request with byte-identical operation identity", async ({ page }) => {
+    let read = false;
+    const posts: string[] = [];
+    await page.route(`**/explorer/waypoints/${UNREAD_ID}/detail`, (route) =>
+      fulfillJson(route, {
+        ok: true,
+        data: detail({
+          read,
+          read_at: read ? "2026-08-16T06:06:00.000Z" : null,
+        }),
+        error: null,
+      }),
+    );
+    await page.route(`**/explorer/waypoints/${UNREAD_ID}/commands`, (route) => {
+      posts.push(route.request().postData() ?? "");
+      if (posts.length === 1) {
+        return route.fulfill({ status: 503, body: "unavailable" });
+      }
+      read = true;
+      return fulfillJson(route, {
+        ok: true,
+        outcome: "idempotent",
+        suggestedWaypointId: UNREAD_ID,
+        error: null,
+      });
+    });
+
+    await page.goto(`/explorer/waypoints/${UNREAD_ID}`);
+    await page.getByRole("button", { name: "Mark as read" }).click();
+    await page.getByRole("button", { name: "Retry exact request" }).click();
+    await expect(page.getByText("✓ Read", { exact: true })).toBeVisible();
+    expect(posts).toHaveLength(2);
+    expect(posts[1]).toBe(posts[0]);
+  });
+
+  test("requires review of a changed delivered version after a stale acknowledgement", async ({ page }) => {
+    let currentVersionId = VERSION_ID;
+    await page.route(`**/explorer/waypoints/${UNREAD_ID}/detail`, (route) =>
+      fulfillJson(route, {
+        ok: true,
+        data: detail({ current_version_id: currentVersionId }),
+        error: null,
+      }),
+    );
+    await page.route(`**/explorer/waypoints/${UNREAD_ID}/commands`, (route) => {
+      currentVersionId = OTHER_VERSION_ID;
+      return fulfillJson(route, {
+        ok: false,
+        outcome: "stale",
+        suggestedWaypointId: null,
+        error: null,
+      });
+    });
+
+    await page.goto(`/explorer/waypoints/${UNREAD_ID}`);
+    await page.getByRole("button", { name: "Acknowledge receipt" }).click();
+    await expect(page.getByText("updated. Review the current version", { exact: false })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Acknowledge receipt" })).toBeEnabled();
+    await expect(page.getByText("Receipt acknowledged.", { exact: false })).toHaveCount(0);
+  });
+
+  test("requires a read-only refresh when a stale version has not appeared yet", async ({ page }) => {
+    let postCount = 0;
+    await page.route(`**/explorer/waypoints/${UNREAD_ID}/detail`, (route) =>
+      fulfillJson(route, { ok: true, data: detail(), error: null }),
+    );
+    await page.route(`**/explorer/waypoints/${UNREAD_ID}/commands`, (route) => {
+      postCount += 1;
+      return fulfillJson(route, {
+        ok: false,
+        outcome: "stale",
+        suggestedWaypointId: null,
+        error: null,
+      });
+    });
+
+    await page.goto(`/explorer/waypoints/${UNREAD_ID}`);
+    await page.getByRole("button", { name: "Acknowledge receipt" }).click();
+    await expect(page.getByText("current version has not appeared yet", { exact: false })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Refresh current status" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Acknowledge receipt" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Retry exact request" })).toHaveCount(0);
+    expect(postCount).toBe(1);
+  });
+
+  test("maps a valid wrong-target success to value-free failure without state mutation", async ({ page }) => {
+    await page.route(`**/explorer/waypoints/${UNREAD_ID}/detail`, (route) =>
+      fulfillJson(route, { ok: true, data: detail(), error: null }),
+    );
+    await page.route(`**/explorer/waypoints/${UNREAD_ID}/commands`, (route) =>
+      fulfillJson(route, {
+        ok: true,
+        outcome: "applied",
+        suggestedWaypointId: READ_ID,
+        error: null,
+      }),
+    );
+
+    await page.goto(`/explorer/waypoints/${UNREAD_ID}`);
+    await page.getByRole("button", { name: "Mark as read" }).click();
+    await expect(page.getByText("could not be completed. Nothing was changed.", { exact: false })).toBeVisible();
+    await expect(page.getByText("● Unread", { exact: true })).toBeVisible();
+    await expect(page.locator("body")).not.toContainText(READ_ID);
+  });
+
   test("renders denied and failed detail states without suggestion leakage and retries safely", async ({ page }) => {
     let mode: "denied" | "failed" | "success" = "denied";
     await page.route(`**/explorer/waypoints/${UNREAD_ID}/detail`, (route) => {

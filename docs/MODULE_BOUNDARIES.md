@@ -95,8 +95,10 @@ Route files should not:
 interactive S01 client boundary without owning its state transitions.
 
 `src/app/explorer/waypoints/page.tsx` and its suggestion-scoped detail page are
-thin Server Components for the authenticated read-only S03 Explorer inbox and
-detail. They must not import or extend `ExplorerExperiencePrototype.tsx`.
+thin Server Components for the authenticated S03 Explorer inbox and detail.
+The detail's explicit engagement actions use a separate same-origin command
+Route Handler; the Server Components own no command state or authority. They
+must not import or extend `ExplorerExperiencePrototype.tsx`.
 
 `src/app/guide/explorers/avery/waypoint-suggestions/page.tsx` is the paired thin
 Server Component for the deterministic Human Guide review surface. It composes
@@ -152,10 +154,12 @@ projection returned by `createNonLiveGuideProjection`.
 - `guideSuggestedWaypointFixtures.ts` constructs Guide-only draft, pending,
   open, and acknowledged examples through the pure domain. It must not emulate
   passive Explorer telemetry or import Explorer-private fixture observations.
-- `ExplorerSuggestedWaypointInbox.tsx` and
-  `ExplorerSuggestedWaypointDetail.tsx` own authenticated read presentation
-  only. Their browser contracts admit exact delivered-current-version and
-  Explorer-private engagement fields, then reject Guide-only or inferred data.
+- `ExplorerSuggestedWaypointInbox.tsx` owns authenticated read presentation.
+  `ExplorerSuggestedWaypointDetail.tsx` also owns explicit Mark as read and
+  Acknowledge receipt interaction and recovery over the separately owned
+  command client and route. Opening the detail remains write-free. Their
+  browser contracts admit exact delivered-current-version and Explorer-private
+  engagement fields, then reject Guide-only or inferred data.
 - `GuideSuggestedWaypointRelationshipEntry.tsx`,
   `GuideSuggestedWaypointRelationshipList.tsx`, and
   `GuideSuggestedWaypointDetail.tsx` own authenticated Guide read presentation
@@ -166,9 +170,11 @@ Action, Route Handler, cookie, browser storage, notification, or real Guide
 record. The authenticated S03 components use thin same-origin routes over
 server-derived request authority and exact role-safe projections. The Guide
 detail invokes only Pull Back through the separately owned Guide command Route
-Handler. No current Suggested Waypoint UI invokes Guide save, schedule,
-correction, withdrawal, an Explorer command, worker, provider, deployment, or
-real-user activation.
+Handler. The Explorer detail invokes only explicit Mark as read and Acknowledge
+receipt through its separately owned command Route Handler. No current
+Suggested Waypoint UI invokes Guide save, schedule, correction, withdrawal,
+Explorer comparison/adoption/response commands, a worker, provider, deployment,
+or real-user activation.
 
 `auth/trustedApplicationOrigin.ts` and
 `auth/sameOriginJsonWriteRequest.ts` are server-only first-write predecessors
@@ -221,6 +227,16 @@ identity on retry, checks the authoritative detail after uncertainty, and
 retries only the read after a conclusive command. Neither client owner may
 render, announce, log, or place the pending-version selector in a URL.
 
+`suggestedWaypointExplorerCommandClient.ts` is the bounded Explorer role-lane
+caller for explicit Mark as read and Acknowledge receipt. It constructs one
+suggestion-scoped request from the already loaded current-version detail and
+sends no actor, role, relationship, Guide policy, or private reaction. The
+detail permits one operation at a time, retains byte-identical requests across
+transport-uncertain retry, requires authoritative detail settlement before it
+announces completion, and ignores late generations after unmount or route
+change. Mark as read remains Explorer-private; only deliberate receipt
+acknowledgement is Guide-visible. Opening the detail never invokes the route.
+
 Dormant `PRJ01_V-WS05-WI022-S02` adds a database-only Suggested Waypoint
 boundary under `supabase/migrations/` and `supabase/tests/`. Eight owners keep
 Guide draft content, pending outbound content, immutable delivered versions,
@@ -265,8 +281,9 @@ and pending-version identifiers are supplied only by an injected server
 resolver. The module returns executor-validated role-safe payload data or one
 of two fixed browser-safe errors. It remains off the shared barrel and owns no
 route, Server Action, UI, worker, scheduler, provider, deployment, or real-user
-activation. Separately reviewed thin Route Handlers build its read-only cookie
-adapter and invoke only the closed Guide or Explorer read operations.
+activation. Separately reviewed thin Route Handlers build its cookie adapter
+and invoke only the closed Guide/Explorer read operations or their exact
+role-lane command subsets.
 
 The banked S03 read layer owns the Guide relationship selector, Guide
 relationship-scoped list/detail, and Explorer list/detail. Route input is
@@ -608,9 +625,19 @@ schedule-send, or Pull-Back RPC. Final projection revalidates the exact
 function-bound row and returns only `ok`, `outcome`, `suggestedWaypointId`, and
 `error`, with expected failures value-free. The route does not expose policy,
 deadline, lifecycle, version, relationship, profile, actor, audit, or private
-Explorer values. The Guide detail calls only Pull Back; it adds no Guide
-save, schedule, correction, or withdrawal caller, delivery worker or
-scheduler, Explorer command, provider, deployment, or real-user activation.
+Explorer values. The Guide detail calls only Pull Back. The Explorer detail
+separately calls only Mark as read and Acknowledge receipt through:
+
+```text
+src/app/explorer/waypoints/[suggestedWaypointId]/commands/route.ts
+```
+
+That route preserves the same body-before-auth ordering, derives Explorer
+identity and its single active Guide relationship on the server, injects the
+path suggestion once, and projects only the shared value-free command result.
+Together the two role lanes add no Guide save, schedule, correction, or
+withdrawal caller, delivery worker or scheduler, Explorer comparison/adoption/
+response command, provider, deployment, or real-user activation.
 
 The S03 Guide entry boundary also owns one feature-specific Suggested Waypoint
 relationship selector. Its forward-only migration exposes only active
