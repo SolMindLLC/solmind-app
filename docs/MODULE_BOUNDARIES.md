@@ -160,21 +160,24 @@ projection returned by `createNonLiveGuideProjection`.
   command client and route. Opening the detail remains write-free. Their
   browser contracts admit exact delivered-current-version and Explorer-private
   engagement fields, then reject Guide-only or inferred data.
-- `GuideSuggestedWaypointRelationshipEntry.tsx`,
-  `GuideSuggestedWaypointRelationshipList.tsx`, and
-  `GuideSuggestedWaypointDetail.tsx` own authenticated Guide read presentation
-  only and remain relationship-scoped.
+- `GuideSuggestedWaypointRelationshipEntry.tsx` and
+  `GuideSuggestedWaypointRelationshipList.tsx` own authenticated Guide read
+  presentation only. `GuideSuggestedWaypointDetail.tsx` remains relationship-
+  scoped and additionally owns complete-draft edit/save/review/schedule and
+  pending-version Pull Back interaction over the separately owned client and
+  Route Handler.
 
 The retained fixture UIs do not access a provider, database owner, Server
 Action, Route Handler, cookie, browser storage, notification, or real Guide
 record. The authenticated S03 components use thin same-origin routes over
 server-derived request authority and exact role-safe projections. The Guide
-detail invokes only Pull Back through the separately owned Guide command Route
-Handler. The Explorer detail invokes only explicit Mark as read and Acknowledge
-receipt through its separately owned command Route Handler. No current
-Suggested Waypoint UI invokes Guide save, schedule, correction, withdrawal,
-Explorer comparison/adoption/response commands, a worker, provider, deployment,
-or real-user activation.
+detail invokes save draft and schedule send for an existing complete draft plus
+Pull Back for a pending version through the separately owned Guide command
+Route Handler. The Explorer detail invokes only explicit Mark as read and
+Acknowledge receipt through its separately owned command Route Handler. No
+current Suggested Waypoint UI invokes blank-draft compose, delete, correction,
+withdrawal, Explorer comparison/adoption/response commands, a worker, provider,
+deployment, or real-user activation.
 
 `auth/trustedApplicationOrigin.ts` and
 `auth/sameOriginJsonWriteRequest.ts` are server-only first-write predecessors
@@ -216,11 +219,18 @@ copy and recovery path still distinguish expected concurrency from a value-free
 denial or operational failure; the pure operation owner carries only their
 shared focus and retry semantics.
 
-`suggestedWaypointGuideCommandClient.ts` is the first role-lane command caller.
-It owns only the exact Guide Pull Back body, relationship-scoped route URL,
-closed permitted outcomes, same-origin fetch, and conclusive versus transport-
-uncertain classification. It creates no authority and receives no actor, role,
-policy, deadline, lifecycle, or Explorer value from the browser. The companion
+`suggestedWaypointGuideDraftContentBrowserContract.ts` is the browser-safe
+content owner shared by Guide detail parsing and the server command-route body
+contract. It snapshots plain data once, then validates normalized single-line
+destination, intentionally multiline why, and one to eight unique bounded
+arrival signals. It owns no request authority, persistence, or lifecycle rule.
+
+`suggestedWaypointGuideCommandClient.ts` is the Guide role-lane command caller.
+It owns exact save-draft, schedule-send, and Pull Back bodies, the relationship-
+scoped route URL, closed action-specific outcomes, same-origin fetch, and
+conclusive versus transport-uncertain classification. It creates no authority
+and receives no actor, role, policy, deadline, lifecycle, or Explorer value
+from the browser. The companion
 `suggestedWaypointPullBackCountdown.ts` is display-only. The Guide detail owns
 the role result and recovery copy, preserves exact request bytes and operation
 identity on retry, checks the authoritative detail after uncertainty, and
@@ -625,8 +635,9 @@ schedule-send, or Pull-Back RPC. Final projection revalidates the exact
 function-bound row and returns only `ok`, `outcome`, `suggestedWaypointId`, and
 `error`, with expected failures value-free. The route does not expose policy,
 deadline, lifecycle, version, relationship, profile, actor, audit, or private
-Explorer values. The Guide detail calls only Pull Back. The Explorer detail
-separately calls only Mark as read and Acknowledge receipt through:
+Explorer values. The Guide detail calls save draft, schedule send, and Pull
+Back. The Explorer detail separately calls only Mark as read and Acknowledge
+receipt through:
 
 ```text
 src/app/explorer/waypoints/[suggestedWaypointId]/commands/route.ts
@@ -645,9 +656,9 @@ returns only `delivered`, `not_delivered`, or `failed`. It does not discover due
 work, scan protected tables, generate or rotate retry identity, queue, claim,
 lease, poll, schedule, run continuously, or activate a hosted runtime.
 Together the two browser role lanes do not call that invoker and add no Guide
-save, schedule, correction, or withdrawal caller, delivery scheduler, Explorer
-comparison/adoption/response command, provider, deployment, or real-user
-activation.
+blank-draft compose, delete, correction, or withdrawal caller, delivery
+scheduler, Explorer comparison/adoption/response command, provider, deployment,
+or real-user activation.
 
 The S03 Guide entry boundary also owns one feature-specific Suggested Waypoint
 relationship selector. Its forward-only migration exposes only active

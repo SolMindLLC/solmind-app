@@ -11,6 +11,7 @@ import {
   parseSuggestedWaypointGuideListBrowserResult,
   type SuggestedWaypointGuideListItem,
 } from "./suggestedWaypointGuideListBrowserContract";
+import { snapshotSuggestedWaypointGuideDraftContent } from "./suggestedWaypointGuideDraftContentBrowserContract";
 
 export const SUGGESTED_WAYPOINT_GUIDE_DETAIL_DENIED =
   SUGGESTED_WAYPOINT_GUIDE_LIST_DENIED;
@@ -102,55 +103,6 @@ function hasExactKeys(
   );
 }
 
-function hasForbiddenControl(value: string): boolean {
-  return Array.from(value).some((character) => {
-    const code = character.codePointAt(0) ?? 0;
-    return (
-      code === 0 ||
-      (code >= 1 && code <= 8) ||
-      (code >= 11 && code <= 12) ||
-      (code >= 14 && code <= 31) ||
-      (code >= 127 && code <= 159)
-    );
-  });
-}
-
-function isBoundedText(value: unknown, maximum: number): value is string {
-  if (typeof value !== "string") {
-    return false;
-  }
-  const length = Array.from(value).length;
-  return (
-    length >= 1 &&
-    length <= maximum &&
-    value === value.trim() &&
-    value === value.normalize("NFC") &&
-    !value.includes("\r") &&
-    !hasForbiddenControl(value)
-  );
-}
-
-function isNullableText(value: unknown, maximum: number): value is string | null {
-  return value === null || isBoundedText(value, maximum);
-}
-
-function isNullableSignals(value: unknown): value is readonly string[] | null {
-  if (value === null) {
-    return true;
-  }
-  if (!Array.isArray(value) || value.length < 1 || value.length > 8) {
-    return false;
-  }
-  const seen = new Set<string>();
-  for (const signal of value) {
-    if (!isBoundedText(signal, 240) || seen.has(signal)) {
-      return false;
-    }
-    seen.add(signal);
-  }
-  return true;
-}
-
 function listProjection(value: Record<string, unknown>): SuggestedWaypointGuideListItem | null {
   const projected: Record<string, unknown> = {};
   for (const key of LIST_KEYS) {
@@ -171,12 +123,6 @@ function parseDetail(value: unknown): SuggestedWaypointGuideDetail | null {
   const base = listProjection(value);
   if (
     base === null ||
-    !isNullableText(value.draft_or_pending_destination, 160) ||
-    !isNullableText(value.draft_or_pending_why, 1000) ||
-    !isNullableSignals(value.draft_or_pending_arrival_signals) ||
-    !isNullableText(value.delivered_destination, 160) ||
-    !isNullableText(value.delivered_why, 1000) ||
-    !isNullableSignals(value.delivered_arrival_signals) ||
     (value.pending_version_id !== null && !isUuid(value.pending_version_id)) ||
     (value.policy_key !== null &&
       value.policy_key !== "suggested_waypoint_send_grace_seconds") ||
@@ -207,9 +153,23 @@ function parseDetail(value: unknown): SuggestedWaypointGuideDetail | null {
     value.delivered_destination === null &&
     value.delivered_why === null &&
     value.delivered_arrival_signals === null;
+  const privateContent = privateContentPresent
+    ? snapshotSuggestedWaypointGuideDraftContent({
+        destination: value.draft_or_pending_destination,
+        why: value.draft_or_pending_why,
+        arrivalSignals: value.draft_or_pending_arrival_signals,
+      })
+    : null;
+  const deliveredContent = deliveredContentPresent
+    ? snapshotSuggestedWaypointGuideDraftContent({
+        destination: value.delivered_destination,
+        why: value.delivered_why,
+        arrivalSignals: value.delivered_arrival_signals,
+      })
+    : null;
   const deliveredContentCoherent =
     (base.current_version_id === null && deliveredContentAbsent) ||
-    (base.current_version_id !== null && deliveredContentPresent);
+    (base.current_version_id !== null && deliveredContentPresent && deliveredContent?.ok === true);
   const policyPresent =
     value.policy_key === "suggested_waypoint_send_grace_seconds" &&
     value.policy_version !== null &&
@@ -220,6 +180,7 @@ function parseDetail(value: unknown): SuggestedWaypointGuideDetail | null {
     value.effective_seconds === null;
 
   const coherent =
+    (privateContentAbsent || privateContent?.ok === true) &&
     deliveredContentCoherent &&
     (base.authoring_mode === "draft"
       ? value.pending_version_id === null && privateContentPresent && policyAbsent
@@ -235,16 +196,16 @@ function parseDetail(value: unknown): SuggestedWaypointGuideDetail | null {
 
   return Object.freeze({
     ...base,
-    draft_or_pending_destination: value.draft_or_pending_destination as string | null,
-    draft_or_pending_why: value.draft_or_pending_why as string | null,
-    draft_or_pending_arrival_signals: value.draft_or_pending_arrival_signals === null
-      ? null
-      : Object.freeze([...value.draft_or_pending_arrival_signals] as string[]),
-    delivered_destination: value.delivered_destination as string | null,
-    delivered_why: value.delivered_why as string | null,
-    delivered_arrival_signals: value.delivered_arrival_signals === null
-      ? null
-      : Object.freeze([...value.delivered_arrival_signals] as string[]),
+    draft_or_pending_destination: privateContent?.ok ? privateContent.data.destination : null,
+    draft_or_pending_why: privateContent?.ok ? privateContent.data.why : null,
+    draft_or_pending_arrival_signals: privateContent?.ok
+      ? privateContent.data.arrivalSignals
+      : null,
+    delivered_destination: deliveredContent?.ok ? deliveredContent.data.destination : null,
+    delivered_why: deliveredContent?.ok ? deliveredContent.data.why : null,
+    delivered_arrival_signals: deliveredContent?.ok
+      ? deliveredContent.data.arrivalSignals
+      : null,
     pending_version_id: value.pending_version_id as string | null,
     policy_key: value.policy_key as SuggestedWaypointGuideDetail["policy_key"],
     policy_version: value.policy_version as number | null,

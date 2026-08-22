@@ -88,6 +88,7 @@ test.describe("Guide Suggested Waypoint detail", () => {
     await page.goto(detailUrl);
     await expect(page.getByRole("heading", { name: "Guide-only draft" })).toBeVisible();
     await expect(page.getByText("One evening stays unscheduled.")).toBeVisible();
+    await expect(page.getByText("Blank-draft compose, delete, correction, and withdrawal remain separately gated.")).toBeVisible();
 
     state = "pending";
     await page.reload();
@@ -132,6 +133,164 @@ test.describe("Guide Suggested Waypoint detail", () => {
     await page.getByRole("button", { name: "Try again" }).click();
     await expect(page.getByRole("heading", { name: "Guide-only draft" })).toBeVisible();
     await expectNoSeriousAxeViolations(page);
+  });
+
+  test("edits and saves a complete Guide-only draft through an authoritative refresh", async ({ page }) => {
+    let data = { ...base };
+    const bodies: unknown[] = [];
+    await page.route(detailPattern, (route) => fulfillJson(route, { ok: true, data, error: null }));
+    await page.route(commandPattern, async (route) => {
+      const body = JSON.parse(route.request().postData() ?? "{}");
+      bodies.push(body);
+      data = {
+        ...data,
+        authoring_revision: data.authoring_revision + 1,
+        destination_preview: body.destination,
+        draft_or_pending_destination: body.destination,
+        draft_or_pending_why: body.why,
+        draft_or_pending_arrival_signals: body.arrivalSignals,
+      };
+      return fulfillJson(route, { ok: true, outcome: "applied", suggestedWaypointId: SUGGESTION_ID, error: null });
+    });
+
+    await page.goto(detailUrl);
+    await page.getByRole("button", { name: "Edit draft" }).click();
+    await page.getByLabel("Possible Waypoint destination").fill("Protect two quiet evenings each week");
+    await page.getByLabel("Why this may help").fill("Two protected evenings may make recovery more dependable.\nReview after two weeks.");
+    await page.getByLabel("Arrival signal 1").fill("Two evenings stay unscheduled.");
+    await page.getByRole("button", { name: "Save changes" }).click();
+
+    await expect(page.getByRole("heading", { name: "Guide-only draft" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Protect two quiet evenings each week" })).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "saved and confirmed" })).toBeFocused();
+    expect(bodies).toEqual([{
+      kind: "guide.save_draft",
+      operationId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+      suggestedWaypointId: SUGGESTION_ID,
+      expectedRevision: 2,
+      destination: "Protect two quiet evenings each week",
+      why: "Two protected evenings may make recovery more dependable.\nReview after two weeks.",
+      arrivalSignals: ["Two evenings stay unscheduled."],
+    }]);
+    await expectNoSeriousAxeViolations(page);
+  });
+
+  test("blocks invalid draft content locally and sends nothing", async ({ page }) => {
+    let commandCount = 0;
+    await page.route(detailPattern, (route) => fulfillJson(route, { ok: true, data: base, error: null }));
+    await page.route(commandPattern, (route) => {
+      commandCount += 1;
+      return fulfillJson(route, { ok: true, outcome: "applied", suggestedWaypointId: SUGGESTION_ID, error: null });
+    });
+    await page.goto(detailUrl);
+    await page.getByRole("button", { name: "Edit draft" }).click();
+    await page.getByLabel("Possible Waypoint destination").fill("");
+    await expect(page.getByText("Use one normalized line between 1 and 160 characters.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Save changes" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Save and close" })).toBeDisabled();
+    await page.getByRole("button", { name: "Cancel editing" }).click();
+    await expect(page.getByRole("button", { name: "Review before sending" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Protect one evening each week for recovery" })).toBeVisible();
+    expect(commandCount).toBe(0);
+  });
+
+  test("saves and closes only after the authoritative draft confirms the exact content", async ({ page }) => {
+    let data = { ...base };
+    const bodies: unknown[] = [];
+    await page.route(detailPattern, (route) => fulfillJson(route, { ok: true, data, error: null }));
+    await page.route(commandPattern, async (route) => {
+      const body = JSON.parse(route.request().postData() ?? "{}");
+      bodies.push(body);
+      data = {
+        ...data,
+        authoring_revision: 3,
+        destination_preview: body.destination,
+        draft_or_pending_destination: body.destination,
+      };
+      return fulfillJson(route, { ok: true, outcome: "applied", suggestedWaypointId: SUGGESTION_ID, error: null });
+    });
+
+    await page.goto(detailUrl);
+    await page.getByRole("button", { name: "Edit draft" }).click();
+    await page.getByLabel("Possible Waypoint destination").fill("Protect Saturday evening for recovery");
+    await page.getByRole("button", { name: "Save and close" }).click();
+    await page.waitForURL(new RegExp(`/guide/waypoint-suggestions/${RELATIONSHIP_ID}(?:\\?.*)?$`, "u"));
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toMatchObject({
+      kind: "guide.save_draft",
+      expectedRevision: 2,
+      destination: "Protect Saturday evening for recovery",
+    });
+  });
+
+  test("reviews then schedules the clean authoritative draft without client policy authority", async ({ page }) => {
+    let data: typeof base | Record<string, unknown> = { ...base };
+    const bodies: unknown[] = [];
+    await page.route(detailPattern, (route) => fulfillJson(route, { ok: true, data, error: null }));
+    await page.route(commandPattern, async (route) => {
+      const body = JSON.parse(route.request().postData() ?? "{}");
+      bodies.push(body);
+      data = {
+        ...base,
+        authoring_mode: "pending",
+        authoring_revision: 3,
+        channel_category: "pending",
+        pending_deadline_at: "2099-08-21T17:05:00.000Z",
+        pull_back_available: true,
+        pending_version_id: VERSION_ID,
+        policy_key: "suggested_waypoint_send_grace_seconds",
+        policy_version: 3,
+        effective_seconds: 300,
+      };
+      return fulfillJson(route, { ok: true, outcome: "applied", suggestedWaypointId: SUGGESTION_ID, error: null });
+    });
+
+    await page.goto(detailUrl);
+    await page.getByRole("button", { name: "Review before sending" }).click();
+    await expect(page.getByRole("heading", { name: "Review before sending" })).toBeVisible();
+    await expect(page.getByText("The Explorer will not see the suggestion immediately.")).toBeVisible();
+    await page.getByRole("button", { name: "Schedule send" }).click();
+    await expect(page.getByRole("heading", { name: "Pending-send window" })).toBeVisible();
+    expect(bodies).toEqual([{
+      kind: "guide.schedule_send",
+      operationId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+      suggestedWaypointId: SUGGESTION_ID,
+      expectedRevision: 2,
+    }]);
+    expect(JSON.stringify(bodies)).not.toContain("policy");
+    expect(JSON.stringify(bodies)).not.toContain(VERSION_ID);
+  });
+
+  test("checks an uncertain save and retries identical retained bytes only after unchanged detail", async ({ page }) => {
+    let data = { ...base };
+    let commandCount = 0;
+    const bodies: string[] = [];
+    await page.route(detailPattern, (route) => fulfillJson(route, { ok: true, data, error: null }));
+    await page.route(commandPattern, async (route) => {
+      commandCount += 1;
+      bodies.push(route.request().postData() ?? "");
+      if (commandCount === 1) return route.fulfill({ status: 503, body: "" });
+      const body = JSON.parse(bodies[1] ?? "{}");
+      data = {
+        ...data,
+        authoring_revision: 3,
+        destination_preview: body.destination,
+        draft_or_pending_destination: body.destination,
+      };
+      return fulfillJson(route, { ok: true, outcome: "idempotent", suggestedWaypointId: SUGGESTION_ID, error: null });
+    });
+
+    await page.goto(detailUrl);
+    await page.getByRole("button", { name: "Edit draft" }).click();
+    await page.getByLabel("Possible Waypoint destination").fill("Protect Friday evening for recovery");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByRole("heading", { name: "Save status needs confirmation" })).toBeVisible();
+    await page.getByRole("button", { name: "Check current status" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "may retry the exact same Save request" })).toBeVisible();
+    await page.getByRole("button", { name: "Retry same request" }).click();
+    await expect(page.getByRole("heading", { name: "Protect Friday evening for recovery" })).toBeVisible();
+    expect(commandCount).toBe(2);
+    expect(bodies[1]).toBe(bodies[0]);
   });
 
   test("pulls a pending version back and refreshes the authoritative Guide-only draft", async ({ page }) => {

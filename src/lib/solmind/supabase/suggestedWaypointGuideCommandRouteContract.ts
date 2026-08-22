@@ -16,6 +16,7 @@ import {
   type SuggestedWaypointCommandExpectedOutcome,
 } from "@/lib/solmind/suggestedWaypointCommandBrowserContract";
 import { isSuggestedWaypointRelationshipId } from "@/lib/solmind/suggestedWaypointRelationshipBrowserContract";
+import { snapshotSuggestedWaypointGuideDraftContent } from "@/lib/solmind/suggestedWaypointGuideDraftContentBrowserContract";
 import {
   SUGGESTED_WAYPOINT_REQUEST_DENIED,
   type SuggestedWaypointClientRequest,
@@ -134,78 +135,6 @@ function isSafeRevision(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
 }
 
-function hasForbiddenControl(value: string): boolean {
-  for (const character of value) {
-    const code = character.codePointAt(0) ?? 0;
-    if (
-      code === 0 ||
-      (code >= 1 && code <= 8) ||
-      (code >= 11 && code <= 12) ||
-      (code >= 14 && code <= 31) ||
-      (code >= 127 && code <= 159) ||
-      code === 0x2028 ||
-      code === 0x2029
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function hasIsolatedSurrogate(value: string): boolean {
-  for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index);
-    if (code >= 0xd800 && code <= 0xdbff) {
-      const next = value.charCodeAt(index + 1);
-      if (!(next >= 0xdc00 && next <= 0xdfff)) {
-        return true;
-      }
-      index += 1;
-    } else if (code >= 0xdc00 && code <= 0xdfff) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function isBoundedText(
-  value: unknown,
-  minimum: number,
-  maximum: number,
-  singleLine = false,
-): value is string {
-  if (typeof value !== "string") {
-    return false;
-  }
-  const length = Array.from(value).length;
-  return (
-    length >= minimum &&
-    length <= maximum &&
-    value === value.trim() &&
-    value === value.normalize("NFC") &&
-    !value.includes("\r") &&
-    (!singleLine || !value.includes("\n")) &&
-    !hasIsolatedSurrogate(value) &&
-    !hasForbiddenControl(value)
-  );
-}
-
-function snapshotArrivalSignals(value: unknown): readonly string[] | null {
-  if (!Array.isArray(value) || value.length < 1 || value.length > 8) {
-    return null;
-  }
-  const snapshot: string[] = [];
-  const seen = new Set<string>();
-  for (const signal of value) {
-    if (!isBoundedText(signal, 1, 240) || seen.has(signal)) {
-      return null;
-    }
-    seen.add(signal);
-    snapshot.push(signal);
-  }
-  return Object.freeze(snapshot);
-}
-
 function functionForKind(
   kind: SuggestedWaypointGuideCommandKind,
 ): SuggestedWaypointGuideCommandRpcFunction {
@@ -289,11 +218,13 @@ export function parseSuggestedWaypointGuideCommandRouteInput(
 
   let request: SuggestedWaypointGuideCommandRequest;
   if (kind === "guide.create_draft" || kind === "guide.save_draft") {
-    const arrivalSignals = snapshotArrivalSignals(body.arrivalSignals);
+    const content = snapshotSuggestedWaypointGuideDraftContent({
+      destination: body.destination,
+      why: body.why,
+      arrivalSignals: body.arrivalSignals,
+    });
     if (
-      arrivalSignals === null ||
-      !isBoundedText(body.destination, 1, 160, true) ||
-      !isBoundedText(body.why, 1, 1000) ||
+      !content.ok ||
       (kind === "guide.save_draft" &&
         (!isUuid(body.suggestedWaypointId) ||
           !isSafeRevision(body.expectedRevision)))
@@ -306,9 +237,9 @@ export function parseSuggestedWaypointGuideCommandRouteInput(
             kind,
             relationshipId,
             operationId: body.operationId,
-            destination: body.destination,
-            why: body.why,
-            arrivalSignals,
+            destination: content.data.destination,
+            why: content.data.why,
+            arrivalSignals: content.data.arrivalSignals,
           })
         : Object.freeze({
             kind,
@@ -316,9 +247,9 @@ export function parseSuggestedWaypointGuideCommandRouteInput(
             operationId: body.operationId,
             suggestedWaypointId: body.suggestedWaypointId as string,
             expectedRevision: body.expectedRevision as number,
-            destination: body.destination,
-            why: body.why,
-            arrivalSignals,
+            destination: content.data.destination,
+            why: content.data.why,
+            arrivalSignals: content.data.arrivalSignals,
           });
   } else if (kind === "guide.schedule_send") {
     if (!isUuid(body.suggestedWaypointId) || !isSafeRevision(body.expectedRevision)) {

@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  SUGGESTED_WAYPOINT_GUIDE_SAVE_DRAFT_OUTCOMES,
+  SUGGESTED_WAYPOINT_GUIDE_SCHEDULE_SEND_OUTCOMES,
   createSuggestedWaypointGuidePullBackCommand,
+  createSuggestedWaypointGuideSaveDraftCommand,
+  createSuggestedWaypointGuideScheduleSendCommand,
+  submitSuggestedWaypointGuideCommand,
   submitSuggestedWaypointGuidePullBackCommand,
 } from "../suggestedWaypointGuideCommandClient";
 
@@ -24,6 +29,8 @@ describe("Guide Pull Back command client", () => {
     const command = createCommand();
     expect(command).not.toBeNull();
     expect(command).toEqual({
+      kind: "guide.pull_back",
+      expectedRevision: 3,
       operationId: OPERATION_ID,
       relationshipId: RELATIONSHIP_ID,
       snapshot: JSON.stringify({
@@ -124,5 +131,130 @@ describe("Guide Pull Back command client", () => {
       vi.fn().mockRejectedValue(new Error("offline")),
     );
     expect(result).toEqual({ kind: "transport_uncertain", result: null });
+  });
+});
+
+describe("Guide draft save and schedule command client", () => {
+  const content = {
+    destination: "Protect one evening each week for recovery",
+    why: "A protected evening may make the week feel more sustainable.",
+    arrivalSignals: ["One evening stays unscheduled."],
+  };
+
+  it("creates exact immutable save bytes and a detached content snapshot", () => {
+    const input = { ...content, arrivalSignals: [...content.arrivalSignals] };
+    const command = createSuggestedWaypointGuideSaveDraftCommand({
+      ...input,
+      expectedRevision: 3,
+      operationId: OPERATION_ID,
+      relationshipId: RELATIONSHIP_ID,
+      suggestedWaypointId: SUGGESTION_ID,
+    });
+    expect(command).toEqual({
+      kind: "guide.save_draft",
+      content,
+      expectedRevision: 3,
+      operationId: OPERATION_ID,
+      relationshipId: RELATIONSHIP_ID,
+      suggestedWaypointId: SUGGESTION_ID,
+      snapshot: JSON.stringify({
+        kind: "guide.save_draft",
+        operationId: OPERATION_ID,
+        suggestedWaypointId: SUGGESTION_ID,
+        expectedRevision: 3,
+        ...content,
+      }),
+      url: `/guide/waypoint-suggestions/${RELATIONSHIP_ID}/commands`,
+    });
+    expect(command && Object.isFrozen(command)).toBe(true);
+    expect(command && Object.isFrozen(command.content)).toBe(true);
+    input.arrivalSignals[0] = "Changed later";
+    expect(command?.content.arrivalSignals).toEqual(content.arrivalSignals);
+  });
+
+  it("creates exact immutable schedule bytes without policy or version authority", () => {
+    const command = createSuggestedWaypointGuideScheduleSendCommand({
+      expectedRevision: 4,
+      operationId: OPERATION_ID,
+      relationshipId: RELATIONSHIP_ID,
+      suggestedWaypointId: SUGGESTION_ID,
+    });
+    expect(command).toEqual({
+      kind: "guide.schedule_send",
+      expectedRevision: 4,
+      operationId: OPERATION_ID,
+      relationshipId: RELATIONSHIP_ID,
+      suggestedWaypointId: SUGGESTION_ID,
+      snapshot: JSON.stringify({
+        kind: "guide.schedule_send",
+        operationId: OPERATION_ID,
+        suggestedWaypointId: SUGGESTION_ID,
+        expectedRevision: 4,
+      }),
+      url: `/guide/waypoint-suggestions/${RELATIONSHIP_ID}/commands`,
+    });
+    expect(command?.snapshot).not.toContain("policy");
+    expect(command?.snapshot).not.toContain("versionId");
+  });
+
+  it.each([
+    { destination: "line one\nline two" },
+    { why: "bad\u2028separator" },
+    { arrivalSignals: ["Duplicate", "Duplicate"] },
+    { expectedRevision: 0 },
+    { operationId: "not-a-v4" },
+    { relationshipId: "not-a-relationship" },
+    { suggestedWaypointId: "not-a-suggestion" },
+  ])("rejects invalid save input without coercion", (override) => {
+    expect(createSuggestedWaypointGuideSaveDraftCommand({
+      ...content,
+      expectedRevision: 3,
+      operationId: OPERATION_ID,
+      relationshipId: RELATIONSHIP_ID,
+      suggestedWaypointId: SUGGESTION_ID,
+      ...override,
+    })).toBeNull();
+  });
+
+  it("uses action-bound outcome allowlists and retains exact request bytes", async () => {
+    const save = createSuggestedWaypointGuideSaveDraftCommand({
+      ...content,
+      expectedRevision: 3,
+      operationId: OPERATION_ID,
+      relationshipId: RELATIONSHIP_ID,
+      suggestedWaypointId: SUGGESTION_ID,
+    })!;
+    const fetcher = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: false,
+        outcome: "policy_unavailable",
+        suggestedWaypointId: null,
+        error: null,
+      }),
+    });
+    expect(await submitSuggestedWaypointGuideCommand(
+      save,
+      SUGGESTED_WAYPOINT_GUIDE_SAVE_DRAFT_OUTCOMES,
+      new AbortController().signal,
+      fetcher,
+    )).toEqual({ kind: "transport_uncertain", result: null });
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ body: save.snapshot });
+
+    const schedule = createSuggestedWaypointGuideScheduleSendCommand({
+      expectedRevision: 3,
+      operationId: OPERATION_ID,
+      relationshipId: RELATIONSHIP_ID,
+      suggestedWaypointId: SUGGESTION_ID,
+    })!;
+    expect(await submitSuggestedWaypointGuideCommand(
+      schedule,
+      SUGGESTED_WAYPOINT_GUIDE_SCHEDULE_SEND_OUTCOMES,
+      new AbortController().signal,
+      fetcher,
+    )).toEqual({
+      kind: "conclusive",
+      result: { ok: false, outcome: "policy_unavailable", suggestedWaypointId: null, error: null },
+    });
   });
 });

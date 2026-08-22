@@ -38,9 +38,10 @@ export default async function GuideSuggestionDetailPage({
         <h1 className="mt-4 text-4xl font-semibold">Suggestion detail</h1>
         <p className="mt-3 max-w-3xl text-slate-300">
           Review the exact current Guide-visible content and lifecycle state.
-          This page does not expose Explorer-private activity. A pending
-          suggestion can be pulled back through the authenticated Guide command
-          boundary; save, schedule, correction, and withdrawal controls remain
+          This page does not expose Explorer-private activity. A complete
+          Guide-only draft can be edited, saved, reviewed, and scheduled; a
+          pending suggestion can be pulled back during its available window.
+          Blank-draft compose, delete, correction, and withdrawal remain
           separately gated.
         </p>
         <GuideSuggestedWaypointDetail
