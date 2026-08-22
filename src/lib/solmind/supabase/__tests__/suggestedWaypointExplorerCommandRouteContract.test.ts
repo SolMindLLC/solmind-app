@@ -242,6 +242,11 @@ describe("projectSuggestedWaypointExplorerCommandResult", () => {
   it.each([
     { ...appliedAcknowledgeRow(), current_version_id: OTHER_VERSION_ID },
     { ...appliedAcknowledgeRow(), acknowledged_version_id: OTHER_VERSION_ID },
+    {
+      ...appliedAcknowledgeRow(),
+      current_version_id: OTHER_VERSION_ID,
+      acknowledged_version_id: OTHER_VERSION_ID,
+    },
   ])("rejects acknowledge version-binding mismatch %#", (row) => {
     const routeInput = parseSuggestedWaypointExplorerCommandRouteInput(
       ACKNOWLEDGE_BODY,
