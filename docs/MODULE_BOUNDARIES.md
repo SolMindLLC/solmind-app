@@ -635,9 +635,19 @@ src/app/explorer/waypoints/[suggestedWaypointId]/commands/route.ts
 That route preserves the same body-before-auth ordering, derives Explorer
 identity and its single active Guide relationship on the server, injects the
 path suggestion once, and projects only the shared value-free command result.
-Together the two role lanes add no Guide save, schedule, correction, or
-withdrawal caller, delivery worker or scheduler, Explorer comparison/adoption/
-response command, provider, deployment, or real-user activation.
+The server-only local delivery invoker in
+`src/lib/solmind/supabase/suggestedWaypointDeliveryWorker.ts` is a separate
+composition boundary. A trusted caller supplies one exact operation,
+suggestion, and expected pending-version UUID envelope. The invoker snapshots
+those values before client or transport work, executes only the closed delivery
+RPC through the worker executor once, revalidates and binds the result, and
+returns only `delivered`, `not_delivered`, or `failed`. It does not discover due
+work, scan protected tables, generate or rotate retry identity, queue, claim,
+lease, poll, schedule, run continuously, or activate a hosted runtime.
+Together the two browser role lanes do not call that invoker and add no Guide
+save, schedule, correction, or withdrawal caller, delivery scheduler, Explorer
+comparison/adoption/response command, provider, deployment, or real-user
+activation.
 
 The S03 Guide entry boundary also owns one feature-specific Suggested Waypoint
 relationship selector. Its forward-only migration exposes only active
