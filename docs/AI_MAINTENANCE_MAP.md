@@ -45,14 +45,15 @@ User-facing routes:
 - `/explorer` - deterministic, browser-memory Explorer S01 experience
 - `/explorer/waypoints` - authenticated, read-only Explorer Suggested Waypoint
   inbox
-- `/explorer/waypoints/[suggestedWaypointId]` - authenticated, read-only
-  Explorer Suggested Waypoint detail
+- `/explorer/waypoints/[suggestedWaypointId]` - authenticated Explorer
+  Suggested Waypoint detail with private Mark as read and deliberate receipt
+  acknowledgement
 
 Shared browser interaction assurance uses a separate Playwright configuration
 and `tests/browser/` harness. It preserves the Node-oriented Vitest
 configuration and exercises the retained deterministic fixtures plus the
-authenticated Explorer and Human Guide read routes at desktop and narrow
-viewports. The harness owns keyboard, focus, responsive navigation,
+authenticated Explorer and Human Guide read and bounded command routes at
+desktop and narrow viewports. The harness owns keyboard, focus, responsive navigation,
 live-region, projection-leakage, and companion automated accessibility checks
 only; it uses mocked route responses rather than Supabase, Docker, a provider,
 hosted data, or a real-user path.
@@ -71,6 +72,8 @@ Server route handlers:
 - `/explorer/waypoints/suggestions` - authenticated Explorer list read
 - `/explorer/waypoints/[suggestedWaypointId]/detail` - authenticated Explorer
   detail read
+- `/explorer/waypoints/[suggestedWaypointId]/commands` - authenticated,
+  same-origin Explorer Mark as read and Acknowledge receipt command route
 
 `PRJ01_R-WS09-WI021-S01` adds the first interactive Explorer experience
 without a provider or persistence. It contains the exact structured onboarding
@@ -214,7 +217,7 @@ The `/guide` route is the human Guide dashboard. Do not label the human Guide da
 S01 uses a deterministic local script. It must not be described as a real
 SolMind Virtual Guide conversation.
 
-## Current Source Layout
+## Representative Source Layout
 
 ```text
 src/
@@ -271,6 +274,9 @@ supabase/
   migrations/    MVP0 schema foundations with Row Level Security enabled deny-by-default
   seed.sql
 ```
+
+This compact tree is an orientation aid rather than an exhaustive owner list.
+The File Responsibility Map below is the current owner enumeration.
 
 The `auth/`, `context/`, and `supabase/` directories hold server-only modules kept off the shared client barrels, each with co-located `__tests__` unit tests.
 
@@ -450,10 +456,11 @@ Extend these modules deliberately and in small slices. Keep server-only modules 
 - Guide Assistant context from these Explorer artifacts.
 - Suggested Waypoint Guide save, schedule, correction, and withdrawal UI
   callers, remaining Explorer comparison/adoption/response command callers,
-  operational local delivery-worker invocation,
-  and hosted delivery-worker caller beyond the banked authenticated
-  composition, shared command predecessor, relationship-scoped Guide command
-  route, Guide relationship selector, and read-only role list/detail paths.
+  due-item discovery and scheduling around the banked local delivery invoker,
+  and a hosted delivery-worker caller beyond the banked authenticated
+  composition, shared command predecessor, local delivery invoker, role-scoped
+  Guide and Explorer command routes, Guide Pull Back and Explorer engagement
+  callers, Guide relationship selector, and role list/detail paths.
 - Production Guide dashboard integration.
 - Runtime safety classification and escalation.
 - Reflection storage beyond approved future slices.

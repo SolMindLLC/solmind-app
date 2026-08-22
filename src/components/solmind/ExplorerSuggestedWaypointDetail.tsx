@@ -300,7 +300,7 @@ export function ExplorerSuggestedWaypointDetail({
       updateOperation(uncertainOperation);
       setReadRetryAvailable(false);
       setActionNotice(
-        "SolMind could not confirm whether this action completed. Check current status before retrying the exact same request.",
+        "SolMind could not confirm whether this action completed. Check current status before trying the action again.",
       );
       return;
     }
@@ -346,7 +346,13 @@ export function ExplorerSuggestedWaypointDetail({
     }
 
     if (!result.ok) {
-      if (result.outcome === "stale") {
+      if (
+        result.outcome === null &&
+        requestedStateObserved(command, current)
+      ) {
+        setReadRetryAvailable(false);
+        setActionNotice(completedNotice(command));
+      } else if (result.outcome === "stale") {
         if (current.current_version_id !== command.versionId) {
           setReadRetryAvailable(false);
           setActionNotice(
@@ -455,7 +461,7 @@ export function ExplorerSuggestedWaypointDetail({
       return;
     }
     updateOperation(next);
-    setActionNotice("Retrying the exact same request.");
+    setActionNotice("Trying this action again safely.");
     void runCommand(command, next);
   }, [runCommand, updateOperation]);
 
@@ -514,14 +520,16 @@ export function ExplorerSuggestedWaypointDetail({
       setActionNotice("This action is unavailable. Do not retry it.");
     } else if (current === null) {
       setActionNotice(
-        "Current status could not be confirmed. Retry only the exact same request.",
+        "Current status could not be confirmed. You can safely try the action again.",
       );
+      focusActionStatus();
     } else {
       setActionNotice(
-        "The requested state is not confirmed. You may retry the exact same request.",
+        "The change is not confirmed yet. You can safely try the action again.",
       );
+      focusActionStatus();
     }
-  }, [load, updateOperation]);
+  }, [focusActionStatus, load, updateOperation]);
 
   const refreshCurrentStatus = useCallback(async () => {
     const current = await load(true);
@@ -566,8 +574,8 @@ export function ExplorerSuggestedWaypointDetail({
         <section className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-5">
           <h2 className="text-lg font-semibold">Action status needs checking</h2>
           <p className="mt-2 text-sm text-slate-700">
-            Check the authoritative detail first. If the requested state is not
-            there, retrying reuses the same operation identity and request bytes.
+            Check current status first. If the change is not there, you can
+            safely try the action again without creating a duplicate.
           </p>
           <div className="mt-4 flex flex-wrap gap-3">
             <button
@@ -585,7 +593,7 @@ export function ExplorerSuggestedWaypointDetail({
               disabled={commandStatusChecking}
               onClick={retryCommand}
             >
-              Retry exact request
+              Try action again
             </button>
           </div>
         </section>

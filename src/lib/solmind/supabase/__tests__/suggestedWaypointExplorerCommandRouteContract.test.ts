@@ -18,6 +18,7 @@ const OPERATION_ID = "33333333-3333-4333-8333-333333333333";
 const RELATIONSHIP_ID = "44444444-4444-4444-8444-444444444444";
 const SUGGESTION_ID = "55555555-5555-4555-8555-555555555555";
 const VERSION_ID = "66666666-6666-4666-8666-666666666666";
+const OTHER_VERSION_ID = "99999999-9999-4999-8999-999999999999";
 const GUIDE_PROFILE_ID = "77777777-7777-4777-8777-777777777777";
 const EXPLORER_PROFILE_ID = "88888888-8888-4888-8888-888888888888";
 const TIMESTAMP = "2026-08-21T20:00:00.000Z";
@@ -220,13 +221,30 @@ describe("projectSuggestedWaypointExplorerCommandResult", () => {
   });
 
   it.each([
-    { ...appliedReadRow(), operation_id: "99999999-9999-4999-8999-999999999999" },
-    { ...appliedReadRow(), suggested_waypoint_id: "99999999-9999-4999-8999-999999999999" },
-    { ...appliedReadRow(), current_version_id: "99999999-9999-4999-8999-999999999999" },
+    { ...appliedReadRow(), operation_id: OTHER_VERSION_ID },
+    { ...appliedReadRow(), suggested_waypoint_id: OTHER_VERSION_ID },
+    { ...appliedReadRow(), current_version_id: OTHER_VERSION_ID },
     { ...appliedReadRow(), private_note: "must not leave" },
   ])("rejects mismatched or widened result %#", (row) => {
     const routeInput = parseSuggestedWaypointExplorerCommandRouteInput(
       MARK_READ_BODY,
+      SUGGESTION_ID,
+    )!;
+    expect(
+      projectSuggestedWaypointExplorerCommandResult(routeInput, {
+        ok: true,
+        data: row,
+        error: null,
+      }),
+    ).toMatchObject({ error: "command_failed" });
+  });
+
+  it.each([
+    { ...appliedAcknowledgeRow(), current_version_id: OTHER_VERSION_ID },
+    { ...appliedAcknowledgeRow(), acknowledged_version_id: OTHER_VERSION_ID },
+  ])("rejects acknowledge version-binding mismatch %#", (row) => {
+    const routeInput = parseSuggestedWaypointExplorerCommandRouteInput(
+      ACKNOWLEDGE_BODY,
       SUGGESTION_ID,
     )!;
     expect(
