@@ -845,6 +845,32 @@ deployment or real-user activation. Later server composition must derive its
 request identifiers and supply the reviewed concrete source; S03D must recheck
 and record the required evidence immediately before any provider effect.
 
+`PRJ01_R-WS09-WI021-S03E` adds a dormant Luna-specific transport adapter:
+
+```text
+src/lib/solmind/virtual-guide/openAiLunaVirtualGuideTransport.ts
+src/lib/solmind/virtual-guide/__tests__/openAiLunaVirtualGuideTransport.test.ts
+```
+
+The adapter is a direct-import server-only implementation of the single S03B
+transport capability. It fixes one HTTPS Responses endpoint, model
+`gpt-5.6-luna`, medium reasoning effort, `store: false`, fixed Virtual Guide
+instructions and a bounded output request. It passes only the exact S03B
+authorized-context string as input. The credential and `fetch` capability are
+captured from later server composition; the module cannot read environment
+state and accepts no endpoint/model/instruction/tool/storage override. Redirects
+are denied. HTTP/provider failures, provider bodies and credentials collapse to
+value-free transport failure at S03B. The response must be completed by the
+selected model, contain exactly one assistant message and no tool output; one
+provider refusal maps to fixed Explorer-facing text before S03B validates the
+final local envelope.
+
+This adapter is not runtime activation. It does not create S03D snapshot/
+invocation/audit evidence, select an operational credential, expose a route,
+persist conversation messages, own safety escalation, connect the UI, deploy or
+affect a real user. Tests use fake HTTP and a deterministic message-ID function.
+No real OpenAI request is made by this slice.
+
 ## Schema Foundation Boundary
 
 Database schema foundations live under:

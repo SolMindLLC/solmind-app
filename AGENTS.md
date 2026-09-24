@@ -137,6 +137,18 @@ not persist the supplied context-snapshot ID, make final pre-provider evidence,
 select/call a provider, log or audit, expose a route, or activate a user path;
 S03D and later owners retain those duties.
 
+The bounded S03E owner is
+`src/lib/solmind/virtual-guide/openAiLunaVirtualGuideTransport.ts`. Keep the
+Responses endpoint, `gpt-5.6-luna`, medium reasoning effort, `store: false`,
+fixed Virtual Guide instructions, output cap and no-tools posture explicit.
+Accept the credential and HTTP function only through the server composition
+root; do not read environment state here. Send only the already-authorized S03B
+context bytes as provider input, never separate Explorer/session/snapshot IDs or
+metadata. Provider bodies and errors remain value-free at the S03B boundary.
+S03E is a dormant transport adapter: S03D pre-dispatch evidence, the authenticated
+route, message persistence, safety handling, deployment and runtime activation
+remain separate gates.
+
 ## PRJ01_V-WS05-WI022 Suggested Waypoint UI Boundaries
 
 `ExplorerSuggestedWaypointWorkspace.tsx` remains deterministic fixture-backed

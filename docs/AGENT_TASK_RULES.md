@@ -254,6 +254,29 @@ transaction. Do not add a concrete database source, snapshot persistence,
 audit/log writing, provider/model selection, credentials, provider I/O,
 route/action, browser/UI code, deployment, or real-user use in this increment.
 
+### Virtual Guide S03E Luna transport
+
+Keep `src/lib/solmind/virtual-guide/openAiLunaVirtualGuideTransport.ts`
+server-only, direct-import and off shared/client barrels. It implements only the
+S03B `generate` capability. The Responses URL, `gpt-5.6-luna`, medium reasoning,
+non-storage request, fixed instructions and output-token cap are constants. Do
+not accept a caller-provided endpoint, model, effort, instruction, metadata,
+tool, previous-response ID or storage flag.
+
+The factory may accept a server-supplied credential, injected `fetch` and an
+injected message-ID function for tests. It must not read process/environment
+state, log or serialize credentials, follow redirects, transmit binding IDs as
+separate metadata, or expose provider bodies/errors. Send only the exact S03B
+authorized-context string as provider input. Require a completed response from
+the selected model, reject tool output and malformed/mixed content, map one
+provider refusal to fixed Explorer-facing text, and let S03B perform the final
+response-envelope validation.
+
+Fake HTTP belongs only in tests. S03E does not select a runtime credential,
+persist a snapshot/invocation/message, create S03D evidence, expose a route,
+connect the screen, deploy or activate a provider call. Those effects require
+their separately reviewed owners and gates.
+
 ### Explorer Suggested Waypoint deterministic UI
 
 For `PRJ01_V-WS05-WI022-S01`, keep the retained
