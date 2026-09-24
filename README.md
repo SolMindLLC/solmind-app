@@ -151,6 +151,15 @@ Backend foundations present in the repository (high level):
   authorization or consent, verify fingerprints, select or call a provider,
   persist or audit messages, expose a route, connect the Explorer UI, deploy,
   or affect a real user.
+- Authorized Virtual Guide S03C context composition: a second direct-import,
+  server-only boundary obtains one current server-derived authorization
+  snapshot, proves self-Explorer/account/session/relationship/adult/onboarding
+  bindings and the complete active required-consent set, runs the S03A
+  allowlisted projection, fingerprints its exact compact serialization, then
+  revalidates the authorization version before returning an S03B request. Its
+  source is injected and synthetic in tests. It does not load a concrete
+  database, persist a snapshot, create pre-provider audit evidence, select/call
+  a model, expose a route, connect the UI, deploy, or affect a real user.
 - Auth/RLS request-auth boundary, real Admin auth-source loading, server-only hardening, and enumerated RPC transport under `src/lib/solmind/auth` and `src/lib/solmind/supabase`.
 - Suggested Waypoint first-write security predecessor: one server-only trusted
   application-origin configuration, one same-origin JSON request guard with a

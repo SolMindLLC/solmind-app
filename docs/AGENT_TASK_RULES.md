@@ -230,6 +230,30 @@ deployment, or real-user use to S03B. Fake transports belong only in tests and
 must never be a production fallback. Those capabilities require later,
 separately reviewed S03 increments.
 
+### Virtual Guide S03C authorized context composition
+
+Keep `src/lib/solmind/virtual-guide/authorizedVirtualGuideContext.ts`
+server-only, direct-import, and off shared/client barrels. Request identifiers
+must be produced by trusted server composition, never accepted as proof of
+authority. The injected source has exactly two data-function capabilities: load
+one authorization snapshot for the requested Explorer/session and revalidate
+the minimized authorization proof/version after S03A assembly. Capture those
+capabilities before the first await.
+
+Fail closed unless the request actor is the same Explorer account, role context
+is Explorer, onboarding is active, adult affirmation is true, the relationship
+is active or paused and bound to that Explorer, at least one current required
+consent exists, and the accepted set exactly equals the current required set.
+The S03A projection must independently validate the same Explorer/session. Hash
+the exact compact S03A serialization, not caller material. Prompt-injection text
+remains bounded data and cannot widen context authority. Return only a frozen
+S03B request and minimized frozen proof; all errors remain closed and value-free.
+
+S03C final revalidation is composition-time assurance, not the S03D pre-I/O
+transaction. Do not add a concrete database source, snapshot persistence,
+audit/log writing, provider/model selection, credentials, provider I/O,
+route/action, browser/UI code, deployment, or real-user use in this increment.
+
 ### Explorer Suggested Waypoint deterministic UI
 
 For `PRJ01_V-WS05-WI022-S01`, keep the retained

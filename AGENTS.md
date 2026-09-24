@@ -125,6 +125,18 @@ verification, a provider adapter, persistence, audit writing, a route, the UI,
 deployment, or real-user activation. Tests may use an in-memory fake transport;
 production code must not silently fall back to it.
 
+The bounded S03C owner is
+`src/lib/solmind/virtual-guide/authorizedVirtualGuideContext.ts`. Keep its
+request identifiers server-derived and its source interface limited to one
+authorization snapshot read plus one final version revalidation. It must prove
+the self-Explorer actor/account binding, active onboarding, adult affirmation,
+an active or paused relationship, the complete current required-consent set,
+and matching S03A Explorer/session context before returning an S03B request.
+Its SHA-256 fingerprint covers the exact compact S03A serialization. S03C does
+not persist the supplied context-snapshot ID, make final pre-provider evidence,
+select/call a provider, log or audit, expose a route, or activate a user path;
+S03D and later owners retain those duties.
+
 ## PRJ01_V-WS05-WI022 Suggested Waypoint UI Boundaries
 
 `ExplorerSuggestedWaypointWorkspace.tsx` remains deterministic fixture-backed

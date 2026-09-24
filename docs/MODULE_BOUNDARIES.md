@@ -817,6 +817,34 @@ audit messages, expose a route/action, connect S01R2, deploy, or affect a real
 user. Fake transport behavior is test-only and must never become a production
 fallback. Those responsibilities remain separately gated later S03 increments.
 
+`PRJ01_R-WS09-WI021-S03C` adds authorized context composition:
+
+```text
+src/lib/solmind/virtual-guide/authorizedVirtualGuideContext.ts
+src/lib/solmind/virtual-guide/__tests__/authorizedVirtualGuideContext.test.ts
+```
+
+This direct-import server-only owner accepts only server-issued invocation,
+Explorer, session and context-snapshot identifiers. Its injected source exposes
+exactly one authorization-snapshot load and one minimized version revalidation;
+the functions are descriptor-checked and captured before the first await. The
+composer independently proves self-Explorer actor/account binding, Explorer
+role context, active onboarding, adult affirmation, an active or paused
+relationship bound to the Explorer, and exact equality between non-empty active
+required-consent IDs and accepted IDs. It then runs S03A, requires the resulting
+Explorer/session binding, hashes the exact compact serialization with SHA-256,
+revalidates the minimized authorization proof/version, and returns a frozen S03B
+request. Ineligible continuity is omitted by S03A; prompt-injection text remains
+data and cannot add context keys or source capabilities.
+
+S03C's revalidation is not final dispatch authority. It has no concrete
+repository or database loader, does not persist the context-snapshot ID, does
+not create S03D pre-I/O evidence, and does not own provider/model selection,
+credentials, provider I/O, logging/audit, route/action, browser/UI code,
+deployment or real-user activation. Later server composition must derive its
+request identifiers and supply the reviewed concrete source; S03D must recheck
+and record the required evidence immediately before any provider effect.
+
 ## Schema Foundation Boundary
 
 Database schema foundations live under:
