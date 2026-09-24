@@ -793,6 +793,30 @@ authorization/consent refresh, context snapshots, audit/fingerprint runtime
 enforcement, context budgeting, provider dispatch, persistence, route/UI
 integration, deployment, and real-user use remain separate gates.
 
+`PRJ01_R-WS09-WI021-S03B` adds one provider-neutral conversation boundary:
+
+```text
+src/lib/solmind/virtual-guide/virtualGuideConversationContract.ts
+src/lib/solmind/virtual-guide/__tests__/virtualGuideConversationContract.test.ts
+```
+
+The module is server-only, is imported directly by later server composition,
+and must remain off every shared/client barrel. It accepts only the exact compact
+serialized context already authorized by S03A together with opaque invocation,
+Explorer, session, context-snapshot, and fingerprint identifiers. It validates
+exact request keys and byte limits, creates a frozen copy, invokes one injected
+transport with bounded timeout and caller cancellation, then validates an exact
+invocation-bound response and returns a deeply immutable copy. Its closed error
+algebra carries no provider or request values. Co-located tests use an in-memory
+fake transport and prove that malformed input never reaches that seam.
+
+S03B neither selects nor calls a concrete provider by itself. It does not load
+context sources, refresh authorization or consent, create or verify the context
+fingerprint, read environment configuration, import a provider SDK, persist or
+audit messages, expose a route/action, connect S01R2, deploy, or affect a real
+user. Fake transport behavior is test-only and must never become a production
+fallback. Those responsibilities remain separately gated later S03 increments.
+
 ## Schema Foundation Boundary
 
 Database schema foundations live under:

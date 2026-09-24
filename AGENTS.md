@@ -113,6 +113,18 @@ Waypoint, quotation, and sharing controls must not imply that a model, human
 Guide, or sharing service is connected. Genuine server-side Virtual Guide
 conversation remains `PRJ01_R-WS09-WI021-S03`.
 
+The first provider-dispatch increment for that later lane is the bounded S03B
+conversation contract under `src/lib/solmind/virtual-guide/`. Keep it
+server-only, provider-neutral, and off shared/client barrels. It accepts only
+the already-authorized compact S03A context serialization plus opaque binding,
+snapshot, invocation, and fingerprint identifiers; calls only an injected
+transport; enforces a bounded timeout and caller cancellation; validates the
+exact response; and exposes only closed, value-free errors. S03B does not own
+source retrieval, authorization or consent refresh, fingerprint creation or
+verification, a provider adapter, persistence, audit writing, a route, the UI,
+deployment, or real-user activation. Tests may use an in-memory fake transport;
+production code must not silently fall back to it.
+
 ## PRJ01_V-WS05-WI022 Suggested Waypoint UI Boundaries
 
 `ExplorerSuggestedWaypointWorkspace.tsx` remains deterministic fixture-backed

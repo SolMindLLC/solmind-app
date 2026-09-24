@@ -142,6 +142,15 @@ remain separately gated.
 Backend foundations present in the repository (high level):
 
 - Supabase schema foundations: MVP0 schemas and tables exist through migrations under `supabase/migrations`, with Row Level Security enabled deny-by-default on application tables.
+- Provider-neutral Virtual Guide S03B conversation contract: a direct-import,
+  server-only boundary validates the already-authorized compact S03A context
+  serialization and opaque invocation/binding/snapshot/fingerprint identifiers,
+  calls only an injected transport with bounded timeout and cancellation, and
+  validates one exact, deeply immutable response with closed value-free errors.
+  Tests use an in-memory fake transport. It does not retrieve context, refresh
+  authorization or consent, verify fingerprints, select or call a provider,
+  persist or audit messages, expose a route, connect the Explorer UI, deploy,
+  or affect a real user.
 - Auth/RLS request-auth boundary, real Admin auth-source loading, server-only hardening, and enumerated RPC transport under `src/lib/solmind/auth` and `src/lib/solmind/supabase`.
 - Suggested Waypoint first-write security predecessor: one server-only trusted
   application-origin configuration, one same-origin JSON request guard with a

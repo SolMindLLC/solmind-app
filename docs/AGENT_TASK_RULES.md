@@ -211,6 +211,25 @@ provider adapter, route handler, persistence, auth, safety classification, or
 real sharing behavior to this S01R2 surface. Those require a separately gated
 S03 design and implementation.
 
+### Virtual Guide S03B conversation contract
+
+Keep `src/lib/solmind/virtual-guide/virtualGuideConversationContract.ts`
+server-only, provider-neutral, directly imported, and absent from shared/client
+barrels. It may accept only opaque invocation, Explorer, session, context-
+snapshot, and fingerprint bindings plus the exact compact serialized context
+already authorized by the S03A kernel. It must validate exact keys and bounded
+bytes, sever caller references, pass a frozen request to one injected transport,
+enforce caller cancellation and a bounded timeout, bind the exact response to
+the invocation, and return only a deeply immutable response or a closed,
+value-free error.
+
+Do not add source loading, authorization/consent refresh, fingerprint creation
+or verification, context selection, a provider SDK or adapter, environment
+access, persistence, audit writing, a route/action, browser code, UI wiring,
+deployment, or real-user use to S03B. Fake transports belong only in tests and
+must never be a production fallback. Those capabilities require later,
+separately reviewed S03 increments.
+
 ### Explorer Suggested Waypoint deterministic UI
 
 For `PRJ01_V-WS05-WI022-S01`, keep the retained
