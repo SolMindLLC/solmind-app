@@ -200,6 +200,17 @@ operational `/guide` dashboard. Persistence belongs to
 `PRJ01_R-WS09-WI021-S02`; genuine provider conversation belongs to
 `PRJ01_R-WS09-WI021-S03`.
 
+The bounded S01R2 `/explorer/compass-comparison` review route inherits those
+same prohibitions. Keep its route thin; keep browser orchestration,
+presentational parts, and pure deterministic domain transitions separated in
+their named owners. Typed Explorer messages receive fixed local replies only.
+Compass attention, Priority confirmation, conversation-mediated Waypoint
+details, quotation provenance, and the three independent sharing explanations
+remain transient and honest about every unconnected destination. Do not add a
+provider adapter, route handler, persistence, auth, safety classification, or
+real sharing behavior to this S01R2 surface. Those require a separately gated
+S03 design and implementation.
+
 ### Explorer Suggested Waypoint deterministic UI
 
 For `PRJ01_V-WS05-WI022-S01`, keep the retained

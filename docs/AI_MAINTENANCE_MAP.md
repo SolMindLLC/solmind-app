@@ -87,6 +87,20 @@ Snapshot, and a non-live Guide projection. The projection contains only
 submitted onboarding answers and the exact confirmed snapshot. Refreshing the
 page resets the experience.
 
+The bounded S01R2 `/explorer/compass-comparison` route is a second
+browser-memory-only review surface for the conversation-first portion of that
+experience. `src/app/explorer/compass-comparison/page.tsx` stays thin;
+`src/components/solmind/ExplorerCompassComparison.tsx` owns client
+orchestration; `ExplorerCompassComparisonParts.tsx` owns presentation; and
+`src/lib/solmind/explorerCompassComparison.ts` owns pure deterministic state.
+It demonstrates fixed local Virtual Guide turns, Compass attention distinct
+from confirmed Priority, a conversation-mediated Forming Waypoint,
+provenance-linked quotations, and separate whole-conversation,
+Reached-Waypoint, and exact-quotation sharing explanations. It adds no
+provider, persistence, authentication, server route, notification, actual
+sharing, deployment, or real-user effect. Genuine provider conversation stays
+in separately gated S03.
+
 Banked dormant `PRJ01_R-WS09-WI021-S02` provides one protected global
 `explorer_shared_snapshot_sendability_days` setting (1-100, default 7), a
 server-only fixed-key reader, a service-role-only expected-version mutation

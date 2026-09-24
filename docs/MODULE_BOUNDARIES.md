@@ -140,6 +140,22 @@ Neither component may own provider, persistence, auth, consent-version,
 safety, or visibility policy. The mock Guide view receives only the narrow
 projection returned by `createNonLiveGuideProjection`.
 
+The bounded S01R2 conversation-first review surface keeps a parallel but
+separate ownership split:
+
+- `ExplorerCompassComparison.tsx` owns transient browser orchestration and
+  focus/viewport handling;
+- `ExplorerCompassComparisonParts.tsx` owns presentational screen regions and
+  controls; and
+- `explorerCompassComparison.ts` owns the pure deterministic conversation,
+  Compass, Waypoint, quotation, navigation, and disclosure transitions.
+
+`src/app/explorer/compass-comparison/page.tsx` only composes that client
+boundary. The surface inherits S01's no-provider, no-persistence, no-auth,
+no-notification, and no-real-user constraints. Its fixed replies must not be
+described as semantic interpretation or a genuine model response. S03 remains
+the owner of server-side provider conversation.
+
 ### Suggested Waypoint components
 
 - `ExplorerSuggestedWaypointWorkspace.tsx` owns only fixture-local view state

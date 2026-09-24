@@ -42,6 +42,7 @@ User-facing routes:
 /guide/waypoint-suggestions/[relationshipId]
 /guide/waypoint-suggestions/[relationshipId]/[suggestedWaypointId]
 /explorer
+/explorer/compass-comparison
 /explorer/waypoints
 /explorer/waypoints/[suggestedWaypointId]
 ```
@@ -67,6 +68,7 @@ Current route purpose:
 | `/guide` | Guide dashboard preview |
 | `/guide/explorers/avery/waypoint-suggestions` | Deterministic fixture-backed Human Guide Suggested Waypoint list, draft, Pull Back, sent-detail, and receipt review surface |
 | `/explorer` | Deterministic Explorer onboarding, First Compass, Waypoint, exact-summary review, and non-live Guide-boundary prototype |
+| `/explorer/compass-comparison` | Deterministic Explorer conversation-first review surface with a fixed local Virtual Guide script, Compass and Forming Waypoint, provenance-linked quotations, and three independent sharing explanations |
 | `/explorer/waypoints` | Authenticated read-only Explorer Suggested Waypoint inbox over the banked `explorer.list` request composition |
 | `/explorer/waypoints/[suggestedWaypointId]` | Authenticated read-only Explorer Suggested Waypoint detail over the banked `explorer.get` request composition |
 | `/admin/access` | Opaque server-side Admin access probe returning only `{ allowed }` |
@@ -98,6 +100,16 @@ It makes no provider call and uses no database, route handler, cookie,
 `localStorage`, `sessionStorage`, or other persistence. Refreshing clears the
 experience. It does not create a real Guide session, send information, deploy a
 feature, or affect a real user.
+
+The bounded `/explorer/compass-comparison` refinement is also deterministic and
+browser-memory-only. It demonstrates the conversation-first layout, a movable
+current attention distinct from confirmed Priority, a conversation-mediated
+Forming Waypoint, exact supporting-quotation provenance, and separately
+explained whole-conversation, Reached-Waypoint, and exact-quotation sharing.
+Unbuilt destinations say `Not connected yet`; no sharing action grants access.
+Its typed message composer receives only fixed local replies. It makes no
+provider, persistence, authentication, database, notification, or real-user
+call, and refresh/reset clears its local state.
 
 The separate `/explorer/waypoints` route now composes an authenticated,
 read-only inbox and suggestion detail over the server-derived Explorer

@@ -102,6 +102,17 @@ exact in-memory Shared Snapshot the Explorer confirmed. It must exclude the
 conversation, Route, private Waypoint, Private Summary Draft, excluded detail,
 selection state, and unconfirmed material.
 
+The bounded S01R2 `/explorer/compass-comparison` route is a separate
+conversation-first review surface. Keep its route thin, its client
+orchestration in `ExplorerCompassComparison.tsx`, presentation in
+`ExplorerCompassComparisonParts.tsx`, and deterministic state transitions in
+`explorerCompassComparison.ts`. It inherits every S01 no-provider,
+no-persistence, no-auth, no-browser-storage, no-notification, and no-real-user
+boundary. Its message replies remain a fixed local script; its conversation,
+Waypoint, quotation, and sharing controls must not imply that a model, human
+Guide, or sharing service is connected. Genuine server-side Virtual Guide
+conversation remains `PRJ01_R-WS09-WI021-S03`.
+
 ## PRJ01_V-WS05-WI022 Suggested Waypoint UI Boundaries
 
 `ExplorerSuggestedWaypointWorkspace.tsx` remains deterministic fixture-backed
