@@ -160,13 +160,23 @@ Backend foundations present in the repository (high level):
   source is injected and synthetic in tests. It does not load a concrete
   database, persist a snapshot, create pre-provider audit evidence, select/call
   a model, expose a route, connect the UI, deploy, or affect a real user.
+- Virtual Guide S03D pre-dispatch evidence foundation: one service-role-only,
+  security-definer transaction revalidates the current Explorer account, role,
+  session type/status, onboarding, relationship, Practice binding, restricted
+  mode, active/approved Practice, adult affirmation, and complete active
+  required-consent set. It then
+  creates exactly one bounded context snapshot, one started model invocation,
+  and two value-free Family E audit rows for one logical operation. Exact retry
+  returns a no-dispatch disposition and creates no duplicate evidence. The
+  function has no provider I/O, route, message persistence, credential reader,
+  deployment, or real-user activation.
 - OpenAI Luna S03E transport adapter: a direct-import, server-only implementation
   of the S03B transport seam for the Responses API. It fixes model
   `gpt-5.6-luna`, medium reasoning, `store: false`, one endpoint and one bounded
   plain-text response. Tests inject fake HTTP and a deterministic message ID.
   The adapter reads no environment variable, makes no call by itself, is not
-  wired to a route or UI, and cannot run before separately banked S03D
-  pre-dispatch evidence plus later composition/activation gates.
+  wired to a route or UI, and must not be invoked unless the S03D transaction returns
+  `created` and the later composition/activation gates also pass.
 - Auth/RLS request-auth boundary, real Admin auth-source loading, server-only hardening, and enumerated RPC transport under `src/lib/solmind/auth` and `src/lib/solmind/supabase`.
 - Suggested Waypoint first-write security predecessor: one server-only trusted
   application-origin configuration, one same-origin JSON request guard with a

@@ -845,6 +845,50 @@ deployment or real-user activation. Later server composition must derive its
 request identifiers and supply the reviewed concrete source; S03D must recheck
 and record the required evidence immediately before any provider effect.
 
+`PRJ01_R-WS09-WI021-S03D` adds the protected pre-dispatch evidence boundary:
+
+```text
+supabase/migrations/20260924000000_virtual_guide_predispatch_evidence.sql
+supabase/tests/virtual_guide_predispatch_evidence_contract_and_security_test.sql
+supabase/tests/virtual_guide_predispatch_evidence_realpath_test.sql
+supabase/tests/virtual_guide_predispatch_evidence_concurrency_test.sql
+```
+
+The service-role-only, security-definer function revalidates the current
+Explorer account/role, one of the three Explorer session types, session status,
+Explorer profile/onboarding, relationship/Practice binding, restricted-mode
+state, active/approved Practice, adult affirmation and complete active
+required-consent set immediately before evidence creation. It locks the reviewed
+authority rows and stabilizes the required-consent definition, recomputes an AV1
+proof over those current facts,
+then atomically creates one bounded context snapshot, one started invocation and
+the exact two value-free Family E lifecycle rows. Advisory serialization,
+unique operation/snapshot indexes and a 2-second lock timeout make the boundary
+bounded and idempotent. Exact retry is retained evidence with an explicit
+no-dispatch disposition; a changed payload under the same operation fails
+closed.
+
+S03D does not load the S03A sources, call S03E, persist conversation messages,
+select a credential, expose a route/action, own the safety response, deploy or
+activate a real-user path. `exact_retry` must never trigger a second provider
+call.
+
+The database recomputes and verifies only the AV1 authority proof. It does not
+verify the context fingerprint, the context source IDs, or their ownership;
+the server caller attests them. The rule that derives the context source IDs
+is still an open composition gate, because the S03C result exposes no
+source-ID set. A `created` result is therefore necessary but not sufficient
+for a provider attempt. An S03D v1 context snapshot is write-once and leaves
+the Methodology Context Pack version, typed source IDs including
+`related_reflection_ids`, and policy/behavior versions empty; the snapshot
+fields required by `solmind-docs`
+`execution/04_SolMind_AI_Orchestration_Spec_v1_0.md` Section 12, plus an S03E
+instruction version, must be recorded at creation by a separately reviewed
+successor evidence contract, and v1 evidence alone never authorizes an
+Explorer-facing dispatch. Later composition must also bind the dispatched
+bytes to the stored fingerprint. Any outcome other than `created`, including
+`exact_retry` and every denial, authorizes no provider call.
+
 `PRJ01_R-WS09-WI021-S03E` adds a dormant Luna-specific transport adapter:
 
 ```text

@@ -137,6 +137,27 @@ not persist the supplied context-snapshot ID, make final pre-provider evidence,
 select/call a provider, log or audit, expose a route, or activate a user path;
 S03D and later owners retain those duties.
 
+The bounded S03D owner is
+`public.solmind_prepare_virtual_guide_predispatch(...)` in
+`supabase/migrations/20260924000000_virtual_guide_predispatch_evidence.sql`.
+Keep it service-role-only, security-definer, empty-search-path, lock-bounded and
+atomic. It revalidates current Explorer authority, one of the three allowed Explorer
+session types, active session/account/profile/onboarding, active or paused relationship,
+Practice binding, clear restricted mode, adult affirmation and the exact current
+required-consent set. The Practice must remain active and approved. Lock the
+reviewed authority rows and the required-consent definition while the
+transaction establishes evidence. It must persist exactly one bounded snapshot, one started
+invocation and the two closed value-free Family E audit events before provider
+I/O. The AV1 proof binds the current authority facts; source IDs and consent IDs
+are canonical sorted unique arrays. `exact_retry` is a no-dispatch disposition,
+never authority to call a provider again. The database verifies only the AV1
+authority proof; the context fingerprint and source IDs are caller-attested, so
+`created` is necessary but not sufficient for a provider attempt, and v1
+evidence alone never authorizes an Explorer-facing dispatch (see
+`docs/AGENT_TASK_RULES.md`). S03D owns no context loading, provider
+call, route, message persistence, safety response, deployment or real-user
+activation.
+
 The bounded S03E owner is
 `src/lib/solmind/virtual-guide/openAiLunaVirtualGuideTransport.ts`. Keep the
 Responses endpoint, `gpt-5.6-luna`, medium reasoning effort, `store: false`,
@@ -145,9 +166,9 @@ Accept the credential and HTTP function only through the server composition
 root; do not read environment state here. Send only the already-authorized S03B
 context bytes as provider input, never separate Explorer/session/snapshot IDs or
 metadata. Provider bodies and errors remain value-free at the S03B boundary.
-S03E is a dormant transport adapter: S03D pre-dispatch evidence, the authenticated
-route, message persistence, safety handling, deployment and runtime activation
-remain separate gates.
+S03E is a dormant transport adapter: the pre-dispatch gate (an S03D `created`
+outcome plus server composition), the authenticated route, message persistence,
+safety handling, deployment and runtime activation remain separate gates.
 
 ## PRJ01_V-WS05-WI022 Suggested Waypoint UI Boundaries
 
