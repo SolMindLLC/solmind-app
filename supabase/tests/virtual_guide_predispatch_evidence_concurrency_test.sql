@@ -1,8 +1,10 @@
 -- Local ephemeral database only. This test commits reserved synthetic fixture
--- rows so two dblink sessions can contend on one logical operation. It removes
--- only its reserved rows before finishing. Never run against hosted or real-user
+-- rows so two dblink sessions can contend first on one logical operation and
+-- then with two different logical operations on one session. It removes only
+-- its reserved rows before finishing. Never run against hosted or real-user
 -- data. If execution aborts after fixture commit, perform an approved idle local
--- database reset before another run.
+-- database reset before another run. The cleanup runs as the database owner and
+-- deletes rows that no application role can write or delete.
 
 create extension if not exists dblink;
 
@@ -20,8 +22,11 @@ begin
   or exists (
     select 1
       from ai.ai_model_invocation
-     where logical_operation_id =
-       '92000000-0000-4000-8000-000000000061'
+     where logical_operation_id in (
+       '92000000-0000-4000-8000-000000000061'::uuid,
+       '92000000-0000-4000-8000-000000000081'::uuid,
+       '92000000-0000-4000-8000-000000000091'::uuid
+     )
   )
   then
     raise exception 'solmind_virtual_guide_predispatch_concurrency_residue';
@@ -294,23 +299,28 @@ select
 commit;
 
 begin;
-select plan(21);
+select plan(31);
 
 create function pg_temp.virtual_guide_wait_for_lock(
   p_connection text,
-  p_pid integer
+  p_pid integer,
+  p_wait_events text[]
 )
 returns boolean
 language plpgsql
 as $$
 begin
   for attempt in 1..20 loop
+    -- pg_stat_activity is cached for the rest of the transaction after first
+    -- access; clear it so every poll sees the current wait event.
+    perform pg_catalog.pg_stat_clear_snapshot();
     if dblink_is_busy(p_connection) = 1
        and exists (
          select 1
            from pg_catalog.pg_stat_activity
           where pid = p_pid
             and wait_event_type = 'Lock'
+            and wait_event = any(p_wait_events)
        )
     then
       return true;
@@ -473,7 +483,8 @@ select ok(
       select pid
         from virtual_guide_concurrency_pids
        where name = 'b'
-    )
+    ),
+    array['advisory']
   ),
   'B waits on the operation-scoped advisory lock'
 );
@@ -548,19 +559,181 @@ select is(
   'the simultaneous calls retain exactly the two required Family E rows'
 );
 
+-- Two different logical operations on one session take different advisory
+-- keys, so they serialize on the session row lock instead.
+create function pg_temp.virtual_guide_prepare_call(
+  p_logical_operation_id uuid,
+  p_context_snapshot_id uuid,
+  p_model_invocation_id uuid
+)
+returns text
+language sql
+as $$
+  select pg_catalog.format(
+    $call$
+      select *
+        from public.solmind_prepare_virtual_guide_predispatch(
+          %L::uuid, %L::uuid, %L::uuid, %L::uuid, %L::uuid, %L::uuid,
+          %L::uuid, %L::text, %L::uuid[], %L::uuid[], %L::text
+        )
+    $call$,
+    p_logical_operation_id,
+    p_context_snapshot_id,
+    p_model_invocation_id,
+    fixture.session_id,
+    fixture.actor_account_id,
+    fixture.explorer_profile_id,
+    fixture.relationship_id,
+    fixture.authorization_version,
+    fixture.required_consent_ids,
+    fixture.source_ids,
+    fixture.context_fingerprint
+  )
+    from pg_temp.virtual_guide_concurrency_fixture fixture
+$$;
+
+select is(
+  dblink_exec('s03d_predispatch_a', 'begin'),
+  'BEGIN',
+  'connection A begins the second operation'
+);
+select is(
+  dblink_exec('s03d_predispatch_b', 'begin'),
+  'BEGIN',
+  'connection B begins the third operation'
+);
+
+create temp table virtual_guide_a_second_result as
+select result.*
+  from dblink(
+    's03d_predispatch_a',
+    pg_temp.virtual_guide_prepare_call(
+      '92000000-0000-4000-8000-000000000081',
+      '92000000-0000-4000-8000-000000000082',
+      '92000000-0000-4000-8000-000000000083'
+    )
+  ) result(
+    preparation_state text,
+    prepared_context_snapshot_id uuid,
+    prepared_model_invocation_id uuid
+  );
+
+select is(
+  (select preparation_state from virtual_guide_a_second_result),
+  'created',
+  'A creates a second operation on the session inside its open transaction'
+);
+select is(
+  dblink_send_query(
+    's03d_predispatch_b',
+    pg_temp.virtual_guide_prepare_call(
+      '92000000-0000-4000-8000-000000000091',
+      '92000000-0000-4000-8000-000000000092',
+      '92000000-0000-4000-8000-000000000093'
+    )
+  ),
+  1,
+  'B launches a third, different operation on the same session asynchronously'
+);
+select ok(
+  pg_temp.virtual_guide_wait_for_lock(
+    's03d_predispatch_b',
+    (
+      select pid
+        from virtual_guide_concurrency_pids
+       where name = 'b'
+    ),
+    array['transactionid', 'tuple']
+  ),
+  'B waits on the session row lock, not an advisory lock'
+);
+select is(
+  dblink_exec('s03d_predispatch_a', 'commit'),
+  'COMMIT',
+  'A commits the second operation'
+);
+
+create temp table virtual_guide_b_third_result as
+select *
+  from dblink_get_result('s03d_predispatch_b')
+       result(
+         preparation_state text,
+         prepared_context_snapshot_id uuid,
+         prepared_model_invocation_id uuid
+       );
+
+select *
+  from dblink_get_result('s03d_predispatch_b')
+       result(
+         preparation_state text,
+         prepared_context_snapshot_id uuid,
+         prepared_model_invocation_id uuid
+       );
+
+select is(
+  (select preparation_state from virtual_guide_b_third_result),
+  'created',
+  'B revalidates after the session lock is released and creates its own evidence'
+);
+select is(
+  dblink_exec('s03d_predispatch_b', 'commit'),
+  'COMMIT',
+  'B commits the third operation'
+);
+select is(
+  (
+    select pg_catalog.count(*)::integer
+      from ai.ai_model_invocation invocation
+      join ai.ai_context_snapshot snapshot
+        on snapshot.ai_context_snapshot_id = invocation.ai_context_snapshot_id
+     where invocation.logical_operation_id in (
+       '92000000-0000-4000-8000-000000000081'::uuid,
+       '92000000-0000-4000-8000-000000000091'::uuid
+     )
+       and invocation.ai_interaction_session_id =
+         '92000000-0000-4000-8000-000000000051'
+  ),
+  2,
+  'each serialized operation retains exactly one bound snapshot and invocation'
+);
+select is(
+  (
+    select pg_catalog.count(*)::integer
+      from audit.audit_event
+     where target_entity_id in (
+       '92000000-0000-4000-8000-000000000082'::uuid,
+       '92000000-0000-4000-8000-000000000083'::uuid,
+       '92000000-0000-4000-8000-000000000092'::uuid,
+       '92000000-0000-4000-8000-000000000093'::uuid
+     )
+  ),
+  4,
+  'each serialized operation retains exactly its two Family E rows'
+);
+
 select lives_ok(
   $cleanup$
     delete from audit.audit_event
      where target_entity_id in (
        '92000000-0000-4000-8000-000000000062'::uuid,
-       '92000000-0000-4000-8000-000000000063'::uuid
+       '92000000-0000-4000-8000-000000000063'::uuid,
+       '92000000-0000-4000-8000-000000000082'::uuid,
+       '92000000-0000-4000-8000-000000000083'::uuid,
+       '92000000-0000-4000-8000-000000000092'::uuid,
+       '92000000-0000-4000-8000-000000000093'::uuid
      );
     delete from ai.ai_model_invocation
-     where logical_operation_id =
-       '92000000-0000-4000-8000-000000000061';
+     where logical_operation_id in (
+       '92000000-0000-4000-8000-000000000061'::uuid,
+       '92000000-0000-4000-8000-000000000081'::uuid,
+       '92000000-0000-4000-8000-000000000091'::uuid
+     );
     delete from ai.ai_context_snapshot
-     where ai_context_snapshot_id =
-       '92000000-0000-4000-8000-000000000062';
+     where ai_context_snapshot_id in (
+       '92000000-0000-4000-8000-000000000062'::uuid,
+       '92000000-0000-4000-8000-000000000082'::uuid,
+       '92000000-0000-4000-8000-000000000092'::uuid
+     );
     delete from ai.ai_interaction_session
      where ai_interaction_session_id =
        '92000000-0000-4000-8000-000000000051';
@@ -613,14 +786,29 @@ select is(
       +
       (select pg_catalog.count(*)
          from ai.ai_model_invocation
-        where logical_operation_id =
-          '92000000-0000-4000-8000-000000000061')
+        where logical_operation_id in (
+          '92000000-0000-4000-8000-000000000061'::uuid,
+          '92000000-0000-4000-8000-000000000081'::uuid,
+          '92000000-0000-4000-8000-000000000091'::uuid
+        ))
+      +
+      (select pg_catalog.count(*)
+         from ai.ai_context_snapshot
+        where ai_context_snapshot_id in (
+          '92000000-0000-4000-8000-000000000062'::uuid,
+          '92000000-0000-4000-8000-000000000082'::uuid,
+          '92000000-0000-4000-8000-000000000092'::uuid
+        ))
       +
       (select pg_catalog.count(*)
          from audit.audit_event
         where target_entity_id in (
           '92000000-0000-4000-8000-000000000062'::uuid,
-          '92000000-0000-4000-8000-000000000063'::uuid
+          '92000000-0000-4000-8000-000000000063'::uuid,
+          '92000000-0000-4000-8000-000000000082'::uuid,
+          '92000000-0000-4000-8000-000000000083'::uuid,
+          '92000000-0000-4000-8000-000000000092'::uuid,
+          '92000000-0000-4000-8000-000000000093'::uuid
         ))
   )::integer,
   0,

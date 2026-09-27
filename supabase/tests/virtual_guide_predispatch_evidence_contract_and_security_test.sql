@@ -77,49 +77,79 @@ select ok(
   not has_table_privilege(
     'service_role',
     'ai.ai_context_snapshot',
-    'SELECT,INSERT,UPDATE,DELETE'
+    'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
+  )
+  and not has_any_column_privilege(
+    'service_role',
+    'ai.ai_context_snapshot',
+    'SELECT,INSERT,UPDATE,REFERENCES'
   ),
-  'service_role has no direct context-snapshot table access'
+  'service_role has no direct context-snapshot table or column privilege'
 );
 select ok(
   not has_table_privilege(
     'service_role',
     'ai.ai_model_invocation',
-    'SELECT,INSERT,UPDATE,DELETE'
+    'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
+  )
+  and not has_any_column_privilege(
+    'service_role',
+    'ai.ai_model_invocation',
+    'SELECT,INSERT,UPDATE,REFERENCES'
   ),
-  'service_role has no direct model-invocation table access'
+  'service_role has no direct model-invocation table or column privilege'
 );
 select ok(
   not has_table_privilege(
     'authenticated',
     'ai.ai_context_snapshot',
-    'SELECT,INSERT,UPDATE,DELETE'
+    'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
+  )
+  and not has_any_column_privilege(
+    'authenticated',
+    'ai.ai_context_snapshot',
+    'SELECT,INSERT,UPDATE,REFERENCES'
   ),
-  'authenticated has no direct context-snapshot table access'
+  'authenticated has no direct context-snapshot table or column privilege'
 );
 select ok(
   not has_table_privilege(
     'authenticated',
     'ai.ai_model_invocation',
-    'SELECT,INSERT,UPDATE,DELETE'
+    'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
+  )
+  and not has_any_column_privilege(
+    'authenticated',
+    'ai.ai_model_invocation',
+    'SELECT,INSERT,UPDATE,REFERENCES'
   ),
-  'authenticated has no direct model-invocation table access'
+  'authenticated has no direct model-invocation table or column privilege'
 );
 select ok(
   not has_table_privilege(
     'anon',
     'ai.ai_context_snapshot',
-    'SELECT,INSERT,UPDATE,DELETE'
+    'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
+  )
+  and not has_any_column_privilege(
+    'anon',
+    'ai.ai_context_snapshot',
+    'SELECT,INSERT,UPDATE,REFERENCES'
   ),
-  'anon has no direct context-snapshot table access'
+  'anon has no direct context-snapshot table or column privilege'
 );
 select ok(
   not has_table_privilege(
     'anon',
     'ai.ai_model_invocation',
-    'SELECT,INSERT,UPDATE,DELETE'
+    'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
+  )
+  and not has_any_column_privilege(
+    'anon',
+    'ai.ai_model_invocation',
+    'SELECT,INSERT,UPDATE,REFERENCES'
   ),
-  'anon has no direct model-invocation table access'
+  'anon has no direct model-invocation table or column privilege'
 );
 
 select has_function(
@@ -196,16 +226,14 @@ select ok(
 );
 select ok(
   (
-    select p.prosrc like '%v_session.session_type not in (%'
-       and p.prosrc like '%v_session.practice_id is distinct from%'
-       and p.prosrc like '%v_practice.status <> ''active''%'
-       and p.prosrc like '%v_practice.approval_status <> ''approved''%'
-      from pg_catalog.pg_proc p
-      join pg_catalog.pg_namespace n on n.oid = p.pronamespace
-     where n.nspname = 'public'
-       and p.proname = 'solmind_prepare_virtual_guide_predispatch'
+    select c.convalidated
+       and pg_catalog.pg_get_constraintdef(c.oid)
+         like '%dispatch_contract_version IS NOT NULL%'
+      from pg_catalog.pg_constraint c
+     where c.conrelid = 'ai.ai_model_invocation'::regclass
+       and c.conname = 'ai_model_invocation_predispatch_evidence_shape_check'
   ),
-  'pre-dispatch transaction pins Explorer session and Practice eligibility'
+  'invocation evidence shape check requires a contract version and is validated'
 );
 select is(
   (

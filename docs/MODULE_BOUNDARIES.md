@@ -849,24 +849,29 @@ and record the required evidence immediately before any provider effect.
 
 ```text
 supabase/migrations/20260924000000_virtual_guide_predispatch_evidence.sql
+supabase/migrations/20260927000000_virtual_guide_predispatch_evidence_hardening.sql
 supabase/tests/virtual_guide_predispatch_evidence_contract_and_security_test.sql
 supabase/tests/virtual_guide_predispatch_evidence_realpath_test.sql
+supabase/tests/virtual_guide_predispatch_evidence_hardening_test.sql
 supabase/tests/virtual_guide_predispatch_evidence_concurrency_test.sql
 ```
 
 The service-role-only, security-definer function revalidates the current
 Explorer account/role, one of the three Explorer session types, session status,
-Explorer profile/onboarding, relationship/Practice binding, restricted-mode
-state, active/approved Practice, adult affirmation and complete active
-required-consent set immediately before evidence creation. It locks the reviewed
+Explorer profile/onboarding, relationship/Practice binding, single-Guide
+topology (no other current Guide relationship), restricted-mode state,
+active/approved Practice and Organization, adult affirmation and complete
+active required-consent set immediately before evidence creation. Every
+authority and exact-retry comparison is null-safe. It locks the reviewed
 authority rows and stabilizes the required-consent definition, recomputes an AV1
 proof over those current facts,
 then atomically creates one bounded context snapshot, one started invocation and
 the exact two value-free Family E lifecycle rows. Advisory serialization,
 unique operation/snapshot indexes and a 2-second lock timeout make the boundary
 bounded and idempotent. Exact retry is retained evidence with an explicit
-no-dispatch disposition; a changed payload under the same operation fails
-closed.
+no-dispatch disposition; a changed payload under the same operation, or a
+snapshot or invocation identifier already used by another operation, fails
+closed as a conflict.
 
 S03D does not load the S03A sources, call S03E, persist conversation messages,
 select a credential, expose a route/action, own the safety response, deploy or
@@ -878,7 +883,9 @@ verify the context fingerprint, the context source IDs, or their ownership;
 the server caller attests them. The rule that derives the context source IDs
 is still an open composition gate, because the S03C result exposes no
 source-ID set. A `created` result is therefore necessary but not sufficient
-for a provider attempt. An S03D v1 context snapshot is write-once and leaves
+for a provider attempt. An S03D v1 context snapshot is write-once by contract
+(no update path or role grant exists; the database does not block an
+owner-level update) and leaves
 the Methodology Context Pack version, typed source IDs including
 `related_reflection_ids`, and policy/behavior versions empty; the snapshot
 fields required by `solmind-docs`

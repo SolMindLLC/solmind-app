@@ -267,34 +267,47 @@ uppercase hexadecimal context fingerprint.
 Before writing, re-read and lock the current session, Explorer profile and
 relationship; require an active Explorer account/role/profile/onboarding state,
 one of the three Explorer session types, an active session, an active or paused
-relationship with matching Practice, clear restricted mode, current adult
-affirmation, an active/approved Practice, and the exact complete active
-required-consent set. Lock the reviewed authority rows and stabilize the
-required-consent definition for the transaction. Recompute the AV1 proof from
-those current facts. In one transaction create exactly one
-context snapshot, one started invocation and the two closed Family E rows.
-`exact_retry` means evidence already exists and the caller must not dispatch
-again; changed payload under the same operation must fail closed. The
-authority guards compare with null-unsafe operators only columns that are NOT
-NULL (the nullable session Practice and consent adult affirmation are
-compared null-safely) and rely on the
-`ai_interaction_session_role_context_shape_check` constraint. The exact-retry
-comparisons against retained snapshot and invocation evidence are not
-null-safe: those evidence columns are nullable for legacy rows, and the v1
-invocation evidence shape check does not require `dispatch_contract_version`
-to be non-null. They hold today only because no application role (anon,
-authenticated or service_role) holds privileges on those tables and this
-function, the only write path granted to them, always writes complete v1
-evidence. Land the deferred C1-H hardening before any caller or activation,
-any other writer or table grant, or any relaxation of those constraints.
+relationship with matching Practice, no other current Guide relationship for
+the Explorer (any status other than `ended` or `transferred`), clear
+restricted mode, current adult affirmation, an active/approved Practice with an
+active/approved Organization, and the exact complete active required-consent
+set. Lock the reviewed authority rows, including every relationship of the
+Explorer profile, and stabilize the required-consent definition for the
+transaction. Recompute the AV1 proof from those current facts; the
+Organization and single-Guide checks are enforced directly and are not part of
+the v1 proof string. The single-Guide check assumes the Explorer
+current-relationship capacity policy stays at 1
+(`core.explorer_engagement_capacity_policy`); raising it would let invitation
+acceptance create a second current relationship that this gate then denies, so
+change both together. In one transaction create exactly one context snapshot,
+one started invocation and the two closed Family E rows. `exact_retry` means
+evidence already exists and the caller must not dispatch again; changed
+payload under the same operation, or a snapshot or invocation ID already used
+by another operation, must fail closed as `operation_conflict`.
+
+Every authority guard and every exact-retry comparison against retained
+snapshot and invocation evidence is null-safe (`is distinct from`, or an
+explicit null test before `not in`), and the invocation evidence shape check
+requires a non-null `dispatch_contract_version` whenever the pre-dispatch
+columns are populated. Both come from
+`supabase/migrations/20260927000000_virtual_guide_predispatch_evidence_hardening.sql`.
+Keep them that way: do not reintroduce `<>`, `=` or `not in` guards against a
+nullable column, and treat any new writer or table grant on the evidence
+tables as a separately reviewed change. Lock order is the operation advisory
+lock, session, account and role, Explorer profile, bound relationship, the Explorer's other
+relationships, Practice, Organization, the consent-document table, consent
+records, then any retained invocation and snapshot. A new writer that takes
+these locks in another order risks a deadlock; the database aborts one
+transaction, and the caller must treat that as the unavailable result below.
 
 The database recomputes and verifies only the AV1 authority proof. It does not
 verify the context fingerprint, the context source IDs, or their ownership;
 the server caller attests them. The rule that derives the context source IDs
 is still an open composition gate, because the S03C result exposes no
-source-ID set. How the logical operation ID is derived from the immediate
-Explorer message, including whether a deliberate new attempt after a terminal
-failure receives a new ID, is also an open composition gate. Authenticating
+source-ID set. The logical operation ID must be bound to the immediate
+Explorer message identity; its exact derivation, including whether a
+deliberate new attempt after a terminal failure receives a new ID, is also an
+open composition gate. Authenticating
 the actor (an authenticated Explorer-role session) also remains a server
 composition duty: S03D does not verify an authenticated
 `identity.user_session`; it checks that the attested actor is an active
@@ -302,10 +315,12 @@ Explorer account with an active Explorer role, consistent across the rows it
 reads.
 
 A `created` result is therefore necessary but not sufficient for a provider
-attempt. An S03D v1 context snapshot is write-once: it leaves the Methodology
-Context Pack version, typed source IDs including `related_reflection_ids`, and
-policy/behavior versions empty, and its stored `prompt_version` is the S03B
-contract token, not an S03E instruction version. The snapshot fields required
+attempt. An S03D v1 context snapshot is write-once by contract (no update path
+or role grant exists, but the database does not block an owner-level update):
+it leaves the Methodology Context Pack version, typed source IDs including
+`related_reflection_ids`, and policy/behavior versions empty, and its stored
+`prompt_version` is the S03B contract token, not an S03E instruction version.
+The snapshot fields required
 by `solmind-docs` `execution/04_SolMind_AI_Orchestration_Spec_v1_0.md`
 Section 12 must be recorded at snapshot creation by a separately reviewed
 successor evidence contract (a new contract version); they cannot be added to
@@ -319,10 +334,12 @@ authorizes no provider call.
 Do not add a provider call, credential lookup, route/action, conversation-message
 write, safety workflow, browser/UI code, deployment, hosted data or real-user
 activation to S03D. Keep fingerprint, authorization proof, source IDs and
-content bytes out of audit metadata and outward errors. Map any database error
-that is not a `solmind_virtual_guide_predispatch_*` code (for example a unique
-violation, lock timeout or deadlock) to the same calm, value-free unavailable
-result, with no provider call.
+content bytes out of audit metadata and outward errors. The closed
+`solmind_virtual_guide_predispatch_*` identifiers are exception message text
+under the default SQLSTATE, not distinct SQLSTATE codes; match on the message.
+Every one of them, and any other database error (for example a unique
+violation, lock timeout or deadlock), maps to the same calm, value-free
+unavailable result, with no provider call.
 
 ### Virtual Guide S03E Luna transport
 

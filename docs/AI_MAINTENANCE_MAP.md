@@ -338,7 +338,7 @@ The `auth/`, `context/`, and `supabase/` directories hold server-only modules ke
 | Provider-free Explorer-safe context kernel (`PRJ01_R-WS09-WI021-S03A`) | `src/lib/solmind/context/explorerContext.ts`; `src/lib/solmind/context/explorerSafeContext.ts`; co-located tests | Direct-import server-only runtime validation and deterministic nine-layer Explorer projection. Summary continuity now requires the exact banked published projection: published container and target publication, active/paused relationship, published revision, and Explorer-facing published section. Cross-contract tests pin every accepted Summary vocabulary to the owning migrations. The kernel stays off the context barrel and proves exact keys, role/binding separation, privacy-byte absence, limits, immutability, and canonical serialization. It is not a provider prompt, source repository, snapshot/audit owner, context budget, route/UI path, or real-user conversation. |
 | Provider-neutral Virtual Guide conversation contract (`PRJ01_R-WS09-WI021-S03B`) | `src/lib/solmind/virtual-guide/virtualGuideConversationContract.ts`; co-located focused tests | Direct-import server-only validation around the exact compact S03A serialization and opaque invocation, Explorer, session, snapshot, and fingerprint bindings. The boundary passes a frozen request only to one injected transport, enforces caller cancellation and a bounded timeout, validates an exact invocation-bound response, and exposes a closed value-free error algebra. Tests use an in-memory fake transport. Context retrieval, authorization/consent refresh, fingerprint creation or verification, provider selection/adapter/credentials, persistence, audit writing, route/UI wiring, deployment, and real-user activation remain separate gates. |
 | Authorized Virtual Guide context composition (`PRJ01_R-WS09-WI021-S03C`) | `src/lib/solmind/virtual-guide/authorizedVirtualGuideContext.ts`; co-located focused tests | Direct-import server-only composition over exactly two injected source capabilities. It validates server-issued request IDs, self-Explorer actor/account binding, active onboarding, adult affirmation, active/paused relationship binding, and equality of active-required versus accepted consent IDs; runs the S03A allowlist; binds the same Explorer/session; hashes the exact compact serialization; and revalidates a minimized authorization proof/version before returning a frozen S03B request. Source mutation, accessor/extra capabilities, stale authorization, excluded-continuity canaries, prompt-injection data, cancellation and value-free failure are tested. Concrete repository/database loading, persisted snapshots, S03D pre-I/O evidence, provider selection/call, route/UI wiring, deployment and real-user activation remain separate gates. |
-| Virtual Guide pre-dispatch evidence (`PRJ01_R-WS09-WI021-S03D`) | `supabase/migrations/20260924000000_virtual_guide_predispatch_evidence.sql`; `supabase/tests/virtual_guide_predispatch_evidence_*_test.sql` | Dormant service-role-only atomic database boundary. It locks and revalidates the current Explorer account/role, allowed Explorer session type and active status, profile/onboarding, relationship/Practice, active/approved Practice, restricted-mode state, adult affirmation and exact current required-consent set; recomputes the AV1 proof; then creates one bounded context snapshot, one started invocation and exactly two value-free Family E events. Canonical arrays, stabilized consent definition, advisory serialization, unique indexes and a lock timeout make exact retry idempotent and explicitly no-dispatch. It has no context loader, provider call, credential reader, route/UI wiring, message persistence, safety runtime, deployment or real-user activation. |
+| Virtual Guide pre-dispatch evidence (`PRJ01_R-WS09-WI021-S03D`) | `supabase/migrations/20260924000000_virtual_guide_predispatch_evidence.sql`; `supabase/migrations/20260927000000_virtual_guide_predispatch_evidence_hardening.sql`; `supabase/tests/virtual_guide_predispatch_evidence_*_test.sql` | Dormant service-role-only atomic database boundary. It locks and revalidates the current Explorer account/role, allowed Explorer session type and active status, profile/onboarding, relationship/Practice, single-Guide topology (no other current Guide relationship), active/approved Practice and Organization, restricted-mode state, adult affirmation and exact current required-consent set; recomputes the AV1 proof; then creates one bounded context snapshot, one started invocation and exactly two value-free Family E events. Canonical arrays, stabilized consent definition, advisory serialization, unique indexes and a lock timeout make exact retry idempotent and explicitly no-dispatch. The hardening migration makes every authority and exact-retry comparison null-safe, requires a non-null contract version on populated invocation evidence, and reports snapshot or invocation identifier reuse under another operation as a conflict. It has no context loader, provider call, credential reader, route/UI wiring, message persistence, safety runtime, deployment or real-user activation. |
 | OpenAI Luna Virtual Guide transport (`PRJ01_R-WS09-WI021-S03E`) | `src/lib/solmind/virtual-guide/openAiLunaVirtualGuideTransport.ts`; co-located focused tests | Dormant direct-import server-only S03B transport mapping. It fixes the OpenAI Responses endpoint, model `gpt-5.6-luna`, medium reasoning, `store: false`, fixed anti-injection Virtual Guide instructions and a bounded response body/output. Only the S03B authorized-context string is provider input; no separate Explorer/session/snapshot metadata is sent. Configuration/accessor, HTTP, redirect, model/status, tool-output, malformed/mixed content, refusal, oversize, credential-leak and dependency cases use fake HTTP. Environment/credential selection, the pre-dispatch gate (an S03D `created` outcome plus server composition), route/UI wiring, deployment and any real provider call remain separate gates. |
 | Supabase integration | `src/lib/solmind/supabase/*.ts` | Server-side request-auth client (who), guarded service-role loader (what), principal mapping, session selection, and the closed-allowlist audit write executor with its admin audit-writer factory |
 | Banked dormant protected application setting (`PRJ01_R-WS09-WI021-S02`) | `src/lib/solmind/supabase/applicationSettingReader.ts`; `supabase/migrations/20260730000000_application_setting_foundation.sql`; `supabase/tests/application_setting_foundation_*_test.sql` | Fixed-key server-only read plus protected service-role-only mutation for the 1-100 day Shared Snapshot sendability setting. Actual changes use expected-version serialization and exact Family F same-transaction audit; same-value/current-version requests and exact already-applied retries are writeless. No routine role, browser, or direct-table mutation path exists, and no application caller is banked. |
@@ -484,32 +484,20 @@ Extend these modules deliberately and in small slices. Keep server-only modules 
   `execution/04_SolMind_AI_Orchestration_Spec_v1_0.md` Section 12 snapshot
   fields (Methodology Context Pack version, typed source IDs including
   `related_reflection_ids`, policy/behavior versions) and an S03E
-  instruction/template version. v1 snapshots are write-once, and v1 evidence
-  alone never authorizes an Explorer-facing dispatch.
+  instruction/template version. v1 snapshots are write-once by contract (no
+  update path or role grant exists; the database does not block an
+  owner-level update), and v1 evidence alone never authorizes an
+  Explorer-facing dispatch.
 - S03D composition gates before any caller: a source-ID derivation rule that
   defines which identifiers populate `context_source_ids` (the S03C result
   exposes no source-ID set), and a stable logical operation ID bound to the
   immediate Explorer message identity, whose exact derivation (including
   whether a deliberate new attempt after a terminal failure receives a new ID)
   the composition slice fixes (no-double-dispatch holds per operation ID only).
-- S03D hardening before any caller or activation: C1-H null-safe guard and
-  exact-retry comparisons, a single-active-relationship recheck, and an
-  Organization status/approval check. C1-H includes requiring
-  `dispatch_contract_version is not null` in the populated branch of
-  `ai_model_invocation_predispatch_evidence_shape_check` (the v1 check accepts
-  NULL there), `IS DISTINCT FROM` for the exact-retry comparisons against
-  retained snapshot and invocation evidence (nullable for legacy rows), and
-  regression tests for those cases, an injected audit-write failure, and the
-  advisory-lock wait. The authority guards fail closed today because every
-  column they compare with a null-unsafe operator is NOT NULL (the nullable
-  session Practice and consent adult affirmation are compared null-safely) and
-  `ai_interaction_session_role_context_shape_check` forces the Explorer profile
-  and relationship IDs; the exact-retry comparisons hold only because no
-  application role (anon, authenticated or service_role) holds privileges on
-  those tables and the S03D function, the only write path granted to them,
-  always writes complete v1 evidence. Land C1-H before any caller or
-  activation, any other writer or table grant, or any relaxation of those
-  constraints.
+- A single-source AV1 producer before any S03D caller. S03C and the
+  composition caller must obtain the AV1 proof from one owner, so the caller's
+  proof string cannot drift from the database recomputation. The composition
+  slice owns this.
 - Guide Assistant context from these Explorer artifacts.
 - Suggested Waypoint blank-draft compose, delete, correction, and withdrawal UI
   callers, remaining Explorer comparison/adoption/response command callers,

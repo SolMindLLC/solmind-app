@@ -162,9 +162,10 @@ Backend foundations present in the repository (high level):
   a model, expose a route, connect the UI, deploy, or affect a real user.
 - Virtual Guide S03D pre-dispatch evidence foundation: one service-role-only,
   security-definer transaction revalidates the current Explorer account, role,
-  session type/status, onboarding, relationship, Practice binding, restricted
-  mode, active/approved Practice, adult affirmation, and complete active
-  required-consent set. It then
+  session type/status, onboarding, relationship, single-Guide topology,
+  Practice binding, restricted mode, active/approved Practice and
+  Organization, adult affirmation, and complete active required-consent set,
+  using null-safe comparisons throughout. It then
   creates exactly one bounded context snapshot, one started model invocation,
   and two value-free Family E audit rows for one logical operation. Exact retry
   returns a no-dispatch disposition and creates no duplicate evidence. The

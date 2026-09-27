@@ -139,14 +139,18 @@ S03D and later owners retain those duties.
 
 The bounded S03D owner is
 `public.solmind_prepare_virtual_guide_predispatch(...)` in
-`supabase/migrations/20260924000000_virtual_guide_predispatch_evidence.sql`.
-Keep it service-role-only, security-definer, empty-search-path, lock-bounded and
-atomic. It revalidates current Explorer authority, one of the three allowed Explorer
-session types, active session/account/profile/onboarding, active or paused relationship,
-Practice binding, clear restricted mode, adult affirmation and the exact current
-required-consent set. The Practice must remain active and approved. Lock the
-reviewed authority rows and the required-consent definition while the
-transaction establishes evidence. It must persist exactly one bounded snapshot, one started
+`supabase/migrations/20260924000000_virtual_guide_predispatch_evidence.sql`,
+hardened by
+`supabase/migrations/20260927000000_virtual_guide_predispatch_evidence_hardening.sql`.
+Keep it service-role-only, security-definer, empty-search-path, lock-bounded,
+atomic and null-safe in every authority and exact-retry comparison. It
+revalidates current Explorer authority, one of the three allowed Explorer
+session types, active session/account/profile/onboarding, active or paused
+relationship, no other current Guide relationship for the Explorer, Practice
+binding, clear restricted mode, adult affirmation and the exact current
+required-consent set. The Practice and its Organization must remain active and
+approved. Lock the reviewed authority rows and the required-consent definition
+while the transaction establishes evidence. It must persist exactly one bounded snapshot, one started
 invocation and the two closed value-free Family E audit events before provider
 I/O. The AV1 proof binds the current authority facts; source IDs and consent IDs
 are canonical sorted unique arrays. `exact_retry` is a no-dispatch disposition,
