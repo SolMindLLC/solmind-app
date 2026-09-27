@@ -498,6 +498,11 @@ Extend these modules deliberately and in small slices. Keep server-only modules 
   composition caller must obtain the AV1 proof from one owner, so the caller's
   proof string cannot drift from the database recomputation. The composition
   slice owns this.
+- S03D caller preconditions from review #91a: call the gate only under READ
+  COMMITTED, and keep the lock order in `docs/AGENT_TASK_RULES.md`, including
+  for a top-down Organization cascade; check the existing invitation-acceptance
+  writer against that order when composition lands. The composition slice
+  owns both.
 - Guide Assistant context from these Explorer artifacts.
 - Suggested Waypoint blank-draft compose, delete, correction, and withdrawal UI
   callers, remaining Explorer comparison/adoption/response command callers,

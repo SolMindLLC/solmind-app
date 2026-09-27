@@ -283,11 +283,16 @@ change both together. In one transaction create exactly one context snapshot,
 one started invocation and the two closed Family E rows. `exact_retry` means
 evidence already exists and the caller must not dispatch again; changed
 payload under the same operation, or a snapshot or invocation ID already used
-by another operation, must fail closed as `operation_conflict`.
+by another operation, must fail closed, normally as `operation_conflict`; a
+racing reuse can instead end in the 2000 ms lock timeout. Call the gate only
+under READ COMMITTED: under REPEATABLE READ or SERIALIZABLE the transaction
+snapshot can predate the Explorer lock and miss a relationship or consent
+change committed in between. The composition caller must enforce this
+before any activation.
 
 Every authority guard and every exact-retry comparison against retained
-snapshot and invocation evidence is null-safe (`is distinct from`, or an
-explicit null test before `not in`), and the invocation evidence shape check
+snapshot and invocation evidence is null-safe (`is distinct from`, an
+explicit null test before `not in`, or a `NOT FOUND` or `NOT EXISTS` check), and the invocation evidence shape check
 requires a non-null `dispatch_contract_version` whenever the pre-dispatch
 columns are populated. Both come from
 `supabase/migrations/20260927000000_virtual_guide_predispatch_evidence_hardening.sql`.
@@ -297,7 +302,8 @@ tables as a separately reviewed change. Lock order is the operation advisory
 lock, session, account and role, Explorer profile, bound relationship, the Explorer's other
 relationships, Practice, Organization, the consent-document table, consent
 records, then any retained invocation and snapshot. A new writer that takes
-these locks in another order risks a deadlock; the database aborts one
+these locks in another order, such as a top-down cascade that updates an
+Organization and then its Practices, risks a deadlock; the database aborts one
 transaction, and the caller must treat that as the unavailable result below.
 
 The database recomputes and verifies only the AV1 authority proof. It does not
