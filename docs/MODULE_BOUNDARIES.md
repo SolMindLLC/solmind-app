@@ -871,7 +871,9 @@ unique operation/snapshot indexes and a 2-second lock timeout make the boundary
 bounded and idempotent. Exact retry is retained evidence with an explicit
 no-dispatch disposition; a changed payload under the same operation, or a
 snapshot or invocation identifier already used by another operation, fails
-closed as a conflict.
+closed, normally as `operation_conflict`; a racing reuse can instead end in
+the 2-second lock timeout, and a check that runs earlier (for example stale
+authorization) reports its own error first.
 
 S03D does not load the S03A sources, call S03E, persist conversation messages,
 select a credential, expose a route/action, own the safety response, deploy or
