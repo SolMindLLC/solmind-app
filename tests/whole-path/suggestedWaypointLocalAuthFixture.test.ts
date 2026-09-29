@@ -12,6 +12,11 @@ import {
   type SuggestedWaypointWholePathRole,
 } from "./suggestedWaypointWholePathSafety";
 
+vi.mock("node:crypto", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:crypto")>()),
+  randomBytes: (size: number) => Buffer.alloc(size),
+}));
+
 const ROLES = [
   "assigned-guide",
   "assigned-explorer",
@@ -212,5 +217,30 @@ describe("Suggested Waypoint local Auth fixture lifecycle", () => {
     ).rejects.toThrow("whole_path_fixture_run_failed");
     expect(events.filter((event) => event.startsWith("delete:"))).toHaveLength(5);
     expect(events.at(-1)).toBe("reset");
+  });
+
+  it("generates default passwords that meet the local Auth password policy even when the random part has no digit", async () => {
+    const { dependencies } = harness();
+    const passwords: string[] = [];
+    const capturing: SuggestedWaypointLocalFixtureDependencies = {
+      ...dependencies,
+      async createAuthUser(email, password) {
+        passwords.push(password);
+        return dependencies.createAuthUser(email, password);
+      },
+    };
+    await expect(
+      runWithSuggestedWaypointLocalAuthFixture({ ...options(capturing), generatePassword: undefined }),
+    ).resolves.toEqual({ status: "completed", result: "scenario-complete" });
+
+    expect(passwords).toHaveLength(5);
+    for (const password of passwords) {
+      expect(password.length).toBeGreaterThanOrEqual(32);
+      expect(password).toMatch(/[a-z]/u);
+      expect(password).toMatch(/[A-Z]/u);
+      expect(password).toMatch(/[0-9]/u);
+      expect(password).toMatch(/[^A-Za-z0-9]/u);
+      expect(password).not.toMatch(/[<>]/u);
+    }
   });
 });

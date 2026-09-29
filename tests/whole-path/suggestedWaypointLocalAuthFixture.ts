@@ -88,8 +88,10 @@ function assertSecret(value: string, code: string): string {
   return value;
 }
 
+const PASSWORD_POLICY_SUFFIX = "aA1!";
+
 function defaultPassword(role: SuggestedWaypointWholePathRole): string {
-  return `${role}.${randomBytes(32).toString("base64url")}`;
+  return `${role}.${randomBytes(32).toString("base64url")}${PASSWORD_POLICY_SUFFIX}`;
 }
 
 class InMemoryCookieStore {
