@@ -41,6 +41,8 @@ src/
       RouteAccessPreview.tsx
       SectionLabel.tsx
       SessionCompass.tsx
+      SignInPreview.tsx
+      SignInPreviewParts.tsx
 
   lib/
     solmind/
@@ -54,6 +56,7 @@ src/
       pages.ts
       profile.ts
       roles.ts
+      signInPreview.ts
       routeAccess.ts
       terms.ts
       topics.ts
@@ -155,6 +158,20 @@ boundary. The surface inherits S01's no-provider, no-persistence, no-auth,
 no-notification, and no-real-user constraints. Its fixed replies must not be
 described as semantic interpretation or a genuine model response. S03 remains
 the owner of server-side provider conversation.
+
+The `/login` sign-in preview keeps the same split: `SignInPreview.tsx` owns
+the one client boundary, `SignInPreviewParts.tsx` owns presentation, and
+`signInPreview.ts` owns the approved copy and pure screen transitions.
+`src/app/login/page.tsx` only composes it. Screens follow their approved
+mockups; the preview's own additions are styled apart (a "Preview controls"
+band, an example-screen callout beside each code screen's claims, and
+explanations beside unconnected controls), and choosing Guide or Admin shows a
+placeholder while A3 is revised.
+A new-code request keeps A4, M1 or M2 on screen with what was typed; only the
+preview switcher moves between the code screens.
+It must not import the `auth/` or `supabase/` modules or send, check or store
+anything; wiring it is login step 6. `LoginOptionList.tsx` and
+`loginOptions.ts` are retained but no longer used by `/login`.
 
 ### Suggested Waypoint components
 

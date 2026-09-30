@@ -31,7 +31,7 @@ worker, provider path, deployment, or real-user activation exists.
 User-facing routes:
 
 - `/` - public landing page
-- `/login` - login preview
+- `/login` - sign-in preview: the approved sign-in screens, local and in-memory, not connected
 - `/admin` - Admin dashboard preview
 - `/guide` - human Guide dashboard preview
 - `/guide/waypoint-suggestions` - authenticated, read-only Human Guide
@@ -100,6 +100,22 @@ Reached-Waypoint, and exact-quotation sharing explanations. It adds no
 provider, persistence, authentication, server route, notification, actual
 sharing, deployment, or real-user effect. Genuine provider conversation stays
 in separately gated S03.
+
+The `/login` sign-in preview follows the same split. `src/app/login/page.tsx`
+stays thin; `src/components/solmind/SignInPreview.tsx` owns the one client
+boundary; `SignInPreviewParts.tsx` owns presentation; and
+`src/lib/solmind/signInPreview.ts` owns the approved copy and the pure
+screen transitions. It shows the sign-in screens approved for UAT (A1, A2,
+A4, M1, M2, M3) in their approved layouts, sends and checks nothing, keeps
+entries only in page memory, and adds no route handler, server action,
+cookie, Supabase or auth-module use. Its own additions are styled apart: a
+separate "Preview controls" band (the disclosure and a message switcher), an
+example-screen callout beside each code screen's claims, and explanations
+beside unconnected controls; choosing Guide or Admin shows a placeholder while
+A3 is revised.
+A new-code request keeps A4, M1 or M2 on screen with what was typed; only the
+preview switcher moves between the code screens.
+Wiring it to real sign-in is login step 6.
 
 Banked dormant `PRJ01_R-WS09-WI021-S02` provides one protected global
 `explorer_shared_snapshot_sendability_days` setting (1-100, default 7), a
@@ -265,6 +281,8 @@ src/
       RouteAccessPreview.tsx
       SectionLabel.tsx
       SessionCompass.tsx
+      SignInPreview.tsx
+      SignInPreviewParts.tsx
 
   lib/
     solmind/
@@ -278,6 +296,7 @@ src/
       pages.ts
       profile.ts
       roles.ts
+      signInPreview.ts
       routeAccess.ts
       terms.ts
       topics.ts
@@ -326,7 +345,9 @@ The `auth/`, `context/`, and `supabase/` directories hold server-only modules ke
 | Role model | `src/lib/solmind/roles.ts` | Canonical role strings, labels, and home routes |
 | Route metadata | `src/lib/solmind/pages.ts` | Page titles, descriptions, and hrefs |
 | Navigation | `src/lib/solmind/navigation.ts` | Primary nav items and route labels |
-| Login options | `src/lib/solmind/loginOptions.ts` | Static login option copy and auth summaries |
+| Login options | `src/lib/solmind/loginOptions.ts` | Static login option copy and auth summaries; retained, no longer used by `/login` |
+| Sign-in preview | `src/lib/solmind/signInPreview.ts` | Approved sign-in copy and pure screen transitions for the unconnected `/login` preview |
+| Sign-in preview UI | `src/components/solmind/SignInPreview.tsx`, `SignInPreviewParts.tsx` | The one client boundary and its presentation for `/login` |
 | Dashboard panels | `src/lib/solmind/dashboardPanels.ts` | Static Admin and Guide panel definitions |
 | Route access preview | `src/lib/solmind/routeAccess.ts` | Static route-access preview rules |
 | Explorer onboarding | `src/lib/solmind/onboarding.ts` | Exact S01 structured-form fields and distinct required-form/optional-First-Compass states |

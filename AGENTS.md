@@ -284,6 +284,33 @@ version identifier in a URL, and never widen Explorer projections. Guide save,
 schedule, correction, withdrawal, worker, provider, deployment, and real-user
 edges remain separately gated.
 
+## Sign-in Screen Preview Boundary
+
+The `/login` route shows the sign-in screens Paul approved for UAT on
+2026-09-29 (A1, A2, A4, M1, M2 and M3 in the sign-in mockups) as a local,
+in-memory preview. Keep `src/app/login/page.tsx` thin, the one client
+boundary in `src/components/solmind/SignInPreview.tsx`, presentation in
+`SignInPreviewParts.tsx`, and copy and deterministic transitions in
+`src/lib/solmind/signInPreview.ts`.
+
+Each screen follows its approved mockup's layout and wording. The preview is
+not connected. It must not use a route handler, server action, cookie,
+`fetch`, browser storage, URL state, Supabase, or the `src/lib/solmind/auth/`
+modules, and it must not issue, check or store a code, look up an account or
+create a session; what a visitor types stays only in page memory until
+refresh. Its wording never confirms whether an account exists.
+
+The preview's own additions are styled apart from the approved layouts. A
+separate "Preview controls" band holds the not-connected disclosure and a
+switcher between A4 and M1 to M3; a distinctly styled "Example screen: no
+code was sent or checked" callout sits beside each code screen's claims; and
+controls that are not connected explain, beside themselves, what they will do,
+without leaving the screen. Choosing Guide or Admin shows a placeholder saying that
+their sign-in (A3) is being revised; it stays out until its revised mockup is
+approved. `LoginOptionList.tsx` and `loginOptions.ts` are retained but no
+longer used by `/login`. Wiring the screens to real sign-in is login step 6,
+after steps 3 to 5 and the session security contract.
+
 ## Secrets Boundary
 
 Never expose server secrets through `NEXT_PUBLIC_` variables.
