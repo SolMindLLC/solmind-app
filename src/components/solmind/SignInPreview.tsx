@@ -13,9 +13,11 @@ import {
 import { SignInPreviewView } from "@/components/solmind/SignInPreviewParts";
 
 // The one client boundary of the /login sign-in preview. It keeps a single
-// in-memory state object from signInPreview.ts plus the two field drafts, and
-// moves focus to the new heading when the screen changes. Nothing leaves the
-// page.
+// in-memory state object from signInPreview.ts plus the email and code field
+// drafts, and moves focus to the new heading when the screen changes. A3 and
+// A3A's password field is uncontrolled: nothing here reads, keeps or passes on
+// what is typed in it, so it never reaches this state or the rendered markup,
+// and it is gone once the screen changes. Nothing leaves the page.
 
 export function SignInPreview() {
   const [state, dispatch] = useReducer(signInPreviewReducer, INITIAL_SIGN_IN_PREVIEW_STATE);
@@ -37,6 +39,12 @@ export function SignInPreview() {
     dispatch({ type: "sendCode", email: emailDraft });
   };
 
+  const submitPassword = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setCodeDraft("");
+    dispatch({ type: "submitPassword", identifier: emailDraft });
+  };
+
   const submitCode = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     dispatch({ type: "explain", notice: "verify" });
@@ -56,15 +64,20 @@ export function SignInPreview() {
       onDismissNotice={() => dispatch({ type: "dismissNotice" })}
       onEmailDraftChange={setEmailDraft}
       onExplain={(notice) => dispatch({ type: "explain", notice })}
+      onPasswordShownChange={(shown) => dispatch({ type: "setPasswordShown", shown })}
       onPreviewCodeScreen={(screen) => {
         // The approved M1 mockup shows a sample code in the field.
         setCodeDraft(screen === SIGN_IN_SCREENS.codeWrong ? M1_SAMPLE_CODE : "");
         dispatch({ type: "previewCodeScreen", screen });
       }}
+      onPreviewRememberedChange={(remembered) => dispatch({ type: "setPreviewRemembered", remembered })}
+      onRememberTickedChange={(ticked) => dispatch({ type: "setRememberTicked", ticked })}
       onRequestNewCode={() => dispatch({ type: "requestNewCode" })}
       onSubmitCode={submitCode}
       onSubmitEmail={submitEmail}
+      onSubmitPassword={submitPassword}
       onUseDifferentEmail={() => {
+        setEmailDraft("");
         setCodeDraft("");
         dispatch({ type: "useDifferentEmail" });
       }}

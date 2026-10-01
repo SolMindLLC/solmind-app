@@ -106,13 +106,19 @@ stays thin; `src/components/solmind/SignInPreview.tsx` owns the one client
 boundary; `SignInPreviewParts.tsx` owns presentation; and
 `src/lib/solmind/signInPreview.ts` owns the approved copy and the pure
 screen transitions. It shows the sign-in screens approved for UAT (A1, A2,
-A4, M1, M2, M3) in their approved layouts, sends and checks nothing, keeps
-entries only in page memory, and adds no route handler, server action,
-cookie, Supabase or auth-module use. Its own additions are styled apart: a
-separate "Preview controls" band (the disclosure and a message switcher), an
-example-screen callout beside each code screen's claims, and explanations
-beside unconnected controls; choosing Guide or Admin shows a placeholder while
-A3 is revised.
+A3, A3A, A4, M1, M2, M3) in their approved layouts, sends and checks
+nothing, keeps entries only in page memory, and adds no route handler,
+server action, cookie, Supabase or auth-module use. Its own additions are
+styled apart: a separate "Preview controls" band (the disclosure, a message
+switcher, and on A3 and A3A a remembered-browser switch), an example-screen
+callout beside each code screen's claims, and explanations beside
+unconnected controls. Guide opens A3 and Admin opens A3A; either goes on to
+A4 for that role, ticked or not, unless the remembered-browser switch is on:
+then the tick box is hidden, because the browser is already remembered and
+the box would do nothing; the button reads "Sign in", explains beside itself
+that it skips the code, and the screen stays. The tick box and the switch
+are page memory only, and the password field is uncontrolled, so its value
+never reaches the preview's state or markup.
 A new-code request keeps A4, M1 or M2 on screen with what was typed; only the
 preview switcher moves between the code screens.
 Wiring it to real sign-in is login step 6.

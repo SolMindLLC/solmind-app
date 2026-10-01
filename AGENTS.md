@@ -286,9 +286,10 @@ edges remain separately gated.
 
 ## Sign-in Screen Preview Boundary
 
-The `/login` route shows the sign-in screens Paul approved for UAT on
-2026-09-29 (A1, A2, A4, M1, M2 and M3 in the sign-in mockups) as a local,
-in-memory preview. Keep `src/app/login/page.tsx` thin, the one client
+The `/login` route shows the sign-in screens Paul approved for UAT (A1, A2,
+A4, M1, M2 and M3 on 2026-09-29; A3 for Guides and A3A for the Admin on
+2026-09-30; all in the sign-in mockups) as a local, in-memory preview. Keep
+`src/app/login/page.tsx` thin, the one client
 boundary in `src/components/solmind/SignInPreview.tsx`, presentation in
 `SignInPreviewParts.tsx`, and copy and deterministic transitions in
 `src/lib/solmind/signInPreview.ts`.
@@ -301,14 +302,23 @@ create a session; what a visitor types stays only in page memory until
 refresh. Its wording never confirms whether an account exists.
 
 The preview's own additions are styled apart from the approved layouts. A
-separate "Preview controls" band holds the not-connected disclosure and a
-switcher between A4 and M1 to M3; a distinctly styled "Example screen: no
+separate "Preview controls" band holds the not-connected disclosure, a
+switcher between A4 and M1 to M3, and on A3 and A3A a "Preview: this browser
+is already remembered" switch; a distinctly styled "Example screen: no
 code was sent or checked" callout sits beside each code screen's claims; and
 controls that are not connected explain, beside themselves, what they will do,
-without leaving the screen. Choosing Guide or Admin shows a placeholder saying that
-their sign-in (A3) is being revised; it stays out until its revised mockup is
-approved. `LoginOptionList.tsx` and `loginOptions.ts` are retained but no
-longer used by `/login`. Wiring the screens to real sign-in is login step 6,
+without leaving the screen. Choosing Guide opens A3 and choosing Admin opens
+A3A. Submitting either goes to A4 for that role, whether or not the
+remembered-browser box is ticked. With the switch on, the tick box is hidden,
+because the browser is already remembered and the box would do nothing; the
+button reads "Sign in" and explains beside itself that it will sign in
+without a code; and the screen stays. The tick box and the switch keep their
+state only in page
+memory, and nothing is remembered. The password field is uncontrolled, so
+what is typed in it never reaches the preview's state or markup, and it is
+never logged or put in the URL. `LoginOptionList.tsx` and `loginOptions.ts`
+are retained but no longer used by `/login`. Wiring the screens to real
+sign-in is login step 6,
 after steps 3 to 5 and the session security contract.
 
 ## Secrets Boundary

@@ -14,12 +14,16 @@ import {
   ENTER_CODE_COPY,
   EXAMPLE_SCREEN_LABEL,
   EXPLORER_EMAIL_COPY,
-  GUIDE_ADMIN_NEXT_COPY,
   NEED_HELP_LABEL,
   NOT_CONNECTED_NOTICES,
+  PASSWORD_SIGN_IN_COPY,
+  PASSWORD_SIGN_IN_IDENTIFIER_LABELS,
+  type PasswordSignInRole,
+  PHONE_OPTION_COPY,
   PLEASE_WAIT_COPY,
   PREVIEW_CONTROLS_LABEL,
   PREVIEW_DISCLOSURE,
+  PREVIEW_REMEMBERED_BROWSER_LABEL,
   PRIVACY_LINE,
   ROLE_CHOICES,
   type RoleChoiceIcon,
@@ -30,6 +34,9 @@ import {
   type SignInScreen,
   enterCodeIntroParts,
   isCodeScreen,
+  isPasswordSignInRole,
+  isPasswordSignInScreen,
+  rememberBrowserLine,
   signingInAsLine,
 } from "@/lib/solmind/signInPreview";
 
@@ -45,7 +52,6 @@ import {
 const SANS = "Figtree, system-ui, sans-serif";
 const SERIF = "Newsreader, Georgia, serif";
 const AMBER = "#f0a64a";
-const LINK = "#f3b566";
 const INK = "#f4ede3";
 const MUTED = "#bfb2a0";
 const SOFT = "#d9c7ad";
@@ -71,11 +77,11 @@ const headingStyle: CSSProperties = {
   lineHeight: 1.15,
   textAlign: "center",
 };
+/** The link-like controls take their colour from LINK_CLASS, so that its hover colour can apply. */
 const linkButtonStyle: CSSProperties = {
   border: 0,
   padding: 0,
   background: "transparent",
-  color: LINK,
   font: "inherit",
   cursor: "pointer",
 };
@@ -107,6 +113,12 @@ const codeInputStyle: CSSProperties = {
 };
 /** The mockups' input focus rule: a 2px amber outline with a 2px offset. */
 const INPUT_FOCUS_CLASS = "focus:outline-2 focus:outline-offset-2 focus:outline-[#f0a64a]";
+/**
+ * The mockups' links (their `a` and `a:hover` rules: #f3b566, then #ffd08f on
+ * hover) for the controls ported from links as buttons, with the same amber
+ * focus outline as the inputs. Written out in full so Tailwind finds it.
+ */
+const LINK_CLASS = "text-[#f3b566] hover:text-[#ffd08f] focus:outline-2 focus:outline-offset-2 focus:outline-[#f0a64a]";
 const primaryStyle: CSSProperties = {
   width: "100%",
   maxWidth: 480,
@@ -214,7 +226,7 @@ function RoleLine({ role, onChooseDifferentRole }: { role: SolMindRole; onChoose
       <span aria-hidden="true" style={{ color: "#6b5a47" }}>
         &middot;
       </span>
-      <button onClick={onChooseDifferentRole} style={linkButtonStyle} type="button">
+      <button className={LINK_CLASS} onClick={onChooseDifferentRole} style={linkButtonStyle} type="button">
         {CHOOSE_DIFFERENT_ROLE_LABEL}
       </button>
     </p>
@@ -273,7 +285,7 @@ function Footer({
 }) {
   return (
     <div style={{ marginTop: "auto", paddingTop: 32, display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-      <button onClick={onHelp} style={{ ...linkButtonStyle, display: "flex", alignItems: "center", gap: 8, fontSize: 16 }} type="button">
+      <button className={LINK_CLASS} onClick={onHelp} style={{ ...linkButtonStyle, display: "flex", alignItems: "center", gap: 8, fontSize: 16 }} type="button">
         <svg aria-hidden="true" fill="none" height="20" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" viewBox="0 0 24 24" width="20">
           <circle cx="12" cy="12" r="9" />
           <path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.6" />
@@ -295,12 +307,28 @@ function Footer({
   );
 }
 
+function previewSwitchStyle(pressed: boolean): CSSProperties {
+  return {
+    padding: "4px 12px",
+    borderRadius: 999,
+    border: pressed ? "1px solid #b8b8f0" : "1px solid #3a3a52",
+    background: pressed ? "#23233a" : "transparent",
+    color: "#d4d4e8",
+    fontSize: 13,
+    cursor: "pointer",
+  };
+}
+
 function PreviewControls({
   screen,
+  previewRemembered,
   onPreviewCodeScreen,
+  onPreviewRememberedChange,
 }: {
   screen: SignInScreen;
+  previewRemembered: boolean;
   onPreviewCodeScreen: (screen: SignInScreen) => void;
+  onPreviewRememberedChange: (remembered: boolean) => void;
 }) {
   return (
     <section
@@ -317,15 +345,7 @@ function PreviewControls({
                 <button
                   aria-pressed={option.screen === screen}
                   onClick={() => onPreviewCodeScreen(option.screen)}
-                  style={{
-                    padding: "4px 12px",
-                    borderRadius: 999,
-                    border: option.screen === screen ? "1px solid #b8b8f0" : "1px solid #3a3a52",
-                    background: option.screen === screen ? "#23233a" : "transparent",
-                    color: "#d4d4e8",
-                    fontSize: 13,
-                    cursor: "pointer",
-                  }}
+                  style={previewSwitchStyle(option.screen === screen)}
                   type="button"
                 >
                   {option.label}
@@ -335,7 +355,47 @@ function PreviewControls({
           </ul>
         </>
       ) : null}
+      {isPasswordSignInScreen(screen) ? (
+        <p style={{ margin: "8px 0 0" }}>
+          <button
+            aria-pressed={previewRemembered}
+            onClick={() => onPreviewRememberedChange(!previewRemembered)}
+            style={previewSwitchStyle(previewRemembered)}
+            type="button"
+          >
+            {PREVIEW_REMEMBERED_BROWSER_LABEL}
+          </button>
+        </p>
+      ) : null}
     </section>
+  );
+}
+
+function PhoneOption({
+  notice,
+  onExplain,
+  onDismissNotice,
+}: {
+  notice: SignInNoticeKey | null;
+  onExplain: (notice: SignInNoticeKey) => void;
+  onDismissNotice: () => void;
+}) {
+  return (
+    <>
+      <div style={{ ...columnStyle, marginTop: 20, padding: "14px 16px", boxSizing: "border-box", borderRadius: 10, border: `1px dashed ${BORDER}`, display: "flex", alignItems: "center", gap: 12 }}>
+        <svg aria-hidden="true" fill="none" height="22" stroke={MUTED} strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" viewBox="0 0 24 24" width="22">
+          <rect height="19" rx="2" width="10" x="7" y="2.5" />
+          <path d="M11 18h2" />
+        </svg>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
+          <button className={LINK_CLASS} onClick={() => onExplain("phone")} style={{ ...linkButtonStyle, fontSize: 16 }} type="button">
+            {PHONE_OPTION_COPY.label}
+          </button>
+          <span style={{ fontSize: 14, color: MUTED }}>{PHONE_OPTION_COPY.note}</span>
+        </div>
+      </div>
+      {notice === "phone" ? <Notice notice="phone" onDismiss={onDismissNotice} /> : null}
+    </>
   );
 }
 
@@ -351,11 +411,16 @@ export type SignInPreviewViewProps = {
   onChooseDifferentRole: () => void;
   onEmailDraftChange: (value: string) => void;
   onSubmitEmail: (event: FormEvent<HTMLFormElement>) => void;
+  /** A3 and A3A's form; the password itself is never passed in or out. */
+  onSubmitPassword: (event: FormEvent<HTMLFormElement>) => void;
+  onPasswordShownChange: (shown: boolean) => void;
+  onRememberTickedChange: (ticked: boolean) => void;
   onCodeDraftChange: (value: string) => void;
   onSubmitCode: (event: FormEvent<HTMLFormElement>) => void;
   onRequestNewCode: () => void;
   onUseDifferentEmail: () => void;
   onPreviewCodeScreen: (screen: SignInScreen) => void;
+  onPreviewRememberedChange: (remembered: boolean) => void;
   onExplain: (notice: SignInNoticeKey) => void;
   onDismissNotice: () => void;
 };
@@ -368,12 +433,17 @@ export function SignInPreviewView(props: SignInPreviewViewProps) {
   const withPrivacy =
     screen === SIGN_IN_SCREENS.chooseRole ||
     screen === SIGN_IN_SCREENS.explorerEmail ||
-    screen === SIGN_IN_SCREENS.guideAdminNext ||
+    isPasswordSignInScreen(screen) ||
     screen === SIGN_IN_SCREENS.enterCode;
 
   return (
     <main style={pageStyle}>
-      <PreviewControls onPreviewCodeScreen={props.onPreviewCodeScreen} screen={screen} />
+      <PreviewControls
+        onPreviewCodeScreen={props.onPreviewCodeScreen}
+        onPreviewRememberedChange={props.onPreviewRememberedChange}
+        previewRemembered={state.previewRemembered}
+        screen={screen}
+      />
       <Image
         alt="SolMind: Illuminate, Understand, Grow"
         height={159}
@@ -441,28 +511,12 @@ export function SignInPreviewView(props: SignInPreviewViewProps) {
               <ArrowRight stroke="#1a1208" />
             </button>
           </form>
-          <div style={{ ...columnStyle, marginTop: 20, padding: "14px 16px", boxSizing: "border-box", borderRadius: 10, border: `1px dashed ${BORDER}`, display: "flex", alignItems: "center", gap: 12 }}>
-            <svg aria-hidden="true" fill="none" height="22" stroke={MUTED} strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" viewBox="0 0 24 24" width="22">
-              <rect height="19" rx="2" width="10" x="7" y="2.5" />
-              <path d="M11 18h2" />
-            </svg>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
-              <button onClick={() => props.onExplain("phone")} style={{ ...linkButtonStyle, fontSize: 16 }} type="button">
-                {EXPLORER_EMAIL_COPY.phoneLabel}
-              </button>
-              <span style={{ fontSize: 14, color: MUTED }}>{EXPLORER_EMAIL_COPY.phoneNote}</span>
-            </div>
-          </div>
-          {state.notice === "phone" ? <Notice notice="phone" onDismiss={props.onDismissNotice} /> : null}
+          <PhoneOption notice={state.notice} onDismissNotice={props.onDismissNotice} onExplain={props.onExplain} />
         </>
       ) : null}
 
-      {screen === SIGN_IN_SCREENS.guideAdminNext && role !== null ? (
-        <>
-          <Heading>{GUIDE_ADMIN_NEXT_COPY.heading}</Heading>
-          <RoleLine onChooseDifferentRole={props.onChooseDifferentRole} role={role} />
-          <p style={{ margin: "16px 0 0", ...columnStyle, fontSize: 18, lineHeight: 1.5, color: SOFT, textAlign: "center" }}>{GUIDE_ADMIN_NEXT_COPY.body}</p>
-        </>
+      {isPasswordSignInScreen(screen) && role !== null && isPasswordSignInRole(role) ? (
+        <PasswordSignIn role={role} view={props} />
       ) : null}
 
       {onCodeScreens && role !== null ? (
@@ -510,10 +564,10 @@ export function SignInPreviewView(props: SignInPreviewViewProps) {
           </form>
           {state.notice === "verify" ? <Notice notice="verify" onDismiss={props.onDismissNotice} /> : null}
           <div style={{ ...columnStyle, marginTop: 22, display: "flex", justifyContent: "space-between", gap: 16, fontSize: 16 }}>
-            <button onClick={props.onRequestNewCode} style={linkButtonStyle} type="button">
+            <button className={LINK_CLASS} onClick={props.onRequestNewCode} style={linkButtonStyle} type="button">
               {ENTER_CODE_COPY.resendLabel}
             </button>
-            <button onClick={props.onUseDifferentEmail} style={linkButtonStyle} type="button">
+            <button className={LINK_CLASS} onClick={props.onUseDifferentEmail} style={linkButtonStyle} type="button">
               {ENTER_CODE_COPY.differentEmailLabel}
             </button>
           </div>
@@ -540,7 +594,7 @@ export function SignInPreviewView(props: SignInPreviewViewProps) {
             {CODE_EXPIRED_COPY.resendLabel}
           </button>
           {state.notice === "resend" ? <Notice notice="resend" onDismiss={props.onDismissNotice} /> : null}
-          <button onClick={props.onUseDifferentEmail} style={{ ...linkButtonStyle, marginTop: 22, fontSize: 16 }} type="button">
+          <button className={LINK_CLASS} onClick={props.onUseDifferentEmail} style={{ ...linkButtonStyle, marginTop: 22, fontSize: 16 }} type="button">
             {CODE_EXPIRED_COPY.differentEmailLabel}
           </button>
         </>
@@ -588,6 +642,100 @@ export function SignInPreviewView(props: SignInPreviewViewProps) {
 
       <Footer notice={state.notice} onDismissNotice={props.onDismissNotice} onHelp={() => props.onExplain("help")} withPrivacy={withPrivacy} />
     </main>
+  );
+}
+
+/**
+ * A3 (Guides) and A3A (the Admin). The password field is uncontrolled and
+ * gets no value from here, so what is typed in it never enters the markup.
+ * On a browser already remembered (the preview controls' switch) the intro
+ * and the button's wording change, and the tick box and its explanation are
+ * hidden, because the browser is already remembered and the box would do
+ * nothing, as Paul decided; the rest stays as it is.
+ */
+function PasswordSignIn({ role, view }: { role: PasswordSignInRole; view: SignInPreviewViewProps }) {
+  const { state } = view;
+  return (
+    <>
+      <Heading>{PASSWORD_SIGN_IN_COPY.heading}</Heading>
+      <RoleLine onChooseDifferentRole={view.onChooseDifferentRole} role={role} />
+      <p style={{ margin: "10px 0 0", fontSize: 18, lineHeight: 1.5, color: AMBER, textAlign: "center" }}>
+        {state.previewRemembered ? PASSWORD_SIGN_IN_COPY.rememberedIntro : PASSWORD_SIGN_IN_COPY.intro}
+      </p>
+      <form onSubmit={view.onSubmitPassword} style={{ ...columnStyle, display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <div style={{ ...columnStyle, marginTop: 32, display: "flex", flexDirection: "column", gap: 10 }}>
+          <label htmlFor="a3user" style={fieldLabelStyle}>
+            {PASSWORD_SIGN_IN_IDENTIFIER_LABELS[role]}
+          </label>
+          <input
+            autoComplete="username"
+            className={INPUT_FOCUS_CLASS}
+            id="a3user"
+            onChange={(event) => view.onEmailDraftChange(event.target.value)}
+            placeholder={EMAIL_PLACEHOLDER}
+            required
+            style={textInputStyle}
+            type="text"
+            value={view.emailDraft}
+          />
+          <label htmlFor="a3pass" style={{ ...fieldLabelStyle, marginTop: 10 }}>
+            {PASSWORD_SIGN_IN_COPY.passwordLabel}
+          </label>
+          <div style={{ position: "relative", display: "flex" }}>
+            <input
+              autoComplete="current-password"
+              className={INPUT_FOCUS_CLASS}
+              id="a3pass"
+              placeholder={PASSWORD_SIGN_IN_COPY.passwordPlaceholder}
+              required
+              style={{ ...textInputStyle, flexGrow: 1, padding: "0 56px 0 16px" }}
+              type={state.passwordShown ? "text" : "password"}
+            />
+            <button
+              aria-label={state.passwordShown ? PASSWORD_SIGN_IN_COPY.hidePasswordLabel : PASSWORD_SIGN_IN_COPY.showPasswordLabel}
+              className={INPUT_FOCUS_CLASS}
+              onClick={() => view.onPasswordShownChange(!state.passwordShown)}
+              style={{ position: "absolute", right: 6, top: 5, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", border: 0, borderRadius: 8, background: "transparent", color: MUTED, cursor: "pointer" }}
+              type="button"
+            >
+              <svg aria-hidden="true" fill="none" height="22" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" viewBox="0 0 24 24" width="22">
+                <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            </button>
+          </div>
+          <button className={LINK_CLASS} onClick={() => view.onExplain("forgot")} style={{ ...linkButtonStyle, alignSelf: "flex-end", fontSize: 15 }} type="button">
+            {PASSWORD_SIGN_IN_COPY.forgotPasswordLabel}
+          </button>
+          {state.notice === "forgot" ? <Notice notice="forgot" onDismiss={view.onDismissNotice} /> : null}
+          {state.previewRemembered ? null : (
+            <>
+              <label style={{ marginTop: 4, display: "flex", alignItems: "flex-start", gap: 12, fontSize: 15, lineHeight: 1.45, color: SOFT, cursor: "pointer" }}>
+                <input
+                  checked={state.rememberTicked}
+                  className={INPUT_FOCUS_CLASS}
+                  onChange={(event) => view.onRememberTickedChange(event.target.checked)}
+                  style={{ flexShrink: 0, width: 22, height: 22, margin: "1px 0 0", accentColor: AMBER }}
+                  type="checkbox"
+                />
+                <span>
+                  {rememberBrowserLine(role)}
+                  <br />
+                  <span style={{ color: MUTED }}>{PASSWORD_SIGN_IN_COPY.rememberSafetyLine}</span>
+                </span>
+              </label>
+              {state.notice === "remember" ? <Notice notice="remember" onDismiss={view.onDismissNotice} /> : null}
+            </>
+          )}
+        </div>
+        <button style={{ ...primaryStyle, marginTop: 24 }} type="submit">
+          {state.previewRemembered ? PASSWORD_SIGN_IN_COPY.rememberedSignInLabel : PASSWORD_SIGN_IN_COPY.sendCodeLabel}
+          <ArrowRight stroke="#1a1208" />
+        </button>
+      </form>
+      {state.notice === "signIn" ? <Notice notice="signIn" onDismiss={view.onDismissNotice} /> : null}
+      <PhoneOption notice={state.notice} onDismissNotice={view.onDismissNotice} onExplain={view.onExplain} />
+    </>
   );
 }
 

@@ -164,13 +164,17 @@ the one client boundary, `SignInPreviewParts.tsx` owns presentation, and
 `signInPreview.ts` owns the approved copy and pure screen transitions.
 `src/app/login/page.tsx` only composes it. Screens follow their approved
 mockups; the preview's own additions are styled apart (a "Preview controls"
-band, an example-screen callout beside each code screen's claims, and
-explanations beside unconnected controls), and choosing Guide or Admin shows a
-placeholder while A3 is revised.
+band, with a remembered-browser switch on A3 and A3A, an example-screen
+callout beside each code screen's claims, and explanations beside
+unconnected controls). Choosing Guide opens A3 and choosing Admin opens A3A;
+both go on to A4 for that role, or, with the remembered-browser switch on,
+explain beside the "Sign in" button that the code is skipped and stay. The
+password field is uncontrolled, so its value never reaches state or markup.
 A new-code request keeps A4, M1 or M2 on screen with what was typed; only the
 preview switcher moves between the code screens.
-It must not import the `auth/` or `supabase/` modules or send, check or store
-anything; wiring it is login step 6. `LoginOptionList.tsx` and
+It must not import the `auth/` or `supabase/` modules, persist entries, or
+send or check credentials or codes; drafts remain in page memory. Wiring it is
+login step 6. `LoginOptionList.tsx` and
 `loginOptions.ts` are retained but no longer used by `/login`.
 
 ### Suggested Waypoint components
