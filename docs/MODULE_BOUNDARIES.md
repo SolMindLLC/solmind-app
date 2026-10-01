@@ -968,6 +968,95 @@ failure, or audit failure fails closed.
 
 The banked dormant DEF5-S3 issuance foundation keeps the database boundary narrow: `public.solmind_issue_verification_challenge` is a service-role-only, purpose-built `SECURITY DEFINER` operation over `identity.verification_challenge`, `identity.contact_method`, and the exact Family B `audit.audit_event` row. Its partial unique index independently limits each normalized-contact/purpose pair to one structurally open challenge. It does not authorize a route, delivery provider, invitation acceptance, session creation, self-signup, Guide assignment, or rate-limit implementation. The outer app/route layer must establish invitation or self-signup eligibility before calling it. The resend and lockout controls (AUTH-RLS-DEC-037) are implemented inside the same function by `supabase/migrations/20260929010000_verification_issuance_abuse_limits.sql` (login step 2, app `05884ed`); the function still has no runtime caller, and its comment says no runtime caller or real-user path may use it until separately gated.
 
+Login step 4 adds the dormant, server-only, provider-neutral verification-code
+delivery boundary that
+`../solmind-docs/execution/21_SolMind_MVP0_Auth_RLS_Login_Provisioning_Write_Path_Contract_v0_1.md`
+section 7.1.3 describes, and a local development transport for it:
+
+```text
+src/lib/solmind/auth/verificationCodeDelivery.ts
+src/lib/solmind/auth/localSmtpVerificationCodeDelivery.ts
+src/lib/solmind/auth/verificationCodeEmailWording.ts
+src/lib/solmind/auth/__tests__/verificationCodeDelivery.test.ts
+src/lib/solmind/auth/__tests__/localSmtpVerificationCodeDelivery.test.ts
+```
+
+The delivery boundary is direct-import only and stays off every barrel. It
+accepts only an `issued` outcome from
+`public.solmind_issue_verification_challenge`; `denied` or any other value is
+refused with a fixed error. That check is a trusted-caller precondition, not
+proof that a challenge committed. The boundary checks every field, rejects
+unknown keys, and returns an opaque handle that serializes to `{}`. It calls
+one injected transport's `send` at most once per prepared handle, within an
+elapsed-time ceiling that the caller sets between 10 ms and 15 s, and has no
+fallback transport. Its limits are a retry ceiling of 0 and one send per
+prepared handle: a handle cannot be delivered twice, but two handles prepared
+with the same challenge and code are two sends. A retry is never a resend of
+the same code: under AUTH-RLS-DEC-033 it is supersede-and-reissue, a new
+issuance that spends budget under AUTH-RLS-DEC-037. The outcomes form a
+closed set: `accepted`, `delivered`, `bounced`, `throttled`, `ambiguous`,
+`timeout`, `retryable_failure`, `terminal_failure` and `cleanup_failure`,
+each returned as a frozen, value-free `{ outcome }`. The boundary meters no
+spend and passes through whatever closed outcome the transport returns.
+Before the ceiling, a transport that throws, rejects or returns anything
+outside the set gives `ambiguous`. When the ceiling is reached, the boundary
+aborts the transport and gives it one turn of the event loop to report. Only
+the literal `ambiguous`, or a rejection, which counts as `ambiguous`, can win
+in that turn; anything else, including a value outside the set, or no
+answer, is `timeout`, so no success is ever reported after the deadline.
+`timeout` is treated like `ambiguous`: either way the code may or may not
+have been sent, and neither is retried.
+
+The boundary does not generate a code and holds no verifier, pepper or
+credential; the plaintext code stays only in memory until its one attempt. It
+writes nothing to a database, audit table or log, reads no environment
+variable, and does not reveal whether an account, invitation, contact or role
+exists. Mapping outcomes to the outward response belongs to the future caller.
+
+The development transport emails the code to the local test mailbox over plain
+SMTP, using Node's built-in `node:net` and no new dependency. Its host, port,
+sender, wording and timeout (10 ms to 15 s) are required settings with no
+defaults, and it reads no environment variable. The host must be exactly
+`127.0.0.1` or `::1`; `localhost` and every other name or address are refused.
+It uses no AUTH or STARTTLS. The email's sender, subject and body live in
+`src/lib/solmind/auth/verificationCodeEmailWording.ts`; the transport takes
+them as required settings with no defaults. They must be printable ASCII, and
+the code token must appear exactly once in the body and never in the subject.
+The message is sent as 7bit `text/plain; charset=us-ascii`, and every body
+line that starts with `.` is dot-stuffed. One overall deadline covers
+connecting, every reply and the message. Before the message is written, a
+4xx reply or a refused or dropped connection is `retryable_failure`, a 5xx,
+unexpected or malformed reply is `terminal_failure`, and a timeout is
+`timeout`. Once the message bytes start to be written, a 250 reply is
+`accepted`, never `delivered`, because it shows only that the local mail
+server took the message. Every other reply after that point, including 4xx
+and 5xx, is `ambiguous`, because a failure reply does not prove that the
+server did not queue the message; a lost, late or unreadable reply is
+`ambiguous` too. When the boundary's ceiling aborts it, the transport reports
+`ambiguous` if the message had started and `timeout` if not, and the
+boundary keeps that result. The transport's spend ceiling is 0, because the
+local mail catcher costs nothing. An SMS request returns a fixed
+`terminal_failure` without touching the network, because SMS is disabled
+locally. Results and errors never contain the code, the contact, the
+challenge id or any server reply text.
+
+Four obligations fall outside this step. The login step 5 caller must bind
+each delivery to its own committed issuance result and prove that ordering in
+its own tests. It must prepare exactly one delivery per committed issuance,
+keep no copy of the code, and reach the transport only through
+`deliverVerificationCode`, never by calling the transport's `send` directly,
+because duplicate suppression here is per prepared handle only. The step 5
+composition root must bound how many sends run at once. A future provider
+adapter must state and prove its own spend ceiling and delivery proof, with
+its own idempotency, retry and elapsed-time limits, before it is activated.
+
+The three modules are dormant. No other application code imports them, and
+there is no caller, route, composition root or environment wiring. The server
+composition root and its callers belong to login step 5, and the routes to
+login step 6. The boundary tests use injected fake transports and the
+transport tests use an in-process loopback server; none of them touches the
+local Supabase stack or its mail catcher.
+
 The banked dormant DEF5-S4 slice keeps session mutation separate from redemption and provisioning. `public.solmind_create_user_session` consumes committed account-bound `login` or `role_reentry` evidence, owns account-wide supersede-then-create serialization, and embeds its exact Family B audit rows. Its freshness policy and both uniqueness indexes are hidden database backstops, not client authorization. Corrective migration `20260716001000_user_session_creation_chronology_guard.sql`, banked in `d2fbb0e`, preserves the writeless exact-retry branch and requires never-sessionized evidence to be strictly newer by `(used_at, challenge UUID)` than every prior session-linked evidence tuple for the account; chronology denial is fixed and zero-write. The three DEF5-S4 plans contain 49/51/50 assertions, and clean reset passed 14 files / 502 assertions. The banked slice creates no caller, route, cookie, provider action, account/profile/role provisioning, invitation or Guide assignment dependency, cloud path, or real-user flow.
 
 Banked `PRJ01_F-WS06-WI008-S02D` - Guide-to-Explorer invitation issuance,
