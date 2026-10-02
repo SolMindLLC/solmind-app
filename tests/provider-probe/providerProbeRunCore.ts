@@ -23,6 +23,19 @@
 //     byte is sent, because Mailpit deletes every message when the list is empty.
 //     (UNVERIFIED against the Mailpit that Supabase CLI 2.115.0 starts.)
 // - `assembleOutput` always uses this run's registry.
+// - `createAuthProbe({ anonKey, serviceRoleKey })` (R5) registers both keys and builds
+//   the probe operations of `providerProbeAuthProbeCore.ts` over the same Auth transport:
+//   fresh non-persisting public clients, the run's admin client, the mail reader, and
+//   three fixed GET requests (Auth health, the disabled-provider authorize path, and one
+//   page of the local user list). No caller can supply a path.
+// - `requestCount()` counts every request either transport was asked to make, so each
+//   probe's evidence can carry its request count.
+// - (R6) `limitRequests(maximum)` sets a request allowance: after `maximum` further
+//   requests, every request either transport is asked to make is refused before the
+//   transport sees it (zero bytes, not counted), until the allowance is set again;
+//   `limitRequests(null)` removes it. The probe core gives each record the kernel's
+//   100-request bound, so every step's request count, and with the transport's
+//   per-request timeout its worst-case duration, is bounded; cleanup runs with none.
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -36,12 +49,22 @@ import {
   type ProviderProbeRandomSource,
 } from "./providerProbeAuthAdminCore";
 import {
+  createAuthProbeOperations,
+  PROVIDER_PROBE_AUTH_LIMITS,
+  type ProviderProbeAdminProbeClient,
+  type ProviderProbeAuthProbe,
+  type ProviderProbePublicClient,
+  type ProviderProbeRawAuthAnswer,
+  type ProviderProbeRawAuthRequest,
+} from "./providerProbeAuthProbeCore";
+import {
   createProviderProbeCleanupLedger,
   type ProviderProbeCleanupReport,
 } from "./providerProbeCleanupLedger";
 import { createRunOwnedRecipients, isValidCleanupId } from "./providerProbeCleanupReceipts";
 import {
   createMailpitInventoryOperations,
+  createMailpitMessageReader,
   MAILPIT_API_PATH_PREFIX,
   type MailpitFetch,
   type ProviderProbeMailpitInventory,
@@ -66,7 +89,10 @@ export type ProviderProbeRun = Readonly<{
   config: ProviderProbeSafetyConfig;
   registerKnownValue(value: string): void;
   knownValueCount(): number;
+  requestCount(): number;
+  limitRequests(maximum: number | null): void;
   createAuthAdmin(serviceRoleKey: string): ProviderProbeAuthAdmin;
+  createAuthProbe(keys: Readonly<{ anonKey: string; serviceRoleKey: string }>): ProviderProbeAuthProbe;
   createMailpitInventory(): ProviderProbeMailpitInventory;
   cleanup(): Promise<ProviderProbeCleanupReport>;
   retryCleanup(): Promise<ProviderProbeCleanupReport>;
@@ -130,23 +156,52 @@ export function createMailpitMessageDeleter(transport: Readonly<{ origin: string
   };
 }
 
+function isWellFormedKey(key: unknown): key is string {
+  return typeof key === "string" && key.length >= 16 && key.length <= 4_096 && !/\s/.test(key);
+}
+
 export function createProviderProbeRunCore(
   input: Readonly<{
     environment: ProbeEnvironment;
     auth: ProviderProbeTransport;
     mailpit: ProviderProbeTransport | null;
     random?: ProviderProbeRandomSource;
+    // Test seam: milliseconds since the epoch. Production uses Date.now.
+    clock?: () => number;
+    // R7 test seam: wraps each fresh public client, so a unit test can give the probe core
+    // an answer the real auth-js never returns (an error that also carries a session).
+    // Production (`providerProbeRun.ts`) passes none, and the client is used as built.
+    publicClientWrapper?: (client: ProviderProbePublicClient) => ProviderProbePublicClient;
   }>,
 ): ProviderProbeRun {
-  const { environment, auth, mailpit } = input;
+  const { environment } = input;
   // An enabled but malformed configuration throws the kernel's own value-free code.
   const config = readProviderProbeSafetyConfig(environment);
   if (config === null) {
     fail("provider_probe_run_ungated");
   }
-  if (!auth || typeof auth.fetch !== "function" || typeof auth.origin !== "string") {
+  if (!input.auth || typeof input.auth.fetch !== "function" || typeof input.auth.origin !== "string") {
     fail("provider_probe_run_invalid_transport");
   }
+  const clock = input.clock ?? (() => Date.now());
+  const wrapPublic = input.publicClientWrapper ?? ((client: ProviderProbePublicClient) => client);
+  // Every request either transport is asked to make is counted, before it is made. A
+  // request beyond the current allowance is refused here, before the transport.
+  let requests = 0;
+  let allowance: number | null = null;
+  const counted = (transport: ProviderProbeTransport): ProviderProbeTransport =>
+    Object.freeze({
+      origin: transport.origin,
+      fetch: (resource: RequestInfo | URL, init?: RequestInit) => {
+        if (allowance !== null && requests >= allowance) {
+          return Promise.reject(new Error("provider_probe_request_allowance_exhausted"));
+        }
+        requests += 1;
+        return transport.fetch(resource, init);
+      },
+    });
+  const auth = counted(input.auth);
+  const mailpit = input.mailpit === null ? null : counted(input.mailpit);
   const ledger = createProviderProbeCleanupLedger(environment);
   const registry = createProviderProbeKnownValueRegistry();
   const ownedRecipients = createRunOwnedRecipients(config.runId);
@@ -170,27 +225,122 @@ export function createProviderProbeRunCore(
     },
   });
 
-  return Object.freeze({
-    config,
-    registerKnownValue: (value: string) => registry.register(value),
-    knownValueCount: () => registry.size(),
+  const clientFor = (key: string) =>
+    createClient(auth.origin, key, {
+      auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
+      global: { fetch: auth.fetch },
+    });
 
-    createAuthAdmin(serviceRoleKey: string): ProviderProbeAuthAdmin {
-      if (typeof serviceRoleKey !== "string" || serviceRoleKey.length < 16 || /\s/.test(serviceRoleKey)) {
-        fail("provider_probe_run_invalid_key");
-      }
-      registry.register(serviceRoleKey);
-      const client = createClient(auth.origin, serviceRoleKey, {
-        auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
-        global: { fetch: auth.fetch },
-      });
-      adminClient = client;
-      return createAuthAdminOperations({
+  const adminOperationsFor = (serviceRoleKey: string) => {
+    if (!isWellFormedKey(serviceRoleKey)) {
+      fail("provider_probe_run_invalid_key");
+    }
+    registry.register(serviceRoleKey);
+    const client = clientFor(serviceRoleKey);
+    adminClient = client;
+    return {
+      client,
+      operations: createAuthAdminOperations({
         config,
         client,
         ledger,
         registry,
         ownedRecipients,
+        ...(input.random === undefined ? {} : { random: input.random }),
+      }),
+    };
+  };
+
+  return Object.freeze({
+    config,
+    registerKnownValue: (value: string) => registry.register(value),
+    knownValueCount: () => registry.size(),
+    requestCount: () => requests,
+
+    limitRequests(maximum: number | null): void {
+      if (maximum === null) {
+        allowance = null;
+        return;
+      }
+      if (!Number.isSafeInteger(maximum) || maximum < 0 || maximum > 1_000) {
+        fail("provider_probe_run_invalid_allowance");
+      }
+      allowance = requests + maximum;
+    },
+
+    createAuthAdmin(serviceRoleKey: string): ProviderProbeAuthAdmin {
+      return adminOperationsFor(serviceRoleKey).operations;
+    },
+
+    createAuthProbe(keys: Readonly<{ anonKey: string; serviceRoleKey: string }>): ProviderProbeAuthProbe {
+      const anonKey = keys?.anonKey;
+      if (!isWellFormedKey(anonKey)) {
+        fail("provider_probe_run_invalid_key");
+      }
+      if (mailpit === null) {
+        fail("mailpit_origin_undecided");
+      }
+      registry.register(anonKey);
+      const admin = adminOperationsFor(keys.serviceRoleKey);
+      const serviceRoleKey = keys.serviceRoleKey;
+      const reader = createMailpitMessageReader({ config, origin: mailpit.origin, fetch: mailpit.fetch, registry, ownedRecipients });
+
+      // The only raw Auth requests: three fixed GET paths, chosen by kind, never by caller text.
+      async function rawRequest(request: ProviderProbeRawAuthRequest): Promise<ProviderProbeRawAuthAnswer> {
+        let path: string;
+        let key: string;
+        if (request?.kind === "health") {
+          path = "/auth/v1/health";
+          key = anonKey as string;
+        } else if (request?.kind === "authorize-disabled-provider") {
+          path = `/auth/v1/authorize?provider=${PROVIDER_PROBE_AUTH_LIMITS.disabledProvider}`;
+          key = anonKey as string;
+        } else if (
+          request?.kind === "list-users" &&
+          Number.isSafeInteger(request.page) &&
+          request.page >= 1 &&
+          request.page <= PROVIDER_PROBE_AUTH_LIMITS.maxUserPages
+        ) {
+          path = `/auth/v1/admin/users?page=${request.page}&per_page=${PROVIDER_PROBE_AUTH_LIMITS.userPageSize}`;
+          key = serviceRoleKey;
+        } else {
+          fail("provider_probe_run_raw_request_refused");
+        }
+        let response: Response;
+        try {
+          response = await auth.fetch(`${auth.origin}${path}`, {
+            method: "GET",
+            headers: { apikey: key, authorization: `Bearer ${key}`, accept: "application/json" },
+          });
+        } catch (error) {
+          const redirectRefused = error instanceof Error && error.message === "loopback_fetch_redirect_refused";
+          return Object.freeze({ status: 0, redirectRefused, transportFailed: !redirectRefused, totalCount: null, json: null });
+        }
+        const totalHeader = response.headers.get("x-total-count");
+        const totalCount = totalHeader !== null && /^[0-9]{1,9}$/.test(totalHeader) ? Number(totalHeader) : null;
+        let json: unknown = null;
+        if (/^application\/json(?:\s*;|$)/i.test(response.headers.get("content-type") ?? "")) {
+          try {
+            json = JSON.parse(await response.text()) as unknown;
+          } catch {
+            json = null;
+          }
+        }
+        return Object.freeze({ status: response.status, redirectRefused: false, transportFailed: false, totalCount, json });
+      }
+
+      return createAuthProbeOperations({
+        config,
+        adminOps: admin.operations,
+        adminClient: admin.client as unknown as ProviderProbeAdminProbeClient,
+        createPublicClient: () => wrapPublic(clientFor(anonKey as string) as unknown as ProviderProbePublicClient),
+        rawRequest,
+        readMailCredentials: (address: string) => reader.readNewestUnread(address),
+        markMailSeen: (address: string) => reader.markExisting(address),
+        ledger,
+        registry,
+        ownedRecipients,
+        nowSeconds: () => Math.floor(clock() / 1000),
         ...(input.random === undefined ? {} : { random: input.random }),
       });
     },

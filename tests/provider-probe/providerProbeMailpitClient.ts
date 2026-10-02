@@ -4,8 +4,11 @@
 // Mailpit fetch) and named unit tests may import it;
 // `providerProbeModuleBoundary.test.ts` enforces that.
 //
-// What it returns: counts only. Message ids, subjects, snippets, bodies, senders and
-// addresses never leave this module. Addresses are compared in memory, then dropped.
+// What the inventory returns: counts only. Message ids, subjects, snippets, bodies,
+// senders and addresses do not leave it; addresses are compared in memory, then
+// dropped. The one exception is the R5 message reader below, which returns a run-owned
+// message's email code and magic-link token hash to the restricted run core (for the
+// restricted Auth probe core), after registering the hash and the link.
 //
 // Completeness. Each page must report an integer `total`. Within one pass every page
 // must report the same total, and each page must hold exactly
@@ -19,8 +22,8 @@
 // it is reading.
 //
 // Created by this run. A message earns a cleanup receipt only when one of its To, Cc
-// or Bcc addresses is exactly a run-owned recipient: an address the run's own
-// user-creation operation minted and the server confirmed. A message that merely
+// or Bcc addresses is exactly a run-owned recipient: an address one of the run's own
+// user-creation operations minted and the server confirmed. A message that merely
 // carries the run tag (for example one inserted from outside) earns no receipt; it is
 // reported only as a count. `takeBaseline` must also find no run-tagged message.
 //
@@ -52,6 +55,7 @@ export type MailpitProbeErrorCode =
   | "mailpit_baseline_already_taken"
   | "mailpit_ledger_closed"
   | "mailpit_capture_capacity_exceeded"
+  | "mailpit_message_ambiguous"
   | "mailpit_invalid_dependencies";
 
 export class MailpitProbeError extends Error {
@@ -257,6 +261,166 @@ async function readStableInventory(
     previous = current;
   }
   fail("mailpit_inventory_unstable");
+}
+
+// ---------------------------------------------------------------------------
+// Message reader (R5). Reads the email code and the magic-link token hash from the
+// newest unread message addressed exactly to one run-owned recipient, for the
+// existing-account sign-in checks. Both are returned only to the restricted Auth probe
+// core (through the run core); the link and its token hash are registered first. The
+// 6-digit code is shorter than the registry's 8-character minimum, so it cannot be
+// registered: the closed evidence schema, which has no field that could carry it, is
+// its only protection.
+//
+// UNVERIFIED: `GET /api/v1/message/{ID}` returning `{ ID, To, Text, HTML }`, and the
+// local magic-link template (a link to `/auth/v1/verify?token=...&type=magiclink` and a
+// 6-digit code) are assumptions about Mailpit and GoTrue that no stack has confirmed.
+// Anything else yields "not found" or no credential, never a guess.
+
+export type MailpitMessageCredentials = Readonly<{
+  messageFound: boolean;
+  code: string | null;
+  tokenHash: string | null;
+}>;
+
+export type ProviderProbeMailpitMessageReader = Readonly<{
+  // Marks every message already addressed to this recipient as seen, so the next read
+  // can only pick a message that arrives after this call.
+  markExisting(address: string): Promise<void>;
+  readNewestUnread(address: string): Promise<MailpitMessageCredentials>;
+}>;
+
+const URL_PATTERN = /https?:\/\/[^\s"'<>]+/g;
+const CODE_PATTERN = /(?:^|[^0-9A-Za-z])([0-9]{6})(?![0-9A-Za-z])/g;
+const TOKEN_HASH_PATTERN = /^[A-Za-z0-9_-]{8,256}$/;
+const MAX_MESSAGE_TEXT = 262_144;
+
+function decodeHtmlAmpersands(text: string): string {
+  return text.replace(/&amp;/gi, "&");
+}
+
+export function extractMailCredentials(
+  text: string,
+  register: (value: string) => void,
+): Readonly<{ code: string | null; tokenHash: string | null }> {
+  const plain = decodeHtmlAmpersands(text);
+  const urls = plain.match(URL_PATTERN) ?? [];
+  const tokens = new Set<string>();
+  for (const raw of urls) {
+    let url: URL;
+    try {
+      url = new URL(raw);
+    } catch {
+      continue;
+    }
+    if (!url.pathname.endsWith("/auth/v1/verify")) {
+      continue;
+    }
+    register(raw);
+    const token = url.searchParams.get("token");
+    if (token !== null && TOKEN_HASH_PATTERN.test(token)) {
+      register(token);
+      tokens.add(token);
+    }
+  }
+  const withoutUrls = plain.replace(URL_PATTERN, " ");
+  const codes = new Set([...withoutUrls.matchAll(CODE_PATTERN)].map((match) => match[1] as string));
+  return Object.freeze({
+    code: codes.size === 1 ? [...codes][0]! : null,
+    tokenHash: tokens.size === 1 ? [...tokens][0]! : null,
+  });
+}
+
+export function createMailpitMessageReader(
+  input: Readonly<{
+    config: ProviderProbeSafetyConfig;
+    origin: string;
+    fetch: MailpitFetch;
+    registry: ProviderProbeKnownValueRegistry;
+    ownedRecipients: ProviderProbeRunOwnedRecipients;
+  }>,
+): ProviderProbeMailpitMessageReader {
+  const { config, origin, registry, ownedRecipients } = input;
+  const fetchPage = input.fetch;
+  if (
+    typeof fetchPage !== "function" ||
+    typeof origin !== "string" ||
+    !isProviderProbeKnownValueRegistry(registry) ||
+    !isRunOwnedRecipientsRecord(ownedRecipients)
+  ) {
+    fail("mailpit_invalid_dependencies");
+  }
+  const read = new Set<string>();
+  const inventoryFor = (target: string) =>
+    readStableInventory(fetchPage, origin, (addresses) =>
+      Object.freeze({ tagged: false, owned: addresses.some((candidate) => candidate.toLowerCase() === target) }),
+    );
+
+  return Object.freeze({
+    async markExisting(address: string): Promise<void> {
+      const target = typeof address === "string" ? address.toLowerCase() : "";
+      if (!isRunOwnedRecipient(ownedRecipients, config.runId, target)) {
+        return;
+      }
+      for (const [id, entry] of (await inventoryFor(target)).entries) {
+        if (entry.owned) {
+          read.add(id);
+        }
+      }
+    },
+
+    async readNewestUnread(address: string): Promise<MailpitMessageCredentials> {
+      const target = typeof address === "string" ? address.toLowerCase() : "";
+      if (!isRunOwnedRecipient(ownedRecipients, config.runId, target)) {
+        // Only a run-owned recipient's mail is ever opened.
+        return Object.freeze({ messageFound: false, code: null, tokenHash: null });
+      }
+      const inventory = await inventoryFor(target);
+      const unread = [...inventory.entries].filter(([id, entry]) => entry.owned && !read.has(id)).map(([id]) => id);
+      if (unread.length === 0) {
+        return Object.freeze({ messageFound: false, code: null, tokenHash: null });
+      }
+      if (unread.length > 1) {
+        fail("mailpit_message_ambiguous");
+      }
+      const id = unread[0]!;
+      registry.register(id);
+      read.add(id);
+      let response: Response;
+      try {
+        response = await fetchPage(`${origin}${MAILPIT_API_PATH_PREFIX}message/${id}`, {
+          method: "GET",
+          headers: { accept: "application/json" },
+        });
+      } catch {
+        fail("mailpit_request_failed");
+      }
+      if (!response.ok) {
+        fail("mailpit_request_failed");
+      }
+      let message: unknown;
+      try {
+        message = JSON.parse(await response.text()) as unknown;
+      } catch {
+        fail("mailpit_response_malformed");
+      }
+      if (!message || typeof message !== "object" || Array.isArray(message)) {
+        fail("mailpit_response_malformed");
+      }
+      const record = message as Record<string, unknown>;
+      const text = typeof record.Text === "string" && record.Text.length > 0 ? record.Text : record.HTML;
+      if (
+        record.ID !== id ||
+        !recipientAddresses(record).some((candidate) => candidate.toLowerCase() === target) ||
+        typeof text !== "string" ||
+        text.length > MAX_MESSAGE_TEXT
+      ) {
+        fail("mailpit_response_malformed");
+      }
+      const credentials = extractMailCredentials(text, (value) => registry.register(value));
+      return Object.freeze({ messageFound: true, ...credentials });
+    },
+  });
 }
 
 export function createMailpitInventoryOperations(

@@ -8,7 +8,9 @@ import {
   compareProviderProbeEnvironment,
   describeProviderProbeImpact,
   expectedProviderProbeWorkdir,
+  providerProbeConfiguredSurfacesFromToml,
   readVerifiedProviderProbeConfigDigest,
+  readVerifiedProviderProbeConfiguredSurfaces,
 } from "./providerProbeEnvironment";
 import {
   assertAcceptedRootPathSyntax,
@@ -30,7 +32,11 @@ const LOCKED_DOWN = testConfig(
 );
 const APP_ROOT = path.resolve(PROVIDER_PROBE_APP_ROOT);
 const MATCHING = { workdir: APP_ROOT, projectId: "solmind-app", apiUrl: "http://127.0.0.1:54321" } as const;
-const PLAN = { authUsersCreated: 3, authSessionsCreated: 2, mailpitMessagesCaptured: 4 } as const;
+const PLAN = {
+  users: { expectedMin: 3, expectedMax: 4, plannedMax: 8, capacity: 10 },
+  sessions: { expectedMin: 2, expectedMax: 2, plannedMax: 6, capacity: 10 },
+  messages: { expectedMin: 0, expectedMax: 2, plannedMax: 7, capacity: 100 },
+} as const;
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -203,18 +209,50 @@ describe("config digest bound to a successful comparison", () => {
   });
 });
 
+describe("configured, not observed: anonymous sign-in and phone sign-up (R6)", () => {
+  it("reads both settings from settings text, as enabled, disabled or unreadable", () => {
+    const text = "[auth]\nenable_signup = false\nenable_anonymous_sign_ins = false\n[auth.sms]\nenable_signup = false # closed\n";
+
+    expect(providerProbeConfiguredSurfacesFromToml(text)).toEqual({ anonymousSignIns: "disabled", phoneSignUp: "disabled" });
+    expect(
+      providerProbeConfiguredSurfacesFromToml("[auth]\nenable_anonymous_sign_ins = true\n[auth.sms]\nenable_signup = true\n"),
+    ).toEqual({ anonymousSignIns: "enabled", phoneSignUp: "enabled" });
+    expect(
+      providerProbeConfiguredSurfacesFromToml(
+        "[auth]\nenable_anonymous_sign_ins = maybe\n[auth.sms]\nenable_signup = false\n[auth.sms]\nenable_signup = true\n",
+      ),
+    ).toEqual({ anonymousSignIns: "unreadable", phoneSignUp: "unreadable" });
+    expect(providerProbeConfiguredSurfacesFromToml("")).toEqual({ anonymousSignIns: "unreadable", phoneSignUp: "unreadable" });
+  });
+
+  it("reads this checkout's settings only through a verified comparison", () => {
+    const readSpy = spyOnFileReads();
+    const forged = { matches: true, workdir: "matches", projectId: "matches", apiUrl: "matches" };
+
+    expect(() => readVerifiedProviderProbeConfiguredSurfaces(forged)).toThrow("provider_probe_config_digest_unverified");
+    expect(readSpy).not.toHaveBeenCalled();
+    // This checkout configures both surfaces closed.
+    expect(readVerifiedProviderProbeConfiguredSurfaces(compareProviderProbeEnvironment(CONFIG, MATCHING))).toEqual({
+      anonymousSignIns: "disabled",
+      phoneSignUp: "disabled",
+    });
+    expect(readSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("provider probe impact display", () => {
-  it("shows counts and categories only", () => {
+  it("shows conditional ranges, planned maxima and enforced capacities, separately, and categories only", () => {
     const lines = describeProviderProbeImpact(CONFIG, PLAN, compareProviderProbeEnvironment(CONFIG, MATCHING));
 
     expect(lines).toEqual([
       "Provider probe run: what it would create and delete (counts and categories only)",
       "Profile: current-config",
       "Reaches: the local Auth API and the local mail catcher, on a literal loopback address only",
-      "Would create: 3 local Auth users, with reserved synthetic addresses",
-      "Would create: 2 local Auth sessions, held in memory only, never in a cookie or file",
-      "May capture: up to 4 local test messages, to reserved synthetic addresses",
-      "Would delete: at most 3 local Auth users and 4 local test messages, only those this run created, by their exact IDs, once each; nothing is listed and deleted",
+      "Local Auth users: expected 3 to 4, each at an address this run minted for it; at most 8 planned, if every check found an unexpected result; the run tracks at most 10 (enforced), and a user it finds but cannot track stops the run",
+      "Local Auth sessions: expected 2, held in memory only, never in a cookie or file; at most 6 planned; at most 10 can be held (enforced)",
+      "Local test messages: expected 0 to 2, to addresses this run minted; at most 7 planned; the run tracks at most 100 (enforced), and a run-tagged message it cannot attribute stops the run",
+      "Would delete: only the users and messages this run created and tracked, by their exact IDs, at most three tries each",
+      "Found by listing: only a user at an address this run minted for the request that created it (the server returned no ID); no other listed user is ever deleted",
       "Would not touch: any SolMind database function, the hosted project, or any real address",
       "Environment check: workdir matches, project matches, API URL matches",
     ]);
@@ -226,23 +264,25 @@ describe("provider probe impact display", () => {
     }
   });
 
-  it("uses singular wording for one item and omits the check when none is given", () => {
-    const lines = describeProviderProbeImpact(CONFIG, { authUsersCreated: 1, authSessionsCreated: 0, mailpitMessagesCaptured: 1 });
+  it("omits the environment check when none is given", () => {
+    const lines = describeProviderProbeImpact(CONFIG, PLAN);
 
-    expect(lines).toContain("Would create: 1 local Auth user, with reserved synthetic addresses");
-    expect(lines).toContain("May capture: up to 1 local test message, to reserved synthetic addresses");
     expect(lines.some((line) => line.startsWith("Environment check"))).toBe(false);
   });
 
   it.each([
-    { ...PLAN, authUsersCreated: 11 },
-    { ...PLAN, authSessionsCreated: -1 },
-    { ...PLAN, mailpitMessagesCaptured: 101 },
-    { ...PLAN, authUsersCreated: 1.5 },
-    { ...PLAN, recipients: 1 },
-    { authUsersCreated: 1 },
+    { ...PLAN, users: { ...PLAN.users, capacity: 11 } },
+    { ...PLAN, sessions: { ...PLAN.sessions, expectedMin: -1 } },
+    { ...PLAN, messages: { ...PLAN.messages, capacity: 101 } },
+    { ...PLAN, users: { ...PLAN.users, expectedMax: 1.5 } },
+    { ...PLAN, users: { ...PLAN.users, expectedMin: 5 } },
+    { ...PLAN, messages: { ...PLAN.messages, plannedMax: 1 } },
+    { ...PLAN, users: { ...PLAN.users, plannedMax: 11 } },
+    { ...PLAN, users: { ...PLAN.users, extra: 1 } },
+    { ...PLAN, recipients: PLAN.users },
+    { users: PLAN.users },
     null,
-  ])("refuses an unbounded or widened plan %#", (plan) => {
+  ])("refuses an unbounded, inconsistent or widened plan %#", (plan) => {
     expect(() => describeProviderProbeImpact(CONFIG, plan)).toThrow("provider_probe_impact_plan_invalid");
   });
 });

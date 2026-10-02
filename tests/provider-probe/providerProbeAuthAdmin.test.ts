@@ -8,7 +8,7 @@ import {
 } from "./providerProbeAuthAdminCore";
 import { createProviderProbeCleanupLedger } from "./providerProbeCleanupLedger";
 import { isRunOwnedRecipient } from "./providerProbeCleanupReceipts";
-import { createProviderProbeKnownValueRegistry, scanProviderProbeOutput } from "./providerProbeRunEnvelope";
+import { createProviderProbeKnownValueRegistry, PROVIDER_PROBE_OUTPUT_LIMITS, scanProviderProbeOutput } from "./providerProbeRunEnvelope";
 import {
   createAuthAdminForTests,
   createOwnedRecipientsForTests,
@@ -74,6 +74,11 @@ async function expectCode(
   expect((error as Error).cause).toBeUndefined();
   return error as ProviderProbeAuthAdminError;
 }
+
+// R7: a locator that finds nobody at the minted address.
+const NOBODY_THERE = async () => [] as string[];
+const OTHER_ID = "22222222-2222-4222-8222-222222222222";
+const THIRD_ID = "44444444-4444-4444-8444-444444444444";
 
 function fillUsers(ledger: ReturnType<typeof createProviderProbeCleanupLedger>, count: number, marker: string): void {
   for (let index = 1; index <= count; index += 1) {
@@ -299,7 +304,8 @@ describe("checks made before the creation call", () => {
     });
     const working = createAuthAdminForTests({ config: CONFIG, client: fakeClient(echoCreate()), ledger, registry, ownedRecipients });
 
-    await expectCode(failing.createRunTaggedUser(), "auth_admin_create_failed");
+    // (R7) The minted address is located after the failure and nobody is there.
+    await expectCode(failing.createRunTaggedUser({ locateMintedAddress: NOBODY_THERE }), "auth_admin_create_failed");
     expect(ledger.remainingCapacity("auth-user")).toBe(1);
     await working.createRunTaggedUser();
 
@@ -340,13 +346,13 @@ describe("checks made before the creation call", () => {
   });
 });
 
-describe("failed creation results record nothing", () => {
+describe("failed creation results, with nobody found at the minted address, record nothing", () => {
   it("maps a thrown client error to one value-free code", async () => {
     const { ledger, admin } = setup(async () => {
       throw new Error(`CLIENTCANARY ${USER_ID}`);
     });
 
-    const error = await expectCode(admin.createRunTaggedUser(), "auth_admin_create_failed");
+    const error = await expectCode(admin.createRunTaggedUser({ locateMintedAddress: NOBODY_THERE }), "auth_admin_create_failed");
     expect(String(error) + (error.stack ?? "") + JSON.stringify(error)).not.toContain("CLIENTCANARY");
     expect(ledger.recordedCounts().authUsers).toBe(0);
   });
@@ -354,7 +360,7 @@ describe("failed creation results record nothing", () => {
   it("maps an error result to the same code", async () => {
     const { ledger, admin } = setup(async () => ({ data: { user: null }, error: { message: "ERRORCANARY" } }));
 
-    await expectCode(admin.createRunTaggedUser(), "auth_admin_create_failed");
+    await expectCode(admin.createRunTaggedUser({ locateMintedAddress: NOBODY_THERE }), "auth_admin_create_failed");
     expect(ledger.recordedCounts().authUsers).toBe(0);
   });
 
@@ -365,11 +371,214 @@ describe("failed creation results record nothing", () => {
     { data: { user: null }, error: null },
     { data: null, error: null },
     null,
-  ])("refuses an unusable success result %#", async (result) => {
+  ])("treats an unusable success result as failed %#", async (result) => {
     const { ledger, admin } = setup(async () => result);
 
-    await expectCode(admin.createRunTaggedUser(), "auth_admin_create_unexpected_result");
+    await expectCode(admin.createRunTaggedUser({ locateMintedAddress: NOBODY_THERE }), "auth_admin_create_failed");
     expect(ledger.recordedCounts().authUsers).toBe(0);
     expect(ledger.remainingCapacity("auth-user")).toBe(10);
+  });
+});
+
+describe("R7: a failed or id-less creation is reconciled by its exact minted address", () => {
+  // The server created the user, then the answer was lost (the request threw).
+  function lostAnswer() {
+    const created: string[] = [];
+    const createUser = vi.fn<CreateUser>(async (attributes: Attributes) => {
+      created.push(attributes.email);
+      throw new Error("socket hang up (fake lost answer)");
+    });
+    return { createUser, created };
+  }
+
+  it("commits the one user located at the minted address, as the created user", async () => {
+    const { createUser, created } = lostAnswer();
+    const { ledger, registry, ownedRecipients, admin } = setup(createUser);
+    const locate = vi.fn(async (address: string) => (address === created[0] ? [USER_ID] : []));
+
+    const result = await admin.createRunTaggedUser({ password: CREDENTIAL, locateMintedAddress: locate });
+
+    expect(locate).toHaveBeenCalledTimes(1);
+    expect(locate).toHaveBeenCalledWith(result.email);
+    expect(result.email).toBe(created[0]);
+    expect(result.emailMatched).toBe(true);
+    expect(result.user.matchesUserId(USER_ID)).toBe(true);
+    expect(ledger.recordedCounts().authUsers).toBe(1);
+    expect(isRunOwnedRecipient(ownedRecipients, CONFIG.runId, result.email)).toBe(true);
+    expect(scanProviderProbeOutput(`copy ${USER_ID}`, registry).knownValueMatches).toBe(1);
+  });
+
+  it("never locates after a successful creation", async () => {
+    const locate = vi.fn(NOBODY_THERE);
+    const { admin } = setup(echoCreate());
+
+    await admin.createRunTaggedUser({ locateMintedAddress: locate });
+
+    expect(locate).not.toHaveBeenCalled();
+  });
+
+  it("keeps the reservation and the in-flight state open while it locates", async () => {
+    const { createUser } = lostAnswer();
+    const ledger = createProviderProbeCleanupLedger(ENV);
+    fillUsers(ledger, 9, "5555");
+    const registry = createProviderProbeKnownValueRegistry();
+    const ownedRecipients = createOwnedRecipientsForTests(CONFIG.runId);
+    const admin = createAuthAdminForTests({ config: CONFIG, client: fakeClient(createUser), ledger, registry, ownedRecipients });
+    const other = createAuthAdminForTests({ config: CONFIG, client: fakeClient(echoCreate(V7_ID)), ledger, registry, ownedRecipients });
+    let answer: (ids: string[]) => void = () => undefined;
+    let locating: () => void = () => undefined;
+    const started = new Promise<void>((resolve) => {
+      locating = resolve;
+    });
+    const locate = () =>
+      new Promise<string[]>((resolve) => {
+        answer = resolve;
+        locating();
+      });
+    const deleters = { deleteAuthUser: async () => undefined, deleteMailpitMessage: async () => undefined };
+
+    const pending = admin.createRunTaggedUser({ locateMintedAddress: locate });
+    await started;
+    // The last unit of capacity is still held, cleanup cannot start, and this admin is busy.
+    await expectCode(other.createRunTaggedUser(), "auth_admin_capacity_exceeded");
+    await expect(ledger.runCleanup(deleters)).rejects.toThrow("cleanup_ledger_creation_in_flight");
+    await expectCode(admin.createRunTaggedUser(), "auth_admin_busy");
+    answer([USER_ID]);
+    const result = await pending;
+
+    expect(result.user.matchesUserId(USER_ID)).toBe(true);
+    expect(ledger.recordedCounts().authUsers).toBe(10);
+  });
+
+  it("ends in exact-id cleanup of the located user", async () => {
+    const { createUser } = lostAnswer();
+    const { ledger, admin } = setup(createUser);
+    const deleted: string[] = [];
+
+    await admin.createRunTaggedUser({ locateMintedAddress: async () => [USER_ID] });
+    const report = await ledger.runCleanup({
+      deleteAuthUser: async (id: string) => {
+        deleted.push(id);
+      },
+      deleteMailpitMessage: async () => undefined,
+    });
+
+    expect(deleted).toEqual([USER_ID]);
+    expect(report.outcome).toBe("complete");
+  });
+
+  it.each([
+    ["no locator was given", undefined],
+    [
+      "the locator fails",
+      async () => {
+        throw new Error("listing failed (fake)");
+      },
+    ],
+    ["the locator returns something that is not a list", async () => "not a list" as unknown as string[]],
+    ["the locator returns an id that is not a valid user id", async () => ["not-a-uuid"]],
+    ["the locator returns the same id twice", async () => [USER_ID, USER_ID]],
+  ])("reports the creation unresolved, recording nothing and releasing its unit, when %s", async (_label, locate) => {
+    const { createUser } = lostAnswer();
+    const { ledger, admin } = setup(createUser);
+
+    const error = await expectCode(
+      admin.createRunTaggedUser(locate === undefined ? {} : { locateMintedAddress: locate }),
+      "auth_admin_create_unresolved",
+    );
+
+    expect(String(error) + JSON.stringify(error)).not.toContain(USER_ID);
+    expect(ledger.recordedCounts().authUsers).toBe(0);
+    expect(ledger.remainingCapacity("auth-user")).toBe(10);
+  });
+
+  it("tracks every user located when more than one is there, and still reports the creation unresolved", async () => {
+    const { createUser } = lostAnswer();
+    const { ledger, registry, admin } = setup(createUser);
+
+    await expectCode(admin.createRunTaggedUser({ locateMintedAddress: async () => [USER_ID, OTHER_ID] }), "auth_admin_create_unresolved");
+
+    expect(ledger.recordedCounts().authUsers).toBe(2);
+    for (const value of [USER_ID, OTHER_ID]) {
+      expect(scanProviderProbeOutput(`copy ${value}`, registry).knownValueMatches).toBe(1);
+    }
+  });
+
+  it("R10: reports exactly the located users it could not track (three located, one ledger place left)", async () => {
+    const { createUser } = lostAnswer();
+    const ledger = createProviderProbeCleanupLedger(ENV);
+    fillUsers(ledger, 9, "7777");
+    const admin = createAuthAdminForTests({
+      config: CONFIG,
+      client: fakeClient(createUser),
+      ledger,
+      registry: createProviderProbeKnownValueRegistry(),
+      ownedRecipients: createOwnedRecipientsForTests(CONFIG.runId),
+    });
+
+    const error = await expectCode(
+      admin.createRunTaggedUser({ locateMintedAddress: async () => [USER_ID, OTHER_ID, THIRD_ID] }),
+      "auth_admin_create_unresolved",
+    );
+
+    // One got the last receipt; two could not.
+    expect(ledger.recordedCounts().authUsers).toBe(10);
+    expect(error.unresolvedUsers).toBe(2);
+  });
+
+  it.each([
+    ["every located user was tracked", async () => [USER_ID, OTHER_ID]],
+    ["the locator failed", async (): Promise<string[]> => {
+      throw new Error("listing failed (fake)");
+    }],
+  ])("R10: reports at least one unresolved user when %s", async (_label, locate) => {
+    const { createUser } = lostAnswer();
+    const { admin } = setup(createUser);
+
+    const error = await expectCode(admin.createRunTaggedUser({ locateMintedAddress: locate }), "auth_admin_create_unresolved");
+
+    expect(error.unresolvedUsers).toBe(1);
+  });
+
+  it("R10: every other code carries no unresolved count", async () => {
+    const { admin } = setup(async () => {
+      throw new Error("transport failed (fake)");
+    });
+
+    const error = await expectCode(admin.createRunTaggedUser({ locateMintedAddress: NOBODY_THERE }), "auth_admin_create_failed");
+
+    expect(error.unresolvedUsers).toBe(0);
+  });
+
+  it("R9: commits every located user before registering any id, so a full registry cannot replace the unresolved report", async () => {
+    const { createUser } = lostAnswer();
+    const { ledger, registry, admin } = setup(createUser);
+    // Leave exactly one place: the minted address the admin registers before its call.
+    for (let index = 0; registry.size() < PROVIDER_PROBE_OUTPUT_LIMITS.maxKnownValues - 1; index += 1) {
+      registry.register(`fake-filler-known-value-${index}`);
+    }
+
+    await expectCode(admin.createRunTaggedUser({ locateMintedAddress: async () => [USER_ID, OTHER_ID] }), "auth_admin_create_unresolved");
+
+    // Both located users are tracked, although neither id could be registered.
+    expect(ledger.recordedCounts().authUsers).toBe(2);
+    expect(registry.size()).toBe(PROVIDER_PROBE_OUTPUT_LIMITS.maxKnownValues);
+  });
+
+  it("tracks what capacity allows when more than one is located at the last unit, and reports the creation unresolved", async () => {
+    const { createUser } = lostAnswer();
+    const ledger = createProviderProbeCleanupLedger(ENV);
+    fillUsers(ledger, 9, "6666");
+    const admin = createAuthAdminForTests({
+      config: CONFIG,
+      client: fakeClient(createUser),
+      ledger,
+      registry: createProviderProbeKnownValueRegistry(),
+      ownedRecipients: createOwnedRecipientsForTests(CONFIG.runId),
+    });
+
+    await expectCode(admin.createRunTaggedUser({ locateMintedAddress: async () => [USER_ID, OTHER_ID] }), "auth_admin_create_unresolved");
+
+    expect(ledger.recordedCounts().authUsers).toBe(10);
   });
 });

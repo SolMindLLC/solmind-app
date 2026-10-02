@@ -3,18 +3,22 @@
 // module and unit-test file that may import this one; the integration file may not.
 //
 // Receipts. A receipt is the only way an identifier can enter the cleanup ledger. Only
-// the two effect-owning operations issue them, from their own successful results:
-// `providerProbeAuthAdminCore.ts` (a local Auth user it created) and
-// `providerProbeMailpitClient.ts` (a test message addressed to a run-owned recipient).
+// the effect-owning modules issue them, from their own results:
+// `providerProbeAuthAdminCore.ts` (a local Auth user it created),
+// `providerProbeMailpitClient.ts` (a test message addressed to a run-owned recipient)
+// and, since R5, `providerProbeAuthProbeCore.ts` (a user whose id the server returned
+// to the run's own creating request, or a user found by listing at exactly the address
+// the run minted for that request, while its reservation was still open).
 // Only `providerProbeCleanupLedger.ts` redeems them. A receipt is an opaque frozen
 // object carrying only its kind; the identifier and the run it belongs to live in a
 // module-private WeakMap, so a receipt-shaped object built anywhere else is not a
 // receipt. Each receipt is bound to one run id and can be redeemed once.
 //
 // Run-owned recipients. A branded, run-bound record of the exact addresses the run
-// itself produced: only the user-creation operation adds to it, with the address it
-// minted, after the server confirmed a user with that address. The mail capture
-// issues a receipt only for a message addressed to one of these exact addresses.
+// itself produced: only the user-creation operations add to it (the admin core's, and
+// since R5 the Auth probe core's), with the address they minted, after the server
+// confirmed a user with that address. The mail capture issues a receipt only for a
+// message addressed to one of these exact addresses.
 
 export type ProviderProbeCleanupKind = "auth-user" | "mailpit-message";
 

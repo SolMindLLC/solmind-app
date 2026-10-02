@@ -21,12 +21,29 @@
 //   receipt at once, before any further check, so a user whose id came back is always
 //   tracked. Only if the server confirms the minted address exactly does that address
 //   become a run-owned recipient, the one thing that lets a test message earn a
-//   cleanup receipt. A failed creation releases the reservation. If the transport
-//   fails after the server has created a user, no id comes back and no receipt can
-//   exist; the later final no-side-effect proof must look for it by run tag.
+//   cleanup receipt.
+// - (R7) After a failed or id-less answer (a thrown request, an error result or an
+//   unusable success), the server may still have created the user, for example when the
+//   response was lost. The reservation stays open, and the creation stays "in flight",
+//   while the caller's locator lists the users at exactly the address minted for this
+//   request:
+//   - none there: the reservation is released and the creation failed
+//     (`auth_admin_create_failed`);
+//   - exactly one: its id is committed (the receipt), registered and returned as the
+//     created user, at the minted address;
+//   - the locator fails, returns something unusable, or finds more than one, or no locator
+//     was given: attribution cannot be completed. Whatever was located is tracked if
+//     capacity allows, the reservation is released (otherwise cleanup could never start)
+//     and the creation is reported unresolved (`auth_admin_create_unresolved`), so the
+//     caller stops every further effect and counts the unresolved users. (R9) Every located
+//     user is committed before any id is registered, and a registration failure cannot
+//     replace the unresolved report. (R10) The report carries the count the caller adds
+//     (`unresolvedUsers`): every located user that could not get a receipt (capacity), and
+//     at least one.
 // - The caller receives the minted address (needed in memory by later probes; it is
 //   registered), a value-free status and an opaque handle that can answer "is this the
-//   same user id?". The id itself never leaves this module.
+//   same user id?". The id leaves this module only through `authUserRecordForHandle`,
+//   to the restricted Auth probe core, which never returns it further.
 
 import { randomBytes } from "node:crypto";
 
@@ -48,15 +65,20 @@ export type ProviderProbeAuthAdminErrorCode =
   | "auth_admin_ledger_closed"
   | "auth_admin_capacity_exceeded"
   | "auth_admin_create_failed"
-  | "auth_admin_create_unexpected_result";
+  | "auth_admin_create_unresolved";
 
 export class ProviderProbeAuthAdminError extends Error {
   readonly code: ProviderProbeAuthAdminErrorCode;
+  // R10: for `auth_admin_create_unresolved`, how many users may exist untracked (value-free):
+  // every located user that could not get a receipt, and at least one, since the creation
+  // itself could not be attributed. Zero for every other code.
+  readonly unresolvedUsers: number;
 
-  constructor(code: ProviderProbeAuthAdminErrorCode) {
+  constructor(code: ProviderProbeAuthAdminErrorCode, unresolvedUsers = 1) {
     super(code);
     this.name = "ProviderProbeAuthAdminError";
     this.code = code;
+    this.unresolvedUsers = code === "auth_admin_create_unresolved" ? Math.max(1, unresolvedUsers) : 0;
   }
 }
 
@@ -84,8 +106,13 @@ export type ProviderProbeAuthUserCreation = Readonly<{
   user: ProviderProbeAuthUserHandle;
 }>;
 
+// R7: lists the ids of the users whose address is exactly the given minted address.
+export type ProviderProbeMintedAddressLocator = (address: string) => Promise<readonly string[]>;
+
 export type ProviderProbeAuthAdmin = Readonly<{
-  createRunTaggedUser(input?: Readonly<{ password?: string }>): Promise<ProviderProbeAuthUserCreation>;
+  createRunTaggedUser(
+    input?: Readonly<{ password?: string; locateMintedAddress?: ProviderProbeMintedAddressLocator }>,
+  ): Promise<ProviderProbeAuthUserCreation>;
 }>;
 
 export type ProviderProbeRandomSource = (size: number) => Uint8Array;
@@ -150,10 +177,22 @@ function createdUser(result: unknown): Readonly<{ id: string; email: unknown }> 
   return isValidCleanupId("auth-user", id) ? Object.freeze({ id, email }) : null;
 }
 
-function handleFor(id: string): ProviderProbeAuthUserHandle {
-  return Object.freeze({
+// Handle -> the created user's id and minted address, for the restricted probe core
+// only (`authUserRecordForHandle`); a handle made anywhere else has no entry.
+const handleRecords = new WeakMap<object, Readonly<{ id: string; email: string }>>();
+
+function handleFor(id: string, email: string): ProviderProbeAuthUserHandle {
+  const handle = Object.freeze({
     matchesUserId: (candidate: unknown) => typeof candidate === "string" && candidate === id,
   });
+  handleRecords.set(handle, Object.freeze({ id, email }));
+  return handle;
+}
+
+// RESTRICTED: the probe core (`providerProbeAuthProbeCore.ts`) needs the id behind a
+// handle to read, sign in as or compare that user. It never returns the id further.
+export function authUserRecordForHandle(handle: unknown): Readonly<{ id: string; email: string }> | null {
+  return handle !== null && typeof handle === "object" ? (handleRecords.get(handle) ?? null) : null;
 }
 
 export function createAuthAdminOperations(
@@ -183,9 +222,12 @@ export function createAuthAdminOperations(
   let busy = false;
 
   return Object.freeze({
-    async createRunTaggedUser(request?: Readonly<{ password?: string }>) {
+    async createRunTaggedUser(
+      request?: Readonly<{ password?: string; locateMintedAddress?: ProviderProbeMintedAddressLocator }>,
+    ) {
       // Every check below runs before the effect.
       const password = assertCredential(request?.password);
+      const locate = request?.locateMintedAddress;
       if (busy) {
         fail("auth_admin_busy");
       }
@@ -207,37 +249,95 @@ export function createAuthAdminOperations(
       }
 
       busy = true;
-      let result: unknown;
       try {
-        // The function captured at construction, called on its own admin object.
-        result = await createUser.call(admin, {
-          email,
-          ...(password === undefined ? {} : { password }),
-          email_confirm: true,
-          user_metadata: { synthetic: true },
-        });
-      } catch {
-        reservation.release();
-        fail("auth_admin_create_failed");
+        let result: unknown = null;
+        try {
+          // The function captured at construction, called on its own admin object.
+          result = await createUser.call(admin, {
+            email,
+            ...(password === undefined ? {} : { password }),
+            email_confirm: true,
+            user_metadata: { synthetic: true },
+          });
+        } catch {
+          result = null;
+        }
+
+        const user = createdUser(result);
+        if (user !== null) {
+          // The user exists: track it before any further check, then register its id.
+          reservation.commit(issueCleanupReceipt("auth-user", user.id, config.runId));
+          registry.register(user.id);
+          const emailMatched = typeof user.email === "string" && user.email.toLowerCase() === email;
+          if (emailMatched) {
+            // Only a server-confirmed, minted address can make a test message cleanable.
+            addRunOwnedRecipient(ownedRecipients, config.runId, email);
+          }
+          return Object.freeze({ email, emailMatched, user: handleFor(user.id, email) });
+        }
+
+        // R7: a failed or id-less answer. The reservation stays open while the users at
+        // exactly this minted address are located.
+        let located: readonly string[] | null = null;
+        if (typeof locate === "function") {
+          try {
+            const found: unknown = await locate(email);
+            located =
+              Array.isArray(found) &&
+              found.every((id) => isValidCleanupId("auth-user", id)) &&
+              new Set(found).size === found.length
+                ? (found as string[])
+                : null;
+          } catch {
+            located = null;
+          }
+        }
+        if (located !== null && located.length === 0) {
+          reservation.release();
+          fail("auth_admin_create_failed");
+        }
+        if (located !== null && located.length === 1) {
+          const id = located[0]!;
+          reservation.commit(issueCleanupReceipt("auth-user", id, config.runId));
+          registry.register(id);
+          // Located at exactly the minted address.
+          addRunOwnedRecipient(ownedRecipients, config.runId, email);
+          return Object.freeze({ email, emailMatched: true, user: handleFor(id, email) });
+        }
+        // Attribution cannot be completed: track whatever was located (if capacity
+        // allows), release the reservation, and report the creation unresolved.
+        let untrackedLocated = 0;
+        if (located !== null && located.length > 1) {
+          // R9: every located user is committed first; registering the ids, which can
+          // throw (a full registry), comes after and can never replace the unresolved
+          // report below.
+          reservation.commit(issueCleanupReceipt("auth-user", located[0]!, config.runId));
+          const committed = [located[0]!];
+          for (const extra of located.slice(1)) {
+            try {
+              ledger.reserve("auth-user").commit(issueCleanupReceipt("auth-user", extra, config.runId));
+              committed.push(extra);
+            } catch {
+              // Left for the final listing to find; counted below, and the caller stops for it.
+            }
+          }
+          untrackedLocated = located.length - committed.length;
+          for (const id of committed) {
+            try {
+              registry.register(id);
+            } catch {
+              // The creation is reported unresolved below either way, which stops the run.
+            }
+          }
+        } else {
+          reservation.release();
+        }
+        // R10: the report carries how many users may exist untracked: every located user
+        // that could not get a receipt, and at least one (the creation itself is ambiguous).
+        throw new ProviderProbeAuthAdminError("auth_admin_create_unresolved", Math.max(1, untrackedLocated));
       } finally {
         busy = false;
       }
-
-      const user = createdUser(result);
-      if (user === null) {
-        reservation.release();
-        const failed = !!result && typeof result === "object" && (result as { error?: unknown }).error;
-        fail(failed ? "auth_admin_create_failed" : "auth_admin_create_unexpected_result");
-      }
-      // The user exists: track it before any further check, then register its id.
-      reservation.commit(issueCleanupReceipt("auth-user", user.id, config.runId));
-      registry.register(user.id);
-      const emailMatched = typeof user.email === "string" && user.email.toLowerCase() === email;
-      if (emailMatched) {
-        // Only a server-confirmed, minted address can make a test message cleanable.
-        addRunOwnedRecipient(ownedRecipients, config.runId, email);
-      }
-      return Object.freeze({ email, emailMatched, user: handleFor(user.id) });
     },
   });
 }

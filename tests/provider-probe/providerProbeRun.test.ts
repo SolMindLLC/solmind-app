@@ -218,9 +218,12 @@ describe("production run surface", () => {
       "cleanupCounts",
       "config",
       "createAuthAdmin",
+      "createAuthProbe",
       "createMailpitInventory",
       "knownValueCount",
+      "limitRequests",
       "registerKnownValue",
+      "requestCount",
       "residueCounts",
       "retryCleanup",
     ]);
@@ -284,6 +287,7 @@ describe("production run surface", () => {
       supabaseJsVersion: "2.108.2",
       authJsVersion: "2.108.2",
       configDigest: `sha256:${"cd".repeat(32)}`,
+      configuredNotObserved: { anonymousSignIns: "disabled", phoneSignUp: "disabled" },
     });
 
     expect(() => run.assembleOutput({ envelope, evidence: [] })).not.toThrow();
@@ -294,6 +298,30 @@ describe("production run surface", () => {
 });
 
 describe("run core over test transports (the production composition and deleters)", () => {
+  it("R6: refuses every request beyond its allowance before the transport, until the allowance is lifted", async () => {
+    const { services, run } = await runOverTestTransports({ ...GATED });
+    const inventory = run.createMailpitInventory();
+    const admin = run.createAuthAdmin(FAKE_KEY);
+
+    expect(() => run.limitRequests(-1)).toThrow("provider_probe_run_invalid_allowance");
+    expect(() => run.limitRequests(1.5)).toThrow("provider_probe_run_invalid_allowance");
+    run.limitRequests(2);
+    // A stable baseline reads the mailbox twice: exactly the allowance.
+    await inventory.takeBaseline();
+    const before = services.exchanges.length;
+    const counted = run.requestCount();
+    await expect(inventory.readCounts()).rejects.toThrow();
+    await expect(admin.createRunTaggedUser()).rejects.toThrow();
+    // Refused before the transport: no connection, no byte, and not counted.
+    expect(services.exchanges.length).toBe(before);
+    expect(run.requestCount()).toBe(counted);
+    expect(run.cleanupCounts()).toEqual({ authUsers: 0, mailpitMessages: 0 });
+
+    run.limitRequests(null);
+    await expect(inventory.readCounts()).resolves.toMatchObject({ runTaggedMessageCount: 0 });
+    expect(services.exchanges.length).toBe(before + 2);
+  });
+
   it("creates users, captures only run-owned mail and cleans up through its fixed deleters", async () => {
     const { services, run } = await runOverTestTransports({ ...GATED });
     const { capture } = await populate(run, services);

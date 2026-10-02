@@ -1,10 +1,27 @@
 // Test-only run envelope, known-value registry and output scanner for the future
 // local Supabase Auth provider probes.
 //
-// Output boundary. The only document a run may emit is the closed envelope below
-// plus kernel-validated evidence records (`createProviderProbeEvidence`): every field
-// is a closed enum, a bounded number, a boolean, a pinned version string, the run id
-// or a SHA-256 config digest. That closed schema is the boundary.
+// Output boundary. The only evidence document a run may emit is the closed envelope
+// below plus kernel-validated evidence records (`createProviderProbeEvidence`): every
+// field is a closed enum, a bounded number, a boolean, a pinned version string, the run
+// id or a SHA-256 config digest. That closed schema is the boundary. (Since R5 the
+// preview phase also writes an impact display: fixed lines of counts, categories,
+// versions and digests, each scanned before it is written.)
+//
+// Envelope version 2 (R6) adds `configuredNotObserved`: what this checkout's
+// `supabase/config.toml` configures for anonymous sign-in and phone sign-up, two
+// surfaces the run no longer tries. Each value is a closed word ("enabled", "disabled"
+// or "unreadable") read from the settings file, never observed from the running stack.
+//
+// Envelope version 3 (R11, re-check #128f) adds `countsBeyondEvidenceBounds`: the banked
+// kernel's evidence record holds each count only up to a fixed maximum (users and
+// sessions 10, messages and requests 100), and never below zero. A record count outside
+// those bounds is written as the bound itself and named here, entry by entry ("PP-01's
+// userDelta is more than 10"), so it is never silently reduced; the list is always
+// present and empty when no count was out of bounds. The exact count is not carried (a
+// "more than" marker, as Paul chose, leaving the kernel unchanged). Assembly checks every
+// entry against its record: the record exists, its probe id matches, its field holds
+// exactly the bound, and it did not pass.
 //
 // The scanner is defence in depth on top of that boundary, not proof that arbitrary
 // text is safe. It applies the kernel's own serializer patterns (by delegating to
@@ -34,14 +51,44 @@ import {
 } from "../../src/lib/solmind/supabase/__tests__/providerProbeEvidence";
 import { providerProbeAppRoot } from "./providerProbeLocalRoot";
 
+export type ProviderProbeConfiguredSetting = "enabled" | "disabled" | "unreadable";
+
+export type ProviderProbeConfiguredNotObserved = Readonly<{
+  anonymousSignIns: ProviderProbeConfiguredSetting;
+  phoneSignUp: ProviderProbeConfiguredSetting;
+}>;
+
+// R11: the record counts the kernel bounds, and those bounds (the kernel does not export
+// them; `providerProbeProbes.test.ts` checks each against the kernel itself).
+export type ProviderProbeEvidenceCountField = "userDelta" | "sessionDelta" | "messageDelta" | "requestCount";
+
+export const PROVIDER_PROBE_EVIDENCE_BOUNDS: Readonly<Record<ProviderProbeEvidenceCountField, number>> = Object.freeze({
+  userDelta: 10,
+  sessionDelta: 10,
+  messageDelta: 100,
+  requestCount: 100,
+});
+
+// R11: one record count outside the kernel's bounds. "more-than" pairs with the field's
+// maximum, "less-than" with zero; the record's field holds exactly that limit.
+export type ProviderProbeCountBeyondEvidenceBounds = Readonly<{
+  record: number;
+  probeId: string;
+  field: ProviderProbeEvidenceCountField;
+  relation: "more-than" | "less-than";
+  limit: number;
+}>;
+
 export type ProviderProbeRunEnvelope = Readonly<{
-  envelopeVersion: 1;
+  envelopeVersion: 3;
   profile: ProviderProbeProfile;
   runId: string;
   supabaseCliVersion: string;
   supabaseJsVersion: string;
   authJsVersion: string;
   configDigest: string;
+  configuredNotObserved: ProviderProbeConfiguredNotObserved;
+  countsBeyondEvidenceBounds: readonly ProviderProbeCountBeyondEvidenceBounds[];
 }>;
 
 export type ProviderProbeObservedRun = Readonly<{
@@ -49,6 +96,7 @@ export type ProviderProbeObservedRun = Readonly<{
   supabaseJsVersion: string;
   authJsVersion: string;
   configDigest: string;
+  configuredNotObserved: ProviderProbeConfiguredNotObserved;
 }>;
 
 export type ProviderProbeOutputScan = Readonly<{
@@ -78,13 +126,25 @@ const CONFIG_DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const ENVELOPE_KEYS = [
   "authJsVersion",
   "configDigest",
+  "configuredNotObserved",
+  "countsBeyondEvidenceBounds",
   "envelopeVersion",
   "profile",
   "runId",
   "supabaseCliVersion",
   "supabaseJsVersion",
 ] as const;
-const OBSERVED_KEYS = ["authJsVersion", "configDigest", "supabaseCliVersion", "supabaseJsVersion"] as const;
+const OBSERVED_KEYS = [
+  "authJsVersion",
+  "configDigest",
+  "configuredNotObserved",
+  "supabaseCliVersion",
+  "supabaseJsVersion",
+] as const;
+const CONFIGURED_KEYS = ["anonymousSignIns", "phoneSignUp"] as const;
+const BEYOND_KEYS = ["field", "limit", "probeId", "record", "relation"] as const;
+const EVIDENCE_PROBE_ID_PATTERN = /^PP-(?:0[0-9]|1[0-2])$/;
+const CONFIGURED_SETTINGS: readonly string[] = ["enabled", "disabled", "unreadable"];
 const SDK_PACKAGES = Object.freeze({
   supabaseJsVersion: "@supabase/supabase-js",
   authJsVersion: "@supabase/auth-js",
@@ -180,6 +240,61 @@ export function readInstalledSupabaseSdkVersions(): Readonly<{ supabaseJsVersion
   });
 }
 
+function assertConfiguredNotObserved(raw: unknown): ProviderProbeConfiguredNotObserved {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    fail("provider_probe_envelope_invalid");
+  }
+  const value = raw as Record<string, unknown>;
+  if (!hasExactKeys(value, CONFIGURED_KEYS) || CONFIGURED_KEYS.some((key) => !CONFIGURED_SETTINGS.includes(value[key] as string))) {
+    fail("provider_probe_envelope_invalid");
+  }
+  return Object.freeze({
+    anonymousSignIns: value.anonymousSignIns as ProviderProbeConfiguredSetting,
+    phoneSignUp: value.phoneSignUp as ProviderProbeConfiguredSetting,
+  });
+}
+
+// R11: a closed list of record counts outside the kernel's bounds; each entry names a
+// record position, its probe id, a bounded field, and the relation paired with its limit.
+function assertCountsBeyondEvidenceBounds(raw: unknown): readonly ProviderProbeCountBeyondEvidenceBounds[] {
+  if (!Array.isArray(raw) || raw.length > PROVIDER_PROBE_OUTPUT_LIMITS.maxEvidenceRecords * 4) {
+    fail("provider_probe_envelope_invalid");
+  }
+  const seen = new Set<string>();
+  return Object.freeze(
+    raw.map((entry: unknown) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry) || !hasExactKeys(entry as Record<string, unknown>, BEYOND_KEYS)) {
+        fail("provider_probe_envelope_invalid");
+      }
+      const { record, probeId, field, relation, limit } = entry as Record<string, unknown>;
+      const bounded = typeof field === "string" && Object.prototype.hasOwnProperty.call(PROVIDER_PROBE_EVIDENCE_BOUNDS, field);
+      if (
+        !Number.isSafeInteger(record) ||
+        (record as number) < 0 ||
+        (record as number) >= PROVIDER_PROBE_OUTPUT_LIMITS.maxEvidenceRecords ||
+        typeof probeId !== "string" ||
+        !EVIDENCE_PROBE_ID_PATTERN.test(probeId) ||
+        !bounded ||
+        !(
+          (relation === "more-than" && limit === PROVIDER_PROBE_EVIDENCE_BOUNDS[field as ProviderProbeEvidenceCountField]) ||
+          (relation === "less-than" && limit === 0)
+        ) ||
+        seen.has(`${record as number}:${field as string}`)
+      ) {
+        fail("provider_probe_envelope_invalid");
+      }
+      seen.add(`${record as number}:${field as string}`);
+      return Object.freeze({
+        record: record as number,
+        probeId,
+        field: field as ProviderProbeEvidenceCountField,
+        relation: relation as "more-than" | "less-than",
+        limit: limit as number,
+      });
+    }),
+  );
+}
+
 function assertEnvelope(raw: unknown): ProviderProbeRunEnvelope {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     fail("provider_probe_envelope_invalid");
@@ -187,7 +302,7 @@ function assertEnvelope(raw: unknown): ProviderProbeRunEnvelope {
   const value = raw as Record<string, unknown>;
   if (
     !hasExactKeys(value, ENVELOPE_KEYS) ||
-    value.envelopeVersion !== 1 ||
+    value.envelopeVersion !== 3 ||
     (value.profile !== "current-config" && value.profile !== "locked-down") ||
     typeof value.runId !== "string" ||
     !/^P28-[0-9]{8}-[a-z0-9][a-z0-9-]{5,31}$/.test(value.runId) ||
@@ -203,14 +318,26 @@ function assertEnvelope(raw: unknown): ProviderProbeRunEnvelope {
     fail("provider_probe_envelope_invalid");
   }
   return Object.freeze({
-    envelopeVersion: 1 as const,
+    envelopeVersion: 3 as const,
     profile: value.profile,
     runId: value.runId,
     supabaseCliVersion: value.supabaseCliVersion,
     supabaseJsVersion: value.supabaseJsVersion,
     authJsVersion: value.authJsVersion,
     configDigest: value.configDigest,
+    configuredNotObserved: assertConfiguredNotObserved(value.configuredNotObserved),
+    countsBeyondEvidenceBounds: assertCountsBeyondEvidenceBounds(value.countsBeyondEvidenceBounds),
   });
+}
+
+// R11: the run's envelope with the record counts that were outside the kernel's bounds
+// (found when the records are finalized, after PP-00 built the envelope). Validated like
+// the rest of the envelope; assembly then checks each entry against its record.
+export function withCountsBeyondEvidenceBounds(
+  envelope: ProviderProbeRunEnvelope,
+  entries: readonly ProviderProbeCountBeyondEvidenceBounds[],
+): ProviderProbeRunEnvelope {
+  return assertEnvelope({ ...assertEnvelope(envelope), countsBeyondEvidenceBounds: entries });
 }
 
 export function createProviderProbeRunEnvelope(
@@ -224,13 +351,15 @@ export function createProviderProbeRunEnvelope(
     fail("provider_probe_envelope_invalid");
   }
   return assertEnvelope({
-    envelopeVersion: 1,
+    envelopeVersion: 3,
     profile: config.profile,
     runId: config.runId,
     supabaseCliVersion: observed.supabaseCliVersion,
     supabaseJsVersion: observed.supabaseJsVersion,
     authJsVersion: observed.authJsVersion,
     configDigest: observed.configDigest,
+    configuredNotObserved: observed.configuredNotObserved,
+    countsBeyondEvidenceBounds: [],
   });
 }
 
@@ -363,6 +492,19 @@ export function assembleProviderProbeRunOutput(
     serializeProviderProbeEvidence(evidence);
     return evidence;
   });
+  // R11: every out-of-bounds entry names a record that exists, with its probe id, whose
+  // field holds exactly the bound, and which did not pass.
+  for (const entry of envelope.countsBeyondEvidenceBounds) {
+    const target = records[entry.record] as unknown as Record<string, unknown> | undefined;
+    if (
+      target === undefined ||
+      target.probeId !== entry.probeId ||
+      target[entry.field] !== entry.limit ||
+      target.outcome === "pass"
+    ) {
+      fail("provider_probe_output_invalid_evidence");
+    }
+  }
   const output = JSON.stringify({ envelope, evidence: records });
   if (!scanProviderProbeOutput(output, input.registry).passed) {
     fail("provider_probe_output_secret_pattern");

@@ -43,6 +43,12 @@ import {
   type MailpitFetch,
   type ProviderProbeMailpitInventory,
 } from "./providerProbeMailpitClient";
+import {
+  createProviderProbeSuiteCore,
+  type ProviderProbeSuite,
+  type ProviderProbeSuiteSeams,
+  type ProviderProbeSuiteSettings,
+} from "./providerProbeProbeCore";
 import { createProviderProbeRunCore, type ProviderProbeRun, type ProviderProbeTransport } from "./providerProbeRunCore";
 import type { ProviderProbeKnownValueRegistry } from "./providerProbeRunEnvelope";
 
@@ -143,16 +149,27 @@ export function createAuthAdminForTests(
   return createAuthAdminOperations(input);
 }
 
-// The production run's own composition and deleters, over test transports.
+// The production run's own composition and deleters, over test transports. (R7) The
+// optional public-client wrapper is the run core's test seam for answers the real
+// auth-js never returns.
 export function createRunForTests(
   input: Readonly<{
     environment: ProbeEnvironment;
     auth: ProviderProbeTransport;
     mailpit: ProviderProbeTransport | null;
     random?: ProviderProbeRandomSource;
+    clock?: () => number;
+    publicClientWrapper?: Parameters<typeof createProviderProbeRunCore>[0]["publicClientWrapper"];
   }>,
 ): ProviderProbeRun {
   return createProviderProbeRunCore(input);
+}
+
+// The production probe bodies over a test run, with test seams (clock, wait, writer).
+export function createSuiteCoreForTests(
+  input: Readonly<{ run: ProviderProbeRun; settings: ProviderProbeSuiteSettings; seams: ProviderProbeSuiteSeams }>,
+): ProviderProbeSuite {
+  return createProviderProbeSuiteCore(input);
 }
 
 export function issueReceiptForTests(

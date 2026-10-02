@@ -18,6 +18,8 @@ import {
   isProviderProbeKnownValueRegistry,
   readInstalledSupabaseSdkVersions,
   scanProviderProbeOutput,
+  withCountsBeyondEvidenceBounds,
+  type ProviderProbeCountBeyondEvidenceBounds,
   type ProviderProbeKnownValueRegistry,
   type ProviderProbeObservedRun,
 } from "./providerProbeRunEnvelope";
@@ -31,6 +33,7 @@ const OBSERVED: ProviderProbeObservedRun = {
   supabaseJsVersion: "2.108.2",
   authJsVersion: "2.108.2",
   configDigest: DIGEST,
+  configuredNotObserved: { anonymousSignIns: "disabled", phoneSignUp: "disabled" },
 };
 
 const BLOCKED_EVIDENCE = {
@@ -61,11 +64,19 @@ function registryWith(...values: string[]): ProviderProbeKnownValueRegistry {
 }
 
 describe("provider probe run envelope", () => {
-  it("records the profile, run id, versions and config digest, and nothing else", () => {
+  it("records the profile, run id, versions, config digest and the configured-not-observed surfaces, and nothing else", () => {
     const envelope = createProviderProbeRunEnvelope(CONFIG, OBSERVED);
 
-    expect(envelope).toEqual({ envelopeVersion: 1, profile: "current-config", runId: "P28-20261001-envelope", ...OBSERVED });
+    expect(envelope).toEqual({
+      envelopeVersion: 3,
+      profile: "current-config",
+      runId: "P28-20261001-envelope",
+      ...OBSERVED,
+      countsBeyondEvidenceBounds: [],
+    });
     expect(Object.isFrozen(envelope)).toBe(true);
+    expect(Object.isFrozen(envelope.configuredNotObserved)).toBe(true);
+    expect(Object.isFrozen(envelope.countsBeyondEvidenceBounds)).toBe(true);
   });
 
   it.each([
@@ -77,8 +88,12 @@ describe("provider probe run envelope", () => {
     { configDigest: "ab".repeat(32) },
     { configDigest: `sha256:${"AB".repeat(32)}` },
     { configDigest: `sha256:${"ab".repeat(31)}` },
+    { configuredNotObserved: { anonymousSignIns: "observed-closed", phoneSignUp: "disabled" } },
+    { configuredNotObserved: { anonymousSignIns: "disabled" } },
+    { configuredNotObserved: { anonymousSignIns: "disabled", phoneSignUp: "disabled", emailSignUp: "disabled" } },
+    { configuredNotObserved: null },
   ])("refuses observed value %j", (change) => {
-    expect(() => createProviderProbeRunEnvelope(CONFIG, { ...OBSERVED, ...change })).toThrow(
+    expect(() => createProviderProbeRunEnvelope(CONFIG, { ...OBSERVED, ...change } as unknown as ProviderProbeObservedRun)).toThrow(
       "provider_probe_envelope_invalid",
     );
   });
@@ -236,9 +251,9 @@ describe("the closed output boundary", () => {
       profile: ["current-config", "locked-down"],
     };
     const impact = describeProviderProbeImpact(CONFIG, {
-      authUsersCreated: 10,
-      authSessionsCreated: 10,
-      mailpitMessagesCaptured: 100,
+      users: { expectedMin: 10, expectedMax: 10, plannedMax: 10, capacity: 10 },
+      sessions: { expectedMin: 0, expectedMax: 10, plannedMax: 10, capacity: 10 },
+      messages: { expectedMin: 100, expectedMax: 100, plannedMax: 100, capacity: 100 },
     });
 
     expect(scanProviderProbeOutput(JSON.stringify(envelope)).passed).toBe(true);
@@ -325,5 +340,108 @@ describe("the closed output boundary", () => {
         registry: registryWith(FAKE_CREDENTIAL),
       }),
     ).not.toThrow();
+  });
+});
+
+// R11 (re-check #128f): a record count outside the kernel's evidence bounds is written as
+// the bound and named in the envelope ("more than 10"); assembly checks each name against
+// its record.
+describe("counts beyond the kernel's evidence bounds (envelope version 3)", () => {
+  // A failed record whose user count is held at the kernel's maximum of 10.
+  const AT_USER_MAXIMUM = {
+    ...BLOCKED_EVIDENCE,
+    probeId: "PP-06",
+    outcome: "fail",
+    errorClass: "cleanup-failed",
+    userDelta: 10,
+    requestCount: 12,
+    cleanupOutcome: "failed",
+  } as const;
+  const MORE_THAN_10_USERS: ProviderProbeCountBeyondEvidenceBounds = {
+    record: 1,
+    probeId: "PP-06",
+    field: "userDelta",
+    relation: "more-than",
+    limit: 10,
+  };
+
+  function assemble(entries: readonly ProviderProbeCountBeyondEvidenceBounds[], evidence: readonly unknown[]): string {
+    return assembleProviderProbeRunOutput({
+      envelope: withCountsBeyondEvidenceBounds(createProviderProbeRunEnvelope(CONFIG, OBSERVED), entries),
+      evidence,
+      registry: registryWith(FAKE_CREDENTIAL),
+    });
+  }
+
+  it("writes each named count beside a record that holds exactly the bound and did not pass", () => {
+    const lessThanZero: ProviderProbeCountBeyondEvidenceBounds = {
+      record: 0,
+      probeId: "PP-00",
+      field: "messageDelta",
+      relation: "less-than",
+      limit: 0,
+    };
+    const output = JSON.parse(assemble([MORE_THAN_10_USERS, lessThanZero], [BLOCKED_EVIDENCE, AT_USER_MAXIMUM]));
+
+    expect(output.envelope.envelopeVersion).toBe(3);
+    expect(output.envelope.countsBeyondEvidenceBounds).toEqual([MORE_THAN_10_USERS, lessThanZero]);
+    expect(output.evidence[1]).toMatchObject({ probeId: "PP-06", outcome: "fail", userDelta: 10 });
+  });
+
+  it.each([
+    ["a limit that is not the field's maximum", { limit: 11 }],
+    ["a below-zero marker paired with the maximum", { relation: "less-than" }],
+    ["an unknown relation", { relation: "exactly" }],
+    ["a field the kernel does not bound by count", { field: "cookieWriteCount" }],
+    ["an inherited property name as the field", { field: "toString" }],
+    ["a record position past the evidence limit", { record: 32 }],
+    ["a negative record position", { record: -1 }],
+    ["a fractional record position", { record: 1.5 }],
+    ["a probe id the kernel does not know", { probeId: "PP-13" }],
+    ["an extra key", { exactCount: 11 }],
+  ])("refuses a marker with %s", (_label, change) => {
+    const envelope = createProviderProbeRunEnvelope(CONFIG, OBSERVED);
+
+    expect(() =>
+      withCountsBeyondEvidenceBounds(envelope, [{ ...MORE_THAN_10_USERS, ...change } as unknown as ProviderProbeCountBeyondEvidenceBounds]),
+    ).toThrow("provider_probe_envelope_invalid");
+  });
+
+  it("refuses a missing key, a repeated record and field, and a list that is not a list", () => {
+    const envelope = createProviderProbeRunEnvelope(CONFIG, OBSERVED);
+    const missing: Record<string, unknown> = { ...MORE_THAN_10_USERS };
+    delete missing.limit;
+
+    expect(() =>
+      withCountsBeyondEvidenceBounds(envelope, [missing as unknown as ProviderProbeCountBeyondEvidenceBounds]),
+    ).toThrow("provider_probe_envelope_invalid");
+    expect(() => withCountsBeyondEvidenceBounds(envelope, [MORE_THAN_10_USERS, MORE_THAN_10_USERS])).toThrow(
+      "provider_probe_envelope_invalid",
+    );
+    expect(() =>
+      withCountsBeyondEvidenceBounds(envelope, "more than 10" as unknown as ProviderProbeCountBeyondEvidenceBounds[]),
+    ).toThrow("provider_probe_envelope_invalid");
+    expect(() =>
+      assembleProviderProbeRunOutput({
+        envelope: { ...envelope, envelopeVersion: 2 } as unknown as typeof envelope,
+        evidence: [],
+        registry: registryWith(FAKE_CREDENTIAL),
+      }),
+    ).toThrow("provider_probe_envelope_invalid");
+  });
+
+  it.each([
+    ["names a record that does not exist", [MORE_THAN_10_USERS], [BLOCKED_EVIDENCE]],
+    ["names the wrong probe", [{ ...MORE_THAN_10_USERS, probeId: "PP-07" }], [BLOCKED_EVIDENCE, AT_USER_MAXIMUM]],
+    ["names a field below the bound", [MORE_THAN_10_USERS], [BLOCKED_EVIDENCE, { ...AT_USER_MAXIMUM, userDelta: 9 }]],
+    [
+      "names a record that passed",
+      [MORE_THAN_10_USERS],
+      [BLOCKED_EVIDENCE, { ...AT_USER_MAXIMUM, outcome: "pass", errorClass: "none", cleanupOutcome: "complete" }],
+    ],
+  ])("refuses output whose marker %s", (_label, entries, evidence) => {
+    expect(() => assemble(entries as ProviderProbeCountBeyondEvidenceBounds[], evidence)).toThrow(
+      "provider_probe_output_invalid_evidence",
+    );
   });
 });

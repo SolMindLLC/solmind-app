@@ -20,6 +20,9 @@ import { describe, expect, it } from "vitest";
 // - network, Supabase, file, console, process-output, global-fetch and dynamic-loading
 //   capabilities appear only where listed, judged by identifier references (so
 //   computed access, aliasing and destructuring are caught too);
+// - (R6) starting a process is confined: only `providerProbeStackObserver.ts` may import
+//   `node:child_process`, and only its `execFile`; among non-test modules only the suite
+//   gate may import the observer, and no probe-body test file may;
 // - every script file in the folder is classified, and the folder has no subfolder.
 
 const FOLDER = path.dirname(fileURLToPath(import.meta.url));
@@ -31,10 +34,14 @@ type ModuleRule = Readonly<{
   kind: "production" | "restricted" | "test-support";
   // Non-test modules allowed to import this module (restricted modules only).
   importers?: readonly string[];
-  // External specifiers this module may import. "type:" means type-only, and "fs:"
-  // lists the only named fs imports allowed.
+  // External specifiers this module may import. "type:" means type-only, "fs:" lists the
+  // only named fs imports allowed, and "child_process:" the only named child_process ones.
   external: readonly string[];
 }>;
+
+// R6: the stack observer, and the only non-test modules that may import it.
+const STACK_OBSERVER = "providerProbeStackObserver.ts";
+const STACK_OBSERVER_IMPORTERS = ["providerProbeSuiteGate.ts"];
 
 const MODULES: Readonly<Record<string, ModuleRule>> = {
   "providerProbeLocalRoot.ts": { kind: "production", external: ["node:path", "node:url"] },
@@ -50,6 +57,7 @@ const MODULES: Readonly<Record<string, ModuleRule>> = {
       "providerProbeCleanupLedger.ts",
       "providerProbeMailpitClient.ts",
       "providerProbeAuthAdminCore.ts",
+      "providerProbeAuthProbeCore.ts",
       "providerProbeRunCore.ts",
       "providerProbeTestSupport.ts",
     ],
@@ -60,6 +68,7 @@ const MODULES: Readonly<Record<string, ModuleRule>> = {
     importers: [
       "providerProbeRunCore.ts",
       "providerProbeAuthAdminCore.ts",
+      "providerProbeAuthProbeCore.ts",
       "providerProbeMailpitClient.ts",
       "providerProbeTestSupport.ts",
     ],
@@ -76,7 +85,12 @@ const MODULES: Readonly<Record<string, ModuleRule>> = {
   },
   "providerProbeAuthAdminCore.ts": {
     kind: "restricted",
-    importers: ["providerProbeRunCore.ts", "providerProbeTestSupport.ts"],
+    importers: ["providerProbeRunCore.ts", "providerProbeAuthProbeCore.ts", "providerProbeTestSupport.ts"],
+    external: ["node:crypto", `type:${KERNEL_CONFIG}`],
+  },
+  "providerProbeAuthProbeCore.ts": {
+    kind: "restricted",
+    importers: ["providerProbeRunCore.ts", "providerProbeProbeCore.ts"],
     external: ["node:crypto", `type:${KERNEL_CONFIG}`],
   },
   "providerProbeRunCore.ts": {
@@ -84,11 +98,21 @@ const MODULES: Readonly<Record<string, ModuleRule>> = {
     importers: ["providerProbeRun.ts", "providerProbeTestSupport.ts"],
     external: ["@supabase/supabase-js", KERNEL_CONFIG],
   },
+  "providerProbeProbeCore.ts": {
+    kind: "restricted",
+    importers: ["providerProbeSuiteGate.ts", "providerProbeTestSupport.ts"],
+    external: [`type:${KERNEL_CONFIG}`, `type:${KERNEL_EVIDENCE}`],
+  },
   "providerProbeEnvironment.ts": {
     kind: "production",
     external: ["fs:readFileSync", "node:path", `type:${KERNEL_CONFIG}`],
   },
+  "providerProbeOutputFile.ts": {
+    kind: "production",
+    external: ["fs:realpathSync", "fs:writeFileSync", "node:path", KERNEL_CONFIG],
+  },
   "providerProbeRun.ts": { kind: "production", external: [KERNEL_CONFIG] },
+  "providerProbeStackObserver.ts": { kind: "production", external: ["child_process:execFile"] },
   "providerProbeSuiteGate.ts": { kind: "production", external: [KERNEL_CONFIG] },
   "providerProbeTestSupport.ts": { kind: "test-support", external: [KERNEL_CONFIG] },
 };
@@ -101,8 +125,11 @@ const UNIT_TEST_FILES = [
   "providerProbeLoopbackFetch.test.ts",
   "providerProbeMailpitClient.test.ts",
   "providerProbeModuleBoundary.test.ts",
+  "providerProbeOutputFile.test.ts",
+  "providerProbeProbes.test.ts",
   "providerProbeRun.test.ts",
   "providerProbeRunEnvelope.test.ts",
+  "providerProbeStackObserver.test.ts",
   "providerProbeSuiteGate.test.ts",
 ];
 // Names that issue receipts or add run-owned recipients, and the only test files
@@ -217,6 +244,46 @@ function probeBodyReferenceViolations(name: string, analysis: Analysis): string[
     ...processViolations(analysis, "env"),
     ...analysis.importMetaUses.map((use) => `import.meta:${use}`),
   ].map((reference) => `${name}: ${reference}`);
+}
+
+// Capabilities granted by name: from these modules a non-test module may import only the
+// names its rule lists under the matching prefix ("fs:", "child_process:"), each as a
+// named import.
+const NAMED_CAPABILITY_MODULES: Readonly<Record<string, string>> = {
+  "node:fs": "fs",
+  fs: "fs",
+  "node:child_process": "child_process",
+  child_process: "child_process",
+};
+
+// The external-capability rule for one non-test module.
+function capabilityViolations(name: string, rule: ModuleRule, analysis: Analysis): string[] {
+  const violations: string[] = [];
+  for (const record of analysis.imports) {
+    if (record.specifier.startsWith("./")) {
+      continue;
+    }
+    if (["dynamic-import", "require", "import-equals", "export-star"].includes(record.form)) {
+      violations.push(`${name}: ${record.form} ${record.specifier}`);
+      continue;
+    }
+    const capability = NAMED_CAPABILITY_MODULES[record.specifier];
+    if (capability !== undefined) {
+      const allowed = rule.external
+        .filter((entry) => entry.startsWith(`${capability}:`))
+        .map((entry) => entry.slice(capability.length + 1));
+      if (record.wholeModule || record.names.length === 0 || record.names.some((imported) => !allowed.includes(imported))) {
+        violations.push(`${name}: ${capability} ${record.names.join(",")}`);
+      }
+      continue;
+    }
+    const permitted =
+      rule.external.includes(record.specifier) || (record.typeOnly && rule.external.includes(`type:${record.specifier}`));
+    if (!permitted) {
+      violations.push(`${name}: ${record.typeOnly ? "type " : ""}${record.specifier}`);
+    }
+  }
+  return violations;
 }
 
 function isInTypePosition(node: ts.Node): boolean {
@@ -602,33 +669,44 @@ describe("provider-probe module boundary", () => {
   });
 
   it("allows external capabilities only where listed", () => {
-    const violations: string[] = [];
-    for (const name of NON_TEST) {
-      const rule = MODULES[name]!;
-      for (const record of ANALYSES.get(name)!.imports) {
-        if (record.specifier.startsWith("./")) {
-          continue;
-        }
-        if (["dynamic-import", "require", "import-equals", "export-star"].includes(record.form)) {
-          violations.push(`${name}: ${record.form} ${record.specifier}`);
-          continue;
-        }
-        if (record.specifier === "node:fs" || record.specifier === "fs") {
-          const allowed = rule.external.filter((entry) => entry.startsWith("fs:")).map((entry) => entry.slice(3));
-          if (record.wholeModule || record.names.length === 0 || record.names.some((imported) => !allowed.includes(imported))) {
-            violations.push(`${name}: fs ${record.names.join(",")}`);
-          }
-          continue;
-        }
-        const permitted =
-          rule.external.includes(record.specifier) ||
-          (record.typeOnly && rule.external.includes(`type:${record.specifier}`));
-        if (!permitted) {
-          violations.push(`${name}: ${record.typeOnly ? "type " : ""}${record.specifier}`);
-        }
-      }
-    }
+    const violations = NON_TEST.flatMap((name) => capabilityViolations(name, MODULES[name]!, ANALYSES.get(name)!));
     expect(violations).toEqual([]);
+  });
+
+  it.each([
+    ["exec instead of execFile", 'import { exec } from "node:child_process";', ["observer.ts: child_process exec"]],
+    ["spawn alongside execFile", 'import { execFile, spawn } from "node:child_process";', ["observer.ts: child_process execFile,spawn"]],
+    ["a namespace import", 'import * as cp from "node:child_process";', ["observer.ts: child_process "]],
+    ["a default import", 'import cp from "child_process";', ["observer.ts: child_process "]],
+  ])("R6: refuses %s, even in the stack observer", (_label, code, expected) => {
+    const rule = MODULES[STACK_OBSERVER]!;
+    expect(capabilityViolations("observer.ts", rule, analyze("observer.ts", code))).toEqual(expected);
+  });
+
+  it("R6: refuses execFile in any module other than the stack observer", () => {
+    const code = 'import { execFile } from "node:child_process";';
+    expect(capabilityViolations("other.ts", MODULES["providerProbeSuiteGate.ts"]!, analyze("other.ts", code))).toEqual([
+      "other.ts: child_process execFile",
+    ]);
+    // Positive control: the observer's own import is allowed.
+    expect(capabilityViolations("observer.ts", MODULES[STACK_OBSERVER]!, analyze("observer.ts", code))).toEqual([]);
+  });
+
+  it("R6: confines process starts to the stack observer, and the observer to the suite gate", () => {
+    const startsProcesses = NON_TEST.filter((name) =>
+      ANALYSES.get(name)!.imports.some((record) => record.specifier === "node:child_process" || record.specifier === "child_process"),
+    );
+    expect(startsProcesses).toEqual([STACK_OBSERVER]);
+    expect(
+      ANALYSES.get(STACK_OBSERVER)!
+        .imports.filter((record) => record.specifier === "node:child_process")
+        .map((record) => [record.form, record.wholeModule, record.names]),
+    ).toEqual([["import", false, ["execFile"]]]);
+    const importers = NON_TEST.filter((name) =>
+      ANALYSES.get(name)!.imports.some((record) => localTarget(record.specifier) === STACK_OBSERVER),
+    );
+    expect(importers).toEqual(STACK_OBSERVER_IMPORTERS);
+    expect(PROBE_BODY_LOCAL_IMPORTS).not.toContain(STACK_OBSERVER);
   });
 
   it("keeps globals, console, process (other than process.platform) and global fetch out of every non-test module", () => {
