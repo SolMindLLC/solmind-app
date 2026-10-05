@@ -1041,8 +1041,10 @@ locally. Results and errors never contain the code, the contact, the
 challenge id or any server reply text.
 
 Four obligations fall outside this step. The login step 5 caller must bind
-each delivery to its own committed issuance result and prove that ordering in
-its own tests. It must prepare exactly one delivery per committed issuance,
+each delivery to its own issuance answer, and its unit tests must prove that
+ordering (the answer comes before the delivery); that the database commits
+before it answers (commit before answer) remains for the separately gated
+database proof. It must prepare exactly one delivery per issuance answer,
 keep no copy of the code, and reach the transport only through
 `deliverVerificationCode`, never by calling the transport's `send` directly,
 because duplicate suppression here is per prepared handle only. The step 5
@@ -1050,12 +1052,164 @@ composition root must bound how many sends run at once. A future provider
 adapter must state and prove its own spend ceiling and delivery proof, with
 its own idempotency, retry and elapsed-time limits, before it is activated.
 
-The three modules are dormant. No other application code imports them, and
-there is no caller, route, composition root or environment wiring. The server
-composition root and its callers belong to login step 5, and the routes to
-login step 6. The boundary tests use injected fake transports and the
-transport tests use an in-process loopback server; none of them touches the
-local Supabase stack or its mail catcher.
+The three modules are dormant. Only login step 5's dormant callers and
+composition root, described next, import them; there is no runtime caller,
+route or environment wiring, and the routes belong to login step 6. The
+boundary tests use injected fake transports and the transport tests use an
+in-process loopback server; none of them touches the local Supabase stack or
+its mail catcher.
+
+Login step 5 adds the dormant, server-only code module, the issuing and
+redeeming callers (a restricted core and a public module), and their
+composition root:
+
+```text
+src/lib/solmind/auth/verificationCode.ts
+src/lib/solmind/auth/verificationChallengeCallersCore.ts
+src/lib/solmind/auth/verificationChallengeCallers.ts
+src/lib/solmind/auth/verificationChallengeComposition.ts
+src/lib/solmind/auth/__tests__/verificationCode.test.ts
+src/lib/solmind/auth/__tests__/verificationChallengeIssuance.test.ts
+src/lib/solmind/auth/__tests__/verificationChallengeRedemption.test.ts
+src/lib/solmind/auth/__tests__/verificationChallengeComposition.test.ts
+```
+
+The four modules are direct-import only, stay off every barrel, start with
+`import "server-only";`, and read no environment variable of their own.
+
+`verificationCode.ts` generates the six-digit code with Node's `randomInt`,
+uniformly from 000000 to 999999, and the challenge UUID with `randomUUID`.
+It computes the AUTH-RLS-DEC-032 verifier exactly as the register fixes it:
+`svf1:` followed by 64 lowercase hexadecimal characters of HMAC-SHA-256,
+keyed by the pepper, over the ASCII fields
+`solmind-verification-challenge-svf1`, the lowercase canonical challenge
+UUID, the purpose and the code, joined by the byte 0x0A. Its tests reproduce
+the register's known-answer verifier and the verifiers that the banked
+redemption pgTAP fixtures store. Every input check is a whole-string match:
+an uppercase UUID, or any value with a final line terminator (LF, CR, CRLF,
+U+2028 or U+2029), is refused before any HMAC, and tests pin this, pairing
+each refused value with its otherwise identical accepted request. The
+pepper, at least 32 bytes, is held as a Node `KeyObject` behind an opaque
+handle that serializes to `{}`. The module compares no verifiers: the banked
+redemption function's byte-exact comparison is the only one, so the app adds
+no second verification authority.
+
+`verificationChallengeCallersCore.ts` holds the two callers. It is a
+restricted module: its factories take the slot pool as a separate argument,
+so only `verificationChallengeCallers.ts` and three named unit-test files may
+import it, which a boundary test checks with TypeScript's own parser, as the
+provider-probe harness does for its restricted modules. Each caller reaches
+the database only through an injected RPC seam, which the service-role
+client satisfies, and calls exactly one fixed function; neither accepts a
+function name. The issuing caller picks a fresh challenge UUID for every
+request (the one exception: if Node's `randomUUID` ever failed, the result
+would carry the fixed nil UUID, which `randomUUID` never issues). It checks
+the request against the issuance function's own rules, takes an issuance
+slot, generates the code, computes the verifier, and calls
+`public.solmind_issue_verification_challenge` once under a caller response
+deadline: the time the caller waits for an answer, not a limit on the call
+itself. Before the call it records that deadline on a monotonic clock
+(`performance.now()` plus the configured limit) and arms a timer that aborts
+the call's AbortSignal at that time, which requests cancellation through
+`fetch`. The deadline is checked when the answer settles, so an answer whose
+callback runs late, even before the timer could fire, is late; it is checked
+again just before a delivery is prepared. Only a timely answer of exactly one
+row `{ outcome: "issued" }` is treated as an issuance; then, and only then,
+the caller prepares exactly one delivery for it and hands it to
+`deliverVerificationCode`, never to the transport directly. The code is kept
+only for that single local delivery attempt; this is not a claim that memory
+is erased. A `denied` row is `denied`; the function's fixed
+`solmind_issue_ineligible_contact` and `solmind_issue_invalid_binding` errors
+are `ineligible`; anything else, including a late or lost answer, is `failed`
+and delivers nothing. There is no retry. Every result carries the request's
+UUID, which names a challenge only after `issued`, so every outcome maps to
+one generic outward acknowledgment of one shape. The redeeming caller takes
+the purpose the route fixes and the client's selector and code, refuses a
+malformed one without a database call, takes a redemption slot (`busy` if
+none is free), computes the verifier, calls
+`public.solmind_redeem_verification_challenge` once under the same kind of
+caller response deadline, and returns `redeemed` (only for a timely answer that is still
+before the deadline when it is accepted), `denied`, `busy`, `invalid_request`
+or `failed`. Results are frozen and value-free: they never hold a code,
+verifier, pepper, contact or database error text, and nothing logs.
+
+An `issued` or `redeemed` answer is the database function's own answer. It
+shows committed database state only if four things hold, and they must be
+proved before these callers are used against any database: PostgREST runs
+the call at READ COMMITTED isolation; each call is its own transaction, begun
+just before the function runs and not given a `transaction_timeout` above 60
+seconds; that transaction commits before the answer is sent; and no layer
+replays the POST. The composition tests prove the last point for the client
+layers, for both callers: postgrest-js 2.108.2 sends one POST and does not
+retry it after a network error or a 503 or 520 answer. Node's own `fetch` and
+the first three points need a local database run, which needs Paul's
+AUTH-RLS-DEF-011 approval.
+
+`verificationChallengeCallers.ts` is the public module. It owns two slot
+pools: four issuance slots shared by every issuer and four redemption slots
+shared by every redeemer built through it, by any root. Its factories take
+no pool, refuse a dependency object that carries one, and pass their own
+pool as the separate argument. The parser-checked `src` references show that
+this public module and three named unit tests are the only literal importers
+of the core: the issuance and redemption tests, which pass test pools to the
+core's caller factories, and the composition test, which exercises its slot
+factory. So no caller built through these public factories can supply a pool,
+and no parser-checked `src` reference outside the public module and those
+tests reaches the core. Reflective loading (`createRequire`, `module.require`
+or the `Function` constructor) is beyond those source checks and could still
+reach the core's exported factories. A caller takes
+a slot before its database call and gives it back only when that call has
+settled (and, for issuance, when the delivery boundary has returned), even
+when the deadline decided the outcome earlier. The bound proved is therefore:
+per loaded copy of this module in one server process, at most four issuances
+(each a database call followed by at most one delivery attempt through the
+delivery boundary) and at most four redemption calls are in progress at the
+client at any moment, for every caller built through the public factories,
+whichever roots built them. This meets login
+step 4's duty that the step 5 composition root bound how many sends run at
+once: the root takes no pool, and every root's callers draw on these pools.
+A call that never settles holds its slot indefinitely, so a pool fails closed
+to `busy`. Nothing is bounded across processes or server instances, and
+nothing is proved about what a transport does after the delivery boundary has
+returned (the local SMTP transport may still close its socket within its
+one-second QUIT grace).
+
+`verificationChallengeComposition.ts` is the dormant composition root. It
+takes no slot pool and cannot be given one. It wires the public callers to
+the service-role client from `createServiceRoleClient()`, which reads its two
+existing environment variables only when the root is called, and to login
+step 4's local SMTP transport with the approved email, through explicit
+configuration with no defaults. The service-role client is postgrest-js
+2.108.2, whose `abortSignal()` passes the caller's signal to `fetch`, so at
+the caller response deadline the abort requests cancellation through
+`fetch`. Whether the transport cancels, and whether and when the call then
+settles, depend on the transport (postgrest-js turns `fetch`'s AbortError
+into an error answer), and nothing proves that PostgreSQL stopped or rolled
+back the call. Tests inject fake database
+clients and transports, and drive the real postgrest-js client through a fake
+`fetch`; no test touches a database, the local Supabase stack or its mail
+catcher. The boundary tests use TypeScript's own parser to find every module
+reference (static and side-effect imports, re-exports, `import x =
+require()`, dynamic `import()` in any spacing or comment form, `require()`
+calls and other value uses of `require`, `typeof import()`, and any use of
+`import.meta`, through which Vite's `import.meta.glob` could load modules
+without naming them). They parse every non-test file, the seven guarded
+modules included, and refuse any computed reference and any `import.meta`
+use in it; only then do they exempt the guarded modules' literal references
+to each other, and prove that no other application file reaches these
+modules or login step 4's through any of those forms.
+Reflective loading (`createRequire`, `module.require` or the `Function`
+constructor) is beyond what a source parser can see.
+
+Nothing calls the callers or the root: there is no route, server action,
+cookie, session or UI. Three duties are not provided by step 5 and are owed
+before activation: the pepper's source and the startup check that
+AUTH-RLS-DEC-032 requires; the one shared, unit-tested contact normalizer of
+AUTH-RLS-DEC-033 (the callers only check that a contact is already
+canonical); and the route-owned purpose and eligibility (the route must fix
+the purpose and prove invitation, first-Admin or account eligibility before
+it calls). The timing of the outward response and the login routes belong to
+login step 6.
 
 The banked dormant DEF5-S4 slice keeps session mutation separate from redemption and provisioning. `public.solmind_create_user_session` consumes committed account-bound `login` or `role_reentry` evidence, owns account-wide supersede-then-create serialization, and embeds its exact Family B audit rows. Its freshness policy and both uniqueness indexes are hidden database backstops, not client authorization. Corrective migration `20260716001000_user_session_creation_chronology_guard.sql`, banked in `d2fbb0e`, preserves the writeless exact-retry branch and requires never-sessionized evidence to be strictly newer by `(used_at, challenge UUID)` than every prior session-linked evidence tuple for the account; chronology denial is fixed and zero-write. The three DEF5-S4 plans contain 49/51/50 assertions, and clean reset passed 14 files / 502 assertions. The banked slice creates no caller, route, cookie, provider action, account/profile/role provisioning, invitation or Guide assignment dependency, cloud path, or real-user flow.
 
