@@ -1277,7 +1277,92 @@ the purpose and prove invitation, first-Admin or account eligibility before
 it calls). The timing of the outward response and the login routes belong to
 login step 6.
 
-The banked dormant DEF5-S4 slice keeps session mutation separate from redemption and provisioning. `public.solmind_create_user_session` consumes committed account-bound `login` or `role_reentry` evidence, owns account-wide supersede-then-create serialization, and embeds its exact Family B audit rows. Its freshness policy and both uniqueness indexes are hidden database backstops, not client authorization. Corrective migration `20260716001000_user_session_creation_chronology_guard.sql`, banked in `d2fbb0e`, preserves the writeless exact-retry branch and requires never-sessionized evidence to be strictly newer by `(used_at, challenge UUID)` than every prior session-linked evidence tuple for the account; chronology denial is fixed and zero-write. The three DEF5-S4 plans contain 49/51/50 assertions, and clean reset passed 14 files / 502 assertions. The banked slice creates no caller, route, cookie, provider action, account/profile/role provisioning, invitation or Guide assignment dependency, cloud path, or real-user flow.
+The banked dormant DEF5-S4 slice keeps session mutation separate from redemption and provisioning. `public.solmind_create_user_session` consumes committed account-bound `login` or `role_reentry` evidence, owns account-wide supersede-then-create serialization, and embeds its exact Family B audit rows. Its freshness policy and both uniqueness indexes are hidden database backstops, not client authorization. Corrective migration `20260716001000_user_session_creation_chronology_guard.sql`, banked in `d2fbb0e`, preserves the writeless exact-retry branch and requires never-sessionized evidence to be strictly newer by `(used_at, challenge UUID)` than every prior session-linked evidence tuple for the account; chronology denial is fixed and zero-write. The three DEF5-S4 plans contain 49/51/50 assertions, and clean reset passed 14 files / 502 assertions. The banked slice creates no caller, route, cookie, provider action, account/profile/role provisioning, invitation or Guide assignment dependency, cloud path, or real-user flow. Its only application caller is login step 6's dormant session-creation caller (sub-slice S6-6), described next, which nothing calls.
+
+Login step 6's sub-slice S6-6 adds that caller and the duration rule it uses,
+both dormant:
+
+```text
+src/lib/solmind/supabase/userSessionCreationCaller.ts
+src/lib/solmind/auth/loginSessionDuration.ts
+src/lib/solmind/supabase/__tests__/userSessionCreationCaller.test.ts
+src/lib/solmind/auth/__tests__/loginSessionDuration.test.ts
+```
+
+Both modules are direct-import only, stay off every barrel, and read no
+environment variable. `loginSessionDuration.ts` is pure, with no import and no
+clock: every time is passed in. It holds the rule of
+`../solmind-docs/execution/25_SolMind_MVP0_Auth_RLS_Login_Session_Cookie_Security_Contract_v0_1.md`
+Section 7: the requested duration is the provider access token's remaining life
+in whole seconds, rounded down, minus 120, capped at 3600, and under 1 the
+login is denied; the cookies' Max-Age is the session's remaining life in whole
+seconds, rounded down, worked out from the `expires_at` the function returns,
+with no cap. A session cookie may be given only 1 to 3600 seconds, the range
+that S6-2's login-step cookie writer accepts, so under 1 second no cookie may
+be written, and more than 3600 seconds, which only this server's clock running
+behind the database's can show, is refused as an abnormal state; the caller
+reports both as `failed`. `expires_at` is read only in the exact form
+PostgreSQL prints a `timestamptz` in JSON, with a real calendar date and time.
+
+`userSessionCreationCaller.ts` starts with `import "server-only";` and imports
+only the duration rule and the role names. It reaches the database only through
+an injected RPC seam that the service-role client satisfies, and calls only
+`public.solmind_create_user_session`, whose current definition is in
+`supabase/migrations/20260718000000_authorizing_evidence_consumption.sql`; it
+accepts no function name. Its request is exactly the server-derived account
+UUID, the role the route's login path fixes, the challenge UUID the route has
+just redeemed, and the provider access token's expiry in epoch seconds. Any
+other key (a purpose, a duration, a session id) or a malformed value, including
+a final line terminator, is `invalid_request`, with no database call. It fixes
+the purpose to `login`, the one flow step 6 builds, works out the duration with
+the rule (`denied` under 1 second, with no call), and calls the function once
+under a caller response deadline, as login step 5's callers do: a monotonic
+deadline recorded before the call, a timer that aborts the call's signal, which
+postgrest-js passes to `fetch`, and the deadline checked again just before an
+answer is accepted. It accepts only exactly one row whose only keys are
+`outcome` (`created` or `existing`), a lowercase canonical `user_session_id`
+and an exactly printed `expires_at`, and returns that UUID and the Max-Age. The
+function's seven fixed refusals of the evidence, account or role are `denied`;
+everything else, its other fixed errors included, is `failed`. A test reads the
+migration and checks both lists, the arguments, the duration bounds, the
+outputs and the service-role-only grants (all privileges revoked from PUBLIC,
+execute revoked from `anon` and `authenticated` and granted to `service_role`)
+against the current definition. Results are frozen, and each refusal is one
+shared object. Refusals contain only `outcome`; successful results contain
+`outcome`, `sessionId` and `maxAgeSeconds`. The session UUID in `sessionId` is
+what the binding cookie needs, so the route must never log a result. Once
+constructed the caller never throws, and it never logs.
+
+`existing` is accepted only for this exact flow. The function's exact-retry
+branch returns the same live session for this challenge, account, role and
+purpose, and it runs before the freshness check, so anything that could call it
+twice with one redeemed challenge could recover a live session's UUID for up to
+an hour. The caller therefore makes one call per `create`, never retries,
+offers no lookup or recovery entry point, and checks `existing` exactly as
+`created`; the tests show that postgrest-js 2.108.2 sends one POST per call and
+does not replay it after a 503, a 520 or a network error. The route slices
+(S6-8 for the Explorer, S6-9 for Guides and the Admin) must call it only after
+their own redemption of that challenge returned `redeemed` in the same request,
+after every other factor and check the role's login path requires, and at most
+once per request. A `created` or `existing` answer shows committed state only
+if the call is its own READ COMMITTED transaction (the runtime-caller
+requirement of
+`../solmind-docs/execution/21_SolMind_MVP0_Auth_RLS_Login_Provisioning_Write_Path_Contract_v0_1.md`
+Section 7.3), PostgREST commits before it answers, and nothing replays the
+POST; only the last is shown here, and the rest belongs to the route slice's
+database run. A lost or late answer may hide a session the database did make,
+which has also ended the account's previous session; the caller reports
+`failed`, no cookie is written, and that session ends by itself within the
+hour.
+
+No runtime caller uses the pair; the dormant session caller uses the duration
+rule. There is no composition root, route, server action, cookie or UI here.
+The boundary tests' parser-covered source-reference checks, with TypeScript's
+parser, find no other application file that references or names either module
+(login step 5's boundary test refuses computed references in every non-test
+file, and reflective loading is beyond a source parser); the first slice to
+import one amends them. Which provider expiry feeds the rule belongs to the
+identity bridge slice (S6-7).
 
 Banked `PRJ01_F-WS06-WI008-S02D` - Guide-to-Explorer invitation issuance,
 same-Guide replacement, and revocation - keeps invitation lifecycle mutation inside
