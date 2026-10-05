@@ -752,6 +752,72 @@ exact 1-100/default-7/version shape, returns a frozen value, and maps failures
 to one value-free sentinel. It is server-only, remains off the shared barrel,
 has no browser export, and has no banked application caller.
 
+Login step 6's sub-slice S6-2 adds the dormant session-cookie policy and the
+login-step cookie writer that
+`../solmind-docs/execution/25_SolMind_MVP0_Auth_RLS_Login_Session_Cookie_Security_Contract_v0_1.md`
+(contract 25, accepted by Paul on 2026-10-04 as AUTH-RLS-DEC-043) Sections 4,
+5.2, 6 and 14 describe:
+
+```text
+src/lib/solmind/auth/sessionCookiePolicy.ts
+src/lib/solmind/supabase/loginCookieWriter.ts
+src/lib/solmind/auth/__tests__/sessionCookiePolicy.test.ts
+src/lib/solmind/supabase/__tests__/loginCookieWriter.test.ts
+```
+
+`sessionCookiePolicy.ts` is pure: it imports nothing, reads no environment
+variable and adds no setting. Given the trusted origin in the canonical form
+that `loadTrustedApplicationOrigin()` returns, it gives one of two frozen
+policies. `https` gives `Secure` and the `__Host-solmind-auth` and
+`__Host-solmind-session` names; plain `http` is allowed only on `127.0.0.1`,
+`::1` or `localhost`, with no `Secure` and the names `solmind-auth` and
+`solmind-session`; any other origin is a configuration failure, so no cookie
+is written and sign-in is denied. Every cookie gets `HttpOnly`,
+`SameSite=Lax`, `Path=/` and no `Domain`; a session write gets the session's
+remaining life, 1 to 3600 seconds, as Max-Age, and a removal gets an empty
+value and Max-Age 0. The auth cookie N is split into `N.0`, `N.1`, ... as
+the installed `@supabase/ssr` 0.12.0 names chunks, and its PKCE code verifier
+is `N-code-verifier`, the key `@supabase/auth-js` 2.108.2 uses once
+`cookieOptions.name` sets the storage key to N. The module also holds the
+three no-store headers and the one shared Section 14 format check: every
+chunk of the auth cookie may hold only A-Z, a-z, 0-9, `-` and `_`, and the
+value the library would join must start with `base64-`, or the auth cookie
+counts as absent.
+
+`loginCookieWriter.ts` is server-only and sits beside `requestAuthClient.ts`,
+where contract 25 Section 6 places it. It imports neither `@supabase/ssr` nor
+any Next.js module: the route's composition root hands it the response
+(anything with `cookies.set` and `headers.set`, such as a Next.js response).
+At login it takes the cookies the library handed over after sign-in, the
+request's cookies, the database's session UUID and the session's remaining
+life. It accepts only N and its chunks, and, for removals only, the code
+verifier and its chunks. Any other name, a non-empty code verifier, a
+repeated name, or writes that are not one complete value (N alone, or `N.0`
+to `N.k` with no gap and no N) deny the login with nothing written.
+Otherwise it sets the no-store headers first, clears every other auth chunk
+and code verifier the request carries (fixation), writes the session chunks
+and the binding cookie with the database's session UUID, and never reads the
+request's binding cookie. At logout it writes removals only. It plans the
+fixed clears of N, the code verifier and the binding cookie regardless of
+earlier authentication or provider outcomes, and adds permitted names from
+readable cookie lists. Invalid configuration or a malformed call denies
+before writing. A response-setter exception can stop the clears partway and
+returns `failed`. A removal is always a `set` with Max-Age 0, never the
+framework's cookie delete, which drops `Secure`. Results are frozen and
+value-free; nothing throws or logs. If the response throws mid-write, the
+result is `failed` and the composition root must discard that response.
+
+Both modules are dormant: no route, page, middleware or caller uses them,
+they write nothing at runtime, and they stay off every barrel, which the
+boundary tests check with TypeScript's parser. The per-request check (S6-4)
+and logout (S6-12) are their readers to come, and the first slice that
+imports either module must amend that dormancy test. One limit is open for
+Paul: a value that passes the format check can still decode to a code point
+above U+10FFFF, and the installed library's decoder then throws an error
+that names that code point, which the library passes to its warning. No
+reader may rely on the check alone to keep cookie-derived values out of logs
+until Paul settles a correction to contract 25 Section 14.
+
 Supabase code should not expose service-role credentials through client-accessible variables.
 
 Never put service-role keys or bootstrap tokens in `NEXT_PUBLIC_*`.
