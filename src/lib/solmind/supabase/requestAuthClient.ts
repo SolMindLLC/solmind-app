@@ -1,4 +1,4 @@
-// SolMind MVP0 server-only request-auth adapter (@supabase/ssr lives ONLY here).
+// SolMind MVP0 server-only request-auth adapter (the per-request @supabase/ssr client).
 //
 // Purpose:
 //   - prove request IDENTITY only: build a request-scoped Supabase auth client
@@ -6,8 +6,10 @@
 //     return the existing SupabaseAuthenticatedUser principal, or null.
 //
 // Architecture notes (MVP0):
-//   - This is the single seam where @supabase/ssr, cookies, and headers coupling
-//     enter the codebase (AUTH-RLS-DEC-012, AUTH-RLS-DEC-013). It stays OFF the
+//   - This module, and the dormant login identity bridge beside it (login step
+//     6, S6-7), sit in the request-auth adapter layer where @supabase/ssr,
+//     cookies, and headers coupling enter the codebase (AUTH-RLS-DEC-012,
+//     AUTH-RLS-DEC-013). It stays OFF the
 //     shared src/lib/solmind/supabase/index.ts barrel, mirroring serviceRoleClient,
 //     and carries an import-time `server-only` guard plus a runtime browser guard
 //     (AUTH-RLS-DEC-023). Import it only from explicit server composition paths.

@@ -818,6 +818,98 @@ that names that code point, which the library passes to its warning. No
 reader may rely on the check alone to keep cookie-derived values out of logs
 until Paul settles a correction to contract 25 Section 14.
 
+Login step 6's sub-slice S6-7 adds the dormant Supabase identity bridge of
+contract 25 Section 6 (hold, then write) and
+`../solmind-docs/execution/21_SolMind_MVP0_Auth_RLS_Login_Provisioning_Write_Path_Contract_v0_1.md`
+Section 7.9 (AUTH-RLS-DEC-035):
+
+```text
+src/lib/solmind/supabase/loginIdentityBridge.ts
+src/lib/solmind/supabase/__tests__/loginIdentityBridge.test.ts
+```
+
+`loginIdentityBridge.ts` is server-only, with the runtime browser guard, and
+sits beside `requestAuthClient.ts` in the request-auth adapter layer where
+contract 25 Sections 5.1 and 6 keep `@supabase/ssr` (AUTH-RLS-DEC-012,
+DEC-013 and DEC-019). It imports only `server-only` and `@supabase/ssr`, no
+Next.js module, and reads no cookie, environment variable or setting: the
+route's composition root passes the Supabase URL and anon key, the auth
+cookie name N from the same S6-2 policy it gives the writer, a provider
+deadline (10 ms to 60 s), a fetch, the link seam (the service-role client's
+Auth admin API) and a value-free cleanup-failure signal. The link seam's
+client must reach Supabase Auth through a non-logging, non-rejecting fetch
+boundary. That is a required precondition and an S6-8 composition gate: the
+library logs a rejected fetch's error, whatever it carries, before the bridge
+sees the answer, or after the bridge has answered when the rejection comes
+after the deadline, and the bridge cannot prevent that. Each sign-in builds
+one `@supabase/ssr` server client whose cookie reader returns no cookies and
+whose cookie setter only holds, in memory, the cookies the library hands
+over after its sign-in event; with no cookies to read, that is the
+session's chunks under N and no removal, which S6-2's writer accepts.
+
+For Guides and the Admin, `signInWithPassword` sends the typed email and
+password; refused credentials give `credentials_refused` with nothing held.
+After the route has redeemed the challenge, the hold's `assertProviderUser`
+compares the bound provider user id. For Explorers, after the route's
+redemption, `exchangeExplorerLink` asks the link seam for a `magiclink`
+link, denies a link made for any other user before any exchange, and
+exchanges the link's token hash at once with `verifyOtp` (type `email`).
+The answer's user, the session's user, the access token's subject and the
+held cookies' access token must agree, or the result is `failed`, and
+equal the bound id, or the result is `denied`; either way the bridge
+immediately attempts best-effort local revocation of a session that came
+back. A link made for another user is `denied` before any exchange, so no
+session exists to revoke. `release` hands over the held `{ name, value }`
+cookies only after that assertion and when the caller states `created` or
+`existing`, a precondition the trusted caller attests. A refused first
+release while the hold is pending starts cleanup. Repeated release attempts
+return `refused` without another provider operation. A hold is released at
+most once.
+`discard` drops the held cookies and immediately attempts best-effort local
+revocation of that one transient session (`POST /logout` with scope `local`
+and the session's own access token); only a successful answer is `cleaned`,
+and anything else raises the signal once and still denies.
+
+Each sign-in or exchange is one attempt with its own hold client, transport
+and recovered access tokens, so concurrent attempts never share a token.
+While the attempt is open, the access token in every answer to its request,
+whatever the library then makes of that answer, and in every completed
+hand-over is kept, for cleanup only. The attempt gives a hold only when the
+library's answer is a well-formed session, the one hand-over carries that
+session's token and no other token was recovered; otherwise every recovered
+token immediately gets best-effort local revocation, and each failed
+revocation raises the signal once. A successful answer read only after the
+attempt ended, because it arrived or its body completed after the deadline,
+never gives a hold and never reaches a release; its token immediately gets
+best-effort local revocation. Cleanup requests are never read for tokens. A
+timeout does not establish whether Supabase created a session; if no access
+token is ever recovered, revocation cannot be attempted.
+
+`accessTokenExpiresAt` is the access token's `exp` claim, as contract 25
+Section 7 sizes the session from the access token's remaining life; the
+session's stored `expires_at` must be well formed but does not redefine it.
+Every hold-client request goes through its attempt's transport, which bounds
+it by the deadline and turns every failure into one fixed 503 answer, so the
+library's own logging of a rejected fetch is not reached on these
+requests; the bridge waits for the link seam at most the same deadline,
+though the seam has no abort. The configuration, dependencies and request
+objects themselves are read through own data properties only, so no getter
+on them runs; the link seam's `generateLink` and the library's answers are
+read as ordinary properties.
+Every result except a successful release carries no token, cookie value,
+password, email, link token or provider id; a successful release carries
+the held cookie values, which contain the tokens. The bridge throws nothing
+once constructed, and its own code logs nothing; the installed library keeps
+its own logging paths. The bridge makes no direct session-read call, though
+the library's initial-session emission still reads the hold's empty storage.
+
+The bridge is dormant: no application runtime caller is introduced (no route,
+page or middleware uses it), and only its unit tests invoke it; it writes
+nothing at runtime, and it stays off every barrel, which the boundary tests
+check with TypeScript's parser. The Explorer route (S6-8) and the Guide and
+Admin route (S6-9) are its callers to come, and the first of them to import
+it must amend that dormancy test.
+
 Supabase code should not expose service-role credentials through client-accessible variables.
 
 Never put service-role keys or bootstrap tokens in `NEXT_PUBLIC_*`.
