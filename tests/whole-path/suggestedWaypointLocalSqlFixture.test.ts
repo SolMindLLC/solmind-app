@@ -39,6 +39,8 @@ describe("Suggested Waypoint local SQL fixture", () => {
     expect(fixture.sql).toContain(SUGGESTED_WAYPOINT_FIXTURE_ID);
     expect(fixture.sql).toContain("relationship_status = 'active') <> 2");
     expect(fixture.sql).toContain("relationship_status = 'ended') <> 1");
+    expect(fixture.sql).toContain("set integer_value = 60");
+    expect(fixture.sql).toContain("default_integer_value = 300");
     expect(fixture.sql.trimEnd().endsWith("commit;")).toBe(true);
   });
 

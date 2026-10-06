@@ -14,8 +14,86 @@ import {
   WHOLE_PATH_EFFECT_GATE,
   type SuggestedWaypointWholePathSafetyConfig,
 } from "./suggestedWaypointWholePathSafety";
+import {
+  SuggestedWaypointGuideDraftCreateFailure,
+  type SuggestedWaypointGuideDraftCreateFailureReason,
+} from "./suggestedWaypointWholePathGuideDraftDiagnostics";
+import {
+  SuggestedWaypointGuideRelationshipEntryFailure,
+  type SuggestedWaypointGuideRelationshipEntryFailureReason,
+} from "./suggestedWaypointWholePathGuideRelationshipEntryDiagnostics";
+import {
+  SuggestedWaypointGuideSchedulePullBackRescheduleFailure,
+  type SuggestedWaypointGuideSchedulePullBackRescheduleFailureReason,
+} from "./suggestedWaypointWholePathGuideScheduleDiagnostics";
 
 type WholePathEnvironment = Readonly<Record<string, string | undefined>>;
+
+export const SUGGESTED_WAYPOINT_WHOLE_PATH_SCENARIO_STEPS = Object.freeze([
+  "guide_relationship_entry",
+  "guide_draft_create",
+  "guide_draft_edit_save",
+  "guide_schedule_pull_back_reschedule",
+  "explorer_pre_delivery_denial",
+  "delivery_eligibility_wait",
+  "delivery_bridge",
+  "explorer_delivery_read",
+  "explorer_mark_read",
+  "explorer_acknowledge",
+  "guide_acknowledgement_refresh",
+  "guide_projection_shape",
+  "unrelated_role_denials",
+  "layout_accessibility",
+] as const);
+
+export type SuggestedWaypointWholePathScenarioStep =
+  (typeof SUGGESTED_WAYPOINT_WHOLE_PATH_SCENARIO_STEPS)[number];
+
+class SuggestedWaypointWholePathScenarioStepFailure extends Error {
+  readonly step: SuggestedWaypointWholePathScenarioStep;
+  readonly guideRelationshipEntryReason: SuggestedWaypointGuideRelationshipEntryFailureReason | null;
+  readonly guideDraftCreateReason: SuggestedWaypointGuideDraftCreateFailureReason | null;
+  readonly guideSchedulePullBackRescheduleReason: SuggestedWaypointGuideSchedulePullBackRescheduleFailureReason | null;
+
+  constructor(
+    step: SuggestedWaypointWholePathScenarioStep,
+    guideRelationshipEntryReason: SuggestedWaypointGuideRelationshipEntryFailureReason | null,
+    guideDraftCreateReason: SuggestedWaypointGuideDraftCreateFailureReason | null,
+    guideSchedulePullBackRescheduleReason: SuggestedWaypointGuideSchedulePullBackRescheduleFailureReason | null,
+  ) {
+    super("whole_path_scenario_step_failed");
+    this.name = "SuggestedWaypointWholePathScenarioStepFailure";
+    this.step = step;
+    this.guideRelationshipEntryReason = guideRelationshipEntryReason;
+    this.guideDraftCreateReason = guideDraftCreateReason;
+    this.guideSchedulePullBackRescheduleReason = guideSchedulePullBackRescheduleReason;
+  }
+}
+
+export async function runSuggestedWaypointWholePathScenarioStep<T>(
+  step: SuggestedWaypointWholePathScenarioStep,
+  action: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await action();
+  } catch (error) {
+    throw new SuggestedWaypointWholePathScenarioStepFailure(
+      step,
+      step === "guide_relationship_entry" &&
+        error instanceof SuggestedWaypointGuideRelationshipEntryFailure
+        ? error.reason
+        : null,
+      step === "guide_draft_create" &&
+        error instanceof SuggestedWaypointGuideDraftCreateFailure
+        ? error.reason
+        : null,
+      step === "guide_schedule_pull_back_reschedule" &&
+        error instanceof SuggestedWaypointGuideSchedulePullBackRescheduleFailure
+        ? error.reason
+        : null,
+    );
+  }
+}
 
 export type SuggestedWaypointOwnedPlaywrightBrowser =
   SuggestedWaypointPlaywrightBrowser &
@@ -43,7 +121,18 @@ export type SuggestedWaypointWholePathOrchestratorOptions<T> = Omit<
 
 type BrowserOutcome<T> =
   | Readonly<{ status: "completed"; result: T }>
-  | Readonly<{ status: "run_failed" }>
+  | Readonly<{
+      status: "run_failed";
+      stage: "browser" | "bundle";
+    }>
+  | Readonly<{
+      status: "run_failed";
+      stage: "scenario";
+      scenarioStep: SuggestedWaypointWholePathScenarioStep | null;
+      guideRelationshipEntryReason: SuggestedWaypointGuideRelationshipEntryFailureReason | null;
+      guideDraftCreateReason: SuggestedWaypointGuideDraftCreateFailureReason | null;
+      guideSchedulePullBackRescheduleReason: SuggestedWaypointGuideSchedulePullBackRescheduleFailureReason | null;
+    }>
   | Readonly<{ status: "cleanup_failed" }>;
 
 function stableEnvironment(
@@ -73,6 +162,15 @@ async function runBrowserScenario<T>(
   > | undefined;
   let result: T | undefined;
   let runFailed = false;
+  let runFailureStage: "browser" | "bundle" | "scenario" = "browser";
+  let runFailureScenarioStep: SuggestedWaypointWholePathScenarioStep | null =
+    null;
+  let runFailureGuideRelationshipEntryReason: SuggestedWaypointGuideRelationshipEntryFailureReason | null =
+    null;
+  let runFailureGuideDraftCreateReason: SuggestedWaypointGuideDraftCreateFailureReason | null =
+    null;
+  let runFailureGuideSchedulePullBackRescheduleReason: SuggestedWaypointGuideSchedulePullBackRescheduleFailureReason | null =
+    null;
   let cleanupFailed = false;
   let stage: "browser" | "bundle" | "scenario" = "browser";
 
@@ -101,6 +199,18 @@ async function runBrowserScenario<T>(
       cleanupFailed = true;
     } else {
       runFailed = true;
+      runFailureStage = stage;
+      if (
+        stage === "scenario" &&
+        error instanceof SuggestedWaypointWholePathScenarioStepFailure
+      ) {
+        runFailureScenarioStep = error.step;
+        runFailureGuideRelationshipEntryReason =
+          error.guideRelationshipEntryReason;
+        runFailureGuideDraftCreateReason = error.guideDraftCreateReason;
+        runFailureGuideSchedulePullBackRescheduleReason =
+          error.guideSchedulePullBackRescheduleReason;
+      }
     }
   } finally {
     if (bundle) {
@@ -120,7 +230,20 @@ async function runBrowserScenario<T>(
   }
 
   if (cleanupFailed) return Object.freeze({ status: "cleanup_failed" });
-  if (runFailed) return Object.freeze({ status: "run_failed" });
+  if (runFailed) {
+    if (runFailureStage === "scenario") {
+      return Object.freeze({
+        status: "run_failed",
+        stage: "scenario",
+        scenarioStep: runFailureScenarioStep,
+        guideRelationshipEntryReason: runFailureGuideRelationshipEntryReason,
+        guideDraftCreateReason: runFailureGuideDraftCreateReason,
+        guideSchedulePullBackRescheduleReason:
+          runFailureGuideSchedulePullBackRescheduleReason,
+      });
+    }
+    return Object.freeze({ status: "run_failed", stage: runFailureStage });
+  }
   return Object.freeze({ status: "completed", result: result as T });
 }
 
@@ -154,7 +277,41 @@ export async function runSuggestedWaypointWholePath<T>(
     throw new Error("whole_path_orchestrator_cleanup_failed");
   }
   if (fixtureResult.result.status === "run_failed") {
-    throw new Error("whole_path_orchestrator_run_failed");
+    if (
+      fixtureResult.result.stage === "scenario" &&
+      fixtureResult.result.scenarioStep !== null
+    ) {
+      if (
+        fixtureResult.result.scenarioStep === "guide_relationship_entry" &&
+        fixtureResult.result.guideRelationshipEntryReason !== null
+      ) {
+        throw new Error(
+          `whole_path_orchestrator_scenario_guide_relationship_entry_${fixtureResult.result.guideRelationshipEntryReason}_failed`,
+        );
+      }
+      if (
+        fixtureResult.result.scenarioStep === "guide_draft_create" &&
+        fixtureResult.result.guideDraftCreateReason !== null
+      ) {
+        throw new Error(
+          `whole_path_orchestrator_scenario_guide_draft_create_${fixtureResult.result.guideDraftCreateReason}_failed`,
+        );
+      }
+      if (
+        fixtureResult.result.scenarioStep === "guide_schedule_pull_back_reschedule" &&
+        fixtureResult.result.guideSchedulePullBackRescheduleReason !== null
+      ) {
+        throw new Error(
+          `whole_path_orchestrator_scenario_guide_schedule_pull_back_reschedule_${fixtureResult.result.guideSchedulePullBackRescheduleReason}_failed`,
+        );
+      }
+      throw new Error(
+        `whole_path_orchestrator_scenario_${fixtureResult.result.scenarioStep}_failed`,
+      );
+    }
+    throw new Error(
+      `whole_path_orchestrator_${fixtureResult.result.stage}_failed`,
+    );
   }
   return Object.freeze({
     status: "completed",

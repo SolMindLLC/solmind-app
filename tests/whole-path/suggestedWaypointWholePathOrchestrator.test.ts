@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
+import {
+  parseSuggestedWaypointExplorerCommandRouteInput,
+  projectSuggestedWaypointExplorerCommandResult,
+} from "@/lib/solmind/supabase/suggestedWaypointExplorerCommandRouteContract";
+
 import type {
   SuggestedWaypointLocalFixtureDependencies,
   SuggestedWaypointRoleSession,
@@ -7,9 +12,22 @@ import type {
 import type { SuggestedWaypointPlaywrightContext } from "./suggestedWaypointPlaywrightSession";
 import {
   runSuggestedWaypointWholePath,
+  runSuggestedWaypointWholePathScenarioStep,
   type SuggestedWaypointOwnedPlaywrightBrowser,
   type SuggestedWaypointWholePathOrchestratorOptions,
 } from "./suggestedWaypointWholePathOrchestrator";
+import {
+  SUGGESTED_WAYPOINT_GUIDE_DRAFT_CREATE_FAILURE_REASONS,
+  SuggestedWaypointGuideDraftCreateFailure,
+} from "./suggestedWaypointWholePathGuideDraftDiagnostics";
+import {
+  SUGGESTED_WAYPOINT_GUIDE_RELATIONSHIP_ENTRY_FAILURE_REASONS,
+  SuggestedWaypointGuideRelationshipEntryFailure,
+} from "./suggestedWaypointWholePathGuideRelationshipEntryDiagnostics";
+import {
+  SUGGESTED_WAYPOINT_GUIDE_SCHEDULE_PULL_BACK_RESCHEDULE_FAILURE_REASONS,
+  SuggestedWaypointGuideSchedulePullBackRescheduleFailure,
+} from "./suggestedWaypointWholePathGuideScheduleDiagnostics";
 import {
   WHOLE_PATH_APPROVAL_GATE,
   WHOLE_PATH_EFFECT_GATE,
@@ -23,6 +41,44 @@ const ROLES = [
   "unrelated-explorer",
   "ended-explorer",
 ] as const satisfies readonly SuggestedWaypointWholePathRole[];
+
+const CONTRACT_OPERATION_ID = "33333333-3333-4333-8333-333333333333";
+const CONTRACT_SUGGESTION_ID = "55555555-5555-4555-8555-555555555555";
+const CONTRACT_VERSION_ID = "66666666-6666-4666-8666-666666666666";
+
+describe("Suggested Waypoint whole-path Explorer denial canary", () => {
+  it("pins relationship_unavailable to the banked value-free non-success shape", () => {
+    const routeInput = parseSuggestedWaypointExplorerCommandRouteInput(
+      {
+        kind: "explorer.mark_read",
+        operationId: CONTRACT_OPERATION_ID,
+        versionId: CONTRACT_VERSION_ID,
+      },
+      CONTRACT_SUGGESTION_ID,
+    );
+    expect(routeInput).not.toBeNull();
+    expect(
+      projectSuggestedWaypointExplorerCommandResult(routeInput!, {
+        ok: true,
+        data: {
+          outcome_code: "relationship_unavailable",
+          operation_id: CONTRACT_OPERATION_ID,
+          suggested_waypoint_id: null,
+          authoring_revision: null,
+          current_version_id: null,
+          committed_at: null,
+          read_at: null,
+        },
+        error: null,
+      }),
+    ).toEqual({
+      ok: false,
+      outcome: "relationship_unavailable",
+      suggestedWaypointId: null,
+      error: null,
+    });
+  });
+});
 
 function environment(): Record<string, string> {
   return {
@@ -47,6 +103,8 @@ type Failure =
   | "context-close:2"
   | "browser-close"
   | "scenario"
+  | "scenario-step"
+  | "scenario-step+auth-delete"
   | "session-clear:1"
   | "auth-delete"
   | "final-reset";
@@ -77,7 +135,10 @@ function harness(failure?: Failure) {
     },
     async deleteAuthUser(id) {
       events.push(`auth-delete:${id}`);
-      if (failure === "auth-delete") {
+      if (
+        failure === "auth-delete" ||
+        failure === "scenario-step+auth-delete"
+      ) {
         throw new Error("protected auth-delete detail");
       }
     },
@@ -119,6 +180,9 @@ function harness(failure?: Failure) {
         contextIndex += 1;
         events.push(`context:${index}`);
         const context: SuggestedWaypointPlaywrightContext = {
+          async newPage() {
+            throw new Error("test_context_has_no_page");
+          },
           async addCookies(cookies) {
             events.push(`cookies:${index}:${cookies.length}`);
             if (
@@ -184,6 +248,17 @@ function options(
         );
         if (failure === "scenario") {
           throw new Error("protected scenario detail");
+        }
+        if (
+          failure === "scenario-step" ||
+          failure === "scenario-step+auth-delete"
+        ) {
+          return runSuggestedWaypointWholePathScenarioStep(
+            "delivery_bridge",
+            async () => {
+              throw new Error("protected delivery detail");
+            },
+          );
         }
         return "scenario-complete";
       },
@@ -282,13 +357,199 @@ describe("Suggested Waypoint whole-path lifecycle orchestrator", () => {
     "maps %s failure to one value-free run category after cleanup",
     async (failure) => {
       const { target, value } = options(failure);
+      const expectedStage =
+        failure === "browser-create"
+          ? "browser"
+          : failure === "add-cookie:3"
+            ? "bundle"
+            : "scenario";
       await expect(runSuggestedWaypointWholePath(value)).rejects.toThrow(
-        "whole_path_orchestrator_run_failed",
+        `whole_path_orchestrator_${expectedStage}_failed`,
       );
       expect(target.events).toContain("reset:1");
       expect(target.events.join(" ")).not.toContain("protected");
     },
   );
+
+  it("preserves one closed value-free scenario step after cleanup", async () => {
+    const { target, value } = options("scenario-step");
+    await expect(runSuggestedWaypointWholePath(value)).rejects.toThrow(
+      "whole_path_orchestrator_scenario_delivery_bridge_failed",
+    );
+    expect(target.events).toContain("reset:1");
+    expect(target.events.join(" ")).not.toContain("protected");
+  });
+
+  it.each(SUGGESTED_WAYPOINT_GUIDE_RELATIONSHIP_ENTRY_FAILURE_REASONS)(
+    "preserves the closed Guide relationship-entry %s subclass after cleanup",
+    async (reason) => {
+      const { target, value } = options();
+      await expect(
+        runSuggestedWaypointWholePath({
+          ...value,
+          async runScenario() {
+            return runSuggestedWaypointWholePathScenarioStep(
+              "guide_relationship_entry",
+              async () => {
+                throw new SuggestedWaypointGuideRelationshipEntryFailure(
+                  reason,
+                );
+              },
+            );
+          },
+        }),
+      ).rejects.toThrow(
+        `whole_path_orchestrator_scenario_guide_relationship_entry_${reason}_failed`,
+      );
+      expect(target.events).toContain("reset:1");
+      expect(target.events.join(" ")).not.toContain("protected");
+    },
+  );
+
+  it("does not preserve an arbitrary Guide relationship-entry error message", async () => {
+    const { target, value } = options();
+    await expect(
+      runSuggestedWaypointWholePath({
+        ...value,
+        async runScenario() {
+          return runSuggestedWaypointWholePathScenarioStep(
+            "guide_relationship_entry",
+            async () => {
+              throw new Error("protected arbitrary Guide relationship detail");
+            },
+          );
+        },
+      }),
+    ).rejects.toThrow(
+      "whole_path_orchestrator_scenario_guide_relationship_entry_failed",
+    );
+    expect(target.events).toContain("reset:1");
+    expect(target.events.join(" ")).not.toContain("protected");
+  });
+
+  it.each(SUGGESTED_WAYPOINT_GUIDE_DRAFT_CREATE_FAILURE_REASONS)(
+    "preserves the closed Guide draft-create %s subclass after cleanup",
+    async (reason) => {
+      const { target, value } = options();
+      await expect(
+        runSuggestedWaypointWholePath({
+          ...value,
+          async runScenario() {
+            return runSuggestedWaypointWholePathScenarioStep(
+              "guide_draft_create",
+              async () => {
+                throw new SuggestedWaypointGuideDraftCreateFailure(reason);
+              },
+            );
+          },
+        }),
+      ).rejects.toThrow(
+        `whole_path_orchestrator_scenario_guide_draft_create_${reason}_failed`,
+      );
+      expect(target.events).toContain("reset:1");
+      expect(target.events.join(" ")).not.toContain("protected");
+    },
+  );
+
+  it("does not preserve an arbitrary Guide draft-create error message", async () => {
+    const { target, value } = options();
+    await expect(
+      runSuggestedWaypointWholePath({
+        ...value,
+        async runScenario() {
+          return runSuggestedWaypointWholePathScenarioStep(
+            "guide_draft_create",
+            async () => {
+              throw new Error("protected arbitrary Guide draft detail");
+            },
+          );
+        },
+      }),
+    ).rejects.toThrow(
+      "whole_path_orchestrator_scenario_guide_draft_create_failed",
+    );
+    expect(target.events).toContain("reset:1");
+    expect(target.events.join(" ")).not.toContain("protected");
+  });
+
+  it.each(SUGGESTED_WAYPOINT_GUIDE_SCHEDULE_PULL_BACK_RESCHEDULE_FAILURE_REASONS)(
+    "preserves the closed Guide schedule/Pull Back/reschedule %s subclass after cleanup",
+    async (reason) => {
+      const { target, value } = options();
+      await expect(
+        runSuggestedWaypointWholePath({
+          ...value,
+          async runScenario() {
+            return runSuggestedWaypointWholePathScenarioStep(
+              "guide_schedule_pull_back_reschedule",
+              async () => {
+                throw new SuggestedWaypointGuideSchedulePullBackRescheduleFailure(
+                  reason,
+                );
+              },
+            );
+          },
+        }),
+      ).rejects.toThrow(
+        `whole_path_orchestrator_scenario_guide_schedule_pull_back_reschedule_${reason}_failed`,
+      );
+      expect(target.events).toContain("reset:1");
+      expect(target.events.join(" ")).not.toContain("protected");
+    },
+  );
+
+  it.each([
+    ["an arbitrary error", () => new Error("protected arbitrary Guide schedule detail")],
+    [
+      "an unlisted subclass reason",
+      () =>
+        new SuggestedWaypointGuideSchedulePullBackRescheduleFailure(
+          "protected-arbitrary-reason",
+        ),
+    ],
+  ] as const)(
+    "does not preserve %s from the Guide schedule/Pull Back/reschedule step",
+    async (_label, makeError) => {
+      const { target, value } = options();
+      const outcome = runSuggestedWaypointWholePath({
+        ...value,
+        async runScenario() {
+          return runSuggestedWaypointWholePathScenarioStep(
+            "guide_schedule_pull_back_reschedule",
+            async () => {
+              throw makeError();
+            },
+          );
+        },
+      });
+      await expect(outcome).rejects.toThrow(
+        /^whole_path_orchestrator_scenario_guide_schedule_pull_back_reschedule_failed$/u,
+      );
+      expect(target.events).toContain("reset:1");
+      expect(target.events.join(" ")).not.toContain("protected");
+    },
+  );
+
+  it("does not carry a Guide schedule subclass from another step", async () => {
+    const { value } = options();
+    await expect(
+      runSuggestedWaypointWholePath({
+        ...value,
+        async runScenario() {
+          return runSuggestedWaypointWholePathScenarioStep(
+            "delivery_eligibility_wait",
+            async () => {
+              throw new SuggestedWaypointGuideSchedulePullBackRescheduleFailure(
+                "pending_selector_mismatch",
+              );
+            },
+          );
+        },
+      }),
+    ).rejects.toThrow(
+      /^whole_path_orchestrator_scenario_delivery_eligibility_wait_failed$/u,
+    );
+  });
 
   it.each(["context-close:2", "browser-close"] as const)(
     "maps %s failure to one value-free cleanup category and continues teardown",
@@ -327,6 +588,38 @@ describe("Suggested Waypoint whole-path lifecycle orchestrator", () => {
       expect(target.events.join(" ")).not.toContain("protected");
     },
   );
+
+  it("preserves fixture cleanup failure when a closed scenario step also fails", async () => {
+    const { target, value } = options("scenario-step+auth-delete");
+    await expect(runSuggestedWaypointWholePath(value)).rejects.toThrow(
+      "whole_path_fixture_cleanup_failed",
+    );
+    expect(target.events).toContain("browser-close");
+    expect(target.events).toContain("reset:1");
+    expect(target.events.join(" ")).not.toContain("protected");
+  });
+
+  it("preserves fixture cleanup failure when a detailed Guide draft-create failure also occurs", async () => {
+    const { target, value } = options("auth-delete");
+    await expect(
+      runSuggestedWaypointWholePath({
+        ...value,
+        async runScenario() {
+          return runSuggestedWaypointWholePathScenarioStep(
+            "guide_draft_create",
+            async () => {
+              throw new SuggestedWaypointGuideDraftCreateFailure(
+                "command_failed",
+              );
+            },
+          );
+        },
+      }),
+    ).rejects.toThrow("whole_path_fixture_cleanup_failed");
+    expect(target.events).toContain("browser-close");
+    expect(target.events).toContain("reset:1");
+    expect(target.events.join(" ")).not.toContain("command_failed");
+  });
 
   it("maps hostile configuration access without calling later owners", async () => {
     const { target, value } = options();

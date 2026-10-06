@@ -6,6 +6,7 @@ import type {
 } from "./suggestedWaypointLocalAuthFixture";
 import {
   createSuggestedWaypointPlaywrightBundle,
+  suggestedWaypointPlaywrightContextOptions,
   type SuggestedWaypointPlaywrightBrowser,
   type SuggestedWaypointPlaywrightContext,
 } from "./suggestedWaypointPlaywrightSession";
@@ -59,6 +60,9 @@ function browser(failAt = -1, failCloseAt = -1) {
       const index = contexts.length;
       events.push(`new:${index}`);
       const context: SuggestedWaypointPlaywrightContext = {
+        async newPage() {
+          throw new Error("test_context_has_no_page");
+        },
         async addCookies(cookies) {
           events.push(`cookies:${index}:${cookies.length}`);
           addCookies(index, cookies.map((cookie) => ({ ...cookie })));
@@ -80,6 +84,21 @@ function browser(failAt = -1, failCloseAt = -1) {
 }
 
 describe("Suggested Waypoint in-memory Playwright session seam", () => {
+  it("binds manual browser contexts to the validated trusted origin", () => {
+    const options = suggestedWaypointPlaywrightContextOptions(config);
+    expect(options).toEqual({ baseURL: "http://127.0.0.1:4627" });
+    expect(Object.isFrozen(options)).toBe(true);
+  });
+
+  it("refuses an untrusted manual-context origin", () => {
+    expect(() =>
+      suggestedWaypointPlaywrightContextOptions({
+        ...config,
+        trustedApplicationOrigin: "https://example.com",
+      }),
+    ).toThrow("whole_path_playwright_origin_refused");
+  });
+
   it("creates five role-isolated contexts and maps every active cookie chunk", async () => {
     const target = browser();
     const bundle = await createSuggestedWaypointPlaywrightBundle(

@@ -4,7 +4,7 @@
 -- Run with: supabase test db  (local stack only; never cloud).
 --
 -- Scope of THIS file (no fixtures required):
---   - column contract: each of the six public.solmind_find_* functions returns ONLY its
+--   - column contract: each of the seven public.solmind_find_* functions returns ONLY its
 --     contracted columns and no excluded column (checked via pg_get_function_result, so it
 --     needs no seeded rows and cannot leak a private column);
 --   - pg_catalog hygiene: every function is SECURITY DEFINER, has an empty search_path, and
@@ -21,7 +21,7 @@
 
 begin;
 
-select plan(20);
+select plan(23);
 
 -- --- Column contract: only the contracted columns, never an excluded one --------------------
 
@@ -91,8 +91,19 @@ select ok(
   'explorer_profile result excludes created_at'
 );
 
--- --- pg_catalog hygiene across all six functions --------------------------------------------
--- The six enumerated functions, referenced by their exact signatures.
+select is(
+  pg_get_function_result('public.solmind_find_guide_explorer_relationship(uuid)'::regprocedure),
+  'TABLE(guide_explorer_relationship_id uuid, guide_profile_id uuid, explorer_profile_id uuid, relationship_status text)',
+  'guide_explorer_relationship result is exactly the four-column relationship identity and status contract'
+);
+select ok(
+  pg_get_function_result('public.solmind_find_guide_explorer_relationship(uuid)'::regprocedure)
+    not like '%created_at%',
+  'guide_explorer_relationship result excludes created_at'
+);
+
+-- --- pg_catalog hygiene across all seven functions ------------------------------------------
+-- The seven enumerated functions, referenced by their exact signatures.
 
 select ok(
   (select bool_and(prosecdef)
@@ -103,9 +114,10 @@ select ok(
       'public.solmind_find_active_user_sessions(uuid)'::regprocedure,
       'public.solmind_find_active_role_assignment(uuid,text)'::regprocedure,
       'public.solmind_find_guide_profile(uuid)'::regprocedure,
-      'public.solmind_find_explorer_profile(uuid)'::regprocedure
+      'public.solmind_find_explorer_profile(uuid)'::regprocedure,
+      'public.solmind_find_guide_explorer_relationship(uuid)'::regprocedure
     )),
-  'all six functions are SECURITY DEFINER'
+  'all seven functions are SECURITY DEFINER'
 );
 
 select ok(
@@ -119,9 +131,10 @@ select ok(
       'public.solmind_find_active_user_sessions(uuid)'::regprocedure,
       'public.solmind_find_active_role_assignment(uuid,text)'::regprocedure,
       'public.solmind_find_guide_profile(uuid)'::regprocedure,
-      'public.solmind_find_explorer_profile(uuid)'::regprocedure
+      'public.solmind_find_explorer_profile(uuid)'::regprocedure,
+      'public.solmind_find_guide_explorer_relationship(uuid)'::regprocedure
     )),
-  'all six functions pin an empty search_path'
+  'all seven functions pin an empty search_path'
 );
 
 select ok(
@@ -133,9 +146,10 @@ select ok(
       'public.solmind_find_active_user_sessions(uuid)'::regprocedure,
       'public.solmind_find_active_role_assignment(uuid,text)'::regprocedure,
       'public.solmind_find_guide_profile(uuid)'::regprocedure,
-      'public.solmind_find_explorer_profile(uuid)'::regprocedure
+      'public.solmind_find_explorer_profile(uuid)'::regprocedure,
+      'public.solmind_find_guide_explorer_relationship(uuid)'::regprocedure
     )),
-  'service_role can EXECUTE all six functions'
+  'service_role can EXECUTE all seven functions'
 );
 
 select ok(
@@ -147,9 +161,10 @@ select ok(
       'public.solmind_find_active_user_sessions(uuid)'::regprocedure,
       'public.solmind_find_active_role_assignment(uuid,text)'::regprocedure,
       'public.solmind_find_guide_profile(uuid)'::regprocedure,
-      'public.solmind_find_explorer_profile(uuid)'::regprocedure
+      'public.solmind_find_explorer_profile(uuid)'::regprocedure,
+      'public.solmind_find_guide_explorer_relationship(uuid)'::regprocedure
     )) is not true,
-  'anon cannot EXECUTE any of the six functions'
+  'anon cannot EXECUTE any of the seven functions'
 );
 
 select ok(
@@ -161,9 +176,10 @@ select ok(
       'public.solmind_find_active_user_sessions(uuid)'::regprocedure,
       'public.solmind_find_active_role_assignment(uuid,text)'::regprocedure,
       'public.solmind_find_guide_profile(uuid)'::regprocedure,
-      'public.solmind_find_explorer_profile(uuid)'::regprocedure
+      'public.solmind_find_explorer_profile(uuid)'::regprocedure,
+      'public.solmind_find_guide_explorer_relationship(uuid)'::regprocedure
     )) is not true,
-  'authenticated cannot EXECUTE any of the six functions'
+  'authenticated cannot EXECUTE any of the seven functions'
 );
 
 -- --- Schema isolation: identity/core tables stay off-limits to the Data API roles ------------
@@ -176,7 +192,8 @@ select ok(
        'identity.user_session',
        'identity.user_role_assignment',
        'core.guide_profile',
-       'core.explorer_profile'
+       'core.explorer_profile',
+       'core.guide_explorer_relationship'
      ]) as t) is not true,
   'anon holds no direct SELECT on the identity/core tables the functions read'
 );
@@ -189,7 +206,8 @@ select ok(
        'identity.user_session',
        'identity.user_role_assignment',
        'core.guide_profile',
-       'core.explorer_profile'
+       'core.explorer_profile',
+       'core.guide_explorer_relationship'
      ]) as t) is not true,
   'authenticated holds no direct SELECT on the identity/core tables the functions read'
 );
@@ -200,6 +218,13 @@ select is(
   (select count(*)::int from public.solmind_find_user_account(gen_random_uuid())),
   0,
   'a lookup on an absent user_account_id returns an empty set'
+);
+
+select is(
+  (select count(*)::int
+     from public.solmind_find_guide_explorer_relationship(gen_random_uuid())),
+  0,
+  'an absent relationship id returns an empty set'
 );
 
 select * from finish();

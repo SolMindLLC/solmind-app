@@ -25,7 +25,11 @@ import {
   projectSuggestedWaypointGuideCommandResult,
 } from "@/lib/solmind/supabase/suggestedWaypointGuideCommandRouteContract";
 import { createSuggestedWaypointRequestDependencies } from "@/lib/solmind/supabase/suggestedWaypointRequestDependencies";
-import { resolveSuggestedWaypointRequest } from "@/lib/solmind/supabase/suggestedWaypointRequestComposition";
+import {
+  resolveSuggestedWaypointRequest,
+  SUGGESTED_WAYPOINT_REQUEST_DENIED,
+} from "@/lib/solmind/supabase/suggestedWaypointRequestComposition";
+import { createSuggestedWaypointWholePathGuideDraftDiagnostic } from "@/lib/solmind/supabase/suggestedWaypointWholePathGuideDraftDiagnostic";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +64,11 @@ export async function POST(
   request: NextRequest,
   context: RouteContext,
 ): Promise<Response> {
+  const wholePathDiagnostic =
+    createSuggestedWaypointWholePathGuideDraftDiagnostic(request);
+
   if ([...request.nextUrl.searchParams.keys()].length > 0) {
+    wholePathDiagnostic?.report("query_denied");
     return json(failure(SUGGESTED_WAYPOINT_COMMAND_DENIED));
   }
 
@@ -68,9 +76,11 @@ export async function POST(
   try {
     relationshipId = (await context.params).relationshipId;
   } catch {
+    wholePathDiagnostic?.report("relationship_path_denied");
     return json(failure(SUGGESTED_WAYPOINT_COMMAND_DENIED));
   }
   if (!isSuggestedWaypointRelationshipId(relationshipId)) {
+    wholePathDiagnostic?.report("relationship_path_denied");
     return json(failure(SUGGESTED_WAYPOINT_COMMAND_DENIED));
   }
 
@@ -86,6 +96,7 @@ export async function POST(
     trustedOrigin,
   });
   if (!guarded.ok) {
+    wholePathDiagnostic?.report("request_guard_denied");
     return json(failure(SUGGESTED_WAYPOINT_COMMAND_DENIED));
   }
 
@@ -94,6 +105,7 @@ export async function POST(
     relationshipId,
   );
   if (routeInput === null) {
+    wholePathDiagnostic?.report("route_input_denied");
     return json(failure(SUGGESTED_WAYPOINT_COMMAND_DENIED));
   }
 
@@ -106,13 +118,72 @@ export async function POST(
           .map((cookie) => ({ name: cookie.name, value: cookie.value })),
       setAll: noopCookieSetAll,
     };
-    const dependencies = createSuggestedWaypointRequestDependencies({
+    const baseDependencies = createSuggestedWaypointRequestDependencies({
       cookies: requestCookies,
     });
+    const dependencies =
+      wholePathDiagnostic === null
+        ? baseDependencies
+        : {
+            ...baseDependencies,
+            principalSource: {
+              async resolveAuthenticatedUser() {
+                wholePathDiagnostic.setResolutionStage("principal_denied");
+                const principal =
+                  await baseDependencies.principalSource.resolveAuthenticatedUser();
+                if (principal !== null) {
+                  wholePathDiagnostic.setResolutionStage(
+                    "auth_context_denied",
+                  );
+                }
+                return principal;
+              },
+            },
+            authSource: {
+              async loadServerAuthContextInput(
+                loadRequest: Parameters<
+                  typeof baseDependencies.authSource.loadServerAuthContextInput
+                >[0],
+              ) {
+                wholePathDiagnostic.setResolutionStage(
+                  "auth_context_denied",
+                );
+                const authInput =
+                  await baseDependencies.authSource.loadServerAuthContextInput(
+                    loadRequest,
+                  );
+                wholePathDiagnostic.setResolutionStage("guide_role_denied");
+                return authInput;
+              },
+              async loadGuideRelationship(
+                loadRequest: Parameters<
+                  typeof baseDependencies.authSource.loadGuideRelationship
+                >[0],
+              ) {
+                wholePathDiagnostic.setResolutionStage(
+                  "relationship_denied",
+                );
+                return baseDependencies.authSource.loadGuideRelationship(
+                  loadRequest,
+                );
+              },
+            },
+            executor: {
+              async execute(
+                call: Parameters<typeof baseDependencies.executor.execute>[0],
+              ) {
+                wholePathDiagnostic.setResolutionStage("rpc_denied");
+                return baseDependencies.executor.execute(call);
+              },
+            },
+          };
     const result = await resolveSuggestedWaypointRequest(
       dependencies,
       routeInput.request,
     );
+    if (!result.ok && result.error === SUGGESTED_WAYPOINT_REQUEST_DENIED) {
+      wholePathDiagnostic?.reportResolutionDenied();
+    }
     return json(projectSuggestedWaypointGuideCommandResult(routeInput, result));
   } catch {
     return json(failure(SUGGESTED_WAYPOINT_COMMAND_FAILED));

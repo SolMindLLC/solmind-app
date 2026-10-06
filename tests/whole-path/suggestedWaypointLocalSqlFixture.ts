@@ -316,6 +316,21 @@ values
   (${sqlText(IDS.relationships.unrelated)}, ${sqlText(IDS.guides.unrelated)}, ${sqlText(IDS.explorers.unrelated)}, ${sqlText(IDS.practice)}, 'active', '2026-01-01 00:00:00+00', null, '2026-01-01 00:00:00+00', ${sqlText(IDS.accounts["unrelated-guide"])}, ${sqlText(metadata)}::jsonb),
   (${sqlText(IDS.relationships.ended)}, ${sqlText(IDS.guides.assigned)}, ${sqlText(IDS.explorers.ended)}, ${sqlText(IDS.practice)}, 'ended', '2026-01-01 00:00:00+00', '2026-01-02 00:00:00+00', '2026-01-01 00:00:00+00', ${sqlText(IDS.accounts["assigned-guide"])}, ${sqlText(metadata)}::jsonb);
 
+do $fixture_policy$
+begin
+  update core.application_setting
+     set integer_value = 60
+   where application_setting_id = 'a30f0220-0000-4000-8000-000000000001'::uuid
+     and setting_key = 'suggested_waypoint_send_grace_seconds'
+     and minimum_integer_value = 60
+     and default_integer_value = 300
+     and maximum_integer_value = 3600;
+  if not found then
+    raise exception 'Lane G fixture send-grace policy unavailable';
+  end if;
+end;
+$fixture_policy$;
+
 do $fixture_post_setup$
 declare
   v_fixture_id constant text := ${sqlText(SUGGESTED_WAYPOINT_FIXTURE_ID)};
@@ -327,7 +342,8 @@ begin
      or (select count(*) from core.guide_profile where metadata ->> 'fixture_id' = v_fixture_id and status = 'active') <> 2
      or (select count(*) from core.explorer_profile where metadata ->> 'fixture_id' = v_fixture_id and status = 'active') <> 3
      or (select count(*) from core.guide_explorer_relationship where metadata ->> 'fixture_id' = v_fixture_id and relationship_status = 'active') <> 2
-     or (select count(*) from core.guide_explorer_relationship where metadata ->> 'fixture_id' = v_fixture_id and relationship_status = 'ended') <> 1 then
+     or (select count(*) from core.guide_explorer_relationship where metadata ->> 'fixture_id' = v_fixture_id and relationship_status = 'ended') <> 1
+     or (select integer_value from core.application_setting where setting_key = 'suggested_waypoint_send_grace_seconds') <> 60 then
     raise exception 'Lane G fixture cardinality validation failed';
   end if;
 end;

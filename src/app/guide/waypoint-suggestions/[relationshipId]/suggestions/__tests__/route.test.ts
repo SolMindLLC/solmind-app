@@ -4,10 +4,24 @@ import { NextRequest } from "next/server";
 const {
   cookiesMock,
   createDependenciesMock,
+  createDiagnosticMock,
+  diagnosticReportMock,
+  diagnosticReportResolutionDeniedMock,
+  diagnosticSetResolutionStageMock,
+  principalResolveMock,
+  authContextLoadMock,
+  relationshipLoadMock,
   resolveRequestMock,
 } = vi.hoisted(() => ({
   cookiesMock: vi.fn(),
   createDependenciesMock: vi.fn(),
+  createDiagnosticMock: vi.fn(),
+  diagnosticReportMock: vi.fn(),
+  diagnosticReportResolutionDeniedMock: vi.fn(),
+  diagnosticSetResolutionStageMock: vi.fn(),
+  principalResolveMock: vi.fn(),
+  authContextLoadMock: vi.fn(),
+  relationshipLoadMock: vi.fn(),
   resolveRequestMock: vi.fn(),
 }));
 
@@ -25,12 +39,61 @@ vi.mock(
     return { ...original, resolveSuggestedWaypointRequest: resolveRequestMock };
   },
 );
+vi.mock(
+  "@/lib/solmind/supabase/suggestedWaypointWholePathGuideRelationshipEntryDiagnostic",
+  () => ({
+    createSuggestedWaypointWholePathGuideRelationshipEntryDiagnostic:
+      createDiagnosticMock,
+  }),
+);
 
 import { GET } from "../route";
 
 const RELATIONSHIP_ID = "55555555-5555-4555-8555-555555555555";
 const SUGGESTION_ID = "66666666-6666-4666-8666-666666666666";
 const SECRET_COOKIE = "sb-access-token-SECRET-do-not-leak";
+const GUIDE_ACCOUNT_ID = "11111111-1111-4111-8111-111111111111";
+const GUIDE_PROFILE_ID = "22222222-2222-4222-8222-222222222222";
+const EXPLORER_PROFILE_ID = "33333333-3333-4333-8333-333333333333";
+const PRINCIPAL = Object.freeze({
+  providerName: "supabase" as const,
+  providerUserId: "guide-provider-user",
+});
+const AUTH_INPUT = Object.freeze({
+  authenticatedUser: PRINCIPAL,
+  authProviderIdentity: Object.freeze({
+    userAccountId: GUIDE_ACCOUNT_ID,
+    providerName: "supabase",
+    providerUserId: "guide-provider-user",
+    status: "active",
+  }),
+  userAccount: Object.freeze({
+    userAccountId: GUIDE_ACCOUNT_ID,
+    accountStatus: "active",
+  }),
+  session: Object.freeze({
+    userAccountId: GUIDE_ACCOUNT_ID,
+    activeRoleContext: "guide",
+    sessionStatus: "active",
+  }),
+  activeRoleAssignment: Object.freeze({
+    userAccountId: GUIDE_ACCOUNT_ID,
+    roleCode: "guide",
+    roleStatus: "active",
+  }),
+  guideProfile: Object.freeze({
+    guideProfileId: GUIDE_PROFILE_ID,
+    userAccountId: GUIDE_ACCOUNT_ID,
+    status: "active",
+  }),
+  explorerProfile: null,
+});
+const RELATIONSHIP = Object.freeze({
+  guideExplorerRelationshipId: RELATIONSHIP_ID,
+  guideProfileId: GUIDE_PROFILE_ID,
+  explorerProfileId: EXPLORER_PROFILE_ID,
+  relationshipStatus: "active",
+});
 const PAGE = Object.freeze({
   items: Object.freeze([
     Object.freeze({
@@ -68,14 +131,32 @@ async function invoke(query = "", relationshipId = RELATIONSHIP_ID) {
 beforeEach(() => {
   cookiesMock.mockReset();
   createDependenciesMock.mockReset();
+  createDiagnosticMock.mockReset();
+  diagnosticReportMock.mockReset();
+  diagnosticReportResolutionDeniedMock.mockReset();
+  diagnosticSetResolutionStageMock.mockReset();
+  principalResolveMock.mockReset();
+  authContextLoadMock.mockReset();
+  relationshipLoadMock.mockReset();
   resolveRequestMock.mockReset();
 
   cookiesMock.mockResolvedValue({
     getAll: () => [{ name: "sb-access-token", value: SECRET_COOKIE }],
   });
+  createDiagnosticMock.mockReturnValue({
+    setResolutionStage: diagnosticSetResolutionStageMock,
+    report: diagnosticReportMock,
+    reportResolutionDenied: diagnosticReportResolutionDeniedMock,
+  });
+  principalResolveMock.mockResolvedValue(PRINCIPAL);
+  authContextLoadMock.mockResolvedValue(AUTH_INPUT);
+  relationshipLoadMock.mockResolvedValue(RELATIONSHIP);
   createDependenciesMock.mockReturnValue({
-    principalSource: { resolveAuthenticatedUser: vi.fn() },
-    authSource: { loadServerAuthContextInput: vi.fn() },
+    principalSource: { resolveAuthenticatedUser: principalResolveMock },
+    authSource: {
+      loadServerAuthContextInput: authContextLoadMock,
+      loadGuideRelationship: relationshipLoadMock,
+    },
     executor: { execute: vi.fn() },
   });
   resolveRequestMock.mockResolvedValue(
@@ -100,6 +181,72 @@ describe("GET relationship-scoped Guide Suggested Waypoint list", () => {
         cursor: null,
       },
     );
+    expect(diagnosticReportMock).not.toHaveBeenCalled();
+    expect(diagnosticReportResolutionDeniedMock).not.toHaveBeenCalled();
+  });
+
+  it("reports only the final fixed relationship-entry resolution stage on denial", async () => {
+    resolveRequestMock.mockImplementation(async (dependencies) => {
+      const principal =
+        await dependencies.principalSource.resolveAuthenticatedUser();
+      const authInput =
+        await dependencies.authSource.loadServerAuthContextInput({
+          authenticatedUser: principal,
+        });
+      await dependencies.authSource.loadGuideRelationship({
+        relationshipId: RELATIONSHIP_ID,
+      });
+      expect(authInput).toBe(AUTH_INPUT);
+      return Object.freeze({
+        ok: false,
+        data: null,
+        error: "solmind_suggested_waypoint_request_denied",
+      });
+    });
+
+    const { body, rawText } = await invoke();
+
+    expect(body.error).toBe("SolMind Suggested Waypoints are unavailable.");
+    expect(diagnosticSetResolutionStageMock.mock.calls).toEqual([
+      ["principal_denied"],
+      ["auth_context_denied"],
+      ["auth_context_denied"],
+      ["relationship_load_denied"],
+      ["relationship_load_denied"],
+      ["rpc_denied"],
+    ]);
+    expect(diagnosticReportResolutionDeniedMock).toHaveBeenCalledOnce();
+    expect(rawText).not.toContain(GUIDE_ACCOUNT_ID);
+    expect(rawText).not.toContain(GUIDE_PROFILE_ID);
+  });
+
+  it("distinguishes relationship access denial from a missing relationship", async () => {
+    relationshipLoadMock.mockResolvedValueOnce({
+      ...RELATIONSHIP,
+      guideProfileId: "99999999-9999-4999-8999-999999999999",
+    });
+    resolveRequestMock.mockImplementation(async (dependencies) => {
+      const principal =
+        await dependencies.principalSource.resolveAuthenticatedUser();
+      await dependencies.authSource.loadServerAuthContextInput({
+        authenticatedUser: principal,
+      });
+      await dependencies.authSource.loadGuideRelationship({
+        relationshipId: RELATIONSHIP_ID,
+      });
+      return Object.freeze({
+        ok: false,
+        data: null,
+        error: "solmind_suggested_waypoint_request_denied",
+      });
+    });
+
+    await invoke();
+
+    expect(diagnosticSetResolutionStageMock).toHaveBeenLastCalledWith(
+      "relationship_access_denied",
+    );
+    expect(diagnosticReportResolutionDeniedMock).toHaveBeenCalledOnce();
   });
 
   it("accepts only a closed page size and one optional opaque cursor", async () => {
@@ -127,6 +274,17 @@ describe("GET relationship-scoped Guide Suggested Waypoint list", () => {
     });
     expect(cookiesMock).not.toHaveBeenCalled();
     expect(resolveRequestMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps malformed query and relationship-path diagnostics value-free", async () => {
+    await invoke("?pageSize=25");
+    expect(diagnosticReportMock).toHaveBeenLastCalledWith("query_denied");
+
+    diagnosticReportMock.mockClear();
+    await invoke("", "not-a-relationship");
+    expect(diagnosticReportMock).toHaveBeenLastCalledWith(
+      "relationship_path_denied",
+    );
   });
 
   it("passes a read-only cookie snapshot into the dependency root", async () => {

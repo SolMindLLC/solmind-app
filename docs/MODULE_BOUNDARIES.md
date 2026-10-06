@@ -714,6 +714,81 @@ fixture lifecycle, isolated role sessions, whole-path
 execution, unconditional teardown, zero-residue proof, and final local reset
 remain separate test-infrastructure owners.
 
+The opt-in local proof driver under `tests/whole-path/` is the separate effect
+owner for one synthetic lifecycle only. `runSuggestedWaypointWholePath.mjs`
+validates the complete safety environment before reading local keys, invokes
+the exact `supabase@2.115.0` CLI through Node, offline and without install
+(`--offline --no`), uses webpack only for the
+junction-backed isolated proof build, starts one loopback production server,
+and launches the isolated Playwright owner. The normal live-repository
+`npm run build` remains a separate mandatory Turbopack pre-banking gate. The
+SQL fixture temporarily
+selects the schema-owned 60-second grace value, while browser authority polling
+must observe Pull Back become unavailable before the isolated Vitest delivery
+bridge can invoke one exact job and replay. Five browser sessions stay in
+memory; keys, cookies, traces, screenshots, videos, and raw failures are not
+durable. The driver owns bounded child processes, reverse-order teardown,
+result cleanup, and the mandatory final reset. It does not start Supabase,
+discover or schedule due items, poll continuously, call a provider, deploy,
+contact hosted data, or affect real users.
+
+The Playwright scenario is partitioned into fourteen closed, test-only steps.
+Only the selected value-free step ID may cross the scenario boundary after a
+failure; raw thrown values, messages, URLs, request bodies, fixture identifiers,
+and other protected detail remain internal. The orchestrator preserves that
+closed step only after successful teardown. Fixture or cleanup failure continues
+to dominate the scenario result so diagnostic precision cannot weaken
+containment. Playwright stops after the first failed viewport project and the
+outer runner preserves the first exact finite-allowlist category, preventing a
+later project or later string from masking the first durable failure. The
+non-effectful contract executes the extracted runner regular expression against
+all approved and representative rejected categories, pins the exact ordered
+step alternation and real wrapper call sites, and directly proves combined
+scenario-step and Auth-cleanup precedence.
+
+Guide draft creation adds one narrower diagnostic owner at
+`tests/whole-path/suggestedWaypointWholePathGuideDraftDiagnostics.ts`. It
+classifies only request failure, non-success HTTP, response parsing, response
+contract rejection, the two fixed browser error kinds, and the four permitted
+create-draft outcomes. The Playwright scenario converts only that closed class
+into a step subclass; arbitrary errors still collapse to the parent step, and
+the outer runner independently allowlists the same ten fixed reasons. This
+diagnostic layer changes no product route, request, database, or authorization
+behavior.
+
+The driver also adds one deliberately inert server-only seam at
+`src/lib/solmind/supabase/suggestedWaypointWholePathGuideDraftDiagnostic.ts`
+to localize a generic Guide draft denial during the separately governed local
+proof. It is reachable only when every exact local proof environment gate,
+loopback target, route and method, and the matching run-ID request header are
+present. The route still returns the unchanged four-field browser-safe denial.
+Only one of ten fixed stage names can reach the outer runner through in-memory
+stderr scanning; arbitrary server output is discarded and never forwarded.
+This seam adds no persistent telemetry, product capability, authorization,
+database behavior, hosted behavior, or ordinary-runtime output.
+
+Before draft creation, the Guide relationship-entry step now has its own narrow
+diagnostic owner at
+`tests/whole-path/suggestedWaypointWholePathGuideRelationshipEntryDiagnostics.ts`.
+It waits for the exact authenticated first-page list response, validates the
+existing browser-safe contract, requires the reset-owned fixture to contain no
+suggestions, and then proves the corresponding empty Guide UI. Only nine fixed
+value-free request, authority, fixture, and UI-projection reasons may cross the
+step boundary; arbitrary values collapse to the parent step and cleanup still
+dominates. The check adds no product route, response field, database read,
+authorization rule, or persistent telemetry.
+
+That step also owns one deliberately inert server-only seam at
+`src/lib/solmind/supabase/suggestedWaypointWholePathGuideRelationshipEntryDiagnostic.ts`.
+It is reachable only for the exact local proof GET after every environment,
+loopback target, route, and run-ID header gate matches. The list route observes
+the already-executed principal, auth-context, Guide-role, relationship-load,
+relationship-access, and RPC boundaries without changing their decisions. If
+the public result remains the unchanged generic denial, exactly one of nine
+fixed stage names may reach the outer runner through in-memory stderr scanning.
+No protected value, response field, persistent telemetry, product capability,
+authorization change, or ordinary-runtime output is introduced.
+
 The S03 Guide entry boundary also owns one feature-specific Suggested Waypoint
 relationship selector. Its forward-only migration exposes only active
 relationship ID, Explorer display name, relationship creation time, and

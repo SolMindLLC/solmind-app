@@ -18,10 +18,24 @@ function fakeClient(response: { data: unknown; error: unknown }) {
   return { client, rpc };
 }
 
-// The six approved scoped-select specs, mirroring exactly what createSupabaseAuthQueryClient
+// The seven approved scoped-select specs, mirroring exactly what createSupabaseAuthQueryClient
 // issues, each paired with the enumerated function and the named args (dynamic values only) the
 // executor must dispatch to. Baked status filters and the columns list must NOT become args.
 const ACCOUNT_ID = "user-admin-1";
+
+const RELATIONSHIP_SPEC: SupabaseQuerySpec = {
+  schema: "core",
+  table: "guide_explorer_relationship",
+  columns: [
+    "guide_explorer_relationship_id",
+    "guide_profile_id",
+    "explorer_profile_id",
+    "relationship_status",
+  ],
+  filters: [
+    { column: "guide_explorer_relationship_id", value: "rel-1" },
+  ],
+};
 
 const DISPATCH_CASES: ReadonlyArray<{
   name: string;
@@ -117,25 +131,20 @@ const DISPATCH_CASES: ReadonlyArray<{
     functionName: "solmind_find_explorer_profile",
     args: { p_user_account_id: ACCOUNT_ID },
   },
+  {
+    name: "guide_explorer_relationship",
+    spec: RELATIONSHIP_SPEC,
+    functionName: "solmind_find_guide_explorer_relationship",
+    args: { p_guide_explorer_relationship_id: "rel-1" },
+  },
 ];
 
-// The deliberately-absent seventh lookup (AUTH-RLS-DEF-018). The query client still issues this
-// spec, so the executor must have no mapping for it and must fail closed.
-const RELATIONSHIP_SPEC: SupabaseQuerySpec = {
-  schema: "core",
-  table: "guide_explorer_relationship",
-  columns: [
-    "guide_explorer_relationship_id",
-    "guide_profile_id",
-    "explorer_profile_id",
-    "relationship_status",
-  ],
-  filters: [
-    { column: "guide_explorer_relationship_id", value: "rel-1" },
-  ],
-};
-
 describe("createServiceRoleRpcExecutor dispatch", () => {
+  it("contains exactly seven closed mappings", () => {
+    expect(DISPATCH_CASES).toHaveLength(7);
+    expect(new Set(DISPATCH_CASES.map((testCase) => testCase.name)).size).toBe(7);
+  });
+
   for (const testCase of DISPATCH_CASES) {
     it(`maps ${testCase.name} to its enumerated function and named args`, async () => {
       const row = { ok: true };
@@ -162,16 +171,6 @@ describe("createServiceRoleRpcExecutor dispatch", () => {
 });
 
 describe("createServiceRoleRpcExecutor fail-closed", () => {
-  it("fails closed on the deliberately-absent relationship lookup without calling .rpc", async () => {
-    const { client, rpc } = fakeClient({ data: [{ ok: true }], error: null });
-    const executor = createServiceRoleRpcExecutor(client);
-
-    const result = await executor.select(RELATIONSHIP_SPEC);
-
-    expect(rpc).not.toHaveBeenCalled();
-    expect(result).toEqual({ data: null, error: RPC_UNMAPPED_SPEC_ERROR });
-  });
-
   it("fails closed on an unknown schema.table without calling .rpc", async () => {
     const { client, rpc } = fakeClient({ data: [{ ok: true }], error: null });
     const executor = createServiceRoleRpcExecutor(client);

@@ -1,18 +1,19 @@
 // SolMind MVP0 server-only Supabase RPC executor (Option B enumerated-function transport).
 //
 // Purpose:
-//   - implement the narrow, injectable SupabaseQueryExecutor over the six banked
+//   - implement the narrow, injectable SupabaseQueryExecutor over the seven approved
 //     public.solmind_find_* lookup functions (AUTH-RLS-DEC-026), replacing the retired
 //     generic PostgREST scoped-select executor. Each scoped-select spec is dispatched to
-//     exactly one enumerated function via a closed allowlist, so a leaked service-role key
-//     can invoke only these six fixed lookups and no arbitrary table/column read remains.
+//     exactly one enumerated function through this executor's closed allowlist. The executor
+//     exposes seven fixed lookups and no arbitrary table/column reader; this does not limit
+//     other RPC capabilities granted to the service-role credential.
 //
 // Server-only boundary (critical):
 //   - The service-role key BYPASSES RLS and every enumerated function is service_role-only,
 //     so this module must never run in the browser. The `import "server-only";` marker is the
 //     import-time guard (AUTH-RLS-DEC-023), backed by the runtime browser guard below, and this
 //     module stays OFF the shared src/lib/solmind/supabase/index.ts barrel (AUTH-RLS-DEC-007).
-//     It is imported only from the explicit /admin server composition root (adminAuthSource.ts).
+//     It is imported only from explicit server composition roots.
 //
 // Scope discipline (transport swap only; contract Sections 6, 10, 11):
 //   - This executor LOADS records and decides nothing. deriveTrustedServerAuthContext and the
@@ -20,8 +21,7 @@
 //     predicates baked into the functions are row-selection defense-in-depth, not a second
 //     authorization authority, so they are NOT re-asserted here (that would duplicate a check the
 //     contract reserves for the derivation layer).
-//   - Fail closed: an unknown or mismatched spec (including the deliberately-absent Guide-Explorer
-//     relationship lookup, AUTH-RLS-DEF-018), a missing required argument, or any .rpc() failure
+//   - Fail closed: an unknown or mismatched spec, a missing required argument, or any .rpc() failure
 //     resolves to a detail-free sentinel error that the upstream query client turns into a null
 //     record and a deny. No error body, URL, argument, or credential leaves the server.
 
@@ -89,9 +89,8 @@ function requireArgs(
   return args;
 }
 
-// Closed allowlist keyed by `${schema}.${table}`. There is deliberately no entry for
-// core.guide_explorer_relationship (AUTH-RLS-DEF-018) or any other lookup, so every
-// unrecognized spec falls through to the unmapped-spec sentinel and denies.
+// Closed allowlist keyed by `${schema}.${table}`. Every unrecognized spec falls through
+// to the unmapped-spec sentinel and denies; no generic table or column reader exists.
 const RPC_ALLOWLIST: Record<string, RpcAllowlistEntry> = {
   "identity.auth_provider_identity": {
     functionName: "solmind_find_auth_provider_identity",
@@ -129,7 +128,25 @@ const RPC_ALLOWLIST: Record<string, RpcAllowlistEntry> = {
     buildArgs: (filters) =>
       requireArgs(filters, [["p_user_account_id", "user_account_id"]]),
   },
+  "core.guide_explorer_relationship": {
+    functionName: "solmind_find_guide_explorer_relationship",
+    buildArgs: (filters) =>
+      requireArgs(filters, [
+        [
+          "p_guide_explorer_relationship_id",
+          "guide_explorer_relationship_id",
+        ],
+      ]),
+  },
 };
+
+// Direct-import, server-only contract evidence for the query-client/executor seam.
+// The integration test compares the actual query-client keys it observes with
+// this list, which is derived from the production allowlist rather than a
+// hand-maintained fixture. Keep this module off the shared Supabase barrel.
+export const SERVICE_ROLE_RPC_DISPATCH_KEYS = Object.freeze(
+  Object.keys(RPC_ALLOWLIST).sort(),
+);
 
 // Adapt a server-only service-role Supabase client to the narrow scoped-select executor by
 // dispatching each spec to its enumerated public.solmind_find_* function. The client's default

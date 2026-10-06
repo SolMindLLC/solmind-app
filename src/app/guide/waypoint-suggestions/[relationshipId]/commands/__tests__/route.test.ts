@@ -4,11 +4,19 @@ import { NextRequest } from "next/server";
 const {
   cookiesMock,
   createDependenciesMock,
+  createWholePathDiagnosticMock,
+  diagnosticReportMock,
+  diagnosticReportResolutionDeniedMock,
+  diagnosticSetResolutionStageMock,
   loadTrustedOriginMock,
   resolveRequestMock,
 } = vi.hoisted(() => ({
   cookiesMock: vi.fn(),
   createDependenciesMock: vi.fn(),
+  createWholePathDiagnosticMock: vi.fn(),
+  diagnosticReportMock: vi.fn(),
+  diagnosticReportResolutionDeniedMock: vi.fn(),
+  diagnosticSetResolutionStageMock: vi.fn(),
   loadTrustedOriginMock: vi.fn(),
   resolveRequestMock: vi.fn(),
 }));
@@ -31,6 +39,19 @@ vi.mock(
       typeof import("@/lib/solmind/supabase/suggestedWaypointRequestComposition")
     >();
     return { ...original, resolveSuggestedWaypointRequest: resolveRequestMock };
+  },
+);
+vi.mock(
+  "@/lib/solmind/supabase/suggestedWaypointWholePathGuideDraftDiagnostic",
+  async (importOriginal) => {
+    const original = await importOriginal<
+      typeof import("@/lib/solmind/supabase/suggestedWaypointWholePathGuideDraftDiagnostic")
+    >();
+    return {
+      ...original,
+      createSuggestedWaypointWholePathGuideDraftDiagnostic:
+        createWholePathDiagnosticMock,
+    };
   },
 );
 
@@ -89,9 +110,14 @@ async function invoke(
 beforeEach(() => {
   cookiesMock.mockReset();
   createDependenciesMock.mockReset();
+  createWholePathDiagnosticMock.mockReset();
+  diagnosticReportMock.mockReset();
+  diagnosticReportResolutionDeniedMock.mockReset();
+  diagnosticSetResolutionStageMock.mockReset();
   loadTrustedOriginMock.mockReset();
   resolveRequestMock.mockReset();
 
+  createWholePathDiagnosticMock.mockReturnValue(null);
   loadTrustedOriginMock.mockReturnValue(TRUSTED_ORIGIN);
   cookiesMock.mockResolvedValue({
     getAll: () => [{ name: "sb-access-token", value: SECRET_COOKIE }],
@@ -121,6 +147,14 @@ beforeEach(() => {
 });
 
 describe("POST relationship-scoped Guide Suggested Waypoint command", () => {
+  function enableWholePathDiagnostic(): void {
+    createWholePathDiagnosticMock.mockReturnValue({
+      setResolutionStage: diagnosticSetResolutionStageMock,
+      report: diagnosticReportMock,
+      reportResolutionDenied: diagnosticReportResolutionDeniedMock,
+    });
+  }
+
   it("uses the actual same-origin JSON guard and ignores Host as authority", async () => {
     const { response, body } = await invoke(
       request({ host: "forwarded-attacker.example" }),
@@ -165,6 +199,111 @@ describe("POST relationship-scoped Guide Suggested Waypoint command", () => {
       expect(resolveRequestMock).not.toHaveBeenCalled();
     },
   );
+
+  it("localizes pre-resolution denial without changing the public response", async () => {
+    enableWholePathDiagnostic();
+
+    const queryDenied = await invoke(request({ query: "?private=1" }));
+    expect(queryDenied.body).toEqual({
+      ok: false,
+      outcome: null,
+      suggestedWaypointId: null,
+      error: "command_denied",
+    });
+    expect(diagnosticReportMock).toHaveBeenLastCalledWith("query_denied");
+
+    diagnosticReportMock.mockClear();
+    const pathDenied = await invoke(request(), "not-a-relationship");
+    expect(pathDenied.body).toMatchObject({ error: "command_denied" });
+    expect(diagnosticReportMock).toHaveBeenLastCalledWith(
+      "relationship_path_denied",
+    );
+
+    diagnosticReportMock.mockClear();
+    const guardDenied = await invoke(
+      request({ origin: "http://attacker.example" }),
+    );
+    expect(guardDenied.body).toMatchObject({ error: "command_denied" });
+    expect(diagnosticReportMock).toHaveBeenLastCalledWith(
+      "request_guard_denied",
+    );
+
+    diagnosticReportMock.mockClear();
+    const routeInputDenied = await invoke(
+      request({ body: { ...CREATE_BODY, destination: "line one\nline two" } }),
+    );
+    expect(routeInputDenied.body).toMatchObject({ error: "command_denied" });
+    expect(diagnosticReportMock).toHaveBeenLastCalledWith(
+      "route_input_denied",
+    );
+  });
+
+  it("tracks only fixed request-resolution stages while preserving generic denial", async () => {
+    enableWholePathDiagnostic();
+    const principalSource = { resolveAuthenticatedUser: vi.fn() };
+    const authSource = {
+      loadServerAuthContextInput: vi.fn(),
+      loadGuideRelationship: vi.fn(),
+    };
+    const executor = { execute: vi.fn() };
+    createDependenciesMock.mockReturnValue({
+      principalSource,
+      authSource,
+      executor,
+      identifiers: {
+        suggestedWaypointIdForCreate: vi.fn(),
+        versionIdForSchedule: vi.fn(),
+      },
+    });
+    principalSource.resolveAuthenticatedUser.mockResolvedValue({
+      providerName: "supabase",
+      providerUserId: "synthetic-user",
+    });
+    authSource.loadServerAuthContextInput.mockResolvedValue({});
+    authSource.loadGuideRelationship.mockResolvedValue({});
+    executor.execute.mockResolvedValue({});
+    resolveRequestMock.mockImplementation(async (dependencies) => {
+      await dependencies.principalSource.resolveAuthenticatedUser();
+      await dependencies.authSource.loadServerAuthContextInput({
+        authenticatedUser: {
+          providerName: "supabase",
+          providerUserId: "synthetic-user",
+        },
+      });
+      await dependencies.authSource.loadGuideRelationship({
+        relationshipId: RELATIONSHIP_ID,
+      });
+      await dependencies.executor.execute({
+        functionName: "solmind_create_suggested_waypoint_draft",
+        args: {},
+      });
+      return {
+        ok: false,
+        data: null,
+        error: "solmind_suggested_waypoint_request_denied",
+      };
+    });
+
+    const { body, rawText } = await invoke();
+
+    expect(body).toEqual({
+      ok: false,
+      outcome: null,
+      suggestedWaypointId: null,
+      error: "command_denied",
+    });
+    expect(diagnosticSetResolutionStageMock.mock.calls).toEqual([
+      ["principal_denied"],
+      ["auth_context_denied"],
+      ["auth_context_denied"],
+      ["guide_role_denied"],
+      ["relationship_denied"],
+      ["rpc_denied"],
+    ]);
+    expect(diagnosticReportResolutionDeniedMock).toHaveBeenCalledOnce();
+    expect(rawText).not.toContain("rpc_denied");
+    expect(rawText).not.toContain("synthetic-user");
+  });
 
   it.each([
     request({ origin: "http://attacker.example" }),

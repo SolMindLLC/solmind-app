@@ -9,10 +9,13 @@
 import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 
+import { decideGuideRelationshipAccess } from "@/lib/solmind/auth/accessBoundary";
 import {
   noopCookieSetAll,
   type RequestCookieAccessor,
 } from "@/lib/solmind/auth/requestCookieAccessor";
+import { deriveTrustedServerAuthContext } from "@/lib/solmind/auth/serverAuthContext";
+import { SOLMIND_ROLES } from "@/lib/solmind/roles";
 import {
   SUGGESTED_WAYPOINT_GUIDE_LIST_DENIED,
   SUGGESTED_WAYPOINT_GUIDE_LIST_FAILED,
@@ -31,6 +34,7 @@ import {
   resolveSuggestedWaypointRequest,
   type SuggestedWaypointRequestResult,
 } from "@/lib/solmind/supabase/suggestedWaypointRequestComposition";
+import { createSuggestedWaypointWholePathGuideRelationshipEntryDiagnostic } from "@/lib/solmind/supabase/suggestedWaypointWholePathGuideRelationshipEntryDiagnostic";
 
 export const dynamic = "force-dynamic";
 
@@ -111,17 +115,22 @@ export async function GET(
   request: NextRequest,
   context: RouteContext,
 ): Promise<Response> {
+  const wholePathDiagnostic =
+    createSuggestedWaypointWholePathGuideRelationshipEntryDiagnostic(request);
   const pagination = parsePagination(request);
   let relationshipId: string;
   try {
     relationshipId = (await context.params).relationshipId;
   } catch {
+    wholePathDiagnostic?.report("relationship_path_denied");
     return json(denied());
   }
-  if (
-    pagination === null ||
-    !isSuggestedWaypointRelationshipId(relationshipId)
-  ) {
+  if (pagination === null) {
+    wholePathDiagnostic?.report("query_denied");
+    return json(denied());
+  }
+  if (!isSuggestedWaypointRelationshipId(relationshipId)) {
+    wholePathDiagnostic?.report("relationship_path_denied");
     return json(denied());
   }
 
@@ -134,15 +143,129 @@ export async function GET(
           .map((cookie) => ({ name: cookie.name, value: cookie.value })),
       setAll: noopCookieSetAll,
     };
-    const dependencies = createSuggestedWaypointRequestDependencies({
+    const baseDependencies = createSuggestedWaypointRequestDependencies({
       cookies: requestCookies,
     });
+    let diagnosticAuthInput: Awaited<
+      ReturnType<typeof baseDependencies.authSource.loadServerAuthContextInput>
+    > | null = null;
+    let diagnosticDerived: ReturnType<
+      typeof deriveTrustedServerAuthContext
+    > | null = null;
+    const dependencies =
+      wholePathDiagnostic === null
+        ? baseDependencies
+        : {
+            ...baseDependencies,
+            principalSource: {
+              async resolveAuthenticatedUser() {
+                wholePathDiagnostic.setResolutionStage("principal_denied");
+                const principal =
+                  await baseDependencies.principalSource.resolveAuthenticatedUser();
+                if (principal !== null) {
+                  wholePathDiagnostic.setResolutionStage(
+                    "auth_context_denied",
+                  );
+                }
+                return principal;
+              },
+            },
+            authSource: {
+              async loadServerAuthContextInput(
+                loadRequest: Parameters<
+                  typeof baseDependencies.authSource.loadServerAuthContextInput
+                >[0],
+              ) {
+                wholePathDiagnostic.setResolutionStage("auth_context_denied");
+                const authInput =
+                  await baseDependencies.authSource.loadServerAuthContextInput(
+                    loadRequest,
+                  );
+                diagnosticAuthInput = authInput;
+                try {
+                  diagnosticDerived =
+                    deriveTrustedServerAuthContext(authInput);
+                  if (!diagnosticDerived.allowed) {
+                    wholePathDiagnostic.setResolutionStage(
+                      "auth_context_denied",
+                    );
+                  } else if (
+                    diagnosticDerived.context.activeRole !==
+                      SOLMIND_ROLES.GUIDE ||
+                    diagnosticDerived.context.identity.guideProfileId === null
+                  ) {
+                    wholePathDiagnostic.setResolutionStage(
+                      "guide_role_denied",
+                    );
+                  } else {
+                    wholePathDiagnostic.setResolutionStage(
+                      "relationship_load_denied",
+                    );
+                  }
+                } catch {
+                  wholePathDiagnostic.setResolutionStage(
+                    "auth_context_denied",
+                  );
+                }
+                return authInput;
+              },
+              async loadGuideRelationship(
+                loadRequest: Parameters<
+                  typeof baseDependencies.authSource.loadGuideRelationship
+                >[0],
+              ) {
+                wholePathDiagnostic.setResolutionStage(
+                  "relationship_load_denied",
+                );
+                const relationship =
+                  await baseDependencies.authSource.loadGuideRelationship(
+                    loadRequest,
+                  );
+                if (
+                  relationship !== null &&
+                  diagnosticAuthInput !== null &&
+                  diagnosticDerived?.allowed
+                ) {
+                  try {
+                    const { context: derivedContext } = diagnosticDerived;
+                    const decision = decideGuideRelationshipAccess({
+                      identity: derivedContext.identity,
+                      selectors: {
+                        requestedRole: derivedContext.activeRole,
+                        requestedUserAccountId:
+                          derivedContext.identity.userAccountId,
+                      },
+                      requestedRelationshipId: relationshipId,
+                      userAccount: diagnosticAuthInput.userAccount,
+                      roleAssignment:
+                        diagnosticAuthInput.activeRoleAssignment,
+                      session: diagnosticAuthInput.session,
+                      relationship,
+                    });
+                    wholePathDiagnostic.setResolutionStage(
+                      decision.allowed
+                        ? "rpc_denied"
+                        : "relationship_access_denied",
+                    );
+                  } catch {
+                    wholePathDiagnostic.setResolutionStage(
+                      "relationship_access_denied",
+                    );
+                  }
+                }
+                return relationship;
+              },
+            },
+          };
     const result = await resolveSuggestedWaypointRequest(dependencies, {
       kind: "guide.list",
       relationshipId,
       pageSize: pagination.pageSize,
       cursor: pagination.cursor,
     });
+    if (!result.ok && result.error === SUGGESTED_WAYPOINT_REQUEST_DENIED) {
+      wholePathDiagnostic?.reportResolutionDenied();
+    }
     return json(projectSuccess(result));
   } catch {
     return json(failed());

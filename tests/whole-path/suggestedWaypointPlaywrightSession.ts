@@ -31,7 +31,7 @@ type PlaywrightCookie = Parameters<BrowserContext["addCookies"]>[0][number];
 
 export type SuggestedWaypointPlaywrightContext = Pick<
   BrowserContext,
-  "addCookies" | "close"
+  "addCookies" | "close" | "newPage"
 >;
 
 export type SuggestedWaypointPlaywrightBrowser = Readonly<{
@@ -47,6 +47,17 @@ export type SuggestedWaypointPlaywrightBundle = Readonly<{
   actors: readonly SuggestedWaypointPlaywrightActor[];
   close(): Promise<void>;
 }>;
+
+export function suggestedWaypointPlaywrightContextOptions(
+  config: SuggestedWaypointWholePathSafetyConfig,
+): Readonly<{ baseURL: string }> {
+  try {
+    trustedApplicationDomain(config.trustedApplicationOrigin);
+  } catch {
+    throw new Error("whole_path_playwright_origin_refused");
+  }
+  return Object.freeze({ baseURL: config.trustedApplicationOrigin });
+}
 
 function sameSite(value: unknown): PlaywrightCookie["sameSite"] {
   switch (value) {
