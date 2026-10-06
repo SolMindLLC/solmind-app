@@ -855,9 +855,11 @@ the installed `@supabase/ssr` 0.12.0 names chunks, and its PKCE code verifier
 is `N-code-verifier`, the key `@supabase/auth-js` 2.108.2 uses once
 `cookieOptions.name` sets the storage key to N. The module also holds the
 three no-store headers and the one shared Section 14 format check: every
-chunk of the auth cookie may hold only A-Z, a-z, 0-9, `-` and `_`, and the
-value the library would join must start with `base64-`, or the auth cookie
-counts as absent.
+chunk of the auth cookie may hold only A-Z, a-z, 0-9, `-` and `_`, the
+value the library would join must start with `base64-`, and the part after
+`base64-`, decoded as base64url exactly as the library decodes it, must be
+strictly valid UTF-8 (Paul's 2026-10-05 correction of Section 14), or the
+auth cookie counts as absent.
 
 `loginCookieWriter.ts` is server-only and sits beside `requestAuthClient.ts`,
 where contract 25 Section 6 places it. It imports neither `@supabase/ssr` nor
@@ -886,14 +888,20 @@ Both modules are dormant: no route, page, middleware or caller uses them,
 they write nothing at runtime, and they stay off every barrel, which the
 boundary tests check with TypeScript's parser. The per-request check (S6-4)
 and logout (S6-12) are their readers to come, and the first slice that
-imports either module must amend that dormancy test. One limit remains:
-a value that passes the format check can still decode to a code point above
-U+10FFFF, and the installed library's decoder then throws an error that names
-that code point, which the library passes to its warning. Paul's 2026-10-05
-correction of contract 25 Section 14, recorded with sub-slice S6-3, adds a
-strict UTF-8 check after base64url decoding, which this check does not yet
-apply. No reader may rely on the check alone to keep cookie-derived values
-out of logs until a later slice adds that step.
+imports either module must amend that dormancy test. The strict UTF-8 step
+closes the limit that review #149a confirmed: a value that passed the
+character and `base64-` checks could still decode to a code point above
+U+10FFFF, and the installed library's decoder then threw an error naming
+a number derived from the value, which the library passes to its
+warning. The library's decoder throws on no well-formed UTF-8, so for an
+auth cookie value the check returns, no decoder exception reaches that
+warning; the module's tests show this against the library's own decoder.
+That is all the step claims. It does not make the decoded value valid JSON
+(the library's separate warning for invalid JSON carries no part of the
+value) or the session authentic, and it says nothing about any other cookie
+a reader hands to the library. What remains is the wiring: the per-request
+check (S6-4) and logout (S6-12) put the check in front of `@supabase/ssr`
+before it reads any auth cookie, and until then nothing calls it.
 
 Login step 6's sub-slice S6-7 adds the dormant Supabase identity bridge of
 contract 25 Section 6 (hold, then write) and

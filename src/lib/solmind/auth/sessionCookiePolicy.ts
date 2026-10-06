@@ -15,11 +15,14 @@
 //     N and its chunks `N.0`, `N.1`, ...; for removals only,
 //     `N-code-verifier` and its chunks), the removal attributes, and the
 //     no-store headers on every response that sets or clears these cookies.
-//   - Section 14: the one shared format check that every client reading the
-//     auth cookie applies before handing it to the Supabase SSR library.
+//   - Section 14, as Paul corrected it on 2026-10-05: the one shared format
+//     check that every client reading the auth cookie applies before handing
+//     it to the Supabase SSR library.
 //
 // Pure and dependency-free: no import, no IO, no environment read and no
-// logging. The trusted origin is passed in by a server composition root,
+// logging. Besides ECMAScript built-ins and the WHATWG `URL`, it
+// uses one standard global, `TextDecoder`, only as a fatal UTF-8 check.
+// The trusted origin is passed in by a server composition root,
 // which loads it with the banked `loadTrustedApplicationOrigin()`. This
 // module adds no setting and reads none.
 //
@@ -36,14 +39,27 @@
 // client, imports this module. Its readers to come are the per-request check
 // (S6-4) and logout (S6-12). Keep it direct-import only and off every barrel.
 //
-// Known limit, open for Paul: `readSessionAuthCookies` applies exactly the
-// format check that contract 25 Section 14 accepted. That check does not
-// stop every value-bearing warning in the installed library: a value that
-// passes it can still decode to a code point above U+10FFFF, and the
-// library's decoder then throws a RangeError that names that code point,
-// which the library passes to its warning. Until Paul settles a correction to
-// Section 14, no reader may rely on this check alone to keep cookie-derived
-// values out of logs.
+// The library's decoder and the strict UTF-8 step. The installed library
+// decodes a `base64-` value with its own base64url decoder
+// (`stringFromBase64URL` in `dist/main/utils/base64url.js`) and passes any
+// error that decoder throws to its warning. The decoder throws in three ways:
+// for a character outside its alphabet, with a message that names the
+// character and its position; with the fixed message "Invalid UTF-8
+// sequence", for a byte 0x80 to 0xBF or 0xF8 to 0xFF where a sequence starts,
+// or a byte below 0x80 inside one; and, from `String.fromCodePoint`, with a
+// RangeError that names the number, when a four-byte sequence adds up to more
+// than U+10FFFF. The character check keeps out the first. The strict UTF-8
+// step keeps out the other two: it decodes the part after `base64-` into
+// bytes exactly as the library's decoder does (6 bits a character, one byte
+// for every 8 bits, and the 2, 4 or 6 bits left over at the end dropped) and
+// refuses the value unless a fatal UTF-8 decoder accepts those bytes. The
+// library's decoder throws on no well-formed UTF-8, so no decoder exception
+// reaches its warning for a value this check returns. That is all the step
+// claims. It does not show that the decoded value is JSON, which the library
+// checks next with a separate warning that carries no part of the value, or
+// that the session is authentic. As Section 14 requires, it also refuses some
+// values the library would decode without an error: overlong forms,
+// surrogate code points and a truncated last sequence.
 
 // A cookie as a request carries it (the shape the request-cookie accessor
 // and the Supabase SSR library's `getAll` use).
@@ -349,12 +365,71 @@ function joinAuthCookie(
   return values.length > 0 ? values.join("") : null;
 }
 
-// Contract 25 Section 14, the one shared format check. Every chunk of the
-// auth cookie in the request (N and every `N.i`, whether or not the library
-// would read it) must hold only A-Z, a-z, 0-9, `-` and `_`, and the value the
-// library would join must start with `base64-`. Otherwise the auth cookie is
-// treated as absent (deny): the status is `malformed` and no cookie is
-// returned. `absent` means the library would find no value. Nothing here
+// The 6-bit value of a base64url character, as the library's decoder maps
+// it (A-Z, a-z, 0-9, `-`, `_` give 0 to 63), or -1 for any other character.
+function base64UrlSextet(code: number): number {
+  if (code >= 0x41 && code <= 0x5a) {
+    return code - 0x41;
+  }
+  if (code >= 0x61 && code <= 0x7a) {
+    return code - 0x61 + 26;
+  }
+  if (code >= 0x30 && code <= 0x39) {
+    return code - 0x30 + 52;
+  }
+  if (code === 0x2d) {
+    return 62;
+  }
+  if (code === 0x5f) {
+    return 63;
+  }
+  return -1;
+}
+
+// The strict UTF-8 step of Section 14: true only when the part after
+// `base64-`, decoded into bytes exactly as the library's decoder does, is
+// well-formed UTF-8. The bytes come out of the same bit queue as the
+// library's: each character adds 6 bits, a byte is taken whenever 8 bits are
+// queued, and the bits left over at the end are dropped. A fatal UTF-8
+// decoder then judges them; it refuses overlong forms, surrogate code points,
+// code points above U+10FFFF, a truncated sequence and a stray continuation
+// byte. Its error, which carries no value, is dropped here, and so is the
+// decoded text. Any character outside the alphabet (already refused by the
+// character check) or a missing `TextDecoder` also gives false.
+function decodesToStrictUtf8(payload: string): boolean {
+  const bytes = new Uint8Array(Math.floor((payload.length * 6) / 8));
+  let queue = 0;
+  let queuedBits = 0;
+  let byteCount = 0;
+  for (let index = 0; index < payload.length; index += 1) {
+    const sextet = base64UrlSextet(payload.charCodeAt(index));
+    if (sextet < 0) {
+      return false;
+    }
+    queue = ((queue << 6) | sextet) & 0x3fff;
+    queuedBits += 6;
+    if (queuedBits >= 8) {
+      queuedBits -= 8;
+      bytes[byteCount] = (queue >> queuedBits) & 0xff;
+      byteCount += 1;
+    }
+  }
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Contract 25 Section 14, the one shared format check, as Paul corrected it
+// on 2026-10-05. Every chunk of the auth cookie in the request (N and every
+// `N.i`, whether or not the library would read it) must hold only A-Z, a-z,
+// 0-9, `-` and `_`; the value the library would join must start with
+// `base64-`; and the part after `base64-`, decoded as base64url exactly as
+// the library decodes it, must be strictly valid UTF-8. Otherwise the auth
+// cookie is treated as absent (deny): the status is `malformed` and no cookie
+// is returned. `absent` means the library would find no value. Nothing here
 // keeps, logs or returns any part of a refused value.
 export function readSessionAuthCookies(
   policy: SessionCookiePolicy,
@@ -376,6 +451,9 @@ export function readSessionAuthCookies(
     return AUTH_COOKIE_ABSENT;
   }
   if (!joined.startsWith(SESSION_AUTH_COOKIE_VALUE_PREFIX)) {
+    return AUTH_COOKIE_MALFORMED;
+  }
+  if (!decodesToStrictUtf8(joined.slice(SESSION_AUTH_COOKIE_VALUE_PREFIX.length))) {
     return AUTH_COOKIE_MALFORMED;
   }
   return authCookieRead("present", family);
