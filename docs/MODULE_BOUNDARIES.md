@@ -886,12 +886,14 @@ Both modules are dormant: no route, page, middleware or caller uses them,
 they write nothing at runtime, and they stay off every barrel, which the
 boundary tests check with TypeScript's parser. The per-request check (S6-4)
 and logout (S6-12) are their readers to come, and the first slice that
-imports either module must amend that dormancy test. One limit is open for
-Paul: a value that passes the format check can still decode to a code point
-above U+10FFFF, and the installed library's decoder then throws an error
-that names that code point, which the library passes to its warning. No
-reader may rely on the check alone to keep cookie-derived values out of logs
-until Paul settles a correction to contract 25 Section 14.
+imports either module must amend that dormancy test. One limit remains:
+a value that passes the format check can still decode to a code point above
+U+10FFFF, and the installed library's decoder then throws an error that names
+that code point, which the library passes to its warning. Paul's 2026-10-05
+correction of contract 25 Section 14, recorded with sub-slice S6-3, adds a
+strict UTF-8 check after base64url decoding, which this check does not yet
+apply. No reader may rely on the check alone to keep cookie-derived values
+out of logs until a later slice adds that step.
 
 Login step 6's sub-slice S6-7 adds the dormant Supabase identity bridge of
 contract 25 Section 6 (hold, then write) and
@@ -1628,6 +1630,8 @@ import one amends them. Which provider expiry feeds the rule belongs to the
 identity bridge slice (S6-7).
 
 The dormant login step 6a logout writer keeps ending a session inside one database operation. `public.solmind_logout_user_session` takes only the server-derived account and the presented session UUID, takes the same shared account-domain advisory lock as session creation (and no evidence lock), then the presented row's lock, and only then reads its one database clock, so a session that expires during either wait is not ended. It changes that session to `logged_out` with `ended_at` only when it is the account's active, unexpired session, embedding the one Family B logout audit row in the same transaction. It reports `ended` or `already_ended`; an unknown or another account's session fails closed with one fixed identifier, and every other error raised in its body, an assertion failure included, leaves as one fixed `solmind_logout_*` identifier with no underlying message, detail, or hint. EXECUTE is granted to `service_role` only: `anon` and `authenticated` execution is denied, and service-role RPC execution through the Data API stays available, as for session creation. It never ends any other session, reads no evidence, and does not require the account or role to be active, because ending a session only removes access. It has no caller, route, cookie, Supabase sign-out, provider action, cloud path, or real-user flow; login step 6's logout route depends on it and remains separately gated.
+
+Login step 6's sub-slice S6-3 changes the banked active-session lookup `public.solmind_find_active_user_sessions(uuid)` (AUTH-RLS-DEC-026; function 3 of `../solmind-docs/execution/19_SolMind_MVP0_Auth_RLS_RPC_Function_Contract_v0_1.md`) so that each returned row also carries its `user_session_id`, the UUID that the per-request session-binding check of `../solmind-docs/execution/25_SolMind_MVP0_Auth_RLS_Login_Session_Cookie_Security_Contract_v0_1.md` (contract 25) Section 8, as Paul corrected it on 2026-10-05, compares with the binding cookie (sub-slice S6-4). `supabase/migrations/20261005000000_active_user_session_lookup_session_id.sql` drops and recreates the function in one transaction, because PostgreSQL cannot replace a function whose return columns change, and keeps everything else: the one `uuid` argument, `LANGUAGE sql`, `STABLE`, `SECURITY DEFINER` owned by `postgres`, an empty search path, one schema-qualified SELECT of `identity.user_session` with only the account and `session_status = 'active'` predicates and no expiry pre-filter, `LIMIT`, `ORDER BY`, or exception handler, and the same grants (all privileges revoked from PUBLIC, EXECUTE revoked from `anon` and `authenticated` and granted to `service_role`). It raises nothing of its own: an absent or null account returns no rows. Unlike the dormant step 6 modules, it has runtime callers: the `/admin/access` composition (`adminAuthSource.ts`) and the Suggested Waypoint request dependencies (`suggestedWaypointRequestDependencies.ts`) reach it through `serviceRoleRpcExecutor.ts`, and `supabaseAuthQueryClient.ts` reads only the four columns it names from each row, so the added column changes nothing there until S6-4 carries the UUID and `expires_at` to the allow result. The UUID grants nothing on its own and stays out of logs, errors and evidence (contract 25 Sections 8 and 14). Two pgTAP suites, `supabase/tests/active_user_session_lookup_*_test.sql`, prove its shape, hygiene, grants and real path; the real-path suite compares session UUIDs only inside SQL, so a failing assertion prints none. The banked `admin_access_rpc_*` suites are unchanged.
 
 Banked `PRJ01_F-WS06-WI008-S02D` - Guide-to-Explorer invitation issuance,
 same-Guide replacement, and revocation - keeps invitation lifecycle mutation inside
