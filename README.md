@@ -426,8 +426,19 @@ npm.cmd run dev
 Then open:
 
 ```text
-http://localhost:3000
+http://127.0.0.1:3000
 ```
+
+Both `npm.cmd run dev` and `npm.cmd run start` (which serves the build made by
+`npm.cmd run build`) pass `-H 127.0.0.1`, so the server listens only on this
+computer's loopback address, `127.0.0.1`, instead of the Next.js default
+`0.0.0.0`. The reason is check 1 in Section 17 of
+`../solmind-docs/execution/25_SolMind_MVP0_Auth_RLS_Login_Session_Cookie_Security_Contract_v0_1.md`:
+other devices on the network must not be able to reach the app. Starting
+Next.js any other way, such as `npx.cmd next dev` without `-H`, does not add
+the flag. Open `http://127.0.0.1:3000`, not `http://localhost:3000`: they are
+different origins, and the local Supabase `site_url` in `supabase/config.toml`
+is `http://127.0.0.1:3000`.
 
 ## Verification Commands
 
