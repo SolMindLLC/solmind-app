@@ -1351,11 +1351,12 @@ reference (static and side-effect imports, re-exports, `import x =
 require()`, dynamic `import()` in any spacing or comment form, `require()`
 calls and other value uses of `require`, `typeof import()`, and any use of
 `import.meta`, through which Vite's `import.meta.glob` could load modules
-without naming them). They parse every non-test file, the seven guarded
-modules included, and refuse any computed reference and any `import.meta`
-use in it; only then do they exempt the guarded modules' literal references
-to each other, and prove that no other application file reaches these
-modules or login step 4's through any of those forms.
+without naming them). They parse every non-test file, the ten guarded
+modules included (login step 4's three, these four, and, since login step
+6's sub-slice S6-1, its three), and refuse any computed reference and any
+`import.meta` use in it; only then do they exempt the guarded modules'
+literal references to each other, and prove that no other application file
+reaches these modules, login step 4's or S6-1's through any of those forms.
 Reflective loading (`createRequire`, `module.require` or the `Function`
 constructor) is beyond what a source parser can see.
 
@@ -1368,6 +1369,101 @@ canonical); and the route-owned purpose and eligibility (the route must fix
 the purpose and prove invitation, first-Admin or account eligibility before
 it calls). The timing of the outward response and the login routes belong to
 login step 6.
+
+Login step 6's sub-slice S6-1 adds the first two of those duties, dormant,
+with the login route configuration that hands the step 5 root its settings:
+
+```text
+src/lib/solmind/auth/verificationPepperSource.ts
+src/lib/solmind/auth/loginRouteConfiguration.ts
+src/lib/solmind/auth/loginContactNormalizer.ts
+src/lib/solmind/auth/__tests__/verificationPepperSource.test.ts
+src/lib/solmind/auth/__tests__/loginRouteConfiguration.test.ts
+src/lib/solmind/auth/__tests__/loginContactNormalizer.test.ts
+```
+
+Paul's 2026-10-05 evening decision 1 placed the settings that banked
+decisions already require (the AUTH-RLS-DEC-032 pepper, the step 5 root's
+delivery settings and the trusted origin) within login step 6, with no
+change to `supabase/config.toml` or to any hosted configuration. The
+contract 25 wording that records that meaning, and its register record,
+belong to sub-slice S6-3.
+
+`verificationPepperSource.ts` is server-only, refuses to load where a
+browser window exists, and besides the server-only marker imports only
+`node:buffer` and the code module.
+It takes the pepper from one server-only environment variable,
+`SOLMIND_VERIFICATION_PEPPER`, listed with an empty value in `.env.example`,
+as base64url text with no padding, 32 to 64 bytes (43 to 86 characters).
+More than 64 bytes would add
+nothing, because HMAC-SHA-256 hashes a longer key down to 32 bytes first.
+The text is accepted only in its one canonical form: exactly that character
+set and length, with no padding, whitespace or line terminator, and decoding
+it and encoding the bytes again must give the same text, so the platform's
+lenient decoder cannot widen what is accepted. If
+`NEXT_PUBLIC_SOLMIND_VERIFICATION_PEPPER` is also present, the pepper is
+refused: a tripwire for that one name, not a guarantee that the value is
+exposed nowhere else. Any failure throws one fixed, value-free
+`VerificationPepperSourceError` (`verification_pepper_unavailable`); whatever
+was thrown inside is dropped unread. A success returns the code module's
+opaque handle, which serializes to `{}`, and the module then overwrites its
+decoded copy of the bytes with zeros; the text stays in the environment, and
+JavaScript strings cannot be wiped. Each call reads the environment again and
+makes a new handle.
+
+`loginRouteConfiguration.ts` is server-only and imports the pepper source
+and, type-only, the step 5 root's configuration type, so loading it does not
+load the root. `loadLoginVerificationConfiguration` returns exactly the
+root's configuration as one frozen plain object: the pepper, and delivery
+settings fixed in the code rather than read from the environment. The host
+is `127.0.0.1`, which login step 4's transport accepts; the port is 54325,
+the local mail catcher's SMTP port that `supabase/config.toml` publishes
+(`[inbucket] smtp_port`), which a test checks; the delivery ceiling is
+5,000 ms; and the caller response deadline is 6,000 ms, longer than the
+issuance function's two advisory lock waits of up to 2,000 ms each
+(`lock_timeout`), which a test reads from the current migration. The
+6,000 ms caller response deadline leaves 2,000 ms beyond the two documented
+advisory-lock waits. Other waiting, execution, transport and scheduling
+delays can still cause a committed issuance to be reported as failed. A test
+hands the loaded configuration to the real
+root with fake dependencies and checks that both callers are keyed by the
+loaded pepper. `checkLoginVerificationConfigurationAtStartup` is
+AUTH-RLS-DEC-032's startup check: it loads the configuration once and returns
+nothing, or throws the pepper source's fixed error. Calling it when the
+server starts (Next.js 16's `instrumentation.ts` `register`, in the Node.js
+runtime only, because the pepper path uses `node:crypto`) is the first
+activating slice's duty (S6-8), so until then the requirement is met only in
+that a route composition that loads this configuration fails closed. These
+settings point at the local mail catcher only: the route composition must
+not compose the local transport unless the trusted origin is a loopback
+origin, and a hosted environment needs a provider adapter that does not
+exist yet.
+
+`loginContactNormalizer.ts` is pure (no import, IO, environment read, clock
+or logging) and is AUTH-RLS-DEC-033's one shared normalizer for login
+emails. It refuses anything that is not a string or is longer than 512
+characters before any other work, removes leading and trailing ASCII
+whitespace (tab, line feed, form feed, carriage return and space), refuses
+the rest unless every character is printable ASCII (nothing outside ASCII is
+mapped or folded, so a look-alike such as the Kelvin sign is refused rather
+than turned into `k`), lowercases A-Z only, and accepts the result only if it
+passes the current issuance function's email check exactly: 3 to 254
+characters, that function's pattern, and no `..`. Tests compare its pattern
+with the migration's text and its behavior with the delivery boundary's
+canonical check for every printable character. A refusal is `null`; a
+success returns the canonical email, which is a contact value that callers
+keep out of audit rows, errors, traces, alarms and logs. It decides no
+eligibility. Phone sign-in is outside login step 6, so phone normalization
+joins this module when phone sign-in is designed; the Admin username's
+lookup belongs to the login lookups (S6-5 and S6-9).
+
+All three are dormant: no application runtime caller is introduced, and they
+stay off every barrel. They join the login step 5 boundary test's guarded
+set (VCB-004), and their own boundary tests check, with TypeScript's parser,
+their exact imports, that `process.env` appears only as the default value of
+an `environment` parameter, and that no other application file references or
+names them. The route slice that first imports any of them (S6-8) amends
+both tests.
 
 The banked dormant DEF5-S4 slice keeps session mutation separate from redemption and provisioning. `public.solmind_create_user_session` consumes committed account-bound `login` or `role_reentry` evidence, owns account-wide supersede-then-create serialization, and embeds its exact Family B audit rows. Its freshness policy and both uniqueness indexes are hidden database backstops, not client authorization. Corrective migration `20260716001000_user_session_creation_chronology_guard.sql`, banked in `d2fbb0e`, preserves the writeless exact-retry branch and requires never-sessionized evidence to be strictly newer by `(used_at, challenge UUID)` than every prior session-linked evidence tuple for the account; chronology denial is fixed and zero-write. The three DEF5-S4 plans contain 49/51/50 assertions, and clean reset passed 14 files / 502 assertions. The banked slice creates no caller, route, cookie, provider action, account/profile/role provisioning, invitation or Guide assignment dependency, cloud path, or real-user flow. Its only application caller is login step 6's dormant session-creation caller (sub-slice S6-6), described next, which nothing calls.
 

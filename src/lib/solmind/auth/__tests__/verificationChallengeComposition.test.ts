@@ -766,11 +766,20 @@ describe("verificationChallenge - server-only, dormant and off every barrel", ()
     "verificationChallengeCallers",
     "verificationChallengeComposition",
   ] as const;
+  // Login step 6's sub-slice S6-1 adds its three dormant modules: the pepper
+  // source imports the code module, and the route configuration imports the
+  // pepper source and the root's configuration type, so they join the guarded
+  // set, and with them the normalizer. Their own boundary tests are in
+  // `loginRouteConfiguration.test.ts`; the route slice that first imports
+  // any of them (S6-8) amends this list.
   const guardedNames = [
     ...moduleNames,
     "verificationCodeDelivery",
     "localSmtpVerificationCodeDelivery",
     "verificationCodeEmailWording",
+    "verificationPepperSource",
+    "loginRouteConfiguration",
+    "loginContactNormalizer",
   ] as const;
   // The only test files that may import the restricted core.
   const CORE_TEST_IMPORTERS = [
@@ -866,7 +875,7 @@ describe("verificationChallenge - server-only, dormant and off every barrel", ()
   }
 
   // Every non-test file is parsed first: a computed reference or an
-  // `import.meta` use is an offender in any of them, the seven guarded modules
+  // `import.meta` use is an offender in any of them, the ten guarded modules
   // included. Only after that are the guarded modules exempted, and only for
   // their permitted literal references to, and mentions of, each other.
   function dormancyOffenders(file: string, text: string, root: string): string[] {
@@ -1020,12 +1029,12 @@ describe("verificationChallenge - server-only, dormant and off every barrel", ()
     }
   });
 
-  it("VCB-004 is dormant: every non-test file, the guarded modules included, has no computed reference or import.meta, and no other application file reaches these modules or login step 4's", () => {
+  it("VCB-004 is dormant: every non-test file, the guarded modules included, has no computed reference or import.meta, and no other application file reaches these modules, login step 4's or login step 6 sub-slice S6-1's", () => {
     const root = sourceRoot();
     const offenders: string[] = [];
     for (const file of sourceFiles(root)) {
       // Only test files are skipped, and a test file is known by its name, as
-      // in the provider-probe boundary test. The seven guarded modules and the
+      // in the provider-probe boundary test. The ten guarded modules and the
       // test-support modules in `__tests__` folders are parsed too.
       if (/\.test\.[cm]?[jt]sx?$/.test(file)) {
         continue;
