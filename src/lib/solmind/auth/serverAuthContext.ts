@@ -16,12 +16,22 @@
 //     user_role_assignment, guide_profile, explorer_profile) are the source of
 //     truth for WHAT the user may do. The caller fetches them server-side and
 //     passes plain projections in; any record not found is passed as null.
-//   - This function accepts NO browser-supplied selectors at all. There is no
+//   - This function accepts NO browser-supplied selectors. There is no
 //     requested role, requested user id, requested profile id, or requested
 //     relationship id parameter. Browser selectors belong at the accessBoundary
 //     layer, where they are bound to the trusted identity this function derives.
 //     Keeping selectors out of derivation is deliberate: a client value can
-//     never influence the trusted context.
+//     never choose the trusted context.
+//   - One request-presented value does take part, as a credential to be
+//     checked and never as a selector: the session UUID the request presented
+//     in its session-binding cookie (login step 6, sub-slice S6-4; solmind-docs
+//     `execution/25_SolMind_MVP0_Auth_RLS_Login_Session_Cookie_Security_Contract_v0_1.md`
+//     Sections 8 and 19, AUTH-RLS-DEC-043 and AUTH-RLS-DEC-044). It is compared
+//     exactly with the UUID of the session the server selected for the
+//     account, after the provider identity, the account and that session have
+//     passed their checks. It can only turn an allow into a deny: it never
+//     selects a session, seeds an id or changes a role, and it grants nothing
+//     on its own.
 //   - Trusted DB record fields are compared exactly (no trimming or case
 //     folding). Normalization here is reserved for the selector layer, matching
 //     the existing helpers; trusted server values are taken as-is.
@@ -50,9 +60,16 @@ import { type AuthenticatedIdentity } from "./accessBoundary";
 // The server-verified Supabase Auth identity. providerName and providerUserId
 // identify the external auth principal; they are matched against the loaded
 // auth_provider_identity record below.
+//
+// presentedSessionId is what the SAME request presented in its session-binding
+// cookie: a SolMind session UUID, or null when the request presented none. It
+// is neither identity nor authority. Derivation compares it with the selected
+// session's UUID and denies unless the two are equal. It is a session UUID, so
+// it stays out of logs, errors and outward results (contract 25 Section 14).
 export type SupabaseAuthenticatedUser = {
   providerName: string;
   providerUserId: string;
+  presentedSessionId: string | null;
 };
 
 // --- Server-loaded record projections (source of truth) ---
@@ -84,16 +101,28 @@ export type ExplorerProfileRecord = {
   status: string;
 };
 
+// identity.user_session, as the active-session lookup selected it: the banked
+// session projection plus the session's own UUID and its expiry (expires_at,
+// exactly as the lookup returned it). The UUID is what the binding comparison
+// uses, and both are carried to the allow result (contract 25 Sections 7, 8
+// and 19).
+export type SelectedSolMindSessionRecord = SolMindSessionRecord & {
+  userSessionId: string;
+  expiresAt: string;
+};
+
 // --- Derivation input ---
 //
-// Every field is server-established or server-loaded. There are intentionally
-// NO selector fields. guideProfile / explorerProfile are optional server-loaded
-// records; pass null when the account has no profile of that kind.
+// Every field is server-established or server-loaded, except
+// authenticatedUser.presentedSessionId, which the request presented and which
+// is only ever compared. There are intentionally NO selector fields.
+// guideProfile / explorerProfile are optional server-loaded records; pass null
+// when the account has no profile of that kind.
 export type DeriveTrustedServerAuthContextInput = {
   authenticatedUser: SupabaseAuthenticatedUser | null;
   authProviderIdentity: AuthProviderIdentityRecord | null;
   userAccount: SolMindUserAccountRecord | null;
-  session: SolMindSessionRecord | null;
+  session: SelectedSolMindSessionRecord | null;
   activeRoleAssignment: SolMindRoleAssignmentRecord | null;
   guideProfile: GuideProfileRecord | null;
   explorerProfile: ExplorerProfileRecord | null;
@@ -103,9 +132,20 @@ export type DeriveTrustedServerAuthContextInput = {
 //
 // activeRole is the immutable session active_role_context, validated to a
 // canonical SolMind role. identity is ready to pass straight to accessBoundary.
+// session is the selected session that the request proved it presents: its
+// UUID and its expiry, carried from the lookup for later server use (the
+// end-of-session warning of contract 25 Section 7 reads expiresAt). Nothing
+// renders or returns either value yet. The UUID must never be logged, put in
+// an error, or sent to a browser by anything but the login-step cookie writer.
+export type TrustedSessionBinding = {
+  userSessionId: string;
+  expiresAt: string;
+};
+
 export type TrustedServerAuthContext = {
   activeRole: SolMindRole;
   identity: AuthenticatedIdentity;
+  session: TrustedSessionBinding;
 };
 
 // --- Deny reason codes ---
@@ -121,6 +161,8 @@ export const SERVER_AUTH_CONTEXT_DENY_REASONS = {
   MISSING_SESSION: "missing_session",
   SESSION_USER_MISMATCH: "session_user_mismatch",
   SESSION_NOT_ACTIVE: "session_not_active",
+  MISSING_PRESENTED_SESSION: "missing_presented_session",
+  PRESENTED_SESSION_MISMATCH: "presented_session_mismatch",
   UNKNOWN_ACTIVE_ROLE: "unknown_active_role",
   MISSING_ROLE_ASSIGNMENT: "missing_role_assignment",
   ROLE_ASSIGNMENT_USER_MISMATCH: "role_assignment_user_mismatch",
@@ -241,6 +283,26 @@ export function deriveTrustedServerAuthContext(
     return deny(SERVER_AUTH_CONTEXT_DENY_REASONS.SESSION_NOT_ACTIVE);
   }
 
+  // 4a. The session binding (contract 25 Section 8). The request must have
+  //     presented the UUID of THIS selected session. A request that presented
+  //     none denies; so does one that presented any other value, which is what
+  //     a browser left with a superseded or replayed session presents. The
+  //     comparison is exact, with no trimming or case folding, and an empty
+  //     value never matches, so a session record without a UUID can never be
+  //     allowed. The UUID grants nothing on its own: this point is reached
+  //     only after the provider identity, the account and the selected
+  //     session have passed.
+  const presentedSessionId = authenticatedUser.presentedSessionId;
+  if (typeof presentedSessionId !== "string" || presentedSessionId.length === 0) {
+    return deny(SERVER_AUTH_CONTEXT_DENY_REASONS.MISSING_PRESENTED_SESSION);
+  }
+  if (
+    typeof session.userSessionId !== "string" ||
+    session.userSessionId !== presentedSessionId
+  ) {
+    return deny(SERVER_AUTH_CONTEXT_DENY_REASONS.PRESENTED_SESSION_MISMATCH);
+  }
+
   // 5. The session's immutable active_role_context must be a canonical role.
   if (!isSolMindRole(session.activeRoleContext)) {
     return deny(SERVER_AUTH_CONTEXT_DENY_REASONS.UNKNOWN_ACTIVE_ROLE);
@@ -285,7 +347,8 @@ export function deriveTrustedServerAuthContext(
   }
 
   // All checks passed. Build the trusted context. identity is exactly the
-  // AuthenticatedIdentity shape accessBoundary expects.
+  // AuthenticatedIdentity shape accessBoundary expects. session carries the
+  // selected session's UUID and expiry from the lookup, unchanged.
   return {
     allowed: true,
     context: {
@@ -294,6 +357,10 @@ export function deriveTrustedServerAuthContext(
         userAccountId: userAccount.userAccountId,
         guideProfileId: guide.id,
         explorerProfileId: explorer.id,
+      },
+      session: {
+        userSessionId: session.userSessionId,
+        expiresAt: session.expiresAt,
       },
     },
   };

@@ -17,6 +17,10 @@ const GUIDE_PROFILE_ID = "guide-profile-1";
 const EXPLORER_PROFILE_ID = "explorer-profile-1";
 const RELATIONSHIP_ID = "rel-1";
 
+// Login step 6, sub-slice S6-4: session UUIDs as the lookup returns them.
+const SESSION_ID = "5e5510a0-0000-4000-8000-000000000a01";
+const OTHER_SESSION_ID = "5e5510a0-0000-4000-8000-000000000a02";
+
 function nowProvider(): Date {
   return NOW;
 }
@@ -155,6 +159,7 @@ describe("findAuthProviderIdentity", () => {
 describe("findActiveSessionByUserAccountId", () => {
   function sessionRow(overrides: Record<string, string> = {}) {
     return {
+      user_session_id: SESSION_ID,
       user_account_id: ACCOUNT_ID,
       active_role_context: "guide",
       session_status: "active",
@@ -172,17 +177,25 @@ describe("findActiveSessionByUserAccountId", () => {
       userAccountId: ACCOUNT_ID,
     });
 
-    // Projected shape excludes expires_at.
+    // PRQ-001 The projected shape keeps the selected session's own UUID and its
+    // expires_at, exactly as the lookup returned them (login step 6, S6-4).
     expect(result).toEqual({
+      user_session_id: SESSION_ID,
       user_account_id: ACCOUNT_ID,
       active_role_context: "guide",
       session_status: "active",
+      expires_at: FUTURE,
     });
-    expect(result).not.toHaveProperty("expires_at");
 
-    // The session query includes expires_at in the selected columns and is
-    // scoped by account + active status, with no limit semantics.
-    expect(calls[0].columns).toContain("expires_at");
+    // The session query includes user_session_id and expires_at in the selected
+    // columns and is scoped by account + active status, with no limit semantics.
+    expect(calls[0].columns).toEqual([
+      "user_session_id",
+      "user_account_id",
+      "active_role_context",
+      "session_status",
+      "expires_at",
+    ]);
     expect(calls[0].filters).toEqual([
       { column: "user_account_id", value: ACCOUNT_ID },
       { column: "session_status", value: "active" },
@@ -232,9 +245,14 @@ describe("findActiveSessionByUserAccountId", () => {
   });
 
   it("returns the single valid session when mixed with an expired one", async () => {
+    // PRQ-002 The UUID and expiry returned are the selected session's own, never
+    // those of another row the lookup returned beside it.
     const { queryClient } = makeClient({
       user_session: {
-        data: [sessionRow({ expires_at: PAST }), sessionRow()],
+        data: [
+          sessionRow({ user_session_id: OTHER_SESSION_ID, expires_at: PAST }),
+          sessionRow(),
+        ],
         error: null,
       },
     });
@@ -244,10 +262,44 @@ describe("findActiveSessionByUserAccountId", () => {
     });
 
     expect(result).toEqual({
+      user_session_id: SESSION_ID,
       user_account_id: ACCOUNT_ID,
       active_role_context: "guide",
       session_status: "active",
+      expires_at: FUTURE,
     });
+  });
+
+  it("PRQ-003 fails closed when a session row carries no usable user_session_id (the lookup's shape before S6-3, or a non-string value)", async () => {
+    const withoutId: Record<string, unknown> = { ...sessionRow() };
+    delete withoutId.user_session_id;
+    for (const row of [
+      withoutId,
+      { ...sessionRow(), user_session_id: null },
+      { ...sessionRow(), user_session_id: 7 },
+      { ...sessionRow(), expires_at: null },
+    ]) {
+      const { queryClient } = makeClient({
+        user_session: { data: [row], error: null },
+      });
+
+      await expect(
+        queryClient.findActiveSessionByUserAccountId({ userAccountId: ACCOUNT_ID }),
+      ).resolves.toBeNull();
+    }
+  });
+
+  it("PRQ-004 returns no session UUID on ambiguity: two valid active sessions select nothing", async () => {
+    const { queryClient } = makeClient({
+      user_session: {
+        data: [sessionRow(), sessionRow({ user_session_id: OTHER_SESSION_ID })],
+        error: null,
+      },
+    });
+
+    await expect(
+      queryClient.findActiveSessionByUserAccountId({ userAccountId: ACCOUNT_ID }),
+    ).resolves.toBeNull();
   });
 
   it("returns null on query error", async () => {

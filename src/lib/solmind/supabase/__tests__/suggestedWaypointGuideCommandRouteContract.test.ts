@@ -21,6 +21,11 @@ const GUIDE_PROFILE_ID = "77777777-7777-4777-8777-777777777777";
 const EXPLORER_PROFILE_ID = "88888888-8888-4888-8888-888888888888";
 const TIMESTAMP = "2026-08-20T20:00:00.000Z";
 
+// Login step 6, sub-slice S6-4: the UUID of the account's selected session, which the
+// request presents in its binding cookie, and its expiry.
+const SESSION_ID = "5e5510a0-0000-4000-8000-00000002001";
+const SESSION_EXPIRES_AT = "2999-12-31T23:59:59+00:00";
+
 const CREATE_BODY = Object.freeze({
   kind: "guide.create_draft",
   operationId: OPERATION_ID,
@@ -334,6 +339,7 @@ describe("Guide command route contract integration", () => {
     const principal: SupabaseAuthenticatedUser = {
       providerName: "supabase",
       providerUserId: "guide-provider-user",
+      presentedSessionId: SESSION_ID,
     };
     const fixture: InMemoryAuthSourceFixture = {
       accounts: [
@@ -352,9 +358,11 @@ describe("Guide command route contract integration", () => {
               accountStatus: "active",
             },
             session: {
+              userSessionId: SESSION_ID,
               userAccountId: GUIDE_ACCOUNT_ID,
               activeRoleContext: "guide",
               sessionStatus: "active",
+              expiresAt: SESSION_EXPIRES_AT,
             },
             activeRoleAssignment: {
               userAccountId: GUIDE_ACCOUNT_ID,

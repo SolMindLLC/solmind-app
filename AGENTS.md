@@ -286,15 +286,18 @@ version identifier in a URL, and never widen Explorer projections. Guide
 correction, withdrawal, worker, provider, deployment, and real-user edges
 remain separately gated.
 
-## Sign-in Screen Preview Boundary
+## Sign-in Preview and Connected Explorer Boundaries
 
-The `/login` route shows the sign-in screens Paul approved for UAT (A1, A2,
-A4, M1, M2 and M3 on 2026-09-29; A3 for Guides and A3A for the Admin on
-2026-09-30; all in the sign-in mockups) as a local, in-memory preview. Keep
-`src/app/login/page.tsx` thin, the one client
-boundary in `src/components/solmind/SignInPreview.tsx`, presentation in
-`SignInPreviewParts.tsx`, and copy and deterministic transitions in
-`src/lib/solmind/signInPreview.ts`.
+The approved sign-in mockups remain the presentation baseline: A1, A2, A4,
+M1, M2 and M3 (2026-09-29), and Guide A3/Admin A3A (2026-09-30).
+In the proposed connected Explorer layer, keep `src/app/login/page.tsx` and
+`src/app/login/explorer/page.tsx` thin. `src/components/solmind/LoginExperience.tsx`
+owns A1 and explicit Explorer browser wiring; the latter path starts fixed
+Explorer re-entry. Guide/Admin still use the local in-memory
+`src/components/solmind/SignInPreview.tsx`, with presentation in
+`SignInPreviewParts.tsx` and deterministic preview transitions in
+`src/lib/solmind/signInPreview.ts`. Default preview callers retain their behavior.
+This source description is conditional and unbanked, not a working-browser claim.
 
 Each screen follows its approved mockup's layout and wording. The preview is
 not connected. It must not use a route handler, server action, cookie,
@@ -319,9 +322,30 @@ state only in page
 memory, and nothing is remembered. The password field is uncontrolled, so
 what is typed in it never reaches the preview's state or markup, and it is
 never logged or put in the URL. `LoginOptionList.tsx` and `loginOptions.ts`
-are retained but no longer used by `/login`. Wiring the screens to real
-sign-in is login step 6,
-after steps 3 to 5 and the session security contract.
+are retained but no longer used by `/login`. These restrictions apply to the
+preview, not to the separately named connected Explorer owners below.
+
+The connected Explorer boundary uses `src/components/solmind/ExplorerSignIn.tsx`
+and its browser contract/transport/controller for exactly the send and verify
+POSTs. A current accepted result alone permits fixed `/explorer/home` navigation;
+client navigation or cookie presence never authorizes that page. The server page
+uses `src/lib/solmind/auth/explorerHomeAccess.ts` and the current binding-aware
+direct-token composition. It preserves duplicate raw cookie names and exact
+values before validation; `cookies().getAll()` cannot prove that preservation.
+Only expiry and server observation times reach `src/components/solmind/ExplorerHome.tsx`.
+No token, account/session ID, password, code or selector enters URLs, logs,
+browser storage or home props. GET never refreshes, clears cookies or signs out.
+
+`src/lib/solmind/logoutBrowserRequest.ts` owns the one guarded POST `/logout`;
+only confirmed `signed_out` shows S1. Unconfirmed/refused/missing answers show
+honest SM-OUT-01 uncertainty; never claim administrator notification. Guard denial
+or apparent expiry shows S2 with fixed `/login/explorer` re-entry. The five-minute
+warning is advisory; Stay signed in remains a separate later amendment. Paul
+approved the sign-in and session reminder text on 2026-10-17; the exact messages
+are recorded in `solmind-docs/execution/25_SolMind_MVP0_Auth_RLS_Login_Session_Cookie_Security_Contract_v0_1.md`,
+under Explorer screen copy approved - 2026-10-17.
+`/explorer` stays a prototype; this home grants no Virtual Guide feature authority.
+See `docs/MODULE_BOUNDARIES.md` for ownership and source/runtime evidence limits.
 
 ## Secrets Boundary
 

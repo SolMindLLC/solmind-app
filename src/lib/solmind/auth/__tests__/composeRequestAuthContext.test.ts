@@ -25,11 +25,20 @@ const ADMIN_USER_ID = "user-admin-1";
 const PROVIDER_NAME = "supabase";
 const ADMIN_PROVIDER_USER_ID = "auth-user-admin-1";
 
+// Login step 6, sub-slice S6-4: the UUID of the account's selected session, which
+// the request presents in its binding cookie, an older superseded one, and the
+// selected session's expiry.
+const SESSION_ID = "5e5510a0-0000-4000-8000-000000001301";
+const SUPERSEDED_SESSION_ID = "5e5510a0-0000-4000-8000-000000001302";
+const SESSION_EXPIRES_AT = "2999-12-31T23:59:59+00:00";
+
 // The server-verified principal the request-auth adapter would resolve for the
-// admin account. Used only as a lookup key by the record load.
+// admin account, with the session UUID the same request presented. The provider
+// identity is used only as a lookup key by the record load.
 const ADMIN_PRINCIPAL: SupabaseAuthenticatedUser = {
   providerName: PROVIDER_NAME,
   providerUserId: ADMIN_PROVIDER_USER_ID,
+  presentedSessionId: SESSION_ID,
 };
 
 // A fully-valid trusted-context input for the admin account, mirroring the shape
@@ -45,9 +54,11 @@ const ADMIN_SERVER_AUTH_CONTEXT_INPUT: DeriveTrustedServerAuthContextInput = {
   },
   userAccount: { userAccountId: ADMIN_USER_ID, accountStatus: "active" },
   session: {
+    userSessionId: SESSION_ID,
     userAccountId: ADMIN_USER_ID,
     activeRoleContext: "admin",
     sessionStatus: "active",
+    expiresAt: SESSION_EXPIRES_AT,
   },
   activeRoleAssignment: {
     userAccountId: ADMIN_USER_ID,
@@ -98,8 +109,63 @@ describe("composeRequestAuthContext - allow", () => {
           guideProfileId: null,
           explorerProfileId: null,
         },
+        // The selected session's UUID and expiry are carried to the allow result
+        // (contract 25 Section 19, as corrected under AUTH-RLS-DEC-044).
+        session: { userSessionId: SESSION_ID, expiresAt: SESSION_EXPIRES_AT },
       },
     });
+  });
+});
+
+// Login step 6, sub-slice S6-4: the session binding at the composed boundary
+// (contract 25 Section 8; its Section 15 item 7).
+describe("composeRequestAuthContext - the session binding", () => {
+  it("PRQ-701 denies (opaque) a verified admin whose request presents no session: a Supabase session alone", async () => {
+    const result = await composeRequestAuthContext(
+      {
+        principalSource: principalSource({ ...ADMIN_PRINCIPAL, presentedSessionId: null }),
+        authSource: adminAuthSource(),
+      },
+      { selectors: { requestedRoute: "/admin" } },
+    );
+
+    expect(result).toEqual({ allowed: false, reason: ROUTE_ACCESS_DENY_REASON });
+  });
+
+  it("PRQ-702 denies (opaque) a verified admin whose request presents a superseded session's UUID, after the guarded read", async () => {
+    const onServiceRoleRead = vi.fn();
+    const result = await composeRequestAuthContext(
+      {
+        principalSource: principalSource({
+          ...ADMIN_PRINCIPAL,
+          presentedSessionId: SUPERSEDED_SESSION_ID,
+        }),
+        authSource: adminAuthSource(),
+        onServiceRoleRead,
+      },
+      { selectors: { requestedRoute: "/admin" } },
+    );
+
+    expect(result).toEqual({ allowed: false, reason: ROUTE_ACCESS_DENY_REASON });
+    expect(Object.keys(result).sort()).toEqual(["allowed", "reason"]);
+    // The UUID is compared only after identity resolved and the records loaded.
+    expect(onServiceRoleRead).toHaveBeenCalledTimes(1);
+  });
+
+  it("PRQ-703 the presented UUID alone grants nothing: with no verified principal there is no record load and no allow", async () => {
+    const loadServerAuthContextInput = vi.fn();
+    const spyAuthSource = {
+      loadServerAuthContextInput,
+      loadGuideRelationship: vi.fn(),
+    } as unknown as SolMindAuthSource;
+
+    const result = await composeRequestAuthContext(
+      { principalSource: principalSource(null), authSource: spyAuthSource },
+      { selectors: { requestedRoute: "/admin" } },
+    );
+
+    expect(result).toEqual({ allowed: false, reason: ROUTE_ACCESS_DENY_REASON });
+    expect(loadServerAuthContextInput).not.toHaveBeenCalled();
   });
 });
 

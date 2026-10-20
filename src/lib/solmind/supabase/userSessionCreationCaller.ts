@@ -113,9 +113,10 @@ import { SOLMIND_ROLES, type SolMindRole } from "../roles";
 // one fixed value-free error; `create` resolves failures without propagating
 // underlying exceptions.
 //
-// Dormant: nothing calls this caller. There is no composition root here (the
-// route slice wires it to the service-role client), and no route, server
-// action, cookie or UI uses it. Keep it direct-import only and off every
+// Called by login step 6's Explorer sign-in routes (S6-8): their
+// request-scoped dependency factory wires it to the service-role client, and
+// their server composition calls `create` once per request, after its own
+// redemption and confirmation. Keep it direct-import only and off every
 // barrel. Owed by the identity bridge slice (S6-7): which provider expiry
 // feeds the rule; the auth library computes a session's `expires_at` from
 // `expires_in` and this server's clock when the server omits it.

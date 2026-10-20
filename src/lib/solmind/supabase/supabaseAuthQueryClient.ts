@@ -139,7 +139,12 @@ const AUTH_PROVIDER_IDENTITY_KEYS = [
 
 const USER_ACCOUNT_KEYS = ["user_account_id", "account_status"] as const;
 
+// The five columns public.solmind_find_active_user_sessions returns since
+// login step 6's sub-slice S6-3. user_session_id is the UUID the per-request
+// binding comparison uses; a row without it fails closed like any other
+// invalid row shape.
 const USER_SESSION_KEYS = [
+  "user_session_id",
   "user_account_id",
   "active_role_context",
   "session_status",
@@ -246,11 +251,18 @@ export function createSupabaseAuthQueryClient(args: {
         return null;
       }
 
-      // Project to the UserSessionRow shape the adapter expects (drop expires_at).
+      // Project to the UserSessionRow shape the adapter expects. The selected
+      // session's own UUID and its expires_at are kept, exactly as the lookup
+      // returned them, for the binding comparison and the allow result
+      // (contract 25 Sections 7, 8 and 19, as corrected under
+      // AUTH-RLS-DEC-044). Only the single selected session's values ever
+      // leave this function.
       return {
+        user_session_id: selected.user_session_id,
         user_account_id: selected.user_account_id,
         active_role_context: selected.active_role_context,
         session_status: selected.session_status,
+        expires_at: selected.expires_at,
       };
     },
 

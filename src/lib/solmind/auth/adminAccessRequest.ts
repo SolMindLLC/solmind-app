@@ -123,7 +123,7 @@ export type AdminActorResult =
 
 // Factory ports, injectable for deterministic tests.
 //   - createPrincipalSource: builds the request-auth identity port (WHO) from the
-//     injected cookie accessor. Defaults to the real @supabase/ssr-backed adapter.
+//     injected cookie accessor. Defaults to the real Supabase-backed adapter.
 //   - createAuthSource: builds the record-load port (WHAT). Defaults to the real
 //     service-role-backed Admin auth source.
 //   - createAuditEventWriter: builds the audit persistence port. Defaults to the

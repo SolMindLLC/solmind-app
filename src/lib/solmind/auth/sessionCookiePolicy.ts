@@ -16,12 +16,18 @@
 //     `N-code-verifier` and its chunks), the removal attributes, and the
 //     no-store headers on every response that sets or clears these cookies.
 //   - Section 14, as Paul corrected it on 2026-10-05: the one shared format
-//     check that every client reading the auth cookie applies before handing
-//     it to the Supabase SSR library.
+//     check that every client reading the auth cookie applies before the
+//     Supabase library is given the cookie or anything taken from it. The
+//     check's last step, the field check, is the one that Section 14's later
+//     correction adds; the decision register records that correction before
+//     this code banks.
 //
 // Pure and dependency-free: no import, no IO, no environment read and no
-// logging. Besides ECMAScript built-ins and the WHATWG `URL`, it
-// uses one standard global, `TextDecoder`, only as a fatal UTF-8 check.
+// logging. Besides ECMAScript built-ins (`JSON.parse` among them) and the
+// WHATWG `URL`, it uses one standard global, `TextDecoder`, as a fatal UTF-8
+// decoder. The text it gives is parsed once by the field check and dropped.
+// The token helper at the end of this file decodes and parses an accepted
+// value once more, returns the sign-in token alone, and keeps nothing either.
 // The trusted origin is passed in by a server composition root,
 // which loads it with the banked `loadTrustedApplicationOrigin()`. This
 // module adds no setting and reads none.
@@ -35,9 +41,12 @@
 // stores its PKCE code verifier under the storage key plus `-code-verifier`,
 // so with N as the name the verifier cookie is `N-code-verifier`.
 //
-// Dormant: only the dormant login-step cookie writer, beside the request-auth
-// client, imports this module. Its readers to come are the per-request check
-// (S6-4) and logout (S6-12). Keep it direct-import only and off every barrel.
+// Readers: the request-auth client, for the per-request check (login step 6,
+// sub-slice S6-4), which takes the cookie names, the format check and the
+// accepted cookie's sign-in token from here at run time; and the dormant
+// login-step cookie writer beside it. Logout
+// (S6-12) is the reader to come. Keep it direct-import only and off every
+// barrel.
 //
 // The library's decoder and the strict UTF-8 step. The installed library
 // decodes a `base64-` value with its own base64url decoder
@@ -55,11 +64,42 @@
 // refuses the value unless a fatal UTF-8 decoder accepts those bytes. The
 // library's decoder throws on no well-formed UTF-8, so no decoder exception
 // reaches its warning for a value this check returns. That is all the step
-// claims. It does not show that the decoded value is JSON, which the library
-// checks next with a separate warning that carries no part of the value, or
-// that the session is authentic. As Section 14 requires, it also refuses some
-// values the library would decode without an error: overlong forms,
-// surrogate code points and a truncated last sequence.
+// claims. As Section 14 requires, it also refuses some values the library
+// would decode without an error: overlong forms, surrogate code points and a
+// truncated last sequence.
+//
+// The field check. A value that passes the strict UTF-8 step is text, and a
+// Supabase client that is handed the cookie reads four things from that
+// text: the sign-in token (`access_token`), which it puts into the
+// `Authorization` header of its request to Supabase Auth; the renewal token
+// (`refresh_token`); the expiry (`expires_at`); and the profile (`user`).
+// The per-request check hands the library the sign-in token alone (the
+// helper at the end of this file), and the library puts that token into the
+// same header.
+// The platform refuses a header value that holds, for example, a line feed,
+// a NUL or a character above U+00FF, and the library prints that refusal,
+// which quotes the token text or gives the odd character's position and
+// code. Such a character reaches the token inside the JSON text (a line feed
+// as a two-character JSON escape, for example), so no rule on the cookie's
+// own characters can see it. The field check therefore judges the text the
+// library would read: the part after `base64-`, decoded as above, with a
+// leading byte-order mark KEPT, as the library's decoder keeps it (with the
+// mark stripped, the check would accept a text that the library then finds
+// is not JSON). It parses that text once, drops the parser's error (its
+// message quotes the input), and requires all of these, each read as an OWN
+// property of the parsed object, with no copy or spread first:
+//   - `access_token`: a string of three non-empty parts of A-Z, a-z, 0-9,
+//     `-` and `_`, joined by dots (the form of a signed token);
+//   - `refresh_token`: a non-empty string. There is no character rule: the
+//     library sends it only inside a JSON request body, and its alphabet is
+//     the Supabase server's to define;
+//   - `expires_at`: a positive safe integer;
+//   - `user`: absent, null, or an object that is not an array.
+// Anything else is refused with the same fixed `malformed` result as every
+// other refusal. So text that is not JSON, and JSON that is not a session of
+// this form, never reach the library either. The check does not show that
+// the session is authentic, which only Supabase Auth can say, and it does not
+// judge what is inside the token's three parts, the profile or any other key.
 
 // A cookie as a request carries it (the shape the request-cookie accessor
 // and the Supabase SSR library's `getAll` use).
@@ -386,17 +426,20 @@ function base64UrlSextet(code: number): number {
   return -1;
 }
 
-// The strict UTF-8 step of Section 14: true only when the part after
-// `base64-`, decoded into bytes exactly as the library's decoder does, is
-// well-formed UTF-8. The bytes come out of the same bit queue as the
-// library's: each character adds 6 bits, a byte is taken whenever 8 bits are
-// queued, and the bits left over at the end are dropped. A fatal UTF-8
-// decoder then judges them; it refuses overlong forms, surrogate code points,
-// code points above U+10FFFF, a truncated sequence and a stray continuation
-// byte. Its error, which carries no value, is dropped here, and so is the
-// decoded text. Any character outside the alphabet (already refused by the
-// character check) or a missing `TextDecoder` also gives false.
-function decodesToStrictUtf8(payload: string): boolean {
+// The strict UTF-8 step of Section 14: the part after `base64-`, decoded into
+// bytes exactly as the library's decoder does and then into text, or null
+// when those bytes are not well-formed UTF-8. The bytes come out of the same
+// bit queue as the library's: each character adds 6 bits, a byte is taken
+// whenever 8 bits are queued, and the bits left over at the end are dropped.
+// A fatal UTF-8 decoder then judges them; it refuses overlong forms,
+// surrogate code points, code points above U+10FFFF, a truncated sequence and
+// a stray continuation byte. Its error, which carries no value, is dropped
+// here. The decoder keeps a leading byte-order mark (`ignoreBOM`), as the
+// library's decoder does, so the text returned is the text the library will
+// read; whether the bytes are well formed does not depend on that option.
+// Any character outside the alphabet (already refused by the character
+// check) or a missing `TextDecoder` also gives null.
+function decodeStrictUtf8(payload: string): string | null {
   const bytes = new Uint8Array(Math.floor((payload.length * 6) / 8));
   let queue = 0;
   let queuedBits = 0;
@@ -404,7 +447,7 @@ function decodesToStrictUtf8(payload: string): boolean {
   for (let index = 0; index < payload.length; index += 1) {
     const sextet = base64UrlSextet(payload.charCodeAt(index));
     if (sextet < 0) {
-      return false;
+      return null;
     }
     queue = ((queue << 6) | sextet) & 0x3fff;
     queuedBits += 6;
@@ -415,22 +458,80 @@ function decodesToStrictUtf8(payload: string): boolean {
     }
   }
   try {
-    new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    return true;
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
   } catch {
-    return false;
+    return null;
   }
 }
 
-// Contract 25 Section 14, the one shared format check, as Paul corrected it
-// on 2026-10-05. Every chunk of the auth cookie in the request (N and every
-// `N.i`, whether or not the library would read it) must hold only A-Z, a-z,
-// 0-9, `-` and `_`; the value the library would join must start with
-// `base64-`; and the part after `base64-`, decoded as base64url exactly as
-// the library decodes it, must be strictly valid UTF-8. Otherwise the auth
-// cookie is treated as absent (deny): the status is `malformed` and no cookie
-// is returned. `absent` means the library would find no value. Nothing here
-// keeps, logs or returns any part of a refused value.
+// A sign-in token in the form the field check requires: three non-empty
+// parts of A-Z, a-z, 0-9, `-` and `_`, joined by dots. Plain ASCII character
+// classes and no flags, on purpose. With `i` and `u` the pattern would also
+// accept the Kelvin sign and the long s; with `m` it would accept a line of
+// token text followed by a line feed and anything else.
+const ACCESS_TOKEN_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+
+// The decoded text parsed once as JSON: the parsed value when it is an object
+// and not an array, otherwise null. The parser's error is dropped, because
+// its message quotes the text.
+function parseSessionObject(text: string): object | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return null;
+  }
+  return parsed;
+}
+
+// The value of an OWN property of a parsed object, or undefined when the
+// object has no own property of that name. A key the JSON text itself
+// carries is always an own data property of the parsed object, a `__proto__`
+// key included, so nothing inherited is ever read. (JSON has no undefined,
+// so undefined here always means absent.)
+function ownValue(holder: object, key: string): unknown {
+  const descriptor = Object.getOwnPropertyDescriptor(holder, key);
+  return descriptor === undefined ? undefined : descriptor.value;
+}
+
+// The field check of Section 14, on the parsed object itself (no copy and no
+// spread): true only when the four fields the library reads have the form
+// described at the top of this file. Unknown keys are ignored.
+function hasSessionFields(session: object): boolean {
+  const accessToken = ownValue(session, "access_token");
+  if (typeof accessToken !== "string" || !ACCESS_TOKEN_PATTERN.test(accessToken)) {
+    return false;
+  }
+  const refreshToken = ownValue(session, "refresh_token");
+  if (typeof refreshToken !== "string" || refreshToken.length === 0) {
+    return false;
+  }
+  const expiresAt = ownValue(session, "expires_at");
+  if (typeof expiresAt !== "number" || !Number.isSafeInteger(expiresAt) || expiresAt <= 0) {
+    return false;
+  }
+  const user = ownValue(session, "user");
+  if (user !== undefined && user !== null && (typeof user !== "object" || Array.isArray(user))) {
+    return false;
+  }
+  return true;
+}
+
+// Contract 25 Section 14, the one shared format check. Every chunk of the
+// auth cookie in the request (N and every `N.i`, whether or not the library
+// would read it) must hold only A-Z, a-z, 0-9, `-` and `_`; the value the
+// library would join must start with `base64-`; the part after `base64-`,
+// decoded as base64url exactly as the library decodes it, must be strictly
+// valid UTF-8 (Paul's correction of 2026-10-05); and that text must be JSON
+// for an object whose own `access_token`, `refresh_token`, `expires_at` and
+// `user` pass the field check. Otherwise the auth cookie is treated as absent
+// (deny): the status is `malformed` and no cookie is returned. `absent` means
+// the library would find no value. Nothing here keeps, logs, returns or
+// throws any part of a refused value; the decoded text and the parsed object
+// are dropped before this function returns.
 export function readSessionAuthCookies(
   policy: SessionCookiePolicy,
   requestCookies: unknown,
@@ -453,8 +554,69 @@ export function readSessionAuthCookies(
   if (!joined.startsWith(SESSION_AUTH_COOKIE_VALUE_PREFIX)) {
     return AUTH_COOKIE_MALFORMED;
   }
-  if (!decodesToStrictUtf8(joined.slice(SESSION_AUTH_COOKIE_VALUE_PREFIX.length))) {
+  const decoded = decodeStrictUtf8(joined.slice(SESSION_AUTH_COOKIE_VALUE_PREFIX.length));
+  if (decoded === null) {
+    return AUTH_COOKIE_MALFORMED;
+  }
+  const session = parseSessionObject(decoded);
+  if (session === null || !hasSessionFields(session)) {
     return AUTH_COOKIE_MALFORMED;
   }
   return authCookieRead("present", family);
+}
+
+// The sign-in token of an auth cookie that the format check accepts, for a
+// reader that asks Supabase Auth to verify that one token and gives the
+// library nothing else of the cookie (the per-request check, contract 25
+// Sections 7 and 8). `cookies` is what the reader has: the request's
+// cookies, or the list a `present` read returned. It is judged here by
+// `readSessionAuthCookies` itself, so a list the check would not accept
+// gives null, and so does a request with no auth cookie. Otherwise the
+// result is the session's own `access_token`: a string of the form the field
+// check requires, tested once more here before it is returned. Nothing else
+// of the value is returned: not the renewal token, not the expiry and not
+// the profile. The token is a credential. A reader passes it to Supabase
+// Auth and to nothing else, and never logs it, throws it or puts it in an
+// error. This module keeps nothing: the decoded text and the parsed object
+// are dropped before this function returns.
+export function readSessionAuthCookieAccessToken(
+  policy: SessionCookiePolicy,
+  cookies: unknown,
+): string | null {
+  const read = readSessionAuthCookies(policy, cookies);
+  if (read.status !== "present") {
+    return null;
+  }
+  const joined = joinAuthCookie(policy.authCookieName, read.cookies);
+  const decoded =
+    joined === null
+      ? null
+      : decodeStrictUtf8(joined.slice(SESSION_AUTH_COOKIE_VALUE_PREFIX.length));
+  const session = decoded === null ? null : parseSessionObject(decoded);
+  const accessToken = session === null ? undefined : ownValue(session, "access_token");
+  return typeof accessToken === "string" && ACCESS_TOKEN_PATTERN.test(accessToken)
+    ? accessToken
+    : null;
+}
+
+// Cleanup-only projection over exactly the same accepted cookie/JSON parser.
+// These are untrusted captured credentials, never actor or session authority.
+// The trusted credentialPairProof owner verifies solmind_pair_proof before
+// renewal; merely returning that own property establishes no provenance. An
+// old missing/invalid proof does not change the existing authentication path.
+export function readSessionAuthCookieCleanupCandidate(
+  policy: SessionCookiePolicy,
+  cookies: unknown,
+): Readonly<{ accessToken: string; refreshToken: string; proof: unknown }> | null {
+  const read = readSessionAuthCookies(policy, cookies);
+  if (read.status !== "present") return null;
+  const joined = joinAuthCookie(policy.authCookieName, read.cookies);
+  const decoded = joined === null ? null : decodeStrictUtf8(joined.slice(SESSION_AUTH_COOKIE_VALUE_PREFIX.length));
+  const session = decoded === null ? null : parseSessionObject(decoded);
+  if (session === null || !hasSessionFields(session)) return null;
+  const accessToken = ownValue(session, "access_token");
+  const refreshToken = ownValue(session, "refresh_token");
+  if (typeof accessToken !== "string" || typeof refreshToken !== "string") return null;
+  const proof = ownValue(session, "solmind_pair_proof");
+  return Object.freeze({ accessToken, refreshToken, proof: typeof proof === "string" ? proof : undefined });
 }

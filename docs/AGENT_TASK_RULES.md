@@ -564,3 +564,23 @@ If an agent gets uncertain, it should stop and report:
 5. What it recommends next
 
 Do not continue guessing.
+
+## Connected Explorer login tasks
+
+Keep the login pages thin and browser wiring in `LoginExperience` and
+`ExplorerSignIn`. Use the existing fixed send/verify contracts, guarded server
+composition, binding-aware `explorerHomeAccess` and logout browser boundary.
+Only the accepted current verify result permits fixed `/explorer/home`
+navigation; navigation and cookie presence are never authorization. Preserve
+server-only secrets, same-origin writes, generic identifier/code refusals and
+honest uncertain sign-out behavior. Do not connect the deterministic `/explorer`
+prototype, Guide/Admin previews or a Virtual Guide provider as an incidental
+login change.
+
+Use direct functional checks of observable behavior with established test tools.
+Do not make a general custom launcher or tests of that launcher a prerequisite
+unless an actual dependency requires it. For the October 19 Explorer integration, Paul retained personal account setup
+and approved direct functional Chrome proof in place of the earlier watched
+custom-launcher prerequisite. Necessary database/authorization checks and the
+complete review/application/banking assurance remain in force. This task-specific
+direction grants no provider, deployment, cleanup or real-user authority.

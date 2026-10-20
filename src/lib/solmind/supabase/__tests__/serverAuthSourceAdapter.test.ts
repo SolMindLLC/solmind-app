@@ -30,6 +30,12 @@ const UNKNOWN_RELATIONSHIP_ID = "rel-does-not-exist";
 
 const PROVIDER_NAME = "supabase";
 
+// Login step 6, sub-slice S6-4: the selected session's UUID and expires_at, as
+// the lookup returns them, and a different UUID that a request might present.
+const SESSION_ID = "5e5510a0-0000-4000-8000-0000000000f1";
+const OTHER_SESSION_ID = "5e5510a0-0000-4000-8000-0000000000f2";
+const SESSION_EXPIRES_AT = "2999-12-31T23:59:59.123456+00:00";
+
 function providerUserIdFor(role: "admin" | "guide" | "explorer"): string {
   return `auth-user-${role}-1`;
 }
@@ -134,9 +140,11 @@ function rowsFor(role: "admin" | "guide" | "explorer"): FakeData {
     userAccounts: [{ user_account_id: userAccountId, account_status: "active" }],
     sessions: [
       {
+        user_session_id: SESSION_ID,
         user_account_id: userAccountId,
         active_role_context: role,
         session_status: "active",
+        expires_at: SESSION_EXPIRES_AT,
       },
     ],
     roleAssignments: [
@@ -169,8 +177,15 @@ function rowsFor(role: "admin" | "guide" | "explorer"): FakeData {
   };
 }
 
-function principalFor(role: "admin" | "guide" | "explorer") {
-  return { providerName: PROVIDER_NAME, providerUserId: providerUserIdFor(role) };
+function principalFor(
+  role: "admin" | "guide" | "explorer",
+  presentedSessionId: string | null = SESSION_ID,
+) {
+  return {
+    providerName: PROVIDER_NAME,
+    providerUserId: providerUserIdFor(role),
+    presentedSessionId,
+  };
 }
 
 // The camelCase projection the adapter should produce for a fully-populated role.
@@ -189,9 +204,11 @@ function expectedInputFor(
     },
     userAccount: { userAccountId, accountStatus: "active" },
     session: {
+      userSessionId: SESSION_ID,
       userAccountId,
       activeRoleContext: role,
       sessionStatus: "active",
+      expiresAt: SESSION_EXPIRES_AT,
     },
     activeRoleAssignment: {
       userAccountId,
@@ -262,6 +279,40 @@ describe("createSupabaseAuthSource - loadServerAuthContextInput mapping", () => 
     expect(input.session?.activeRoleContext).toBe("guide");
     expect(input.activeRoleAssignment?.roleCode).toBe("guide");
     expect(input.guideProfile?.guideProfileId).toBe(GUIDE_PROFILE_A);
+  });
+
+  it("PRQ-101 carries the selected session's UUID and expires_at from the row to the session record, unchanged", async () => {
+    const source = createSupabaseAuthSource(createFakeClient(rowsFor("guide")));
+
+    const input = await source.loadServerAuthContextInput({
+      authenticatedUser: principalFor("guide"),
+    });
+
+    expect(input.session).toEqual({
+      userSessionId: SESSION_ID,
+      userAccountId: GUIDE_USER_ID,
+      activeRoleContext: "guide",
+      sessionStatus: "active",
+      expiresAt: SESSION_EXPIRES_AT,
+    });
+  });
+
+  it("PRQ-102 echoes the session UUID the request presented, whatever it is, and never takes it from a record", async () => {
+    const source = createSupabaseAuthSource(createFakeClient(rowsFor("guide")));
+
+    for (const presented of [OTHER_SESSION_ID, null]) {
+      const input = await source.loadServerAuthContextInput({
+        authenticatedUser: principalFor("guide", presented),
+      });
+
+      // The adapter loads records and decides nothing: the presented value
+      // reaches derivation as the request gave it, beside the selected
+      // session's own UUID.
+      expect(input.authenticatedUser).toEqual(principalFor("guide", presented));
+      expect(input.session?.userSessionId).toBe(SESSION_ID);
+      // Derivation, not the adapter, denies the mismatch.
+      expect(deriveTrustedServerAuthContext(input).allowed).toBe(false);
+    }
   });
 });
 
@@ -435,6 +486,11 @@ describe("createSupabaseAuthSource - composes with the existing guard layer", ()
         userAccountId: GUIDE_USER_ID,
         guideProfileId: GUIDE_PROFILE_A,
         explorerProfileId: null,
+      });
+      // The UUID and expires_at reach the allow result from the lookup's row.
+      expect(derived.context.session).toEqual({
+        userSessionId: SESSION_ID,
+        expiresAt: SESSION_EXPIRES_AT,
       });
     }
   });

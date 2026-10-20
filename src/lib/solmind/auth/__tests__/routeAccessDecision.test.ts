@@ -16,6 +16,12 @@ const EXPLORER_PROFILE_A = "explorer-profile-a";
 
 const PROVIDER_NAME = "supabase";
 
+// Login step 6, sub-slice S6-4: the selected session's UUID, which the request
+// presents in its binding cookie, and its expiry.
+const SESSION_ID = "5e5510a0-0000-4000-8000-000000000f01";
+const SESSION_EXPIRES_AT = "2999-12-31T23:59:59+00:00";
+const SESSION_BINDING = { userSessionId: SESSION_ID, expiresAt: SESSION_EXPIRES_AT };
+
 // Build a fully-valid trusted-context input for a given canonical role. The
 // active role is carried by the server-loaded session record, exactly as in
 // serverAuthContext.test.ts.
@@ -31,7 +37,11 @@ function validServerAuthContextInput(
   const providerUserId = `auth-user-${role}-1`;
 
   return {
-    authenticatedUser: { providerName: PROVIDER_NAME, providerUserId },
+    authenticatedUser: {
+      providerName: PROVIDER_NAME,
+      providerUserId,
+      presentedSessionId: SESSION_ID,
+    },
     authProviderIdentity: {
       userAccountId,
       providerName: PROVIDER_NAME,
@@ -40,9 +50,11 @@ function validServerAuthContextInput(
     },
     userAccount: { userAccountId, accountStatus: "active" },
     session: {
+      userSessionId: SESSION_ID,
       userAccountId,
       activeRoleContext: role,
       sessionStatus: "active",
+      expiresAt: SESSION_EXPIRES_AT,
     },
     activeRoleAssignment: {
       userAccountId,
@@ -80,6 +92,7 @@ describe("authorizeRouteAccess - allow cases", () => {
           guideProfileId: null,
           explorerProfileId: null,
         },
+        session: SESSION_BINDING,
       },
     });
   });
@@ -99,6 +112,7 @@ describe("authorizeRouteAccess - allow cases", () => {
           guideProfileId: GUIDE_PROFILE_A,
           explorerProfileId: null,
         },
+        session: SESSION_BINDING,
       },
     });
   });
@@ -118,6 +132,7 @@ describe("authorizeRouteAccess - allow cases", () => {
           guideProfileId: null,
           explorerProfileId: EXPLORER_PROFILE_A,
         },
+        session: SESSION_BINDING,
       },
     });
   });
@@ -181,9 +196,11 @@ describe("authorizeRouteAccess - trusted context derivation failure", () => {
       serverAuthContext: {
         ...input,
         session: {
+          userSessionId: SESSION_ID,
           userAccountId: GUIDE_USER_ID,
           activeRoleContext: "guide",
           sessionStatus: "expired",
+          expiresAt: SESSION_EXPIRES_AT,
         },
       },
       selectors: { requestedRoute: "/guide" },
@@ -193,6 +210,32 @@ describe("authorizeRouteAccess - trusted context derivation failure", () => {
       allowed: false,
       reason: ROUTE_ACCESS_DENY_REASON,
     });
+  });
+
+  it("PRQ-501 denies with the same generic reason when the request presents no session or another session's UUID, on a route its role would match", () => {
+    // Login step 6, sub-slice S6-4: the session binding is part of derivation,
+    // so every route decision made through this helper requires it.
+    const input = validServerAuthContextInput("guide");
+    const principal = input.authenticatedUser;
+    expect(principal).not.toBeNull();
+    if (principal === null) {
+      return;
+    }
+    for (const presentedSessionId of [null, "5e5510a0-0000-4000-8000-000000000f02"]) {
+      const result = authorizeRouteAccess({
+        serverAuthContext: {
+          ...input,
+          authenticatedUser: { ...principal, presentedSessionId },
+        },
+        selectors: { requestedRoute: "/guide" },
+      });
+
+      expect(result).toEqual({
+        allowed: false,
+        reason: ROUTE_ACCESS_DENY_REASON,
+      });
+      expect(Object.keys(result).sort()).toEqual(["allowed", "reason"]);
+    }
   });
 });
 

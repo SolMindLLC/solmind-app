@@ -6,7 +6,7 @@
 //   2. build the dependency-free RequestCookieAccessor (read-only; MVP0 writes are a
 //      no-op, AUTH-RLS-DEC-018);
 //   3. delegate the whole composition decision to resolveAdminAccessForRequest, which
-//      builds the @supabase/ssr request-auth principal source (WHO) and the real
+//      builds the Supabase request-auth principal source (WHO) and the real
 //      Admin auth source (WHAT), calls resolveAdminRouteAccess, and reduces the result
 //      to an opaque { allowed }.
 //

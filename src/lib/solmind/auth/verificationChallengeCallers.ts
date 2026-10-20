@@ -48,8 +48,10 @@ import {
 // returned (the local SMTP transport may still close its socket within its
 // 1 s QUIT grace).
 //
-// Dormant: nothing calls these factories outside the dormant composition root.
-// Keep this module direct-import only and off every barrel.
+// Only the composition root calls these factories. Login step 6's Explorer
+// sign-in routes (S6-8) call that root, and their server composition imports
+// this module's acknowledgment helper and one type. Keep this module
+// direct-import only and off every barrel.
 
 export {
   VERIFICATION_CHALLENGE_ACKNOWLEDGMENT,

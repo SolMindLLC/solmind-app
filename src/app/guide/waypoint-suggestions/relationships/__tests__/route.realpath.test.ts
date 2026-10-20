@@ -1,3 +1,5 @@
+import { Buffer } from "node:buffer";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
@@ -18,8 +20,17 @@ const {
 }));
 
 vi.mock("next/headers", () => ({ cookies: cookiesMock }));
+// The request-auth adapter builds its client with createClient from
+// @supabase/supabase-js and calls auth.getUser(token) on it. The service-role
+// client is its own mocked module below. The adapter no longer imports
+// @supabase/ssr, so a client built from that package here is an error.
+vi.mock("@supabase/supabase-js", () => ({
+  createClient: () => ({ auth: { getUser: getUserMock } }),
+}));
 vi.mock("@supabase/ssr", () => ({
-  createServerClient: () => ({ auth: { getUser: getUserMock } }),
+  createServerClient: () => {
+    throw new Error("the adapter must not build an @supabase/ssr client");
+  },
 }));
 vi.mock("@/lib/solmind/supabase/serviceRoleClient", () => ({
   createServiceRoleClient: createServiceRoleClientMock,
@@ -31,8 +42,29 @@ const PROVIDER_USER_ID = "auth-guide-1";
 const GUIDE_ACCOUNT_ID = "11111111-1111-4111-8111-111111111111";
 const GUIDE_PROFILE_ID = "22222222-2222-4222-8222-222222222222";
 const RELATIONSHIP_ID = "33333333-3333-4333-8333-333333333333";
-const SECRET_COOKIE = "sb-access-token-SECRET-do-not-leak";
+const SECRET_MARKER = "sb-access-token-SECRET-do-not-leak";
+// A well-formed auth cookie value (the shared format check requires one): a
+// synthetic session with the fields that check requires, an expiry far ahead
+// (the first second of the year 2100), and, inside the token, a marker that a
+// leak of the decoded value would show.
+const SECRET_COOKIE = `base64-${Buffer.from(
+  JSON.stringify({
+    access_token: `synthetic.${SECRET_MARKER}.signature`,
+    refresh_token: "synthetic-refresh-token",
+    expires_at: 4102444800,
+  }),
+  "utf8",
+).toString("base64url")}`;
 const FAR_FUTURE = "2999-12-31T23:59:59.000Z";
+
+// Login step 6, sub-slice S6-4: the local trusted origin, the session cookie names
+// the policy gives for it, the UUID of the session the lookup selects (which the
+// request presents in its binding cookie), and an older, superseded one.
+const TRUSTED_ORIGIN = "http://127.0.0.1:3000";
+const AUTH_COOKIE = "solmind-auth";
+const BINDING_COOKIE = "solmind-session";
+const SESSION_ID = "5e5510a0-0000-4000-8000-0000000000e1";
+const SUPERSEDED_SESSION_ID = "5e5510a0-0000-4000-8000-0000000000e2";
 
 const FN = Object.freeze({
   identity: "solmind_find_auth_provider_identity",
@@ -78,6 +110,7 @@ function guideChain(): Record<string, RpcResponse> {
     [FN.sessions]: {
       data: [
         {
+          user_session_id: SESSION_ID,
           user_account_id: GUIDE_ACCOUNT_ID,
           active_role_context: "guide",
           session_status: "active",
@@ -129,6 +162,16 @@ async function invoke() {
 
 let savedUrl: string | undefined;
 let savedAnonKey: string | undefined;
+let savedTrustedOrigin: string | undefined;
+
+function presentCookies(sessionId: string | null = SESSION_ID): void {
+  cookiesMock.mockResolvedValue({
+    getAll: () => [
+      { name: AUTH_COOKIE, value: SECRET_COOKIE },
+      ...(sessionId === null ? [] : [{ name: BINDING_COOKIE, value: sessionId }]),
+    ],
+  });
+}
 
 beforeEach(() => {
   cookiesMock.mockReset();
@@ -142,10 +185,10 @@ beforeEach(() => {
   savedAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   process.env.NEXT_PUBLIC_SUPABASE_URL = "http://127.0.0.1:54321";
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-test-key";
+  savedTrustedOrigin = process.env.SOLMIND_TRUSTED_APP_ORIGIN;
+  process.env.SOLMIND_TRUSTED_APP_ORIGIN = TRUSTED_ORIGIN;
 
-  cookiesMock.mockResolvedValue({
-    getAll: () => [{ name: "sb-access-token", value: SECRET_COOKIE }],
-  });
+  presentCookies();
   getUserMock.mockResolvedValue({
     data: { user: { id: PROVIDER_USER_ID } },
     error: null,
@@ -168,6 +211,11 @@ afterEach(() => {
     delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   } else {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = savedAnonKey;
+  }
+  if (savedTrustedOrigin === undefined) {
+    delete process.env.SOLMIND_TRUSTED_APP_ORIGIN;
+  } else {
+    process.env.SOLMIND_TRUSTED_APP_ORIGIN = savedTrustedOrigin;
   }
   vi.restoreAllMocks();
 });
@@ -200,6 +248,7 @@ describe("GET relationship selector real path", () => {
     chain[FN.sessions] = {
       data: [
         {
+          user_session_id: SESSION_ID,
           user_account_id: GUIDE_ACCOUNT_ID,
           active_role_context: "explorer",
           session_status: "active",
@@ -262,5 +311,53 @@ describe("GET relationship selector real path", () => {
     expect(rawText).not.toContain("private relationship");
     expect(rawText).not.toContain("service-role");
     expect(rawText).not.toContain(SECRET_COOKIE);
+    expect(rawText).not.toContain(SECRET_MARKER);
+  });
+
+  // Login step 6, sub-slice S6-4: the session binding on a Guide route (contract 25
+  // Section 8; its Section 15 item 7).
+  it("PRR-201 denies before selector IO when the binding cookie holds a superseded session's UUID", async () => {
+    // Same account, same Guide role, a newer login: the lookup returns the newer
+    // session, and this browser still presents the older UUID. By account alone it
+    // would read the Guide's relationships.
+    presentCookies(SUPERSEDED_SESSION_ID);
+
+    const { body, rawText } = await invoke();
+    expect(body).toEqual({
+      ok: false,
+      data: null,
+      error: "SolMind Suggested Waypoint relationships are unavailable.",
+    });
+    expect(rpcMock.mock.calls.some((call) => call[0] === FN.sessions)).toBe(true);
+    expect(rpcMock.mock.calls.some((call) => call[0] === FN.selector)).toBe(false);
+    expect(rawText).not.toContain(SESSION_ID);
+    expect(rawText).not.toContain(SUPERSEDED_SESSION_ID);
+  });
+
+  it("PRR-202 denies the stale tab of another role: an account that logged in again as a Guide is not served under the UUID its earlier session left behind", async () => {
+    // The earlier login was in another role (for example the Admin), and its tab
+    // still holds that session's UUID. The account's selected session is now the
+    // Guide one, so on this Guide route only the presented UUID tells the two
+    // browsers apart.
+    presentCookies(SUPERSEDED_SESSION_ID);
+    expect((await invoke()).body.ok).toBe(false);
+    expect(rpcMock.mock.calls.some((call) => call[0] === FN.selector)).toBe(false);
+
+    rpcMock.mockClear();
+    presentCookies(SESSION_ID);
+    expect((await invoke()).body).toEqual({ ok: true, data: PAGE, error: null });
+  });
+
+  it("PRR-203 denies a Supabase session alone: without the binding cookie nothing is verified or read", async () => {
+    presentCookies(null);
+
+    const { body } = await invoke();
+    expect(body).toEqual({
+      ok: false,
+      data: null,
+      error: "SolMind Suggested Waypoint relationships are unavailable.",
+    });
+    expect(getUserMock).not.toHaveBeenCalled();
+    expect(rpcMock).not.toHaveBeenCalled();
   });
 });

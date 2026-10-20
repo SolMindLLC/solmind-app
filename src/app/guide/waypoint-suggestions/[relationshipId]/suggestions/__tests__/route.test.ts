@@ -55,9 +55,14 @@ const SECRET_COOKIE = "sb-access-token-SECRET-do-not-leak";
 const GUIDE_ACCOUNT_ID = "11111111-1111-4111-8111-111111111111";
 const GUIDE_PROFILE_ID = "22222222-2222-4222-8222-222222222222";
 const EXPLORER_PROFILE_ID = "33333333-3333-4333-8333-333333333333";
+// Login step 6, sub-slice S6-4: the UUID of the account's selected session, which the
+// request presents in its binding cookie, and its expiry.
+const SESSION_ID = "5e5510a0-0000-4000-8000-00000002301";
+const SESSION_EXPIRES_AT = "2999-12-31T23:59:59+00:00";
 const PRINCIPAL = Object.freeze({
   providerName: "supabase" as const,
   providerUserId: "guide-provider-user",
+  presentedSessionId: SESSION_ID,
 });
 const AUTH_INPUT = Object.freeze({
   authenticatedUser: PRINCIPAL,
@@ -72,9 +77,11 @@ const AUTH_INPUT = Object.freeze({
     accountStatus: "active",
   }),
   session: Object.freeze({
+    userSessionId: SESSION_ID,
     userAccountId: GUIDE_ACCOUNT_ID,
     activeRoleContext: "guide",
     sessionStatus: "active",
+    expiresAt: SESSION_EXPIRES_AT,
   }),
   activeRoleAssignment: Object.freeze({
     userAccountId: GUIDE_ACCOUNT_ID,

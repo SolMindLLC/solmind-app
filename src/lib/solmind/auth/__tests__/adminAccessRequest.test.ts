@@ -41,6 +41,11 @@ const PROVIDER_NAME = "supabase";
 const PROVIDER_USER_ID = "auth-admin-1";
 const ACCOUNT_ID = "user-admin-1";
 
+// Login step 6, sub-slice S6-4: the UUID of the account's selected session, which the
+// request presents in its binding cookie, and an older, superseded one.
+const SESSION_ID = "5e5510a0-0000-4000-8000-000000001501";
+const SUPERSEDED_SESSION_ID = "5e5510a0-0000-4000-8000-000000001502";
+
 function nowProvider(): Date {
   return NOW;
 }
@@ -48,6 +53,7 @@ function nowProvider(): Date {
 const ADMIN_PRINCIPAL: SupabaseAuthenticatedUser = {
   providerName: PROVIDER_NAME,
   providerUserId: PROVIDER_USER_ID,
+  presentedSessionId: SESSION_ID,
 };
 
 // Deterministic cookie accessor double. The injected principal-source factory below
@@ -94,6 +100,7 @@ function chainTables(
     user_session: {
       data: [
         {
+          user_session_id: SESSION_ID,
           user_account_id: ACCOUNT_ID,
           active_role_context: role,
           session_status: "active",
@@ -304,6 +311,46 @@ describe("resolveAdminAccessForRequest - opaque deny", () => {
     });
 
     expectOpaque(result);
+  });
+});
+
+// Login step 6, sub-slice S6-4: the session binding at the /admin request composition
+// (contract 25 Section 8; its Section 15 item 7).
+describe("resolveAdminAccessForRequest - the session binding", () => {
+  it("PRQ-901 denies a verified Admin whose request presents no session or a superseded session's UUID, with one opaque deny row and no guarded-read row", async () => {
+    for (const presentedSessionId of [null, SUPERSEDED_SESSION_ID]) {
+      const { result, calls, auditEvents } = await callHelperWith({
+        principal: { ...ADMIN_PRINCIPAL, presentedSessionId },
+        resultByTable: chainTables("admin"),
+      });
+
+      expect(result).toEqual({ allowed: false });
+      expectOpaque(result);
+      // The records were read: the UUID is compared only after them.
+      expect(calls.some((call) => call.table === "user_session")).toBe(true);
+      // The denial persists exactly the opaque deny decision row: no guarded-read
+      // row, no allow row, no actor, and no session UUID anywhere in the row.
+      expect(auditEvents).toHaveLength(1);
+      expect(auditEvents[0].eventType).toBe(
+        AUTH_RLS_AUDIT_EVENT_TYPES.ADMIN_ROUTE_ACCESS_DECISION,
+      );
+      expect(auditEvents[0].action).toBe(AUTH_RLS_AUDIT_ACTIONS.DENY);
+      expect(auditEvents[0].actorUserAccountId).toBeNull();
+      expectBoundedEnvelope(auditEvents[0]);
+      expect(JSON.stringify(auditEvents)).not.toContain(SESSION_ID);
+      expect(JSON.stringify(auditEvents)).not.toContain(SUPERSEDED_SESSION_ID);
+    }
+  });
+
+  it("PRQ-902 an allow's two audit rows name the account and never the session UUID", async () => {
+    const { result, auditEvents } = await callHelperWith({
+      principal: ADMIN_PRINCIPAL,
+      resultByTable: chainTables("admin"),
+    });
+
+    expect(result).toEqual({ allowed: true });
+    expect(auditEvents).toHaveLength(2);
+    expect(JSON.stringify(auditEvents)).not.toContain(SESSION_ID);
   });
 });
 

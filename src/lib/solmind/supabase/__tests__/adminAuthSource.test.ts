@@ -26,9 +26,15 @@ const PROVIDER_NAME = "supabase";
 const PROVIDER_USER_ID = "auth-admin-1";
 const ACCOUNT_ID = "user-admin-1";
 
+// Login step 6, sub-slice S6-4: the UUID of the session the lookup returns, which
+// the request presents in its binding cookie, and an older, superseded one.
+const SESSION_ID = "5e5510a0-0000-4000-8000-000000000d01";
+const SUPERSEDED_SESSION_ID = "5e5510a0-0000-4000-8000-000000000d02";
+
 const ADMIN_PRINCIPAL: SupabaseAuthenticatedUser = {
   providerName: PROVIDER_NAME,
   providerUserId: PROVIDER_USER_ID,
+  presentedSessionId: SESSION_ID,
 };
 
 // A deterministic mock scoped-select executor. It records every spec and returns a
@@ -72,6 +78,7 @@ function chainTables(
     user_session: {
       data: [
         {
+          user_session_id: SESSION_ID,
           user_account_id: ACCOUNT_ID,
           active_role_context: role,
           session_status: "active",
@@ -127,6 +134,26 @@ describe("createAdminAuthSource - admin allow", () => {
     if (result.allowed) {
       expect(result.context.activeRole).toBe("admin");
       expect(result.context.identity.userAccountId).toBe(ACCOUNT_ID);
+      // PRQ-301 The selected session's UUID and expires_at reach the allow
+      // result from the lookup's row (contract 25 Section 19, as corrected).
+      expect(result.context.session).toEqual({
+        userSessionId: SESSION_ID,
+        expiresAt: FUTURE,
+      });
+    }
+  });
+
+  it("PRQ-302 denies /admin when the request presents no session, or another session's UUID, for an otherwise fully valid Admin chain", async () => {
+    for (const presentedSessionId of [null, SUPERSEDED_SESSION_ID]) {
+      const { result } = await decideAdmin(chainTables("admin"), {
+        ...ADMIN_PRINCIPAL,
+        presentedSessionId,
+      });
+
+      expect(result).toEqual({
+        allowed: false,
+        reason: ROUTE_ACCESS_DENY_REASON,
+      });
     }
   });
 
@@ -196,12 +223,14 @@ describe("createAdminAuthSource - deny by default", () => {
         user_session: {
           data: [
             {
+              user_session_id: SESSION_ID,
               user_account_id: ACCOUNT_ID,
               active_role_context: "admin",
               session_status: "active",
               expires_at: FUTURE,
             },
             {
+              user_session_id: SUPERSEDED_SESSION_ID,
               user_account_id: ACCOUNT_ID,
               active_role_context: "guide",
               session_status: "active",
@@ -222,6 +251,7 @@ describe("createAdminAuthSource - deny by default", () => {
         user_session: {
           data: [
             {
+              user_session_id: SESSION_ID,
               user_account_id: ACCOUNT_ID,
               active_role_context: "admin",
               session_status: "active",

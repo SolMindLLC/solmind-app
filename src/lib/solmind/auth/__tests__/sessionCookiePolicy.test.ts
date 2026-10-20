@@ -5,6 +5,19 @@
 // and base64url decoder are used here as test oracles only, so the names and
 // the join match the real library. For the strict UTF-8 step, Node's own
 // base64url decoder and a fatal UTF-8 decoder are an independent oracle.
+//
+// The format check's last step is the field check of Section 14 (login step
+// 6, sub-slice S6-4): the decoded text must be JSON for a session whose own
+// `access_token`, `refresh_token`, `expires_at` and `user` have the form the
+// library can use safely. So every value these tests expect the check to
+// accept is a synthetic session of that form, and the tests of the earlier
+// steps carry the bytes they are about inside one (`sessionJson`). The field
+// check's own tests are `FCP-001` to `FCP-013`, at the end of this file; they
+// compare the module with an oracle written here (`oracleAccepts`).
+//
+// Odd characters are built with String.fromCharCode and String.fromCodePoint
+// in the parts of this file that sub-slice S6-4 added, so that the source
+// holds only plain ASCII there. Every value is synthetic.
 
 import { Buffer } from "node:buffer";
 import { inspect } from "node:util";
@@ -52,15 +65,46 @@ function policyFor(origin: string): SessionCookiePolicy {
 const HOSTED = policyFor("https://uat.solmind.example");
 const LOOPBACK = policyFor("http://127.0.0.1:3000");
 
+// An expiry far ahead (the first second of the year 2100), so that no test
+// here depends on the clock.
+const FAR_FUTURE_EXPIRES_AT = 4102444800;
+
 // A synthetic session in the library's own encoding (`base64-` plus the
-// base64url form of the stored JSON).
+// base64url form of the stored JSON), with the four fields in the form the
+// field check requires.
 function encodedSession(marker: string, size: number): string {
   return `${SESSION_AUTH_COOKIE_VALUE_PREFIX}${stringToBase64URL(
-    JSON.stringify({ access_token: `${marker}-${"a".repeat(size)}`, refresh_token: `${marker}-r` }),
+    JSON.stringify({
+      access_token: `${marker}.${"a".repeat(size)}.signature`,
+      refresh_token: `${marker}-r`,
+      expires_at: FAR_FUTURE_EXPIRES_AT,
+    }),
   )}`;
 }
 
 const SHORT_VALUE = encodedSession("synthetic-short", 10);
+
+// The JSON text of a synthetic session that the field check accepts, with
+// `more` laid over it. A test of an earlier step puts the characters it is
+// about into `note`, a key the check ignores.
+function sessionJson(more: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    access_token: "synthetic.access-token.signature",
+    refresh_token: "synthetic-refresh-token",
+    expires_at: FAR_FUTURE_EXPIRES_AT,
+    ...more,
+  });
+}
+
+// The payload (the part after `base64-`) for a text: Node's own UTF-8 and
+// base64url encoders, which are independent of the library's writer.
+function payloadOfText(text: string): string {
+  return Buffer.from(text, "utf8").toString("base64url");
+}
+
+function valueOfText(text: string): string {
+  return `${SESSION_AUTH_COOKIE_VALUE_PREFIX}${payloadOfText(text)}`;
+}
 
 // Every character outside Section 14's set: the rest of ASCII, and a few
 // others, among them line and paragraph separators, a BOM and surrogates.
@@ -122,6 +166,51 @@ function libraryDecoderError(payload: string): Error | null {
 // The canonical base64url form of these bytes, without padding.
 function payloadOf(bytes: ReadonlyArray<number>): string {
   return Buffer.from(bytes).toString("base64url");
+}
+
+// The independent oracle for the field check, written apart from the module:
+// the decoded text parsed once, and the four fields read as own properties of
+// the parsed value. The pattern has no flags.
+const ORACLE_TOKEN_PATTERN = /^[A-Za-z0-9_-]+[.][A-Za-z0-9_-]+[.][A-Za-z0-9_-]+$/;
+
+function oracleAcceptsText(text: string): boolean {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return false;
+  }
+  const own = (key: string): unknown =>
+    Object.prototype.hasOwnProperty.call(parsed, key)
+      ? (parsed as Record<string, unknown>)[key]
+      : undefined;
+  const token = own("access_token");
+  const refreshToken = own("refresh_token");
+  const expiresAt = own("expires_at");
+  const user = own("user");
+  return (
+    typeof token === "string" &&
+    ORACLE_TOKEN_PATTERN.test(token) &&
+    typeof refreshToken === "string" &&
+    refreshToken.length > 0 &&
+    typeof expiresAt === "number" &&
+    Number.isSafeInteger(expiresAt) &&
+    expiresAt > 0 &&
+    (user === undefined || user === null || (typeof user === "object" && !Array.isArray(user)))
+  );
+}
+
+// The whole check's oracle for a payload: strictly valid UTF-8 by Node's own
+// decoders, and then the field oracle on the text the LIBRARY's decoder
+// gives, which is the text the library would read.
+function oracleAccepts(payload: string): boolean {
+  if (!isStrictUtf8Payload(payload)) {
+    return false;
+  }
+  return oracleAcceptsText(stringFromBase64URL(payload));
 }
 
 const MALFORMED_READ = { status: "malformed", cookies: [] } as const;
@@ -468,10 +557,20 @@ describe("sessionCookiePolicy - the one shared format check (contract 25 Section
         label,
       ).toBe("present");
     }
-    // Every allowed character passes. Each one ends a group of four after
-    // `AAA`, so it gives the low 6 bits of a byte from 0x00 to 0x3F and the
-    // value also passes the strict UTF-8 step.
-    const everyAllowedCharacter = [...BASE64URL_ALPHABET].map((character) => `AAA${character}`).join("");
+    // Every allowed character passes. The value is a session whose `note`
+    // holds every printable ASCII character at each of the three places a
+    // byte can take in a base64url group, so its payload uses all 64
+    // characters of the alphabet.
+    let printable = "";
+    for (let code = 0x20; code <= 0x7e; code += 1) {
+      printable += String.fromCharCode(code);
+    }
+    const everyAllowedCharacter = payloadOfText(
+      sessionJson({ note: [printable, `x${printable}`, `xx${printable}`] }),
+    );
+    for (const character of BASE64URL_ALPHABET) {
+      expect(everyAllowedCharacter.includes(character), character).toBe(true);
+    }
     expect(
       readSessionAuthCookies(LOOPBACK, [
         { name: N, value: `${SESSION_AUTH_COOKIE_VALUE_PREFIX}${everyAllowedCharacter}` },
@@ -480,8 +579,11 @@ describe("sessionCookiePolicy - the one shared format check (contract 25 Section
   });
 
   it("SCP-013 requires the joined value to start with base64-, and joins exactly as the library does", async () => {
-    // `QUJD` is the base64url form of "ABC". `zz` and `zzz` decode to bytes
-    // that are not UTF-8, so a wrong join would be refused.
+    // `GOOD` is the payload of a session the check accepts; its `note` holds
+    // a two-byte character. `zz` and `zzz` decode to bytes that are not UTF-8,
+    // so a wrong join would be refused.
+    const eAcute = String.fromCharCode(0xe9);
+    const GOOD = payloadOfText(sessionJson({ note: `caf${eAcute}` }));
     const cases: ReadonlyArray<ReadonlyArray<SessionCookieEntry>> = [
       [{ name: N, value: "eyJhbGciOiJIUzI1NiJ9" }],
       [{ name: N, value: "base64" }],
@@ -491,65 +593,73 @@ describe("sessionCookiePolicy - the one shared format check (contract 25 Section
       ],
       // N, when non-empty, wins over chunks.
       [
-        { name: N, value: "base64-QUJD" },
+        { name: N, value: `base64-${GOOD}` },
         { name: `${N}.0`, value: "zzz" },
       ],
       [
         { name: N, value: "zzz" },
-        { name: `${N}.0`, value: "base64-QUJD" },
+        { name: `${N}.0`, value: `base64-${GOOD}` },
       ],
       // An empty N falls back to the chunks.
       [
         { name: N, value: "" },
-        { name: `${N}.0`, value: "base64-QU" },
-        { name: `${N}.1`, value: "JD" },
+        { name: `${N}.0`, value: `base64-${GOOD.slice(0, 2)}` },
+        { name: `${N}.1`, value: GOOD.slice(2) },
       ],
       // The join stops at the first missing or empty chunk.
       [
-        { name: `${N}.0`, value: "base64-QUJD" },
+        { name: `${N}.0`, value: `base64-${GOOD}` },
         { name: `${N}.1`, value: "" },
         { name: `${N}.2`, value: "zz" },
       ],
-      [{ name: `${N}.1`, value: "base64-QUJD" }],
+      [{ name: `${N}.1`, value: `base64-${GOOD}` }],
       // For a repeated name the first one counts.
       [
         { name: `${N}.0`, value: "zzz" },
-        { name: `${N}.0`, value: "base64-QUJD" },
+        { name: `${N}.0`, value: `base64-${GOOD}` },
       ],
       [
-        { name: `${N}.0`, value: "base64-QUJD" },
+        { name: `${N}.0`, value: `base64-${GOOD}` },
         { name: `${N}.0`, value: "zzz" },
       ],
-      // The strict UTF-8 step judges the joined value: `w6k` is "\u{e9}", whose
-      // two bytes are split across the chunks, and `QUJDzz` ends in a
-      // truncated sequence although each chunk alone would pass.
+      // The joined value is what is judged: with `zz` joined on, the value
+      // ends in a truncated sequence although each chunk alone would pass.
       [
-        { name: `${N}.0`, value: "base64-w6" },
-        { name: `${N}.1`, value: "k" },
-      ],
-      [
-        { name: `${N}.0`, value: "base64-QU" },
-        { name: `${N}.1`, value: "JDzz" },
+        { name: `${N}.0`, value: `base64-${GOOD.slice(0, 2)}` },
+        { name: `${N}.1`, value: `${GOOD.slice(2)}zz` },
       ],
     ];
     const seen = new Set<string>();
-    for (const cookies of cases) {
+    const judge = async (cookies: ReadonlyArray<SessionCookieEntry>): Promise<string> => {
       const joined = await libraryJoin(N, cookies);
       const expected =
         joined === null
           ? "absent"
           : joined.startsWith(SESSION_AUTH_COOKIE_VALUE_PREFIX) &&
-              isStrictUtf8Payload(joined.slice(SESSION_AUTH_COOKIE_VALUE_PREFIX.length))
+              oracleAccepts(joined.slice(SESSION_AUTH_COOKIE_VALUE_PREFIX.length))
             ? "present"
             : "malformed";
       expect(readSessionAuthCookies(LOOPBACK, cookies).status, JSON.stringify(cookies)).toBe(expected);
-      seen.add(expected);
+      return expected;
+    };
+    for (const cookies of cases) {
+      seen.add(await judge(cookies));
     }
     expect([...seen].sort()).toEqual(["absent", "malformed", "present"]);
-    expect(stringFromBase64URL("w6k")).toBe("\u{e9}");
+    // Cut in two at every place, so that the cut also falls inside the
+    // two-byte character: the joined value is the same session every time,
+    // and it is accepted.
+    expect(stringFromBase64URL(GOOD)).toContain(`caf${eAcute}`);
+    for (let cut = 0; cut < GOOD.length; cut += 1) {
+      const cookies = [
+        { name: `${N}.0`, value: `base64-${GOOD.slice(0, cut)}` },
+        { name: `${N}.1`, value: GOOD.slice(cut) },
+      ];
+      expect(await judge(cookies), String(cut)).toBe("present");
+    }
   });
 
-  it("SCP-014 no value that passes the check reaches any error of the library's decoder, and a deterministic sweep agrees with an independent strict UTF-8 oracle", () => {
+  it("SCP-014 no value that passes the check reaches any error of the library's decoder, and a deterministic sweep agrees with an independent oracle for the strict UTF-8 step and the field check", () => {
     // The decoder names any character outside its alphabet; it skips space,
     // tab, LF, CR and `=`. The check refuses all of them first.
     for (const character of REFUSED_CHARACTERS.filter((value) => value.length === 1)) {
@@ -566,11 +676,13 @@ describe("sessionCookiePolicy - the one shared format check (contract 25 Section
       }
     }
     // A deterministic sweep of three kinds of value: random characters of
-    // the alphabet, Node's UTF-8 and base64url encoding of random text, and
-    // that encoding with one byte changed. The check agrees with the
-    // independent oracle on every value; whenever the library's decoder
-    // throws, the value is refused; and every value that passes decodes in
-    // the library exactly as the oracle decodes it.
+    // the alphabet, Node's UTF-8 and base64url encoding of a session whose
+    // `note` is random text, and that encoding with one byte changed. The
+    // check agrees with the independent oracle on every value (strictly
+    // valid UTF-8, and then the field oracle on the text the library's
+    // decoder gives); whenever the library's decoder throws, the value is
+    // refused; and every value that passes decodes in the library exactly as
+    // the oracle decodes it.
     let seed = 20261005;
     const nextRandom = (): number => {
       seed = (seed * 48271) % 2147483647;
@@ -601,7 +713,7 @@ describe("sessionCookiePolicy - the one shared format check (contract 25 Section
           payload += BASE64URL_ALPHABET[nextRandom() % 64];
         }
       } else {
-        const bytes = Buffer.from(randomText(), "utf8");
+        const bytes = Buffer.from(sessionJson({ note: randomText() }), "utf8");
         if (trial % 3 === 2 && bytes.length > 0) {
           bytes[nextRandom() % bytes.length] = nextRandom() % 256;
         }
@@ -611,7 +723,7 @@ describe("sessionCookiePolicy - the one shared format check (contract 25 Section
       const read = readSessionAuthCookies(LOOPBACK, [
         { name: N, value: `${SESSION_AUTH_COOKIE_VALUE_PREFIX}${payload}` },
       ]);
-      expect(read.status, label).toBe(isStrictUtf8Payload(payload) ? "present" : "malformed");
+      expect(read.status, label).toBe(oracleAccepts(payload) ? "present" : "malformed");
       const error = libraryDecoderError(payload);
       if (error !== null) {
         counts.libraryThrew += 1;
@@ -686,6 +798,25 @@ describe("sessionCookiePolicy - the one shared format check (contract 25 Section
         label,
       ).toEqual(MALFORMED_READ);
     }
+    // Since the field check, a bare value like `9YCAgA` would be refused in any
+    // case, as text that is not JSON. So the same four bytes are also put
+    // inside the `note` string of a session that is good in every other
+    // respect: there only the strict UTF-8 step stands between the value and
+    // the library's decoder, which throws the same RangeError for it.
+    const [head, tail] = sessionJson({ note: "@@" }).split("@@");
+    const inside = payloadOf([...Buffer.from(head, "utf8"), 0xf5, 0x80, 0x80, 0x80, ...Buffer.from(tail, "utf8")]);
+    const insideError = libraryDecoderError(inside);
+    expect(insideError).toBeInstanceOf(RangeError);
+    expect(insideError?.message).toContain(String(0x140000));
+    expect(
+      readSessionAuthCookies(LOOPBACK, [{ name: N, value: `${SESSION_AUTH_COOKIE_VALUE_PREFIX}${inside}` }]),
+    ).toEqual(MALFORMED_READ);
+    // Control: with a well-formed character in the same place it is accepted.
+    const wellFormed = payloadOf([...Buffer.from(head, "utf8"), 0xc3, 0xa9, ...Buffer.from(tail, "utf8")]);
+    expect(
+      readSessionAuthCookies(LOOPBACK, [{ name: N, value: `${SESSION_AUTH_COOKIE_VALUE_PREFIX}${wellFormed}` }])
+        .status,
+    ).toBe("present");
   });
 
   it("SCP-016 anything that is not a plain list of plain name-and-value cookies is malformed, and no getter runs", () => {
@@ -801,9 +932,34 @@ describe("sessionCookiePolicy - the one shared format check (contract 25 Section
         }
       }
     }
+    // Since the field check, bare bytes like these would be refused in any
+    // case, as text that is not JSON. So each sequence is also put inside the
+    // `note` string of a session that is good in every other respect, where
+    // only the strict UTF-8 step can refuse it. The library's decoder throws
+    // on some of those values and decodes the others to something else.
+    const [head, tail] = sessionJson({ note: "@@" }).split("@@");
+    let libraryThrewInside = 0;
+    for (const [name, bytes] of MALFORMED_UTF8) {
+      const inside = payloadOf([...Buffer.from(head, "utf8"), ...bytes, ...Buffer.from(tail, "utf8")]);
+      expect(isStrictUtf8Payload(inside), name).toBe(false);
+      if (libraryDecoderError(inside) !== null) {
+        libraryThrewInside += 1;
+      }
+      expect(
+        readSessionAuthCookies(LOOPBACK, [{ name: N, value: `${SESSION_AUTH_COOKIE_VALUE_PREFIX}${inside}` }]),
+        name,
+      ).toEqual(MALFORMED_READ);
+    }
+    expect(libraryThrewInside).toBeGreaterThan(5);
+    // Control: with a well-formed character in the same place it is accepted.
+    const wellFormed = payloadOf([...Buffer.from(head, "utf8"), 0xc3, 0xa9, ...Buffer.from(tail, "utf8")]);
+    expect(
+      readSessionAuthCookies(LOOPBACK, [{ name: N, value: `${SESSION_AUTH_COOKIE_VALUE_PREFIX}${wellFormed}` }])
+        .status,
+    ).toBe("present");
   });
 
-  it("SCP-019 accepts valid multi-byte UTF-8: every boundary code point, and the library's own encoding of a session holding 2-, 3- and 4-byte characters, whole and in chunks", async () => {
+  it("SCP-019 accepts valid multi-byte UTF-8: a session holding each boundary code point, and the library's own encoding of a session holding 2-, 3- and 4-byte characters, whole and in chunks", async () => {
     const boundaries: ReadonlyArray<readonly [number, ReadonlyArray<number>]> = [
       [0x00, [0x00]],
       [0x7f, [0x7f]],
@@ -819,28 +975,46 @@ describe("sessionCookiePolicy - the one shared format check (contract 25 Section
       [0x10ffff, [0xf4, 0x8f, 0xbf, 0xbf]],
     ];
     for (const [codePoint, bytes] of boundaries) {
-      const payload = payloadOf(bytes);
       const label = codePoint.toString(16);
-      expect([...Buffer.from(String.fromCodePoint(codePoint), "utf8")], label).toEqual(bytes);
+      const character = String.fromCodePoint(codePoint);
+      expect([...Buffer.from(character, "utf8")], label).toEqual(bytes);
+      // The code point inside a session's `note`. JSON writes every code
+      // point from U+0020 up as its own bytes; U+0000 is written as an
+      // escape, because a JSON string may not hold a raw control character.
+      const json = sessionJson({ note: `a${character}z` });
+      const payload = payloadOfText(json);
+      if (codePoint >= 0x20) {
+        expect(Buffer.from(payload, "base64url").includes(Buffer.from(bytes)), label).toBe(true);
+      }
       expect(
         readSessionAuthCookies(LOOPBACK, [{ name: N, value: `${SESSION_AUTH_COOKIE_VALUE_PREFIX}${payload}` }])
           .status,
         label,
       ).toBe("present");
-      expect(stringFromBase64URL(payload), label).toBe(String.fromCodePoint(codePoint));
+      expect(stringFromBase64URL(payload), label).toBe(json);
+      // The bare code point is strictly valid UTF-8 and is no session: the
+      // strict UTF-8 step passes it and the field check refuses it.
+      expect(isStrictUtf8Payload(payloadOf(bytes)), label).toBe(true);
+      expect(
+        readSessionAuthCookies(LOOPBACK, [
+          { name: N, value: `${SESSION_AUTH_COOKIE_VALUE_PREFIX}${payloadOf(bytes)}` },
+        ]),
+        label,
+      ).toEqual(MALFORMED_READ);
     }
 
     // A synthetic session as the library writes it. JSON.stringify escapes
     // the lone surrogate, so what the library encodes is always valid UTF-8.
     // (The 4-byte characters stay below U+20000, which the library's encoder
     // keeps intact.)
-    const text = "caf\u{e9} \u{df} \u{20ac} \u{800} \u{feff} \u{1d11e} \u{1f600} \u{80} \u{7ff} \u{ffff}";
-    const json = JSON.stringify({
-      access_token: `synthetic-${text}`,
-      refresh_token: "synthetic-r",
-      note: "\ud800",
+    const text = [0x63, 0x61, 0x66, 0xe9, 0x20, 0xdf, 0x20, 0x20ac, 0x20, 0x800, 0x20, 0xfeff, 0x20, 0x1d11e, 0x20, 0x1f600, 0x20, 0x80, 0x20, 0x7ff, 0x20, 0xffff]
+      .map((codePoint) => String.fromCodePoint(codePoint))
+      .join("");
+    const json = sessionJson({
+      user: { id: "synthetic-user", user_metadata: { full_name: `synthetic ${text}` } },
+      note: String.fromCharCode(0xd800),
     });
-    expect(json).toContain("\\ud800");
+    expect(json).toContain(`${String.fromCharCode(92)}ud800`);
     const value = `${SESSION_AUTH_COOKIE_VALUE_PREFIX}${stringToBase64URL(json)}`;
     const read = readSessionAuthCookies(LOOPBACK, [{ name: N, value }]);
     expect(read).toEqual({ status: "present", cookies: [{ name: N, value }] });
@@ -873,22 +1047,41 @@ describe("sessionCookiePolicy - the one shared format check (contract 25 Section
     }
     // A dangling character (a payload length of 1 more than a multiple of
     // 4) gives 6 bits and no byte, so the library ignores it and so does the
-    // check, whatever the character is.
+    // check, whatever the character is. `WHOLE` is a session whose JSON text
+    // is a multiple of 3 bytes long, so its payload ends on a full group.
+    let wholeJson = sessionJson({ note: "" });
+    for (let pad = 0; Buffer.byteLength(wholeJson, "utf8") % 3 !== 0; pad += 1) {
+      wholeJson = sessionJson({ note: "x".repeat(pad + 1) });
+    }
+    const WHOLE = payloadOfText(wholeJson);
+    expect(WHOLE.length % 4).toBe(0);
     for (const character of BASE64URL_ALPHABET) {
-      expect(stringFromBase64URL(`QUJD${character}`), character).toBe("ABC");
+      expect(stringFromBase64URL(`${WHOLE}${character}`), character).toBe(wholeJson);
       expect(
-        readSessionAuthCookies(LOOPBACK, [{ name: N, value: `${SESSION_AUTH_COOKIE_VALUE_PREFIX}QUJD${character}` }])
+        readSessionAuthCookies(LOOPBACK, [{ name: N, value: `${SESSION_AUTH_COOKIE_VALUE_PREFIX}${WHOLE}${character}` }])
           .status,
         character,
       ).toBe("present");
     }
-    // `QUI` and `QUJ` both decode to "AB": their last 2 bits (00 and 01) make
-    // no byte.
-    for (const payload of ["QUI", "QUJ"]) {
-      expect(stringFromBase64URL(payload)).toBe("AB");
+    // A payload of 3 characters more than a multiple of 4 ends in a character
+    // whose last 2 bits make no byte. `SHORT` is a session whose JSON text is
+    // 2 bytes more than a multiple of 3; its last character with each of the
+    // four values of those 2 bits decodes to the same text and is accepted.
+    let shortJson = sessionJson({ note: "" });
+    for (let pad = 0; Buffer.byteLength(shortJson, "utf8") % 3 !== 2; pad += 1) {
+      shortJson = sessionJson({ note: "x".repeat(pad + 1) });
+    }
+    const SHORT = payloadOfText(shortJson);
+    expect(SHORT.length % 4).toBe(3);
+    const lastIndex = BASE64URL_ALPHABET.indexOf(SHORT[SHORT.length - 1]);
+    expect(lastIndex % 4).toBe(0);
+    for (let spare = 0; spare < 4; spare += 1) {
+      const payload = `${SHORT.slice(0, -1)}${BASE64URL_ALPHABET[lastIndex + spare]}`;
+      expect(stringFromBase64URL(payload), String(spare)).toBe(shortJson);
       expect(
         readSessionAuthCookies(LOOPBACK, [{ name: N, value: `${SESSION_AUTH_COOKIE_VALUE_PREFIX}${payload}` }])
           .status,
+        String(spare),
       ).toBe("present");
     }
   });
@@ -915,14 +1108,15 @@ describe("sessionCookiePolicy - the one shared format check (contract 25 Section
     // The console spies in afterEach prove nothing was logged.
   });
 
-  it("SCP-022 claims only the decoder: an empty payload, or text that is not JSON, passes this check and is left to the library's own value-free JSON step", () => {
+  it("SCP-022 the strict UTF-8 step is not the last one: an empty payload, or text that is not JSON, is strictly valid UTF-8 and is refused by the field check, so the library's own invalid-JSON step is never reached", () => {
     for (const payload of ["", stringToBase64URL("synthetic text, not JSON")]) {
       expect(libraryDecoderError(payload)).toBeNull();
+      expect(isStrictUtf8Payload(payload)).toBe(true);
+      // What the library would do with it: its own JSON step would fail.
       expect(() => JSON.parse(stringFromBase64URL(payload))).toThrow();
       expect(
-        readSessionAuthCookies(LOOPBACK, [{ name: N, value: `${SESSION_AUTH_COOKIE_VALUE_PREFIX}${payload}` }])
-          .status,
-      ).toBe("present");
+        readSessionAuthCookies(LOOPBACK, [{ name: N, value: `${SESSION_AUTH_COOKIE_VALUE_PREFIX}${payload}` }]),
+      ).toEqual(MALFORMED_READ);
     }
   });
 
@@ -1027,5 +1221,474 @@ describe("sessionCookiePolicy - the one shared format check (contract 25 Section
     expect(outcome.globalDuring).toBe(FailingDecodeTextDecoder);
     expect(decodes).toBe(1);
     expectRefusedQuietly(outcome, "a TextDecoder whose decode throws");
+  });
+});
+
+describe("sessionCookiePolicy - the field check (contract 25 Section 14; item 11)", () => {
+  const N = LOOPBACK.authCookieName;
+  const ch = (code: number): string => String.fromCharCode(code);
+  const BS = ch(92);
+  const LF = ch(10);
+  const CR = ch(13);
+  const TAB = ch(9);
+  const NUL = ch(0);
+  const BOM = ch(0xfeff);
+  const KELVIN = ch(0x212a);
+  const LONG_S = ch(0x17f);
+  const E_ACUTE = ch(0xe9);
+  const U0100 = ch(0x100);
+  const FULL_WIDTH_A = ch(0xff41);
+  const LINE_SEPARATOR = ch(0x2028);
+  const LONE_SURROGATE = ch(0xd800);
+  const EMOJI = String.fromCodePoint(0x1f600);
+  const GOOD_TOKEN = "synthetic.access-token.signature";
+  const RAW_SLOT = "@@RAW-SLOT@@";
+
+  function read(text: string, policy: SessionCookiePolicy = LOOPBACK): SessionAuthCookieRead {
+    return readSessionAuthCookies(policy, [{ name: policy.authCookieName, value: valueOfText(text) }]);
+  }
+
+  // The JSON text of a good session with one field written as raw JSON text,
+  // so that a number can be written as `1e400` and a string can carry a JSON
+  // escape that this file spells out character by character.
+  function withRaw(field: string, rawJson: string): string {
+    return sessionJson({ [field]: RAW_SLOT }).replace(JSON.stringify(RAW_SLOT), () => rawJson);
+  }
+
+  // The JSON text of a good session without one of its keys.
+  function without(field: string): string {
+    const session = JSON.parse(sessionJson({ user: { id: "synthetic-user" } })) as Record<string, unknown>;
+    delete session[field];
+    return JSON.stringify(session);
+  }
+
+  // The module's verdict on a text, which must be the oracle's verdict on the
+  // text the library's own decoder gives for the same payload.
+  function expectVerdict(text: string, expected: "present" | "malformed", label: string): void {
+    expect(oracleAccepts(payloadOfText(text)), label).toBe(expected === "present");
+    const result = read(text);
+    if (expected === "present") {
+      expect(result.status, label).toBe("present");
+    } else {
+      expect(result, label).toEqual(MALFORMED_READ);
+    }
+  }
+
+  it("FCP-001 accepts a session whose four fields have the required form, whole and in chunks, under both policies, and ignores every other key", () => {
+    const hostileElsewhere = `line one${LF}line two ${BS} "quoted" ${NUL}${ch(27)}[2J ${E_ACUTE}${U0100}${EMOJI}`;
+    const texts: string[] = [
+      sessionJson(),
+      sessionJson({ user: null }),
+      sessionJson({ user: {} }),
+      sessionJson({ user: { id: "synthetic-user", user_metadata: { note: hostileElsewhere } } }),
+      sessionJson({
+        token_type: `bearer${LF}${hostileElsewhere}`,
+        expires_in: "3600",
+        provider_token: hostileElsewhere,
+        weak_password: { reasons: [hostileElsewhere] },
+        [`key ${hostileElsewhere}`]: { nested: [1, 2, 3] },
+      }),
+      sessionJson({ access_token: "a.b.c", refresh_token: "r", expires_at: 1 }),
+      sessionJson({ access_token: "A-Z_a-z.0-9_-.___---" }),
+      sessionJson({ expires_at: Number.MAX_SAFE_INTEGER }),
+      // A whole number written with a decimal point or an exponent parses to
+      // the same number.
+      withRaw("expires_at", `${FAR_FUTURE_EXPIRES_AT}.0`),
+      withRaw("expires_at", "4.1024448e9"),
+      // White space between JSON tokens, line breaks included, is still JSON,
+      // for the library as for this check.
+      `${LF} ${sessionJson()} ${CR}${LF}${TAB}`,
+    ];
+    for (const text of texts) {
+      expectVerdict(text, "present", text);
+      for (const policy of [HOSTED, LOOPBACK]) {
+        const value = valueOfText(text);
+        expect(readSessionAuthCookies(policy, [{ name: policy.authCookieName, value }]), text).toEqual({
+          status: "present",
+          cookies: [{ name: policy.authCookieName, value }],
+        });
+        const chunks = createChunks(policy.authCookieName, value, 25).map((chunk) => ({
+          name: chunk.name,
+          value: chunk.value,
+        }));
+        expect(chunks.length, text).toBeGreaterThan(1);
+        const chunked = readSessionAuthCookies(policy, chunks);
+        expect(chunked.status, text).toBe("present");
+        expect(chunked.cookies.map((cookie) => cookie.value).join(""), text).toBe(value);
+      }
+    }
+  });
+
+  // Each access token is given as raw JSON text. A character that a JSON
+  // string may not hold raw travels as an escape, spelled here with BS.
+  const REFUSED_TOKENS: Array<[string, string]> = [
+    ["the Kelvin sign in place of a letter", JSON.stringify(`synthetic${KELVIN}.access-token.signature`)],
+    ["the long s in place of a letter", JSON.stringify(`synthetic${LONG_S}.access-token.signature`)],
+    ["a line feed at the very end", JSON.stringify(`${GOOD_TOKEN}${LF}`)],
+    ["a second line of free text", JSON.stringify(`${GOOD_TOKEN}${LF}forged log line`)],
+    ["a first line of free text", JSON.stringify(`forged log line${LF}${GOOD_TOKEN}`)],
+    ["a line feed carried by a JSON escape", `"synthetic.access${BS}ntoken.signature"`],
+    ["a line feed carried by a JSON unicode escape", `"synthetic.access${BS}u000atoken.signature"`],
+    ["a carriage return carried by a JSON escape", `"synthetic.access${BS}rtoken.signature"`],
+    ["a NUL carried by a JSON escape", `"synthetic.access${BS}u0000token.signature"`],
+    ["an ESC sequence carried by a JSON escape", `"synthetic.access${BS}u001b[2Jtoken.signature"`],
+    ["a tab carried by a JSON escape", `"synthetic.access${BS}ttoken.signature"`],
+    ["a character above U+00FF, raw", JSON.stringify(`synthetic.access${U0100}token.signature`)],
+    ["a character above U+00FF, as a JSON escape", `"synthetic.access${BS}u0100token.signature"`],
+    ["an emoji", JSON.stringify(`synthetic.access${EMOJI}token.signature`)],
+    ["a full-width letter", JSON.stringify(`${FULL_WIDTH_A}synthetic.access-token.signature`)],
+    ["an accented letter at or below U+00FF", JSON.stringify(`synth${E_ACUTE}tic.access-token.signature`)],
+    ["a space", JSON.stringify("synthetic.access token.signature")],
+    ["an equals sign at the end", JSON.stringify(`${GOOD_TOKEN}=`)],
+    ["a plus sign", JSON.stringify("synthetic.access+token.signature")],
+    ["a slash", JSON.stringify("synthetic.access/token.signature")],
+    ["four parts", JSON.stringify("a.b.c.d")],
+    ["two parts", JSON.stringify("a.b")],
+    ["one part", JSON.stringify("abc")],
+    ["two dots and nothing else", JSON.stringify("..")],
+    ["an empty first part", JSON.stringify(".b.c")],
+    ["an empty middle part", JSON.stringify("a..c")],
+    ["an empty last part", JSON.stringify("a.b.")],
+    ["no characters at all", JSON.stringify("")],
+    ["the form of an array holding a good token", `[${JSON.stringify(GOOD_TOKEN)}]`],
+    ["the form of an array holding a string with a line feed", `["synthetic.access${BS}ntoken.signature"]`],
+    ["the form of an object with a toString key", '{"toString":1}'],
+    ["the form of an object holding a good token", `{"access_token":${JSON.stringify(GOOD_TOKEN)}}`],
+    ["the form of a number", "12345"],
+    ["the value null", "null"],
+    ["the value true", "true"],
+  ];
+
+  it.each(REFUSED_TOKENS)("FCP-002 refuses an access_token with %s", (label, rawJson) => {
+    const text = withRaw("access_token", rawJson);
+    // The text is JSON, and the session's other fields are good: only the
+    // token makes the difference.
+    expect(() => JSON.parse(text) as unknown).not.toThrow();
+    expectVerdict(text, "malformed", label);
+    expectVerdict(withRaw("access_token", JSON.stringify(GOOD_TOKEN)), "present", label);
+  });
+
+  it("FCP-003 refuses a session without an access_token, a refresh_token or an expires_at of its own, and accepts one without a user", () => {
+    for (const field of ["access_token", "refresh_token", "expires_at"]) {
+      expectVerdict(without(field), "malformed", field);
+    }
+    expectVerdict(without("user"), "present", "user");
+    expectVerdict(without("note"), "present", "a key the session never had");
+  });
+
+  it("FCP-004 requires a non-empty string as refresh_token and puts no character rule on it", () => {
+    for (const rawJson of ['""', "null", "0", "1", "true", "false", "{}", '{"note":"x"}', "[]", '["x"]']) {
+      expectVerdict(withRaw("refresh_token", rawJson), "malformed", rawJson);
+    }
+    const accepted = [
+      "r",
+      "0",
+      "false",
+      "synthetic refresh token with spaces",
+      `synthetic${NUL}refresh`,
+      `synthetic${CR}${LF}X-Injected: 1`,
+      `synthetic${LONE_SURROGATE}refresh`,
+      `synthetic${EMOJI}${LINE_SEPARATOR}${U0100}refresh`,
+      `synthetic${BS}refresh "quoted"`,
+      "x".repeat(10241),
+    ];
+    for (const refreshToken of accepted) {
+      expectVerdict(sessionJson({ refresh_token: refreshToken }), "present", JSON.stringify(refreshToken).slice(0, 60));
+    }
+  });
+
+  it("FCP-005 requires a positive safe integer as expires_at", () => {
+    const refused = [
+      "1e400",
+      "-1e400",
+      "9007199254740992",
+      "1e21",
+      "0.5",
+      "0",
+      "-0",
+      "-5",
+      "-1",
+      `${FAR_FUTURE_EXPIRES_AT}.5`,
+      '"1"',
+      JSON.stringify(String(FAR_FUTURE_EXPIRES_AT)),
+      "null",
+      "true",
+      "{}",
+      `{"valueOf":${FAR_FUTURE_EXPIRES_AT}}`,
+      "[1]",
+      `[${FAR_FUTURE_EXPIRES_AT}]`,
+      `${"[".repeat(3000)}1${"]".repeat(3000)}`,
+    ];
+    for (const rawJson of refused) {
+      expectVerdict(withRaw("expires_at", rawJson), "malformed", rawJson.slice(0, 40));
+    }
+    // What the refused numbers parse to, as the library would read them.
+    expect(JSON.parse("1e400")).toBe(Infinity);
+    expect(JSON.parse("9007199254740992")).toBe(2 ** 53);
+    expect(Number.isSafeInteger(JSON.parse("9007199254740992"))).toBe(false);
+    for (const rawJson of ["1", "2", String(FAR_FUTURE_EXPIRES_AT), "9007199254740991", "1e3", "1.0"]) {
+      expectVerdict(withRaw("expires_at", rawJson), "present", rawJson);
+    }
+  });
+
+  it("FCP-006 accepts a user that is absent, null or an object, and refuses any other user", () => {
+    for (const rawJson of ['"synthetic-user"', '""', "0", "1", "true", "false", "[]", "[1,2]", '[{"id":"x"}]']) {
+      expectVerdict(withRaw("user", rawJson), "malformed", rawJson);
+    }
+    for (const rawJson of ["null", "{}", '{"id":"synthetic-user"}', '{"toString":1,"__proto__":{"id":1}}']) {
+      expectVerdict(withRaw("user", rawJson), "present", rawJson);
+    }
+    expectVerdict(without("user"), "present", "absent");
+  });
+
+  it("FCP-007 reads the four fields as own properties of the parsed value: a __proto__ key carries nothing, and nothing inherited counts", () => {
+    // Every field under a `__proto__` key and none at the top level: JSON
+    // makes `__proto__` an ordinary own key, so the session has no fields.
+    const carried = `{"__proto__":${sessionJson()}}`;
+    expect(Object.keys(JSON.parse(carried) as object)).toEqual(["__proto__"]);
+    expectVerdict(carried, "malformed", "carried");
+    // A good session beside a `__proto__` key that carries a hostile token:
+    // the top level's own fields are the ones the library reads.
+    const beside = `{"__proto__":{"access_token":"x${BS}ny"},${sessionJson().slice(1)}`;
+    expect((JSON.parse(beside) as { access_token: unknown }).access_token).toBe(GOOD_TOKEN);
+    expectVerdict(beside, "present", "beside");
+
+    // Fields that exist only on Object.prototype are not the cookie's. The
+    // prototype is changed only while the two reads run, and is put back in
+    // the `finally`; every assertion comes afterwards.
+    const prototype = Object.prototype as unknown as Record<string, unknown>;
+    const inherited: Record<string, unknown> = {
+      access_token: GOOD_TOKEN,
+      refresh_token: "synthetic-refresh-token",
+      expires_at: FAR_FUTURE_EXPIRES_AT,
+    };
+    let emptyObject: SessionAuthCookieRead | undefined = undefined;
+    let tokenOnly: SessionAuthCookieRead | undefined = undefined;
+    let inheritedDuring: unknown = undefined;
+    try {
+      for (const [key, value] of Object.entries(inherited)) {
+        Object.defineProperty(prototype, key, { configurable: true, enumerable: false, writable: true, value });
+      }
+      inheritedDuring = ({} as Record<string, unknown>).access_token;
+      emptyObject = read("{}");
+      tokenOnly = read(JSON.stringify({ access_token: GOOD_TOKEN }));
+    } finally {
+      for (const key of Object.keys(inherited)) {
+        Reflect.deleteProperty(prototype, key);
+      }
+    }
+    expect(({} as Record<string, unknown>).access_token).toBe(undefined);
+    expect(inheritedDuring).toBe(GOOD_TOKEN);
+    expect(emptyObject).toEqual(MALFORMED_READ);
+    expect(tokenOnly).toEqual(MALFORMED_READ);
+  });
+
+  it("FCP-008 a key written twice counts as JSON.parse and the library read it, the last value: good first and hostile last is refused, hostile first and good last is accepted", () => {
+    const hostile = `"x${BS}ny"`;
+    const goodFirst = `${sessionJson().slice(0, -1)},"access_token":${hostile}}`;
+    const hostileFirst = `{"access_token":${hostile},${sessionJson().slice(1)}`;
+    expect((JSON.parse(goodFirst) as { access_token: unknown }).access_token).toBe(`x${LF}y`);
+    expectVerdict(goodFirst, "malformed", "good first");
+    expect((JSON.parse(hostileFirst) as { access_token: unknown }).access_token).toBe(GOOD_TOKEN);
+    expectVerdict(hostileFirst, "present", "hostile first");
+    // The same for the other fields the check requires.
+    expectVerdict(`${sessionJson().slice(0, -1)},"expires_at":"1"}`, "malformed", "expires_at last");
+    expectVerdict(`{"expires_at":"1",${sessionJson().slice(1)}`, "present", "expires_at first");
+    expectVerdict(`${sessionJson().slice(0, -1)},"refresh_token":""}`, "malformed", "refresh_token last");
+    expectVerdict(`{"refresh_token":"",${sessionJson().slice(1)}`, "present", "refresh_token first");
+    const withUser = sessionJson({ user: {} });
+    expectVerdict(`${withUser.slice(0, -1)},"user":"x"}`, "malformed", "user last");
+    expectVerdict(`{"user":"x",${withUser.slice(1)}`, "present", "user first");
+  });
+
+  it("FCP-009 keeps a leading byte-order mark, as the library's decoder does: such a text is not JSON for the library, so it is refused here", () => {
+    const withMark = `${BOM}${sessionJson()}`;
+    const payload = payloadOfText(withMark);
+    // The library's decoder keeps the mark, and its JSON step then fails.
+    expect(stringFromBase64URL(payload)).toBe(withMark);
+    expect(stringFromBase64URL(payload).charCodeAt(0)).toBe(0xfeff);
+    expect(() => JSON.parse(stringFromBase64URL(payload)) as unknown).toThrow();
+    // Without the mark the same text is a good session.
+    expect(oracleAcceptsText(withMark.slice(1))).toBe(true);
+    expectVerdict(withMark, "malformed", "a mark before a good session");
+    expectVerdict(`${BOM}${withRaw("access_token", `"x${BS}ny"`)}`, "malformed", "a mark before a hostile session");
+    // A mark inside a string is data; a mark between tokens is not JSON.
+    expectVerdict(sessionJson({ note: `a${BOM}z` }), "present", "a mark inside a string");
+    expectVerdict(`{${BOM}${sessionJson().slice(1)}`, "malformed", "a mark between tokens");
+    expectVerdict(`${sessionJson()}${BOM}`, "malformed", "a mark at the end");
+  });
+
+  it("FCP-010 refuses JSON that is not an object, and text that is not JSON", () => {
+    const good = sessionJson();
+    const refused = [
+      "null",
+      "true",
+      "false",
+      "0",
+      "12345",
+      '"text"',
+      JSON.stringify(GOOD_TOKEN),
+      JSON.stringify(good),
+      "[]",
+      `[${good}]`,
+      "{}",
+      "",
+      " ",
+      "{",
+      good.slice(0, -1),
+      `${good}x`,
+      `${good}${good}`,
+      `${good},`,
+      "undefined",
+      "NaN",
+      // A raw control character inside a string is not JSON.
+      good.replace("synthetic-refresh-token", `synthetic${LF}refresh`),
+      good.replace("synthetic-refresh-token", `synthetic${NUL}refresh`),
+    ];
+    for (const text of refused) {
+      expectVerdict(text, "malformed", JSON.stringify(text).slice(0, 60));
+    }
+  });
+
+  it("FCP-011 a refusal by the field check is the same fixed, frozen, value-free result as any other refusal, and nothing is logged or thrown", () => {
+    const marker = "MARKERdoNotLeak9x";
+    const other = readSessionAuthCookies(LOOPBACK, [{ name: N, value: "not-base64" }]);
+    const refused = [
+      `{"access_token":"${marker}${BS}n${marker}","refresh_token":"${marker}","expires_at":1,"user":{"id":"${marker}"}}`,
+      sessionJson({ access_token: `${marker}.${marker}`, refresh_token: marker }),
+      sessionJson({ expires_at: marker, refresh_token: marker }),
+      sessionJson({ user: marker }),
+      `${marker} is not JSON`,
+      JSON.stringify(marker),
+      JSON.stringify([marker]),
+    ];
+    for (const text of refused) {
+      let result: SessionAuthCookieRead | undefined = undefined;
+      let thrown: unknown = undefined;
+      try {
+        result = read(text);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown, text).toBe(undefined);
+      expect(result, text).toBe(other);
+      expect(result, text).toEqual(MALFORMED_READ);
+      expect(Object.isFrozen(result), text).toBe(true);
+      expect(Object.isFrozen(result?.cookies), text).toBe(true);
+      const shown = textOf(result);
+      expect(shown, text).not.toContain(marker);
+      expect(shown, text).not.toContain(payloadOfText(text).slice(0, 8));
+    }
+    // The console spies in afterEach prove nothing was logged.
+  });
+
+  it("FCP-012 parses the text once, and drops the parser's error, whose message quotes the input", () => {
+    const marker = "MARKERdoNotLeak9x";
+    const notJson = `${marker} is not JSON`;
+    let message = "";
+    try {
+      JSON.parse(notJson);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    // Why the error is dropped: the platform's message quotes the text.
+    expect(message).toContain(marker.slice(0, 6));
+
+    const countParses = (text: string): { calls: number; result: SessionAuthCookieRead | undefined; thrown: unknown } => {
+      const value = valueOfText(text);
+      const parse = vi.spyOn(JSON, "parse");
+      let result: SessionAuthCookieRead | undefined = undefined;
+      let thrown: unknown = undefined;
+      let calls = 0;
+      try {
+        result = readSessionAuthCookies(LOOPBACK, [{ name: N, value }]);
+      } catch (error) {
+        thrown = error;
+      } finally {
+        calls = parse.mock.calls.length;
+        parse.mockRestore();
+      }
+      return { calls, result, thrown };
+    };
+    const refused = countParses(notJson);
+    expect(refused.thrown).toBe(undefined);
+    expect(refused.result).toEqual(MALFORMED_READ);
+    expect(refused.calls).toBe(1);
+    const accepted = countParses(sessionJson({ user: { id: "synthetic-user" } }));
+    expect(accepted.thrown).toBe(undefined);
+    expect(accepted.result?.status).toBe("present");
+    expect(accepted.calls).toBe(1);
+    // A value refused by an earlier step is never parsed at all.
+    const parse = vi.spyOn(JSON, "parse");
+    readSessionAuthCookies(LOOPBACK, [{ name: N, value: "base64-9YCAgA" }]);
+    readSessionAuthCookies(LOOPBACK, [{ name: N, value: "not-base64" }]);
+    const earlier = parse.mock.calls.length;
+    parse.mockRestore();
+    expect(earlier).toBe(0);
+  });
+
+  it("FCP-013 a deterministic sweep of sessions put together from good and hostile parts agrees with the independent oracle on every one", () => {
+    const tokens = [
+      JSON.stringify(GOOD_TOKEN),
+      JSON.stringify("a.b.c"),
+      JSON.stringify(`${GOOD_TOKEN}${LF}`),
+      `"synthetic.access${BS}ntoken.signature"`,
+      JSON.stringify(`synthetic${KELVIN}.access-token.signature`),
+      JSON.stringify("a.b"),
+      `[${JSON.stringify(GOOD_TOKEN)}]`,
+      "null",
+      "",
+    ];
+    const refreshTokens = [JSON.stringify("r"), JSON.stringify(`r${NUL}${CR}${LF}`), '""', "null", "{}", ""];
+    const expiries = ["1", String(FAR_FUTURE_EXPIRES_AT), "0", "-5", "0.5", "1e400", "9007199254740992", '"1"', ""];
+    const users = ["", "null", "{}", '{"id":"synthetic-user"}', '"synthetic-user"', "[1,2]"];
+    const wrappers: Array<(body: string) => string> = [
+      (body) => body,
+      (body) => `${BOM}${body}`,
+      (body) => `[${body}]`,
+      (body) => ` ${body}${LF}`,
+      (body) => `{"__proto__":${body}}`,
+    ];
+    let seed = 20261006;
+    const nextRandom = (): number => {
+      seed = (seed * 48271) % 2147483647;
+      return seed;
+    };
+    const pick = <T,>(items: ReadonlyArray<T>): T => items[nextRandom() % items.length];
+    // Half the time the first entry, which is a good one, so that a fair
+    // share of the sessions put together are accepted.
+    const pickMostlyFirst = <T,>(items: ReadonlyArray<T>): T =>
+      nextRandom() % 2 === 0 ? items[0] : pick(items);
+    const counts = { present: 0, malformed: 0 };
+    for (let trial = 0; trial < 4000; trial += 1) {
+      const members: string[] = [];
+      const add = (key: string, rawJson: string): void => {
+        if (rawJson !== "") {
+          members.push(`${JSON.stringify(key)}:${rawJson}`);
+        }
+      };
+      add("access_token", pickMostlyFirst(tokens));
+      add("refresh_token", pickMostlyFirst(refreshTokens));
+      add("expires_at", pickMostlyFirst(expiries));
+      add("user", pickMostlyFirst(users));
+      // Now and then a key is written a second time, before or after.
+      if (nextRandom() % 4 === 0) {
+        const again = `"access_token":${pick(tokens.filter((token) => token !== ""))}`;
+        if (nextRandom() % 2 === 0) {
+          members.unshift(again);
+        } else {
+          members.push(again);
+        }
+      }
+      // Seven times in eight the text is the plain object.
+      const wrap = nextRandom() % 8 === 0 ? pick(wrappers) : wrappers[0];
+      const text = wrap(`{${members.join(",")}}`);
+      const expected = oracleAccepts(payloadOfText(text));
+      const result = read(text);
+      expect(result.status, text).toBe(expected ? "present" : "malformed");
+      counts[expected ? "present" : "malformed"] += 1;
+    }
+    expect(counts.present).toBeGreaterThan(300);
+    expect(counts.malformed).toBeGreaterThan(2000);
   });
 });

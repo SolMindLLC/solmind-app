@@ -27,6 +27,13 @@ import {
 
 const PROVIDER_NAME = "supabase";
 
+// Login step 6, sub-slice S6-4: the UUID of the account's selected session, which
+// the request presents in its binding cookie, an older superseded one, and the
+// selected session's expiry.
+const SESSION_ID = "5e5510a0-0000-4000-8000-000000001401";
+const SUPERSEDED_SESSION_ID = "5e5510a0-0000-4000-8000-000000001402";
+const SESSION_EXPIRES_AT = "2999-12-31T23:59:59+00:00";
+
 // Build a fully-valid trusted-context input for a given role, mirroring
 // routeAccessDecision.test.ts / serverAuthContext.test.ts. Every field is
 // server-loaded; none is a selector.
@@ -36,7 +43,11 @@ function validInput(
   const userAccountId = `user-${role}-1`;
   const providerUserId = `auth-user-${role}-1`;
   return {
-    authenticatedUser: { providerName: PROVIDER_NAME, providerUserId },
+    authenticatedUser: {
+      providerName: PROVIDER_NAME,
+      providerUserId,
+      presentedSessionId: SESSION_ID,
+    },
     authProviderIdentity: {
       userAccountId,
       providerName: PROVIDER_NAME,
@@ -45,9 +56,11 @@ function validInput(
     },
     userAccount: { userAccountId, accountStatus: "active" },
     session: {
+      userSessionId: SESSION_ID,
       userAccountId,
       activeRoleContext: role,
       sessionStatus: "active",
+      expiresAt: SESSION_EXPIRES_AT,
     },
     activeRoleAssignment: { userAccountId, roleCode: role, roleStatus: "active" },
     guideProfile:
@@ -58,8 +71,15 @@ function validInput(
   };
 }
 
-function principalFor(role: "admin" | "guide"): SupabaseAuthenticatedUser {
-  return { providerName: PROVIDER_NAME, providerUserId: `auth-user-${role}-1` };
+function principalFor(
+  role: "admin" | "guide",
+  presentedSessionId: string | null = SESSION_ID,
+): SupabaseAuthenticatedUser {
+  return {
+    providerName: PROVIDER_NAME,
+    providerUserId: `auth-user-${role}-1`,
+    presentedSessionId,
+  };
 }
 
 // An in-memory auth source seeded with one account, used as the injected
@@ -94,8 +114,23 @@ describe("resolveAdminRouteAccess - allow", () => {
           guideProfileId: null,
           explorerProfileId: null,
         },
+        session: { userSessionId: SESSION_ID, expiresAt: SESSION_EXPIRES_AT },
       },
     });
+  });
+});
+
+// Login step 6, sub-slice S6-4: the session binding on the /admin helper.
+describe("resolveAdminRouteAccess - the session binding (contract 25 Section 8)", () => {
+  it("PRQ-801 denies a verified admin whose request presents no session, or a superseded session's UUID", async () => {
+    for (const presented of [null, SUPERSEDED_SESSION_ID]) {
+      const result = await resolveAdminRouteAccess({
+        principalSource: principalSource(principalFor("admin", presented)),
+        authSource: authSourceWith("admin"),
+      });
+
+      expect(result).toEqual({ allowed: false, reason: ROUTE_ACCESS_DENY_REASON });
+    }
   });
 });
 
@@ -193,8 +228,14 @@ function realNow(): Date {
   return REAL_NOW;
 }
 
-function realAdminPrincipal(): SupabaseAuthenticatedUser {
-  return { providerName: PROVIDER_NAME, providerUserId: REAL_PROVIDER_USER_ID };
+function realAdminPrincipal(
+  presentedSessionId: string | null = SESSION_ID,
+): SupabaseAuthenticatedUser {
+  return {
+    providerName: PROVIDER_NAME,
+    providerUserId: REAL_PROVIDER_USER_ID,
+    presentedSessionId,
+  };
 }
 
 // Mock scoped-select executor: returns a canned result keyed by table.
@@ -230,6 +271,7 @@ function realAdminChainTables(
     user_session: {
       data: [
         {
+          user_session_id: SESSION_ID,
           user_account_id: REAL_ACCOUNT_ID,
           active_role_context: role,
           session_status: "active",
@@ -292,6 +334,33 @@ describe("resolveAdminRouteAccess - real-shaped service-role auth source", () =>
     });
 
     expect(result).toEqual({ allowed: false, reason: ROUTE_ACCESS_DENY_REASON });
+  });
+
+  it("PRQ-802 denies /admin through the real assembler when the presented UUID is not the selected session's, and allows it when it is", async () => {
+    const authSource = createAdminAuthSourceFromExecutor({
+      executor: realExecutor(realAdminChainTables("admin")),
+      now: realNow,
+    });
+
+    for (const presented of [null, SUPERSEDED_SESSION_ID]) {
+      const result = await resolveAdminRouteAccess({
+        principalSource: principalSource(realAdminPrincipal(presented)),
+        authSource,
+      });
+      expect(result).toEqual({ allowed: false, reason: ROUTE_ACCESS_DENY_REASON });
+    }
+
+    const allowed = await resolveAdminRouteAccess({
+      principalSource: principalSource(realAdminPrincipal(SESSION_ID)),
+      authSource,
+    });
+    expect(allowed.allowed).toBe(true);
+    if (allowed.allowed) {
+      expect(allowed.context.session).toEqual({
+        userSessionId: SESSION_ID,
+        expiresAt: REAL_FUTURE,
+      });
+    }
   });
 
   it("denies a null principal WITHOUT reading any records through the real assembler", async () => {

@@ -14,9 +14,12 @@
 //     below (AUTH-RLS-DEC-023), backed by the runtime browser guard and by keeping
 //     this module OFF the shared src/lib/solmind/supabase index barrel. Import it
 //     only from explicit server paths.
-//   - Authorization is NOT done here. Every service-role read must run behind
-//     deriveTrustedServerAuthContext and the guard layer, which stay the
-//     authority. This module is a small factory only.
+//   - Authorization is NOT done here. Every service-role read made for a
+//     signed-in request must run behind deriveTrustedServerAuthContext and the
+//     guard layer, which stay the authority. Login step 6's sign-in routes
+//     (sub-slice S6-8) use this client before any session exists, and only
+//     through the enumerated login database functions. This module is a small
+//     factory only.
 
 import "server-only";
 

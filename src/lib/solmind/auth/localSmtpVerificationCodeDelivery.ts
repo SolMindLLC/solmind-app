@@ -19,7 +19,8 @@ import {
 // Supabase stack's mail catcher) over plain SMTP, using Node's built-in
 // `node:net` and no new dependency.
 //
-// Dormant: nothing composes it yet. The future server composition root
+// Composed by login step 5's composition root, which login step 6's Explorer
+// sign-in routes (S6-8) call for a loopback trusted origin only. That root
 // injects the host, port, sender, wording and timeout explicitly. This module
 // reads no environment variables, has no defaults, and never falls back to a
 // fake transport.

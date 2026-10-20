@@ -58,9 +58,9 @@ import { createVerificationCodePepper, type VerificationCodePepper } from "./ver
 // The environment is passed in, defaulting to `process.env`, and only the
 // two names above are read from it, as plain property reads.
 //
-// Dormant: no application runtime caller is introduced. Among application
-// files, only the login route configuration beside it imports it, and no
-// application file imports that; the unit tests import both. Keep it
+// Among application files, only the login route configuration beside it
+// imports it. Login step 6's Explorer sign-in routes (S6-8) and the server
+// start hook load that configuration; the unit tests import both. Keep it
 // server-only, direct-import only and off every barrel.
 
 if (typeof window !== "undefined") {

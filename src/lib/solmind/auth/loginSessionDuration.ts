@@ -32,9 +32,9 @@
 // second no cookie may be written, and over 3600 seconds, which only this
 // server's clock running behind the database's can show, is an abnormal state.
 //
-// Dormant: only the dormant session-creation caller of this sub-slice, in
-// `../supabase/`, imports this module. Keep it direct-import only and off
-// every barrel.
+// Only the session-creation caller of this sub-slice, in `../supabase/`,
+// imports this module; login step 6's Explorer sign-in routes (S6-8) call
+// that caller. Keep it direct-import only and off every barrel.
 
 export const LOGIN_SESSION_DURATION_LIMITS: Readonly<{
   expiryMarginSeconds: number;

@@ -28,13 +28,17 @@ or validation expectations change.
 
 The current app pairs an interactive deterministic Explorer prototype with
 static MVP0 preview pages and several foundation-first backend modules. These
-surfaces are development and review artifacts, not complete runtime workflows.
+surfaces are development and review artifacts. Explorer email-code sign-in, a protected
+minimal home and sign-out have explicit runtime owners; that home does not activate
+Virtual Guide conversations or change the deterministic `/explorer` prototype.
 
 User-facing routes:
 
 ```text
 /
 /login
+/login/explorer
+/explorer/home
 /admin
 /guide
 /guide/explorers/avery/waypoint-suggestions
@@ -51,6 +55,9 @@ Server route handlers:
 
 ```text
 /admin/access
+/login/explorer/send
+/login/explorer/verify
+/logout
 /guide/waypoint-suggestions/relationships
 /guide/waypoint-suggestions/[relationshipId]/suggestions
 /guide/waypoint-suggestions/[relationshipId]/[suggestedWaypointId]/detail
@@ -63,7 +70,12 @@ Current route purpose:
 | Route | Purpose |
 |---|---|
 | `/` | Public landing page (preview) |
-| `/login` | Login preview |
+| `/login` | Role chooser with Explorer email-code sign-in; Guide/Admin remain previews |
+| `/login/explorer` | Fixed Explorer sign-in and re-entry |
+| `/explorer/home` | Server-authorized minimal Explorer home with finite-session reminder and sign-out |
+| `/login/explorer/send` | Same-origin Explorer code request through the local email catcher |
+| `/login/explorer/verify` | Same-origin verification, session creation and fixed-home result |
+| `/logout` | Same-origin sign-out with explicit confirmed and uncertain outcomes |
 | `/admin` | Admin dashboard preview |
 | `/guide` | Guide dashboard preview |
 | `/guide/explorers/avery/waypoint-suggestions` | Deterministic fixture-backed Human Guide Suggested Waypoint list, draft, Pull Back, sent-detail, and receipt review surface |
@@ -184,7 +196,7 @@ Backend foundations present in the repository (high level):
   16,384-byte bounded stream, and Unicode-scalar integrity at the existing
   command-composition boundary. It adds no POST route or database caller.
 - Auth/RLS audit persistence for `/admin/access`: the bounded audit event model, the `public.solmind_record_audit_event` database writer function, the closed-allowlist app writer chain, and the runtime wiring.
-- Dormant verification and session database primitives: verification-challenge redemption and issuance, account-bound session creation, the all-history chronology correction, the login step 6a logout writer, which ends only the presented active session, and the login step 6 sign-in lookups (sub-slice S6-5), which find the one eligible account for a typed email or the Admin username and confirm that a redeemed code belongs to that account.
+- Verification and session database primitives: the Explorer server composition calls verification-challenge issuance/redemption, account lookup, redeemed-challenge confirmation and account-bound session creation; logout ends the presented session through its separate writer. The all-history chronology correction and role/session checks remain database backstops. Guide/Admin runtime sign-in stays separate.
 - Dormant Explorer invitation foundations: the protected invitation-acceptance preparation helper, capacity and lock-key behavior, shared invited-identity provisioning, Guide-to-Explorer invitation issuance, replacement, revocation, and Explorer invitation acceptance with one `intake_pending` relationship.
 - Dormant Explorer S02 foundations: a protected 1-100 day Shared Snapshot sendability setting (default 7), a server-only fixed-key reader, a service-role-only audited mutation, and a manually invoked local synthetic Guide/Explorer fixture.
 - Dormant Summary and Shared Snapshot persistence foundation: immutable Guide-authored Summary revisions and sections, an authoritative publication record and fail-closed Explorer projection, Explorer-private exact-review drafts, immutable Explorer-confirmed Shared Snapshots with preserved lineage, and bounded service-role-only publication, unpublication, confirmation, and integrity surfaces. It has no application caller, permissive RLS policy, direct-table role grant, hosted data, provider action, deployment, or real-user path.
@@ -510,3 +522,34 @@ Durable implementation boundaries:
   separately reviewed changes.
 
 Safety, consent, role access, and privacy behavior must be implemented carefully and verified before production use.
+
+## Local Explorer sign-in boundary
+
+The server composes the existing code-issuance/redemption services, account
+lookup, provider identity bridge and SolMind session creation. A valid provider
+token alone does not authorize the home: every request must also bind the
+current active Explorer session and application records. The home receives only
+expiry and server-observation timestamps. Sign-out is a POST; a missing or
+uncertain response must not be presented as confirmed remote completion.
+
+Local development uses the existing Next scripts and local Supabase stack.
+Configure the public local Supabase URL/anon key, server-only service-role key,
+trusted loopback application origin and independent verification pepper listed
+in `.env.example`. Never commit actual values. Email goes to the local catcher;
+no external delivery provider is activated. A database reset does not create
+demo accounts; the separately approved local fixture/setup owns those records.
+The optional credential-pair proof key is independent of the pepper. Leaving it
+unconfigured disables proof-authorized renewal, not ordinary sign-in.
+
+Use Next's standard `--webpack` development/build option when a long Windows
+validation path exceeds Turbopack's filesystem path limit. This is a tooling
+choice, not a change to authentication or a reason to adopt a custom launcher.
+
+A compiled app or a passing signed-out check does not prove successful local
+sign-in. Keep actual account/code delivery, successful session/home refresh,
+sign-out and subsequent denial evidence in the existing execution/test owners.
+For this Explorer integration Paul approved direct functional Chrome proof on
+October 19 instead of the earlier custom-launcher/watched-session prerequisite.
+Account setup remains Paul-run; necessary database and authorization checks,
+complete review, and application/banking assurance remain required. Stay-signed-in renewal, connected Guide/Admin
+logins and Virtual Guide conversations are separate increments.

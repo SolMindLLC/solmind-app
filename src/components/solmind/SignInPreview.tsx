@@ -9,6 +9,7 @@ import {
   SIGN_IN_HEADING_ID,
   SIGN_IN_SCREENS,
   signInPreviewReducer,
+  type PasswordSignInRole,
 } from "@/lib/solmind/signInPreview";
 import { SignInPreviewView } from "@/components/solmind/SignInPreviewParts";
 
@@ -19,8 +20,10 @@ import { SignInPreviewView } from "@/components/solmind/SignInPreviewParts";
 // what is typed in it, so it never reaches this state or the rendered markup,
 // and it is gone once the screen changes. Nothing leaves the page.
 
-export function SignInPreview() {
-  const [state, dispatch] = useReducer(signInPreviewReducer, INITIAL_SIGN_IN_PREVIEW_STATE);
+type SignInPreviewProps = Readonly<{ initialRole?: PasswordSignInRole; onChooseDifferentRole?: () => void }>;
+
+export function SignInPreview({ initialRole, onChooseDifferentRole }: SignInPreviewProps) {
+  const [state, dispatch] = useReducer(signInPreviewReducer, initialRole, (role) => role === undefined ? INITIAL_SIGN_IN_PREVIEW_STATE : signInPreviewReducer(INITIAL_SIGN_IN_PREVIEW_STATE, { type: "chooseRole", role }));
   const [emailDraft, setEmailDraft] = useState("");
   const [codeDraft, setCodeDraft] = useState("");
   const shownScreen = useRef(state.screen);
@@ -58,6 +61,7 @@ export function SignInPreview() {
         setEmailDraft("");
         setCodeDraft("");
         dispatch({ type: "chooseDifferentRole" });
+        onChooseDifferentRole?.();
       }}
       onChooseRole={(role) => dispatch({ type: "chooseRole", role })}
       onCodeDraftChange={(value) => setCodeDraft(value.replace(/\D/g, "").slice(0, CODE_LENGTH))}

@@ -287,7 +287,7 @@ describe("verificationChallengeComposition - the dormant composition root", () =
     ]);
   });
 
-  it("VCC-002 composes with login step 4's real local SMTP transport, which opens nothing until a send", () => {
+  it("VCC-002 composes with login step 4's real local SMTP transport", () => {
     const fake = fakeWiring({ createDeliveryTransport: createLocalSmtpVerificationCodeTransport });
     const services = createVerificationChallengeServices(
       configuration({ localSmtpHost: "::1" }),
@@ -702,7 +702,7 @@ describe("verificationChallengeComposition - the dormant composition root", () =
     await new Promise((resolve) => setTimeout(resolve, 30));
   });
 
-  it("VCC-009 the public factories and the composition root neither accept nor expose a slot pool", () => {
+  it("VCC-009 the public factories and the composition root expose no slot pool and refuse one in their dependency object, and each public factory declares one parameter", () => {
     // Neither runtime module exports a pool factory or a pool-taking factory.
     for (const [name, namespace] of [
       ["verificationChallengeCallers", publicCallersModule],
@@ -752,8 +752,9 @@ describe("verificationChallengeComposition - the dormant composition root", () =
         [],
       );
     }
-    // The public factories take exactly one argument, so a pool cannot be
-    // passed beside the dependencies either.
+    // Each public factory declares exactly one parameter (its `length` is 1).
+    // That is the declared arity only: it does not show what a factory would
+    // do with an extra argument.
     expect(createVerificationChallengeIssuer).toHaveLength(1);
     expect(createVerificationChallengeRedeemer).toHaveLength(1);
   });
@@ -770,8 +771,10 @@ describe("verificationChallenge - server-only, dormant and off every barrel", ()
   // source imports the code module, and the route configuration imports the
   // pepper source and the root's configuration type, so they join the guarded
   // set, and with them the normalizer. Their own boundary tests are in
-  // `loginRouteConfiguration.test.ts`; the route slice that first imports
-  // any of them (S6-8) amends this list.
+  // `loginRouteConfiguration.test.ts`. The Explorer sign-in routes (login
+  // step 6, sub-slice S6-8) are the first application files to reach some of
+  // these modules; the names stay guarded, and VCB-004 below lists every
+  // permitted reference exactly.
   const guardedNames = [
     ...moduleNames,
     "verificationCodeDelivery",
@@ -1029,7 +1032,7 @@ describe("verificationChallenge - server-only, dormant and off every barrel", ()
     }
   });
 
-  it("VCB-004 is dormant: every non-test file, the guarded modules included, has no computed reference or import.meta, and no other application file reaches these modules, login step 4's or login step 6 sub-slice S6-1's", () => {
+  it("VCB-004 every non-test file, the guarded modules included, has no computed reference or import.meta, and only the Explorer sign-in routes' composition, their dependency factory and the server start hook reach these modules, login step 4's or login step 6 sub-slice S6-1's, by exactly the listed references", () => {
     const root = sourceRoot();
     const offenders: string[] = [];
     for (const file of sourceFiles(root)) {
@@ -1040,10 +1043,32 @@ describe("verificationChallenge - server-only, dormant and off every barrel", ()
         continue;
       }
       for (const offender of dormancyOffenders(file, fs.readFileSync(file, "utf8"), root)) {
-        offenders.push(`${path.relative(root, file)}: ${offender}`);
+        offenders.push(`${path.relative(root, file).split(path.sep).join("/")}: ${offender}`);
       }
     }
-    expect(offenders).toEqual([]);
+    // Amended by the Explorer sign-in routes (login step 6, sub-slice S6-8).
+    // Exactly these references, and no other: the routes' server composition
+    // imports the shared normalizer and, from the public callers module, the
+    // acknowledgment helper and a type; their dependency factory imports the
+    // route configuration and the composition root; and the server start
+    // hook imports the route configuration for the startup check. Each
+    // import is listed with that file's own mention of the module's name.
+    // Nothing reaches the restricted core, the code module, the delivery
+    // boundary, the local transport, the wording or the pepper source. The
+    // next slice that reaches any of these modules (S6-9 for Guides and the
+    // Admin) amends this list in its own slice.
+    expect(offenders.sort()).toEqual([
+      "instrumentation-node.ts: import ./lib/solmind/auth/loginRouteConfiguration",
+      "instrumentation-node.ts: mentions loginRouteConfiguration",
+      "lib/solmind/supabase/explorerSignInComposition.ts: import ../auth/loginContactNormalizer",
+      "lib/solmind/supabase/explorerSignInComposition.ts: import ../auth/verificationChallengeCallers",
+      "lib/solmind/supabase/explorerSignInComposition.ts: mentions loginContactNormalizer",
+      "lib/solmind/supabase/explorerSignInComposition.ts: mentions verificationChallengeCallers",
+      "lib/solmind/supabase/explorerSignInDependencies.ts: import ../auth/loginRouteConfiguration",
+      "lib/solmind/supabase/explorerSignInDependencies.ts: import ../auth/verificationChallengeComposition",
+      "lib/solmind/supabase/explorerSignInDependencies.ts: mentions loginRouteConfiguration",
+      "lib/solmind/supabase/explorerSignInDependencies.ts: mentions verificationChallengeComposition",
+    ]);
 
     // Controls: each form, placed in each guarded login step 4 module, is an
     // offender, although those modules may still import each other literally.

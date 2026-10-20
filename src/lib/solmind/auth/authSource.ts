@@ -79,7 +79,11 @@ export interface SolMindAuthSource {
 
 // One stored account: the server-verified principal used as the lookup key, and
 // the exact trusted records to return for it. The records are returned verbatim;
-// the request never injects or overrides them.
+// the request never injects or overrides them. One value is not a record and is
+// never taken from the store: the session UUID the request presented in its
+// session-binding cookie (presentedSessionId). On a match it is taken from the
+// request's principal, as the real adapter echoes it, so a stored value can
+// never stand in for what a request presented. The lookup key ignores it.
 export type InMemoryAuthAccountFixture = {
   principal: SupabaseAuthenticatedUser;
   serverAuthContextInput: DeriveTrustedServerAuthContextInput;
@@ -129,9 +133,22 @@ export function createInMemoryAuthSource(
       );
       // Records come only from the store. On a miss, return the all-null input
       // so the guard layer denies by default.
-      return Promise.resolve(
-        match ? match.serverAuthContextInput : EMPTY_SERVER_AUTH_CONTEXT_INPUT,
-      );
+      if (!match) {
+        return Promise.resolve(EMPTY_SERVER_AUTH_CONTEXT_INPUT);
+      }
+      const stored = match.serverAuthContextInput;
+      if (stored.authenticatedUser === null) {
+        return Promise.resolve(stored);
+      }
+      // The presented session UUID is the request's, never the store's: a
+      // fresh object carries it, and the fixture itself is not changed.
+      return Promise.resolve({
+        ...stored,
+        authenticatedUser: {
+          ...stored.authenticatedUser,
+          presentedSessionId: request.authenticatedUser.presentedSessionId,
+        },
+      });
     },
 
     loadGuideRelationship(request) {

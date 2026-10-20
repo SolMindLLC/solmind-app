@@ -105,7 +105,7 @@ export type AuthResolutionFailureAuditSink = () => void | Promise<void>;
 //
 // principalSource proves WHO (identity only); authSource loads WHAT (records only).
 // They are separate clients and are never merged (AUTH-RLS-DEC-015). In production
-// the composition root injects the concrete @supabase/ssr-backed principal source
+// the composition root injects the concrete Supabase-backed principal source
 // and the concrete service-role-backed auth source; tests inject in-memory doubles.
 export type ComposeRequestAuthContextDependencies = {
   principalSource: SolMindRequestAuthPrincipalSource;

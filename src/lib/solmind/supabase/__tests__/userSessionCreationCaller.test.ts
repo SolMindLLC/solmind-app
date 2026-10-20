@@ -92,10 +92,13 @@ type RpcCall = Readonly<{
   signal: AbortSignal | null;
 }>;
 
-// `expires_at` as PostgreSQL prints a timestamptz in JSON, at the given
-// instant plus a microsecond part.
-function pgTimestamp(milliseconds: number, microseconds = "123456"): string {
-  return `${new Date(milliseconds).toISOString().slice(0, 19)}.${microseconds}+00:00`;
+// A synthetic `expires_at` text for the given instant: its date, time and
+// three millisecond digits are kept, and the three digits given here are
+// appended as microseconds (the fourth to sixth fraction digits), so the text
+// holds six fraction digits. It is a made-up timestamp in a form the caller's
+// parser accepts, and no claim about the text PostgreSQL prints.
+function pgTimestamp(milliseconds: number, submillisecondDigits = "456"): string {
+  return `${new Date(milliseconds).toISOString().slice(0, 23)}${submillisecondDigits}+00:00`;
 }
 
 function sessionRow(
@@ -105,8 +108,8 @@ function sessionRow(
   return {
     outcome: "created",
     user_session_id: SESSION_ID,
-    // The microseconds are below a millisecond, so the Max-Age is unchanged.
-    expires_at: pgTimestamp(expiresAtMilliseconds, "000999"),
+    // The 999 microseconds are below a millisecond, so the Max-Age is unchanged.
+    expires_at: pgTimestamp(expiresAtMilliseconds, "999"),
     ...overrides,
   };
 }
@@ -369,12 +372,26 @@ describe("userSessionCreationCaller - creating a session (contract 25 Sections 6
       ["0 seconds left", NOW, refused("failed")],
       ["expired a minute ago", NOW - 60_000, refused("failed")],
     ];
+    const answeredExpiryTexts = new Map<string, string>();
     for (const [label, expiresAt, expected] of cases) {
+      const expiresAtText = pgTimestamp(expiresAt, "000");
+      answeredExpiryTexts.set(label, expiresAtText);
       const rpc = fakeRpc(() =>
-        rpcResponse([{ outcome: "created", user_session_id: SESSION_ID, expires_at: pgTimestamp(expiresAt, "000") }]),
+        rpcResponse([{ outcome: "created", user_session_id: SESSION_ID, expires_at: expiresAtText }]),
       );
       expect(view(await buildCreator({ rpcClient: rpc.client }).create(request())), label).toEqual(expected);
     }
+    // The two fractional cases answered exactly these texts: the instant's
+    // milliseconds are in the expiry (NOW is 17:00:00.000 UTC), so the cases
+    // are 3000.999 and 0.999 seconds from the end, as their labels say.
+    expect(
+      answeredExpiryTexts.get("3000.999 seconds left") === "2026-10-05T17:50:00.999000+00:00",
+      "USC-003: the exact expiry text of the 3000.999 seconds case",
+    ).toBe(true);
+    expect(
+      answeredExpiryTexts.get("0.999 seconds left") === "2026-10-05T17:00:00.999000+00:00",
+      "USC-003: the exact expiry text of the 0.999 seconds case",
+    ).toBe(true);
 
     // The Max-Age is worked out when the answer is accepted, from the
     // returned expiry: 2.5 seconds after the duration was computed, 3477.
@@ -402,6 +419,14 @@ describe("userSessionCreationCaller - creating a session (contract 25 Sections 6
       const rpc = fakeRpc(() => rpcResponse([row]));
       expect(view(await buildCreator({ rpcClient: rpc.client }).create(request())), label).toEqual(refused("failed"));
     }
+    // The "0.5 seconds left" row answered exactly this text: the instant's
+    // 500 milliseconds are in the expiry (NOW is 17:00:00.000 UTC), followed
+    // by the row fixture's 999 microseconds, which are below a millisecond.
+    const halfSecondRow = rows.find(([label]) => label === "0.5 seconds left");
+    expect(
+      halfSecondRow !== undefined && halfSecondRow[1].expires_at === "2026-10-05T17:00:00.500999+00:00",
+      "USC-004: the exact expiry text of the 0.5 seconds case",
+    ).toBe(true);
 
     // Each create is its own single call: two creates are two calls with the
     // same arguments, and nothing is cached or looked up between them.
@@ -795,7 +820,7 @@ describe("userSessionCreationCaller - creating a session (contract 25 Sections 6
     expect(() => buildCreator({ rpcTimeoutMilliseconds: 60_000 })).not.toThrow();
   });
 
-  it("USC-012 returns frozen results from the closed set, shared for every refusal, carrying no account, challenge or error text, and never throws", async () => {
+  it("USC-012 returns results from the closed set, one shared object for two `failed` answers and one for two `invalid_request` answers (`denied` is not sampled), the first `failed` result frozen, carrying no account, challenge or error text, and never throws", async () => {
     expect(USER_SESSION_CREATION_OUTCOMES).toEqual(["created", "existing", "denied", "invalid_request", "failed"]);
     const creator = buildCreator({ rpcClient: fakeRpc(() => Promise.reject(hostileError())).client });
     const first = await creator.create(request());
@@ -1136,12 +1161,14 @@ describe("loginSessionDuration and userSessionCreationCaller - module boundary (
     }
   });
 
-  it("USB-004 is dormant: no other application file references or names either module", () => {
+  it("USB-004 only the Explorer sign-in routes' dependency factory references or names the session caller, by exactly the listed references, and nothing else reaches either module", () => {
     // Computed references and `import.meta` in any non-test file are already
     // refused by the login step 5 boundary test (VCB-004), so the literal
-    // references found here are all the references there are. The route slice
-    // that first imports either module (S6-8) must amend this test in its own
-    // slice, as VCB-004 is amended for login step 5's modules.
+    // references found here are all the references there are. Amended by the
+    // Explorer sign-in routes (login step 6, sub-slice S6-8): their dependency
+    // factory imports the session caller and names it, and nothing else may
+    // reach either module. The next route slice (S6-9) amends this list in its
+    // own slice.
     const root = sourceRoot();
     const durationPath = path.join(root, "lib", "solmind", "auth", "loginSessionDuration").toLowerCase();
     const callerPath = path.join(root, "lib", "solmind", "supabase", "userSessionCreationCaller").toLowerCase();
@@ -1163,16 +1190,23 @@ describe("loginSessionDuration and userSessionCreationCaller - module boundary (
         }
         const resolved = resolveReference(file, reference.specifier, root);
         if (resolved !== null && guarded.has(resolved)) {
-          offenders.push(`${path.relative(root, file)}: ${reference.form} ${reference.specifier}`);
+          offenders.push(
+            `${path.relative(root, file).split(path.sep).join("/")}: ${reference.form} ${reference.specifier}`,
+          );
         }
       }
       for (const name of ["loginSessionDuration", "userSessionCreationCaller"]) {
         if (new RegExp(`\\b${name}\\b`).test(text)) {
-          offenders.push(`${path.relative(root, file)}: mentions ${name}`);
+          offenders.push(`${path.relative(root, file).split(path.sep).join("/")}: mentions ${name}`);
         }
       }
     }
-    expect(offenders).toEqual([]);
+    // Exactly these: one import of the session caller and that file's own
+    // mention of it. Nothing outside the pair references or names the rule.
+    expect(offenders.sort()).toEqual([
+      "lib/solmind/supabase/explorerSignInDependencies.ts: import ./userSessionCreationCaller",
+      "lib/solmind/supabase/explorerSignInDependencies.ts: mentions userSessionCreationCaller",
+    ]);
 
     // Controls: a literal import of either module from another file, and a
     // mention by name, are both found.

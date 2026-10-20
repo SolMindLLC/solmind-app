@@ -25,8 +25,21 @@ const UNKNOWN_RELATIONSHIP_ID = "rel-does-not-exist";
 
 const PROVIDER_NAME = "supabase";
 
-function principalFor(role: "admin" | "guide" | "explorer"): SupabaseAuthenticatedUser {
-  return { providerName: PROVIDER_NAME, providerUserId: `auth-user-${role}-1` };
+// Login step 6, sub-slice S6-4: the UUID of the account's selected session, which
+// a request presents in its binding cookie, and a different one.
+const SESSION_ID = "5e5510a0-0000-4000-8000-000000000e01";
+const OTHER_SESSION_ID = "5e5510a0-0000-4000-8000-000000000e02";
+const SESSION_EXPIRES_AT = "2999-12-31T23:59:59+00:00";
+
+function principalFor(
+  role: "admin" | "guide" | "explorer",
+  presentedSessionId: string | null = SESSION_ID,
+): SupabaseAuthenticatedUser {
+  return {
+    providerName: PROVIDER_NAME,
+    providerUserId: `auth-user-${role}-1`,
+    presentedSessionId,
+  };
 }
 
 // Build a fully-valid trusted-context input for a given canonical role, in the
@@ -44,7 +57,11 @@ function validServerAuthContextInput(
   const { providerUserId } = principalFor(role);
 
   return {
-    authenticatedUser: { providerName: PROVIDER_NAME, providerUserId },
+    authenticatedUser: {
+      providerName: PROVIDER_NAME,
+      providerUserId,
+      presentedSessionId: SESSION_ID,
+    },
     authProviderIdentity: {
       userAccountId,
       providerName: PROVIDER_NAME,
@@ -53,9 +70,11 @@ function validServerAuthContextInput(
     },
     userAccount: { userAccountId, accountStatus: "active" },
     session: {
+      userSessionId: SESSION_ID,
       userAccountId,
       activeRoleContext: role,
       sessionStatus: "active",
+      expiresAt: SESSION_EXPIRES_AT,
     },
     activeRoleAssignment: {
       userAccountId,
@@ -125,6 +144,7 @@ describe("createInMemoryAuthSource - loadServerAuthContextInput", () => {
       authenticatedUser: {
         providerName: PROVIDER_NAME,
         providerUserId: "auth-user-nobody",
+        presentedSessionId: SESSION_ID,
       },
     });
 
@@ -137,6 +157,30 @@ describe("createInMemoryAuthSource - loadServerAuthContextInput", () => {
       guideProfile: null,
       explorerProfile: null,
     });
+  });
+
+  it("PRQ-401 takes the presented session UUID from the request, never from the store, and leaves the fixture unchanged", async () => {
+    const fixture = fullFixture();
+    const source = createInMemoryAuthSource(fixture);
+
+    for (const presented of [OTHER_SESSION_ID, null]) {
+      const input = await source.loadServerAuthContextInput({
+        authenticatedUser: principalFor("guide", presented),
+      });
+
+      // The stored input names SESSION_ID as presented; the request's value wins,
+      // so a stored value can never stand in for what a request presented.
+      expect(input.authenticatedUser).toEqual(principalFor("guide", presented));
+      expect(input.session?.userSessionId).toBe(SESSION_ID);
+      expect(deriveTrustedServerAuthContext(input).allowed).toBe(false);
+    }
+
+    // The lookup key ignores the presented value, and the fixture is not mutated.
+    expect(fixture).toEqual(fullFixture());
+    const allowed = await source.loadServerAuthContextInput({
+      authenticatedUser: principalFor("guide"),
+    });
+    expect(deriveTrustedServerAuthContext(allowed).allowed).toBe(true);
   });
 });
 
@@ -195,6 +239,7 @@ describe("loaded input composes with deriveTrustedServerAuthContext", () => {
       authenticatedUser: {
         providerName: PROVIDER_NAME,
         providerUserId: "auth-user-nobody",
+        presentedSessionId: SESSION_ID,
       },
     });
     const derived = deriveTrustedServerAuthContext(input);

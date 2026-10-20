@@ -404,6 +404,14 @@ function PhoneOption({
 // ---------------------------------------------------------------------------
 
 export type SignInPreviewViewProps = {
+  /** Optional dormant-consumer presentation; omission preserves the preview. */
+  hidePreviewAdditions?: boolean;
+  pending?: boolean;
+  inputsDisabled?: boolean;
+  sendDisabled?: boolean;
+  verifyDisabled?: boolean;
+  resendDisabled?: boolean;
+  status?: ReactNode;
   state: SignInPreviewState;
   emailDraft: string;
   codeDraft: string;
@@ -438,12 +446,12 @@ export function SignInPreviewView(props: SignInPreviewViewProps) {
 
   return (
     <main style={pageStyle}>
-      <PreviewControls
+      {props.hidePreviewAdditions ? null : <PreviewControls
         onPreviewCodeScreen={props.onPreviewCodeScreen}
         onPreviewRememberedChange={props.onPreviewRememberedChange}
         previewRemembered={state.previewRemembered}
         screen={screen}
-      />
+      />}
       <Image
         alt="SolMind: Illuminate, Understand, Grow"
         height={159}
@@ -453,6 +461,8 @@ export function SignInPreviewView(props: SignInPreviewViewProps) {
         unoptimized
         width={220}
       />
+
+      {props.status}
 
       {screen === SIGN_IN_SCREENS.chooseRole ? (
         <>
@@ -489,7 +499,7 @@ export function SignInPreviewView(props: SignInPreviewViewProps) {
           <Heading>{EXPLORER_EMAIL_COPY.heading}</Heading>
           <RoleLine onChooseDifferentRole={props.onChooseDifferentRole} role={role} />
           <p style={{ margin: "10px 0 0", fontSize: 18, lineHeight: 1.5, color: AMBER, textAlign: "center" }}>{EXPLORER_EMAIL_COPY.intro}</p>
-          <form onSubmit={props.onSubmitEmail} style={{ ...columnStyle, display: "flex", flexDirection: "column", alignItems: "center" }}>
+          <form aria-busy={props.pending || undefined} onSubmit={props.onSubmitEmail} style={{ ...columnStyle, display: "flex", flexDirection: "column", alignItems: "center" }}>
             <div style={{ ...columnStyle, marginTop: 32, display: "flex", flexDirection: "column", gap: 10 }}>
               <label htmlFor="a2email" style={fieldLabelStyle}>
                 {EXPLORER_EMAIL_COPY.emailLabel}
@@ -497,6 +507,7 @@ export function SignInPreviewView(props: SignInPreviewViewProps) {
               <input
                 autoComplete="email"
                 className={INPUT_FOCUS_CLASS}
+                disabled={props.inputsDisabled || undefined}
                 id="a2email"
                 onChange={(event) => props.onEmailDraftChange(event.target.value)}
                 placeholder={EMAIL_PLACEHOLDER}
@@ -506,7 +517,7 @@ export function SignInPreviewView(props: SignInPreviewViewProps) {
                 value={props.emailDraft}
               />
             </div>
-            <button style={{ ...primaryStyle, marginTop: 24 }} type="submit">
+            <button disabled={props.pending || props.sendDisabled || undefined} style={{ ...primaryStyle, marginTop: 24 }} type="submit">
               {EXPLORER_EMAIL_COPY.submitLabel}
               <ArrowRight stroke="#1a1208" />
             </button>
@@ -524,8 +535,8 @@ export function SignInPreviewView(props: SignInPreviewViewProps) {
           <Heading>{ENTER_CODE_COPY.heading}</Heading>
           <RoleLine onChooseDifferentRole={props.onChooseDifferentRole} role={role} />
           <CodeIntro email={state.email} />
-          <ExampleCallout placement="below" />
-          <form onSubmit={props.onSubmitCode} style={{ ...columnStyle, display: "flex", flexDirection: "column", alignItems: "center" }}>
+          {props.hidePreviewAdditions ? null : <ExampleCallout placement="below" />}
+          <form aria-busy={props.pending || undefined} onSubmit={props.onSubmitCode} style={{ ...columnStyle, display: "flex", flexDirection: "column", alignItems: "center" }}>
             <div style={{ ...columnStyle, marginTop: 30, display: "flex", flexDirection: "column", gap: 10 }}>
               <label htmlFor="sign-in-code" style={fieldLabelStyle}>
                 {ENTER_CODE_COPY.codeLabel}
@@ -535,6 +546,7 @@ export function SignInPreviewView(props: SignInPreviewViewProps) {
                 aria-invalid={screen === SIGN_IN_SCREENS.codeWrong ? true : undefined}
                 autoComplete="one-time-code"
                 className={INPUT_FOCUS_CLASS}
+                disabled={props.inputsDisabled || props.pending || undefined}
                 id="sign-in-code"
                 inputMode="numeric"
                 maxLength={CODE_LENGTH}
@@ -558,13 +570,13 @@ export function SignInPreviewView(props: SignInPreviewViewProps) {
                 </div>
               ) : null}
             </div>
-            <button style={{ ...primaryStyle, marginTop: 22 }} type="submit">
+            <button disabled={props.pending || props.verifyDisabled || undefined} style={{ ...primaryStyle, marginTop: 22 }} type="submit">
               {ENTER_CODE_COPY.verifyLabel}
             </button>
           </form>
           {state.notice === "verify" ? <Notice notice="verify" onDismiss={props.onDismissNotice} /> : null}
           <div style={{ ...columnStyle, marginTop: 22, display: "flex", justifyContent: "space-between", gap: 16, fontSize: 16 }}>
-            <button className={LINK_CLASS} onClick={props.onRequestNewCode} style={linkButtonStyle} type="button">
+            <button className={LINK_CLASS} disabled={props.pending || props.resendDisabled || undefined} onClick={props.onRequestNewCode} style={linkButtonStyle} type="button">
               {ENTER_CODE_COPY.resendLabel}
             </button>
             <button className={LINK_CLASS} onClick={props.onUseDifferentEmail} style={linkButtonStyle} type="button">
@@ -582,7 +594,7 @@ export function SignInPreviewView(props: SignInPreviewViewProps) {
         <>
           <Heading>{CODE_EXPIRED_COPY.heading}</Heading>
           <RoleLine onChooseDifferentRole={props.onChooseDifferentRole} role={role} />
-          <ExampleCallout placement="above" />
+          {props.hidePreviewAdditions ? null : <ExampleCallout placement="above" />}
           <div role="status" style={panelStyle}>
             <svg aria-hidden="true" fill="none" height="22" stroke={AMBER} strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" style={{ flexShrink: 0, marginTop: 2 }} viewBox="0 0 24 24" width="22">
               <circle cx="12" cy="12" r="9" />
@@ -590,7 +602,7 @@ export function SignInPreviewView(props: SignInPreviewViewProps) {
             </svg>
             <span>{CODE_EXPIRED_COPY.body}</span>
           </div>
-          <button onClick={props.onRequestNewCode} style={{ ...primaryStyle, marginTop: 24 }} type="button">
+          <button disabled={props.pending || props.resendDisabled || undefined} onClick={props.onRequestNewCode} style={{ ...primaryStyle, marginTop: 24 }} type="button">
             {CODE_EXPIRED_COPY.resendLabel}
           </button>
           {state.notice === "resend" ? <Notice notice="resend" onDismiss={props.onDismissNotice} /> : null}
@@ -604,14 +616,14 @@ export function SignInPreviewView(props: SignInPreviewViewProps) {
         <>
           <Heading>{PLEASE_WAIT_COPY.heading}</Heading>
           <RoleLine onChooseDifferentRole={props.onChooseDifferentRole} role={role} />
-          <ExampleCallout placement="above" />
+          {props.hidePreviewAdditions ? null : <ExampleCallout placement="above" />}
           <div role="status" style={panelStyle}>
             <svg aria-hidden="true" fill="none" height="22" stroke={AMBER} strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" style={{ flexShrink: 0, marginTop: 2 }} viewBox="0 0 24 24" width="22">
               <path d="M12 3l7 3v5c0 4.4-3 8.2-7 10-4-1.8-7-5.6-7-10V6l7-3z" />
             </svg>
             <span>{PLEASE_WAIT_COPY.body}</span>
           </div>
-          <form onSubmit={props.onSubmitCode} style={{ ...columnStyle, display: "flex", flexDirection: "column", alignItems: "center" }}>
+          <form aria-busy={props.pending || undefined} onSubmit={props.onSubmitCode} style={{ ...columnStyle, display: "flex", flexDirection: "column", alignItems: "center" }}>
             <div style={{ ...columnStyle, marginTop: 24, display: "flex", flexDirection: "column", gap: 10 }}>
               <label htmlFor="sign-in-code" style={fieldLabelStyle}>
                 {ENTER_CODE_COPY.codeLabel}
@@ -619,6 +631,7 @@ export function SignInPreviewView(props: SignInPreviewViewProps) {
               <input
                 autoComplete="one-time-code"
                 className={INPUT_FOCUS_CLASS}
+                disabled={props.inputsDisabled || props.pending || undefined}
                 id="sign-in-code"
                 inputMode="numeric"
                 maxLength={CODE_LENGTH}
@@ -629,7 +642,7 @@ export function SignInPreviewView(props: SignInPreviewViewProps) {
                 value={props.codeDraft}
               />
             </div>
-            <button style={{ ...primaryStyle, marginTop: 22 }} type="submit">
+            <button disabled={props.pending || props.verifyDisabled || undefined} style={{ ...primaryStyle, marginTop: 22 }} type="submit">
               {ENTER_CODE_COPY.verifyLabel}
             </button>
           </form>

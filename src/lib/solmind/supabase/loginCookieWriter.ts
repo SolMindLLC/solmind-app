@@ -74,9 +74,11 @@ import {
 // `failed` and that response may already hold some of the cookies: the
 // composition root must discard it and send a fresh deny response instead.
 //
-// Dormant: no route, page, middleware or other caller imports this module,
-// and it writes nothing at runtime. Keep it server-only, direct-import only
-// and off every barrel.
+// Called by login step 6's Explorer sign-in routes (S6-8): their server
+// composition calls the login writer only after the session exists and the
+// held cookies were released. The logout composition (S6-12) calls the logout
+// writer to clear only the owned session cookies on its response.
+// Keep it server-only, direct-import only and off every barrel.
 
 // One cookie as the Supabase SSR library hands it to its cookie setter. The
 // `options` it carries are never read: the writer chooses every attribute.

@@ -11,7 +11,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { inspect } from "node:util";
+import { inspect, isDeepStrictEqual } from "node:util";
 
 import { createChunks, stringToBase64URL } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
@@ -391,7 +391,7 @@ describe("loginIdentityBridge - hold, then write (contract 25 Section 6; Section
     // The provider expiry: the token's own exp (equal to expires_at here).
     expect(hold.accessTokenExpiresAt).toBe(expOf(accessTokenOf(answer)));
     expect(Object.isFrozen(hold)).toBe(true);
-    expect(Object.keys(hold).sort()).toEqual(["accessTokenExpiresAt", "assertProviderUser", "discard", "release"]);
+    expect(Object.keys(hold).sort()).toEqual(["accessTokenExpiresAt", "assertProviderUser", "discard", "prepareAcceptedSession", "release"]);
     // After the route's redemption and assertion, the held set is the
     // library's own encoding of the session it received: N alone, no removal,
     // no code verifier.
@@ -540,13 +540,27 @@ describe("loginIdentityBridge - hold, then write (contract 25 Section 6; Section
       null,
       undefined,
     ];
-    for (const request of refusedRequests) {
+    for (const [index, request] of refusedRequests.entries()) {
       const answer = sessionAnswer();
       const server = fakeAuthServer({ password: () => jsonAnswer(200, answer) });
       const { bridge } = bridgeWith(server);
       const hold = await heldPasswordSignIn(bridge);
       await hold.assertProviderUser(BOUND_ID);
+      // The refused release itself starts the cleanup: no logout before it,
+      // and one on its way before the test calls `discard`.
+      expect(
+        server.paths().includes(LOGOUT_PATH),
+        `LIB-004: refused release ${index + 1} of ${refusedRequests.length}, no cleanup before the release`,
+      ).toBe(false);
       expect(hold.release(request as never)).toEqual({ outcome: "refused" });
+      await eventually(
+        () => server.paths().includes(LOGOUT_PATH),
+        `LIB-004: refused release ${index + 1}, the cleanup it starts`,
+      );
+      expect(
+        server.paths().filter((recordedPath) => recordedPath === LOGOUT_PATH).length === 1,
+        `LIB-004: refused release ${index + 1} of ${refusedRequests.length} started one cleanup before any discard`,
+      ).toBe(true);
       expect(await hold.discard()).toEqual({ outcome: "discarded", cleanup: "cleaned" });
       expect(hold.release({ sessionOutcome: "created" })).toEqual({ outcome: "refused" });
       expect(server.requests.filter((recorded) => recorded.path === LOGOUT_PATH)).toEqual([
@@ -555,15 +569,53 @@ describe("loginIdentityBridge - hold, then write (contract 25 Section 6; Section
     }
     expect(getter).not.toHaveBeenCalled();
 
-    // Before the provider-id assertion, even `created` is refused.
+    // Before the provider-id assertion, even `created` is refused, and the
+    // hold is unusable at once: the provider-id assertion is made straight
+    // after the refused release, with no wait between the two.
     const answer = sessionAnswer();
     const server = fakeAuthServer({ password: () => jsonAnswer(200, answer) });
     const { bridge } = bridgeWith(server);
     const hold = await heldPasswordSignIn(bridge);
+    expect(
+      server.paths().includes(LOGOUT_PATH),
+      "LIB-004: the refused release before the assertion, no cleanup before the release",
+    ).toBe(false);
     expect(hold.release({ sessionOutcome: "created" })).toEqual({ outcome: "refused" });
-    expect(await hold.assertProviderUser(BOUND_ID)).toEqual({ outcome: "denied" });
+    const deniedAtOnce = await hold.assertProviderUser(BOUND_ID);
+    expect(
+      isDeepStrictEqual(deniedAtOnce, { outcome: "denied" }),
+      "LIB-004: straight after the refused release, with no wait, the provider-id assertion is `denied` and nothing else",
+    ).toBe(true);
     await hold.discard();
     expect(server.paths()).toEqual([PASSWORD_PATH, LOGOUT_PATH]);
+
+    // A separate fresh hold that is never asserted: the refused release
+    // itself starts the cleanup, before `assertProviderUser` or `discard`
+    // could cause it. Neither is called until the one cleanup has been seen.
+    const unassertedAnswer = sessionAnswer();
+    const unassertedServer = fakeAuthServer({ password: () => jsonAnswer(200, unassertedAnswer) });
+    const unasserted = await heldPasswordSignIn(bridgeWith(unassertedServer).bridge);
+    expect(
+      unassertedServer.paths().includes(LOGOUT_PATH),
+      "LIB-004: the refused release of an unasserted hold, no cleanup before the release",
+    ).toBe(false);
+    expect(
+      isDeepStrictEqual(unasserted.release({ sessionOutcome: "created" }), { outcome: "refused" }),
+      "LIB-004: the release of an unasserted hold is `refused` and nothing else",
+    ).toBe(true);
+    await eventually(
+      () => unassertedServer.paths().includes(LOGOUT_PATH),
+      "LIB-004: the refused release of an unasserted hold, the cleanup it starts",
+    );
+    expect(
+      unassertedServer.paths().filter((recordedPath) => recordedPath === LOGOUT_PATH).length === 1,
+      "LIB-004: the refused release of an unasserted hold started one cleanup, with no assertion and no discard",
+    ).toBe(true);
+    await unasserted.discard();
+    expect(
+      isDeepStrictEqual(unassertedServer.paths(), [PASSWORD_PATH, LOGOUT_PATH]),
+      "LIB-004: the unasserted hold made one sign-in request and one cleanup request, and no other",
+    ).toBe(true);
 
     // A second release is refused and changes nothing.
     const onceServer = fakeAuthServer();
@@ -990,8 +1042,25 @@ describe("loginIdentityBridge - credentials, provider failures and the deadline"
       { supabaseUrl: SUPABASE_URL, anonKey: ANON_KEY, authCookieName: LOOPBACK.authCookieName },
       Object.defineProperty({ ...configuration, anonKey: undefined }, "anonKey", { enumerable: true, get: getter }),
     ];
-    for (const bad of badConfigurations) {
+    // Only a boolean leaves the catch: the thrown error is the fixed class
+    // with exactly the fixed message, so no value of the call is in it.
+    const throwsTheFixedError = (build: () => unknown): boolean => {
+      try {
+        build();
+      } catch (error) {
+        return (
+          error instanceof LoginIdentityBridgeConfigurationError &&
+          error.message === "SolMind login identity bridge: invalid configuration or dependencies."
+        );
+      }
+      return false;
+    };
+    for (const [index, bad] of badConfigurations.entries()) {
       expect(() => createLoginIdentityBridge(bad as never, dependencies)).toThrow(LoginIdentityBridgeConfigurationError);
+      expect(
+        throwsTheFixedError(() => createLoginIdentityBridge(bad as never, dependencies)),
+        `LIB-013: malformed configuration ${index + 1} of ${badConfigurations.length} throws exactly the fixed message`,
+      ).toBe(true);
     }
     const badDependencies: unknown[] = [
       null,
@@ -1003,8 +1072,12 @@ describe("loginIdentityBridge - credentials, provider failures and the deadline"
       { ...dependencies, extra: true },
       { fetch: dependencies.fetch, linkAdmin: dependencies.linkAdmin },
     ];
-    for (const bad of badDependencies) {
+    for (const [index, bad] of badDependencies.entries()) {
       expect(() => createLoginIdentityBridge(configuration, bad as never)).toThrow(LoginIdentityBridgeConfigurationError);
+      expect(
+        throwsTheFixedError(() => createLoginIdentityBridge(configuration, bad as never)),
+        `LIB-013: malformed dependencies ${index + 1} of ${badDependencies.length} throw exactly the fixed message`,
+      ).toBe(true);
     }
     expect(getter).not.toHaveBeenCalled();
     let thrown: unknown = null;
@@ -1042,12 +1115,14 @@ describe("loginIdentityBridge - credentials, provider failures and the deadline"
     const { bridge } = bridgeWith(goodServer);
     const held = await bridge.signInWithPassword({ email: GUIDE_EMAIL, password: PASSWORD });
     results.push(held);
+    expect(held.outcome === "held", "LIB-014: case 1, the password sign-in gives a hold").toBe(true);
     if (held.outcome === "held") {
       results.push(held.hold, await held.hold.assertProviderUser(BOUND_ID));
       results.push(held.hold.release({ sessionOutcome: "denied" } as never), await held.hold.discard());
     }
     const exchanged = await bridge.exchangeExplorerLink({ email: EXPLORER_EMAIL, boundProviderUserId: BOUND_ID });
     results.push(exchanged);
+    expect(exchanged.outcome === "held", "LIB-014: case 2, the link exchange gives a hold").toBe(true);
     if (exchanged.outcome === "held") {
       results.push(await exchanged.hold.assertProviderUser(OTHER_ID));
     }
@@ -1690,19 +1765,19 @@ describe("loginIdentityBridge - module boundary (dormant, server-only, off every
     return target.replace(/\.(?:[cm]?[jt]sx?)$/, "").toLowerCase();
   }
 
-  it("LBB-001 starts with the server-only import, imports only @supabase/ssr besides it, and refuses to load where a browser window exists", async () => {
+  it("LBB-001 starts server-only, imports only SSR and the pair-provenance owner, and refuses browser loading", async () => {
     const text = moduleText(BRIDGE_PATH);
     expect(text.startsWith('import "server-only";')).toBe(true);
     expect(text.charCodeAt(0)).not.toBe(0xfeff);
     expect(
       moduleReferences("loginIdentityBridge.ts", text).map((reference) => `${reference.form} ${reference.specifier}`),
-    ).toEqual(["import server-only", "import @supabase/ssr"]);
+    ).toEqual(["import server-only", "import @supabase/ssr", "import ./credentialPairProof"]);
 
     vi.resetModules();
     vi.stubGlobal("window", {});
     try {
       await expect(import("../loginIdentityBridge")).rejects.toThrow(
-        "SolMind server configuration error: the login identity bridge must not be imported in browser code.",
+        "SolMind credential pair proof must remain server-only.",
       );
     } finally {
       vi.unstubAllGlobals();
@@ -1758,7 +1833,7 @@ describe("loginIdentityBridge - module boundary (dormant, server-only, off every
     }
   });
 
-  it("LBB-004 is dormant: no other application file references or names the bridge", () => {
+  it("LBB-004 only the explicitly scoped Explorer dependency factory references the bridge", () => {
     // Computed references and `import.meta` in any non-test file are already
     // refused by the login step 5 boundary test (VCB-004), so the literal
     // references found here are all the references there are. The first route
@@ -1780,13 +1855,16 @@ describe("loginIdentityBridge - module boundary (dormant, server-only, off every
           continue;
         }
         if (resolveReference(file, reference.specifier, root) === bridgePath) {
-          offenders.push(`${path.relative(root, file)}: ${reference.form} ${reference.specifier}`);
+          offenders.push(`${path.relative(root, file).split(path.sep).join("/")}: ${reference.form} ${reference.specifier}`);
         }
       }
       if (/\bloginIdentityBridge\b/.test(text)) {
-        offenders.push(`${path.relative(root, file)}: mentions loginIdentityBridge`);
+        offenders.push(`${path.relative(root, file).split(path.sep).join("/")}: mentions loginIdentityBridge`);
       }
     }
-    expect(offenders).toEqual([]);
+    expect(offenders.sort()).toEqual([
+      "lib/solmind/supabase/explorerSignInDependencies.ts: import ./loginIdentityBridge",
+      "lib/solmind/supabase/explorerSignInDependencies.ts: mentions loginIdentityBridge",
+    ]);
   });
 });

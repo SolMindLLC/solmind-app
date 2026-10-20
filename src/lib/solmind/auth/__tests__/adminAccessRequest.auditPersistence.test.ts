@@ -48,9 +48,14 @@ const PROVIDER_NAME = "supabase";
 const PROVIDER_USER_ID = "auth-admin-1";
 const ACCOUNT_ID = "user-admin-1";
 
+// Login step 6, sub-slice S6-4: the UUID of the account's selected session, which
+// the request presents in its binding cookie.
+const SESSION_ID = "5e5510a0-0000-4000-8000-000000001601";
+
 const ADMIN_PRINCIPAL: SupabaseAuthenticatedUser = {
   providerName: PROVIDER_NAME,
   providerUserId: PROVIDER_USER_ID,
+  presentedSessionId: SESSION_ID,
 };
 
 function nowProvider(): Date {
@@ -96,6 +101,7 @@ function chainTables(
     user_session: {
       data: [
         {
+          user_session_id: SESSION_ID,
           user_account_id: ACCOUNT_ID,
           active_role_context: role,
           session_status: "active",

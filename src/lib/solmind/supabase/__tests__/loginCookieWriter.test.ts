@@ -7,7 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { inspect } from "node:util";
+import { inspect, isDeepStrictEqual } from "node:util";
 
 import { createChunks, stringToBase64URL } from "@supabase/ssr";
 import { NextResponse } from "next/server";
@@ -265,11 +265,22 @@ describe("loginCookieWriter - a successful login (contract 25 Sections 4, 5.2 an
   });
 
   it("LCW-005 Max-Age is the given remaining life: 1 and 3600 are written as given; 0, 3601 and the rest deny", () => {
-    for (const maxAge of [1, 3600]) {
+    for (const [index, maxAge] of [1, 3600].entries()) {
       const { response, calls } = recordingResponse();
       expect(writeLoginSessionCookies(loginInput({ maxAgeSeconds: maxAge }, response))).toEqual({
         outcome: "written",
       });
+      // Exactly the auth cookie and the binding cookie are written, so the
+      // Max-Age checks below have both cookies to look at.
+      const writtenNames = calls.filter((call) => call.kind === "cookie").map((call) => call.name);
+      expect(
+        writtenNames.length === 2,
+        `LCW-005: boundary case ${index + 1} of 2 writes exactly two cookies`,
+      ).toBe(true);
+      expect(
+        isDeepStrictEqual(writtenNames, ["__Host-solmind-auth", "__Host-solmind-session"]),
+        `LCW-005: boundary case ${index + 1} of 2 writes the auth cookie, then the binding cookie, and no other`,
+      ).toBe(true);
       for (const call of calls) {
         if (call.kind === "cookie") {
           expect(call.attributes.maxAge).toBe(maxAge);
@@ -622,7 +633,7 @@ describe("loginCookieWriter - logout clears (contract 25 Sections 6 and 9)", () 
     ]);
   });
 
-  it("LCW-016 only a configuration failure or a malformed call stops the clears", () => {
+  it("LCW-016 a non-loopback http, an empty or a null trusted origin denies with `configuration` and writes nothing; a null call, a null response, an extra key or a login-only key denies with `request`", () => {
     for (const origin of ["http://192.168.1.10:3000", "", null]) {
       const { response, calls } = recordingResponse();
       expect(
@@ -667,7 +678,7 @@ describe("loginCookieWriter - the response and value-free results (item 11)", ()
     }
   });
 
-  it("LCW-018 every result is frozen, shared, closed and value-free", () => {
+  it("LCW-018 two successful login writes return the same result object; each sampled written, denied and cleared result is frozen, has no enumerable key other than `outcome`, `reason` and `ignoredInput`, and its text holds neither the session id nor the session value", () => {
     const results = [
       writeLoginSessionCookies(loginInput()),
       writeLoginSessionCookies(loginInput()),
@@ -902,6 +913,8 @@ describe("sessionCookiePolicy and loginCookieWriter - module boundary (dormant, 
         "isSessionCodeVerifierCookieName",
         "isSessionCookieMaxAge",
         "isSessionCookiePolicy",
+        "readSessionAuthCookieAccessToken",
+        "readSessionAuthCookieCleanupCandidate",
         "readSessionAuthCookies",
         "readSessionCookieEntries",
         "resolveSessionCookiePolicy",
@@ -927,17 +940,23 @@ describe("sessionCookiePolicy and loginCookieWriter - module boundary (dormant, 
     }
   });
 
-  it("LCB-004 is dormant: no other application file references or names either module", () => {
+  it("LCB-004 the policy and writer are referenced only by the named per-request, Explorer sign-in and logout modules", () => {
     // Computed references and `import.meta` in any non-test file are already
     // refused by the login step 5 boundary test (VCB-004), so the literal
-    // references found here are all the references there are. The first
-    // reader (S6-4 or S6-12) or route (S6-8) must amend this test in its own
-    // slice.
+    // references found here are all the references there are. Amended by the
+    // per-request check (login step 6, sub-slice S6-4): `requestAuthClient.ts`
+    // now imports the policy, for the shared cookie names, the one shared
+    // format check and the accepted cookie's sign-in token. Amended again by
+    // the Explorer sign-in routes (sub-slice S6-8): their dependency factory
+    // imports the policy to resolve it, their route contract imports it for
+    // the no-store headers, and their server composition imports the writer.
+    // Logout (S6-12) adds its contract, composition and dependency factory;
+    // Explorer verify captures the old credential through the same parser.
     const root = sourceRoot();
     const policyPath = path.join(root, "lib", "solmind", "auth", "sessionCookiePolicy").toLowerCase();
     const writerPath = path.join(root, "lib", "solmind", "supabase", "loginCookieWriter").toLowerCase();
     const guarded = new Set([policyPath, writerPath]);
-    const offenders: string[] = [];
+    const references: string[] = [];
     for (const file of sourceFiles(root)) {
       if (/\.test\.[cm]?[jt]sx?$/.test(file)) {
         continue;
@@ -947,21 +966,42 @@ describe("sessionCookiePolicy and loginCookieWriter - module boundary (dormant, 
         continue;
       }
       const text = fs.readFileSync(file, "utf8");
+      const relative = path.relative(root, file).split(path.sep).join("/");
       for (const reference of moduleReferences(file, text)) {
         if (reference.specifier === null) {
           continue;
         }
         const resolved = resolveReference(file, reference.specifier, root);
         if (resolved !== null && guarded.has(resolved)) {
-          offenders.push(`${path.relative(root, file)}: ${reference.form} ${reference.specifier}`);
+          references.push(`${relative}: ${reference.form} ${reference.specifier}`);
         }
       }
       for (const name of ["sessionCookiePolicy", "loginCookieWriter"]) {
         if (new RegExp(`\\b${name}\\b`).test(text)) {
-          offenders.push(`${path.relative(root, file)}: mentions ${name}`);
+          references.push(`${relative}: mentions ${name}`);
         }
       }
     }
-    expect(offenders).toEqual([]);
+    // Exact closed inventory, including each importing file's own mention.
+    expect(references.sort()).toEqual([
+      "app/login/explorer/verify/route.ts: import @/lib/solmind/auth/sessionCookiePolicy",
+      "app/login/explorer/verify/route.ts: mentions sessionCookiePolicy",
+      "lib/solmind/supabase/explorerSignInComposition.ts: import ./loginCookieWriter",
+      "lib/solmind/supabase/explorerSignInComposition.ts: mentions loginCookieWriter",
+      "lib/solmind/supabase/explorerSignInDependencies.ts: import ../auth/sessionCookiePolicy",
+      "lib/solmind/supabase/explorerSignInDependencies.ts: mentions sessionCookiePolicy",
+      "lib/solmind/supabase/explorerSignInRouteContract.ts: import ../auth/sessionCookiePolicy",
+      "lib/solmind/supabase/explorerSignInRouteContract.ts: mentions sessionCookiePolicy",
+      "lib/solmind/supabase/logoutComposition.ts: import ../auth/sessionCookiePolicy",
+      "lib/solmind/supabase/logoutComposition.ts: import ./loginCookieWriter",
+      "lib/solmind/supabase/logoutComposition.ts: mentions loginCookieWriter",
+      "lib/solmind/supabase/logoutComposition.ts: mentions sessionCookiePolicy",
+      "lib/solmind/supabase/logoutDependencies.ts: import ../auth/sessionCookiePolicy",
+      "lib/solmind/supabase/logoutDependencies.ts: mentions sessionCookiePolicy",
+      "lib/solmind/supabase/logoutRouteContract.ts: import ../auth/sessionCookiePolicy",
+      "lib/solmind/supabase/logoutRouteContract.ts: mentions sessionCookiePolicy",
+      "lib/solmind/supabase/requestAuthClient.ts: import ../auth/sessionCookiePolicy",
+      "lib/solmind/supabase/requestAuthClient.ts: mentions sessionCookiePolicy",
+    ]);
   });
 });

@@ -36,10 +36,10 @@ import {
   type GuideProfileRecord,
   type LoadGuideRelationshipRequest,
   type LoadServerAuthContextInputRequest,
+  type SelectedSolMindSessionRecord,
   type SolMindAuthSource,
   type SolMindRelationshipRecord,
   type SolMindRoleAssignmentRecord,
-  type SolMindSessionRecord,
   type SolMindUserAccountRecord,
 } from "../auth";
 
@@ -63,11 +63,18 @@ export type UserAccountRow = {
   account_status: string;
 };
 
-// identity.user_session
+// identity.user_session, as public.solmind_find_active_user_sessions returns
+// the account's selected session: its own UUID (user_session_id) and its
+// expires_at come with it since login step 6's sub-slice S6-4, for the
+// per-request binding comparison and the allow result (solmind-docs
+// `execution/25_SolMind_MVP0_Auth_RLS_Login_Session_Cookie_Security_Contract_v0_1.md`
+// Sections 7, 8 and 19).
 export type UserSessionRow = {
+  user_session_id: string;
   user_account_id: string;
   active_role_context: string;
   session_status: string;
+  expires_at: string;
 };
 
 // identity.user_role_assignment
@@ -158,11 +165,13 @@ function toUserAccount(row: UserAccountRow): SolMindUserAccountRecord {
   };
 }
 
-function toSession(row: UserSessionRow): SolMindSessionRecord {
+function toSession(row: UserSessionRow): SelectedSolMindSessionRecord {
   return {
+    userSessionId: row.user_session_id,
     userAccountId: row.user_account_id,
     activeRoleContext: row.active_role_context,
     sessionStatus: row.session_status,
+    expiresAt: row.expires_at,
   };
 }
 
@@ -271,7 +280,9 @@ export function createSupabaseAuthSource(
         ? toExplorerProfile(explorerProfileRow)
         : null;
 
-      // The verified principal is echoed; DB records are whatever was found.
+      // The verified principal is echoed whole, so the session UUID the request
+      // presented reaches derivation, which compares it with the selected
+      // session's; DB records are whatever was found.
       return {
         authenticatedUser,
         authProviderIdentity,

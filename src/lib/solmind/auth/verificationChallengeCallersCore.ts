@@ -44,8 +44,9 @@ import {
 // `Function` constructor) is beyond those source checks and could still reach
 // this module's exported factories.
 //
-// Dormant: nothing calls these callers. There is no route, server action,
-// cookie, session or UI here; the login routes are login step 6.
+// Called, through the public module and the composition root, by login step
+// 6's Explorer sign-in routes (S6-8). There is no route, server action,
+// cookie, session or UI here.
 //
 // The issuing caller, in order:
 //   1. picks a fresh challenge UUID for every request. The one exception: if

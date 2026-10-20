@@ -20,8 +20,19 @@ const PROVIDER_NAME = "supabase";
 const GUIDE_USER_ID = "user-guide-1";
 const GUIDE_PROFILE_A = "guide-profile-a";
 
-function guidePrincipal(): SupabaseAuthenticatedUser {
-  return { providerName: PROVIDER_NAME, providerUserId: "auth-user-guide-1" };
+// Login step 6, sub-slice S6-4: the selected session's UUID, which the request
+// presents in its binding cookie, and its expiry.
+const SESSION_ID = "5e5510a0-0000-4000-8000-000000001101";
+const SESSION_EXPIRES_AT = "2999-12-31T23:59:59+00:00";
+
+function guidePrincipal(
+  presentedSessionId: string | null = SESSION_ID,
+): SupabaseAuthenticatedUser {
+  return {
+    providerName: PROVIDER_NAME,
+    providerUserId: "auth-user-guide-1",
+    presentedSessionId,
+  };
 }
 
 // A fully-valid trusted-context input for the guide principal, in the style of
@@ -30,7 +41,11 @@ function guidePrincipal(): SupabaseAuthenticatedUser {
 function validGuideInput(): DeriveTrustedServerAuthContextInput {
   const { providerUserId } = guidePrincipal();
   return {
-    authenticatedUser: { providerName: PROVIDER_NAME, providerUserId },
+    authenticatedUser: {
+      providerName: PROVIDER_NAME,
+      providerUserId,
+      presentedSessionId: SESSION_ID,
+    },
     authProviderIdentity: {
       userAccountId: GUIDE_USER_ID,
       providerName: PROVIDER_NAME,
@@ -39,9 +54,11 @@ function validGuideInput(): DeriveTrustedServerAuthContextInput {
     },
     userAccount: { userAccountId: GUIDE_USER_ID, accountStatus: "active" },
     session: {
+      userSessionId: SESSION_ID,
       userAccountId: GUIDE_USER_ID,
       activeRoleContext: "guide",
       sessionStatus: "active",
+      expiresAt: SESSION_EXPIRES_AT,
     },
     activeRoleAssignment: {
       userAccountId: GUIDE_USER_ID,
@@ -118,6 +135,25 @@ describe("request-auth principal composes with the existing auth chain", () => {
     if (derived.allowed) {
       expect(derived.context.activeRole).toBe("guide");
       expect(derived.context.identity.userAccountId).toBe(GUIDE_USER_ID);
+    }
+  });
+
+  it("PRQ-601 the session UUID a principal source presents is what the chain compares: none, or another session's, derives a denial", async () => {
+    const authSource = createInMemoryAuthSource(guideFixture());
+
+    for (const presented of [null, "5e5510a0-0000-4000-8000-000000001102"]) {
+      const principal = await createInMemoryRequestAuthPrincipalSource(
+        guidePrincipal(presented),
+      ).resolveAuthenticatedUser();
+      expect(principal).toEqual(guidePrincipal(presented));
+      if (principal === null) {
+        return;
+      }
+
+      const input = await authSource.loadServerAuthContextInput({
+        authenticatedUser: principal,
+      });
+      expect(deriveTrustedServerAuthContext(input).allowed).toBe(false);
     }
   });
 

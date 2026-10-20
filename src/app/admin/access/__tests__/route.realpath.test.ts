@@ -14,7 +14,8 @@
 //     (as of AUD-3) the REAL default audit writer chain (createAdminAuditEventWriter ->
 //     createAuditEventWriteExecutor -> createAuthRlsAuditEventWriter), faking ONLY the
 //     two true IO edges:
-//       1. the @supabase/ssr request-auth edge (auth.getUser), which proves WHO; and
+//       1. the Supabase Auth request-auth edge (auth.getUser, on the client the
+//          adapter builds with createClient), which proves WHO; and
 //       2. the service-role Supabase client, whose .rpc(fn, args) is the RPC transport
 //          for BOTH the six enumerated read lookups and the single enumerated audit
 //          write function.
@@ -34,15 +35,24 @@
 // covered by the separate pgTAP and local-stack suites; see SLICE_MANIFEST.md.
 //
 // No network, DB, env secret, or real Supabase client is touched: the service-role
-// client factory and the @supabase/ssr edge are the only mocked modules, plus the
+// client factory and the @supabase/supabase-js edge are the only mocked modules, plus the
 // Next.js cookies() request surface. NextResponse and the real requestCookieAccessor
 // are used unmocked, so the assertions read the actual serialized Response.
+//
+// Login step 6, sub-slice S6-4 (the per-request check of
+// execution/25_SolMind_MVP0_Auth_RLS_Login_Session_Cookie_Security_Contract_v0_1.md Sections 8 and 14):
+// the request now carries the SolMind auth cookie under the shared name and the
+// session-binding cookie, the session lookup's rows carry user_session_id, and an allow
+// requires the binding cookie to hold the selected session's UUID. The "session binding"
+// block below drives those denials through the same real path.
+
+import { Buffer } from "node:buffer";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Hoisted doubles shared with the (hoisted) vi.mock factories below.
 //   - cookiesMock: the next/headers cookies() request API.
-//   - getUserMock: the @supabase/ssr client's auth.getUser() (the WHO edge).
+//   - getUserMock: the Supabase Auth client's auth.getUser(token) (the WHO edge).
 //   - rpcMock: the service-role client's .rpc(fn, args) (the RPC transport edge for
 //     both the read lookups and the audit write).
 //   - fromSpy / schemaSpy: never-called spies. The RETIRED broad PostgREST scoped-select
@@ -74,13 +84,22 @@ vi.mock("next/headers", () => ({
   cookies: cookiesMock,
 }));
 
-// Mock ONLY the @supabase/ssr edge (WHO). The real createSupabaseRequestAuthPrincipalSource
-// still runs: it reads the public request-auth env, builds the (fake) client, calls
-// auth.getUser(), and maps the result to a principal via the real principalMapping.
-vi.mock("@supabase/ssr", () => ({
-  createServerClient: () => ({
+// Mock ONLY the @supabase/supabase-js edge (WHO). The real createSupabaseRequestAuthPrincipalSource
+// still runs: it reads the public request-auth env, takes the sign-in token from the checked
+// auth cookie, builds the (fake) client, calls auth.getUser(token), and maps the result to a
+// principal via the real principalMapping. The service-role client is its own mocked module
+// below, so this factory stands in for the request-auth client only.
+vi.mock("@supabase/supabase-js", () => ({
+  createClient: () => ({
     auth: { getUser: getUserMock },
   }),
+}));
+
+// The adapter no longer imports @supabase/ssr; a client built from it here is an error.
+vi.mock("@supabase/ssr", () => ({
+  createServerClient: () => {
+    throw new Error("the adapter must not build an @supabase/ssr client");
+  },
 }));
 
 // Mock ONLY the service-role CLIENT factory (WHAT transport edge). createAdminAuthSource
@@ -96,7 +115,7 @@ import { GET } from "../route";
 // --- Fixtures -------------------------------------------------------------------------
 
 const PROVIDER_NAME = "supabase";
-// The @supabase/ssr auth user id; principalMapping trims it into providerUserId.
+// The Supabase auth user id; principalMapping trims it into providerUserId.
 const PROVIDER_USER_ID = "auth-admin-1";
 const ACCOUNT_ID = "user-admin-1";
 
@@ -105,6 +124,15 @@ const ACCOUNT_ID = "user-admin-1";
 // of when the suite runs.
 const FAR_FUTURE = "2999-12-31T23:59:59.000Z";
 const FAR_PAST = "2000-01-01T00:00:00.000Z";
+
+// The local trusted origin and the cookie names the session-cookie policy gives for it,
+// and two synthetic session UUIDs: the one the lookup selects, which the request presents
+// in its binding cookie, and an older one that a stale or replayed request still carries.
+const TRUSTED_ORIGIN = "http://127.0.0.1:3000";
+const AUTH_COOKIE = "solmind-auth";
+const BINDING_COOKIE = "solmind-session";
+const SESSION_ID = "5e5510a0-0000-4000-8000-0000000000d1";
+const SUPERSEDED_SESSION_ID = "5e5510a0-0000-4000-8000-0000000000d2";
 
 // The six enumerated read functions the executor must dispatch to (execution/19_SolMind_MVP0_Auth_RLS_RPC_Function_Contract_v0_1.md Section 8).
 const FN = {
@@ -126,8 +154,20 @@ const AUDIT_FN = "solmind_record_audit_event";
 const AUDIT_EVENT_ID = "0f9be9a6-2f7e-4e64-9f0a-5a1b2c3d4e5f";
 
 // A secret-looking request cookie value, so leak assertions can prove it never reaches
-// the response body or any audit write argument.
-const SECRET_COOKIE_VALUE = "sb-access-token-SECRET-do-not-leak";
+// the response body or any audit write argument. It is a well-formed auth cookie value
+// (`base64-` plus the base64url form of a JSON session), as the shared format check
+// requires, and the marker inside it is what a leak of the decoded value would show.
+const SECRET_MARKER = "sb-access-token-SECRET-do-not-leak";
+// The session has the fields that check's field check requires; the marker sits inside
+// the token, and the expiry is far ahead (the first second of the year 2100).
+const SECRET_COOKIE_VALUE = `base64-${Buffer.from(
+  JSON.stringify({
+    access_token: `synthetic.${SECRET_MARKER}.signature`,
+    refresh_token: "synthetic-refresh-token",
+    expires_at: 4102444800,
+  }),
+  "utf8",
+).toString("base64url")}`;
 
 type RpcResponse = { data: unknown; error: unknown };
 
@@ -154,6 +194,7 @@ function rpcChain(role: "admin" | "guide"): Record<string, RpcResponse> {
     [FN.sessions]: {
       data: [
         {
+          user_session_id: SESSION_ID,
           user_account_id: ACCOUNT_ID,
           active_role_context: role,
           session_status: "active",
@@ -225,7 +266,8 @@ function setGetUserError(): void {
 
 function cookieStore(
   entries: Array<{ name: string; value: string }> = [
-    { name: "sb-access-token", value: SECRET_COOKIE_VALUE },
+    { name: AUTH_COOKIE, value: SECRET_COOKIE_VALUE },
+    { name: BINDING_COOKIE, value: SESSION_ID },
   ],
 ) {
   return {
@@ -309,6 +351,7 @@ const EXPECTED_DENY_DECISION_ARGS = {
 let savedUrlEnv: string | undefined;
 let savedAnonEnv: string | undefined;
 let savedServiceRoleEnv: string | undefined;
+let savedTrustedOriginEnv: string | undefined;
 
 beforeEach(() => {
   cookiesMock.mockReset();
@@ -328,6 +371,9 @@ beforeEach(() => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = "http://127.0.0.1:54321";
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-test-key-not-a-secret";
   delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // The adapter resolves the session cookie names from the trusted application origin.
+  savedTrustedOriginEnv = process.env.SOLMIND_TRUSTED_APP_ORIGIN;
+  process.env.SOLMIND_TRUSTED_APP_ORIGIN = TRUSTED_ORIGIN;
 
   // Default: present request cookies, a verified admin user, the fake service-role client
   // (rpc + never-to-be-called from/schema spies), and a valid admin RPC chain including
@@ -359,6 +405,11 @@ afterEach(() => {
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
   } else {
     process.env.SUPABASE_SERVICE_ROLE_KEY = savedServiceRoleEnv;
+  }
+  if (savedTrustedOriginEnv === undefined) {
+    delete process.env.SOLMIND_TRUSTED_APP_ORIGIN;
+  } else {
+    process.env.SOLMIND_TRUSTED_APP_ORIGIN = savedTrustedOriginEnv;
   }
   vi.restoreAllMocks();
 });
@@ -523,6 +574,7 @@ describe("GET /admin/access real path - fail-closed denies", () => {
     chain[FN.sessions] = {
       data: [
         {
+          user_session_id: SESSION_ID,
           user_account_id: ACCOUNT_ID,
           active_role_context: "admin",
           session_status: "active",
@@ -538,16 +590,20 @@ describe("GET /admin/access real path - fail-closed denies", () => {
   });
 
   it("denies on session ambiguity: two valid active sessions", async () => {
+    // One of the two is the session the request presents; ambiguity still denies,
+    // because no session is selected for the comparison.
     const chain = rpcChain("admin");
     chain[FN.sessions] = {
       data: [
         {
+          user_session_id: SESSION_ID,
           user_account_id: ACCOUNT_ID,
           active_role_context: "admin",
           session_status: "active",
           expires_at: FAR_FUTURE,
         },
         {
+          user_session_id: SUPERSEDED_SESSION_ID,
           user_account_id: ACCOUNT_ID,
           active_role_context: "admin",
           session_status: "active",
@@ -636,12 +692,168 @@ describe("GET /admin/access real path - fail-closed denies", () => {
   });
 });
 
+// Login step 6, sub-slice S6-4: the session binding on the first guarded route, through
+// the same real path, with its audit rows (contract 25 Section 8 and Section 15 item 7).
+describe("GET /admin/access real path - the session binding (contract 25 Section 8)", () => {
+  it("PRR-101 denies a superseded session (a different UUID in the binding cookie) with exactly one opaque deny row and NO guarded-read row", async () => {
+    // The Admin's account has a newer session; this browser still presents the older
+    // UUID. Everything else about the request is valid, so account selection alone
+    // would allow it.
+    cookiesMock.mockResolvedValue(
+      cookieStore([
+        { name: AUTH_COOKIE, value: SECRET_COOKIE_VALUE },
+        { name: BINDING_COOKIE, value: SUPERSEDED_SESSION_ID },
+      ]),
+    );
+
+    const { status, body, rawText } = await invokeRoute();
+
+    expect(status).toBe(200);
+    expect(body).toEqual({ allowed: false });
+    // The chain was read, and the comparison denied: one opaque deny decision row
+    // (system context, null actor), no guarded-read row and no allow row.
+    expect(calledFindNames()).toContain(FN.sessions);
+    const audits = auditCallArgs();
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toEqual(EXPECTED_DENY_DECISION_ARGS);
+    expect(rawText).not.toContain(SESSION_ID);
+    expect(rawText).not.toContain(SUPERSEDED_SESSION_ID);
+  });
+
+  it("PRR-102 denies a Supabase session alone (no binding cookie) without any service-role record read", async () => {
+    cookiesMock.mockResolvedValue(
+      cookieStore([{ name: AUTH_COOKIE, value: SECRET_COOKIE_VALUE }]),
+    );
+
+    const { body } = await invokeRoute();
+
+    expect(body).toEqual({ allowed: false });
+    expect(getUserMock).not.toHaveBeenCalled();
+    expect(calledFindNames()).toHaveLength(0);
+    const audits = auditCallArgs();
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toEqual(EXPECTED_DENY_DECISION_ARGS);
+  });
+
+  it("PRR-103 denies a malformed auth cookie before the library reads it, and a request that still carries only the library's default cookie name", async () => {
+    for (const entries of [
+      [
+        { name: AUTH_COOKIE, value: `base64-${SECRET_MARKER}!` },
+        { name: BINDING_COOKIE, value: SESSION_ID },
+      ],
+      [
+        { name: "sb-127-auth-token", value: SECRET_COOKIE_VALUE },
+        { name: BINDING_COOKIE, value: SESSION_ID },
+      ],
+    ]) {
+      rpcMock.mockClear();
+      cookiesMock.mockResolvedValue(cookieStore(entries));
+
+      const { body, rawText } = await invokeRoute();
+
+      expect(body).toEqual({ allowed: false });
+      expect(getUserMock).not.toHaveBeenCalled();
+      expect(calledFindNames()).toHaveLength(0);
+      expect(rawText).not.toContain(SECRET_MARKER);
+    }
+  });
+
+  it("PRR-104 allows only the selected session: after a newer login the older cookie denies and the newer one allows", async () => {
+    // The lookup now returns the newer session. The browser that logged in again
+    // presents its UUID and is allowed; the stale browser is not.
+    const chain = rpcChain("admin");
+    chain[FN.sessions] = {
+      data: [
+        {
+          user_session_id: SUPERSEDED_SESSION_ID,
+          user_account_id: ACCOUNT_ID,
+          active_role_context: "admin",
+          session_status: "active",
+          expires_at: FAR_FUTURE,
+        },
+      ],
+      error: null,
+    };
+    setRpcChain(chain);
+
+    // Default cookies present SESSION_ID, which is no longer the selected session.
+    expect((await invokeRoute()).body).toEqual({ allowed: false });
+
+    cookiesMock.mockResolvedValue(
+      cookieStore([
+        { name: AUTH_COOKIE, value: SECRET_COOKIE_VALUE },
+        { name: BINDING_COOKIE, value: SUPERSEDED_SESSION_ID },
+      ]),
+    );
+    expect((await invokeRoute()).body).toEqual({ allowed: true });
+  });
+
+  it("PRR-105 denies when the session lookup's row carries no user_session_id (the pre-S6-3 row shape)", async () => {
+    const chain = rpcChain("admin");
+    chain[FN.sessions] = {
+      data: [
+        {
+          user_account_id: ACCOUNT_ID,
+          active_role_context: "admin",
+          session_status: "active",
+          expires_at: FAR_FUTURE,
+        },
+      ],
+      error: null,
+    };
+    setRpcChain(chain);
+
+    const { body } = await invokeRoute();
+    expect(body).toEqual({ allowed: false });
+    expect(auditCallArgs().every((args) => args.p_action === "deny")).toBe(true);
+  });
+
+  it("PRR-106 denies with no RPC traffic for records when the trusted application origin is not configured, writing one auth_resolution_failure row in place of the deny decision row", async () => {
+    delete process.env.SOLMIND_TRUSTED_APP_ORIGIN;
+
+    const { status, body, rawText } = await invokeRoute();
+
+    expect(status).toBe(200);
+    expect(body).toEqual({ allowed: false });
+    expect(getUserMock).not.toHaveBeenCalled();
+    expect(calledFindNames()).toHaveLength(0);
+    expect(rawText).not.toContain("SOLMIND_TRUSTED_APP_ORIGIN");
+    // The adapter cannot be built, which the banked composition handles as a
+    // construction failure: with the audit writer available it writes one
+    // auth_resolution_failure row for the request, in place of the opaque deny
+    // decision row that a refused request otherwise gets.
+    const audits = auditCallArgs();
+    expect(audits).toHaveLength(1);
+    expect(audits[0].p_event_type).toBe("auth_resolution_failure");
+    expect(audits[0].p_action).toBe("deny");
+    expect(audits[0].p_reason_code).toBe("auth_unresolved");
+
+    // Every request gets that row while the origin is unusable, one with no
+    // cookies at all included (with a usable origin it gets the deny decision row).
+    rpcMock.mockClear();
+    cookiesMock.mockResolvedValue(cookieStore([]));
+    expect((await invokeRoute()).body).toEqual({ allowed: false });
+    const withoutCookies = auditCallArgs();
+    expect(withoutCookies).toHaveLength(1);
+    expect(withoutCookies[0].p_event_type).toBe("auth_resolution_failure");
+    expect(withoutCookies[0].p_reason_code).toBe("auth_unresolved");
+
+    process.env.SOLMIND_TRUSTED_APP_ORIGIN = TRUSTED_ORIGIN;
+    rpcMock.mockClear();
+    expect((await invokeRoute()).body).toEqual({ allowed: false });
+    expect(auditCallArgs()).toEqual([EXPECTED_DENY_DECISION_ARGS]);
+  });
+});
+
 describe("GET /admin/access real path - opaque outward projection and audit privacy", () => {
   it("never serializes a request cookie value into the response body", async () => {
     const { rawText } = await invokeRoute();
 
     expect(rawText).not.toContain(SECRET_COOKIE_VALUE);
     expect(rawText).not.toContain("sb-access-token");
+    expect(rawText).not.toContain(SECRET_MARKER);
+    // Nor the session UUID from the binding cookie (contract 25 Section 14).
+    expect(rawText).not.toContain(SESSION_ID);
   });
 
   it("never carries the request cookie value or free-form detail into any audit write argument", async () => {
@@ -659,6 +871,9 @@ describe("GET /admin/access real path - opaque outward projection and audit priv
     );
     expect(serialized).not.toContain(SECRET_COOKIE_VALUE);
     expect(serialized).not.toContain("sb-access-token");
+    // The session UUID appears in no audit argument either: the rows name the account,
+    // never the session.
+    expect(serialized).not.toContain(SESSION_ID);
     for (const args of auditCallArgs()) {
       expect(Object.keys(args).sort()).toEqual(
         [

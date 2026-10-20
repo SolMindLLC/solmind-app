@@ -29,6 +29,12 @@ const GUIDE_PROFILE_ID = "77777777-7777-4777-8777-777777777777";
 const EXPLORER_PROFILE_ID = "88888888-8888-4888-8888-888888888888";
 const TIMESTAMP = "2026-08-14T03:00:00.000Z";
 
+// Login step 6, sub-slice S6-4: the UUID of the account's selected session, which the
+// request presents in its binding cookie, an older superseded one, and the expiry.
+const SESSION_ID = "5e5510a0-0000-4000-8000-00000001701";
+const SUPERSEDED_SESSION_ID = "5e5510a0-0000-4000-8000-00000001702";
+const SESSION_EXPIRES_AT = "2999-12-31T23:59:59+00:00";
+
 const IDENTIFIERS = {
   suggestedWaypointIdForCreate: vi.fn(() => SUGGESTION_ID),
   versionIdForSchedule: vi.fn(() => VERSION_ID),
@@ -37,10 +43,12 @@ const IDENTIFIERS = {
 const GUIDE_PRINCIPAL: SupabaseAuthenticatedUser = {
   providerName: "supabase",
   providerUserId: "guide-provider-user",
+  presentedSessionId: SESSION_ID,
 };
 const EXPLORER_PRINCIPAL: SupabaseAuthenticatedUser = {
   providerName: "supabase",
   providerUserId: "explorer-provider-user",
+  presentedSessionId: SESSION_ID,
 };
 
 function authAccount(args: {
@@ -63,9 +71,11 @@ function authAccount(args: {
         accountStatus: "active",
       },
       session: {
+        userSessionId: SESSION_ID,
         userAccountId: args.accountId,
         activeRoleContext: args.role,
         sessionStatus: "active",
+        expiresAt: SESSION_EXPIRES_AT,
       },
       activeRoleAssignment: {
         userAccountId: args.accountId,
@@ -324,6 +334,71 @@ describe("resolveSuggestedWaypointRequest - server-derived authority", () => {
       },
     });
   });
+});
+
+// Login step 6, sub-slice S6-4: the session binding (contract 25 Section 8; its
+// Section 15 item 7) reaches every Suggested Waypoint request through derivation.
+describe("resolveSuggestedWaypointRequest - the session binding", () => {
+  const NOT_THE_SELECTED_SESSION: Array<[string, string | null]> = [
+    ["no session (a Supabase session alone)", null],
+    ["a superseded session's UUID", SUPERSEDED_SESSION_ID],
+  ];
+
+  it.each(NOT_THE_SELECTED_SESSION)(
+    "PRQ-1001 denies a Guide request that presents %s, before any relationship load or RPC",
+    async (_label, presentedSessionId) => {
+      const authSource = createInMemoryAuthSource(fixture());
+      const loadRelationship = vi.spyOn(authSource, "loadGuideRelationship");
+      const executor = makeExecutor();
+
+      const result = await resolveSuggestedWaypointRequest(
+        {
+          principalSource: createInMemoryRequestAuthPrincipalSource({
+            ...GUIDE_PRINCIPAL,
+            presentedSessionId,
+          }),
+          authSource,
+          executor,
+          identifiers: IDENTIFIERS,
+        },
+        GUIDE_CREATE_REQUEST,
+      );
+
+      expect(result).toEqual({
+        ok: false,
+        data: null,
+        error: SUGGESTED_WAYPOINT_REQUEST_DENIED,
+      });
+      expect(loadRelationship).not.toHaveBeenCalled();
+      expect(executor.execute).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(NOT_THE_SELECTED_SESSION)(
+    "PRQ-1002 denies an Explorer request that presents %s, before any RPC",
+    async (_label, presentedSessionId) => {
+      const executor = makeExecutor();
+
+      const result = await resolveSuggestedWaypointRequest(
+        {
+          principalSource: createInMemoryRequestAuthPrincipalSource({
+            ...EXPLORER_PRINCIPAL,
+            presentedSessionId,
+          }),
+          authSource: createInMemoryAuthSource(fixture()),
+          executor,
+        },
+        { kind: "explorer.list", pageSize: 10, cursor: null },
+      );
+
+      expect(result).toEqual({
+        ok: false,
+        data: null,
+        error: SUGGESTED_WAYPOINT_REQUEST_DENIED,
+      });
+      expect(executor.execute).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("resolveSuggestedWaypointRequest - role and relationship isolation", () => {

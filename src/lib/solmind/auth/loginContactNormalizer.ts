@@ -43,9 +43,9 @@
 //
 // Pure: no import, no IO, no environment read, no clock and no logging.
 //
-// Dormant: no application runtime caller is introduced; no application file
-// imports this module, and the unit tests do. Keep it direct-import only and
-// off every barrel.
+// Called by login step 6's Explorer sign-in routes (S6-8), through their
+// server composition; the unit tests import it too. Keep it direct-import
+// only and off every barrel.
 
 export const LOGIN_CONTACT_NORMALIZER_LIMITS = Object.freeze({
   maximumInputCharacters: 512,

@@ -18,11 +18,12 @@
 // Architecture notes (MVP0):
 //   - Pure and deterministic: time is supplied by an injected now (a Date). This
 //     module never reads Date.now() or performs IO.
-//   - It reuses the UserSessionRow shape from the adapter and adds the expires_at
-//     column (identity.user_session.expires_at is NOT NULL in the schema; the
-//     adapter projection omits it because deriveTrustedServerAuthContext only
-//     needs session_status). The selection candidate carries expires_at so the
-//     expiration rule can be applied here.
+//   - It reuses the UserSessionRow shape from the adapter, which since login
+//     step 6's sub-slice S6-4 carries the session's own UUID and its expires_at
+//     (identity.user_session.expires_at is NOT NULL in the schema). The
+//     expiration rule is applied here to the candidate's expires_at, and the
+//     selected candidate is returned whole, so its UUID and expiry are the
+//     selected session's own.
 //   - This function selects a record; it makes no authorization decision. The
 //     guard layer still re-validates the selected session.
 
@@ -32,11 +33,9 @@ import { type UserSessionRow } from "./serverAuthSourceAdapter";
 // logged_out, revoked, or any unknown value) is not valid.
 export const SOLMIND_ACTIVE_SESSION_STATUS = "active";
 
-// A user_session candidate for selection: the adapter row plus the expires_at
-// timestamp (ISO 8601 string, as stored in identity.user_session.expires_at).
-export type UserSessionSelectionCandidate = UserSessionRow & {
-  expires_at: string;
-};
+// A user_session candidate for selection: the adapter row, whose expires_at is
+// the timestamp as the lookup returned it (identity.user_session.expires_at).
+export type UserSessionSelectionCandidate = UserSessionRow;
 
 export type SelectActiveUserSessionArgs = {
   candidates: UserSessionSelectionCandidate[];

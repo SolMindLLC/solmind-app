@@ -1,7 +1,14 @@
 # SolMind App Module Boundaries
 
+> Conditional source preparation, 2026-10-16. The Explorer, direct-token,
+> logout and newer login/browser components described below include unbanked
+> proposal layers. Their source descriptions do not establish live, connected,
+> runtime-validated or banked behavior. Final predecessor reconciliation and
+> complete-slice assurance remain required; do not apply this draft.
+
 Version: 0.2.3
 Repo: solmind-app  
+Last Updated: 2026-10-17
 Purpose: Define where code should live as the SolMind MVP0 application grows.
 
 ## Core Principle
@@ -14,6 +21,8 @@ Prefer small, explicit modules over large mixed-purpose files.
 
 ```text
 src/
+  instrumentation.ts        server start hook: runs the login startup check
+  instrumentation-node.ts   its Node.js half
   app/
     page.tsx
     layout.tsx
@@ -23,6 +32,10 @@ src/
     explorer/page.tsx
     guide/page.tsx
     login/page.tsx
+    login/explorer/page.tsx
+    explorer/home/page.tsx
+    login/explorer/send/route.ts
+    login/explorer/verify/route.ts
 
   components/
     solmind/
@@ -159,10 +172,11 @@ no-notification, and no-real-user constraints. Its fixed replies must not be
 described as semantic interpretation or a genuine model response. S03 remains
 the owner of server-side provider conversation.
 
-The `/login` sign-in preview keeps the same split: `SignInPreview.tsx` owns
-the one client boundary, `SignInPreviewParts.tsx` owns presentation, and
+The retained sign-in preview keeps the same split: `SignInPreview.tsx` owns
+its client boundary, `SignInPreviewParts.tsx` owns presentation, and
 `signInPreview.ts` owns the approved copy and pure screen transitions.
-`src/app/login/page.tsx` only composes it. Screens follow their approved
+The proposed `/login` instead composes the connected LoginExperience boundary
+described below; Guide/Admin remain preview entries. Screens follow their approved
 mockups; the preview's own additions are styled apart (a "Preview controls"
 band, with a remembered-browser switch on A3 and A3A, an example-screen
 callout beside each code screen's claims, and explanations beside
@@ -173,8 +187,8 @@ password field is uncontrolled, so its value never reaches state or markup.
 A new-code request keeps A4, M1 or M2 on screen with what was typed; only the
 preview switcher moves between the code screens.
 It must not import the `auth/` or `supabase/` modules, persist entries, or
-send or check credentials or codes; drafts remain in page memory. Wiring it is
-login step 6. `LoginOptionList.tsx` and
+send or check credentials or codes; drafts remain in page memory. Connected
+Explorer uses separate login step 6 owners. `LoginOptionList.tsx` and
 `loginOptions.ts` are retained but no longer used by `/login`.
 
 ### Suggested Waypoint components
@@ -732,6 +746,21 @@ result cleanup, and the mandatory final reset. It does not start Supabase,
 discover or schedule due items, poll continuously, call a provider, deploy,
 contact hosted data, or affect real users.
 
+Since login step 6's sub-slice S6-4 the driver's Auth fixture builds the two
+cookies the per-request check requires, because no sign-in route writes them
+yet. `suggestedWaypointLocalAuthFixture.ts` takes both names from the app's
+session-cookie policy for the trusted application origin, gives the auth
+cookie name to the Supabase browser client that signs each synthetic role in,
+and adds the session-binding cookie holding the UUID of the
+`identity.user_session` row that `suggestedWaypointLocalSqlFixture.ts` inserts
+for that role. The UUIDs stay with the fixture owner and never reach a
+scenario, and a cookie set that the app's shared format check would refuse
+fails with a fixed value-free error before any browser exists.
+`suggestedWaypointRoleSessionCookies.test.ts` proves without a database or a
+browser that the app's real request-auth adapter accepts each role's cookies
+and is presented the UUID the SQL fixture inserts for that role. The driver's
+own browser run needs the local database and is run only in a watched session.
+
 The Playwright scenario is partitioned into fourteen closed, test-only steps.
 Only the selected value-free step ID may cross the scenario boundary after a
 failure; raw thrown values, messages, URLs, request bodies, fixture identifiers,
@@ -827,7 +856,7 @@ exact 1-100/default-7/version shape, returns a frozen value, and maps failures
 to one value-free sentinel. It is server-only, remains off the shared barrel,
 has no browser export, and has no banked application caller.
 
-Login step 6's sub-slice S6-2 adds the dormant session-cookie policy and the
+Login step 6's sub-slice S6-2 adds the session-cookie policy and the
 login-step cookie writer that
 `../solmind-docs/execution/25_SolMind_MVP0_Auth_RLS_Login_Session_Cookie_Security_Contract_v0_1.md`
 (contract 25, accepted by Paul on 2026-10-04 as AUTH-RLS-DEC-043) Sections 4,
@@ -859,7 +888,8 @@ chunk of the auth cookie may hold only A-Z, a-z, 0-9, `-` and `_`, the
 value the library would join must start with `base64-`, and the part after
 `base64-`, decoded as base64url exactly as the library decodes it, must be
 strictly valid UTF-8 (Paul's 2026-10-05 correction of Section 14), or the
-auth cookie counts as absent.
+auth cookie counts as absent. Since sub-slice S6-4 the check ends with a
+field check of the session inside the cookie, described below.
 
 `loginCookieWriter.ts` is server-only and sits beside `requestAuthClient.ts`,
 where contract 25 Section 6 places it. It imports neither `@supabase/ssr` nor
@@ -884,11 +914,25 @@ framework's cookie delete, which drops `Secure`. Results are frozen and
 value-free; nothing throws or logs. If the response throws mid-write, the
 result is `failed` and the composition root must discard that response.
 
-Both modules are dormant: no route, page, middleware or caller uses them,
-they write nothing at runtime, and they stay off every barrel, which the
-boundary tests check with TypeScript's parser. The per-request check (S6-4)
-and logout (S6-12) are their readers to come, and the first slice that
-imports either module must amend that dormancy test. The strict UTF-8 step
+Since sub-slice S6-8 the Explorer sign-in routes' server composition
+calls the login writer `writeLoginSessionCookies` in `loginCookieWriter.ts` only
+after the SolMind session exists and the held cookies were released. Its
+logout clear writer is called by the guarded logout composition (S6-12),
+with the request, cookie-read and trusted-policy prerequisites below. `sessionCookiePolicy.ts` has had a
+runtime reader since sub-slice S6-4, the per-request adapter
+`requestAuthClient.ts`, which takes the cookie names, the format check and
+the accepted cookie's sign-in token from it on every guarded request; since
+S6-8 the sign-in routes' dependency factory resolves the policy from the
+trusted origin, and their route contract takes the three no-store headers
+from it. Both stay off every barrel, and the boundary tests check with
+TypeScript's parser that exactly those references exist and that no other
+application file references or names either module.
+The guarded logout composition (S6-12) now reads the shared cleanup
+candidate and uses the owned-cookie clear writer. The Explorer verify
+route also uses the candidate reader for its cleanup-only backstop; the
+boundary tests enumerate these explicit references. A later new caller
+must amend those tests in its own reviewed slice.
+The strict UTF-8 step
 closes the limit that review #149a confirmed: a value that passed the
 character and `base64-` checks could still decode to a code point above
 U+10FFFF, and the installed library's decoder then threw an error naming
@@ -899,11 +943,16 @@ warning; the module's tests show this against the library's own decoder.
 That is all the step claims. It does not make the decoded value valid JSON
 (the library's separate warning for invalid JSON carries no part of the
 value) or the session authentic, and it says nothing about any other cookie
-a reader hands to the library. What remains is the wiring: the per-request
-check (S6-4) and logout (S6-12) put the check in front of `@supabase/ssr`
-before it reads any auth cookie, and until then nothing calls it.
+a reader hands to the library. The per-request check (S6-4) applies the
+check before any Supabase client exists and hands the library only the
+sign-in token of a cookie the check accepted, never the cookie; logout
+(S6-12), whose client reads the cookie, is to put the check in front of
+`@supabase/ssr` before it reads any auth cookie. The field check that S6-4
+adds as the check's last step also refuses a decoded value that is not
+JSON, so the library's warning for one is no longer reached for a cookie
+the check returns.
 
-Login step 6's sub-slice S6-7 adds the dormant Supabase identity bridge of
+Login step 6's sub-slice S6-7 adds the Supabase identity bridge of
 contract 25 Section 6 (hold, then write) and
 `../solmind-docs/execution/21_SolMind_MVP0_Auth_RLS_Login_Provisioning_Write_Path_Contract_v0_1.md`
 Section 7.9 (AUTH-RLS-DEC-035):
@@ -916,9 +965,10 @@ src/lib/solmind/supabase/__tests__/loginIdentityBridge.test.ts
 `loginIdentityBridge.ts` is server-only, with the runtime browser guard, and
 sits beside `requestAuthClient.ts` in the request-auth adapter layer where
 contract 25 Sections 5.1 and 6 keep `@supabase/ssr` (AUTH-RLS-DEC-012,
-DEC-013 and DEC-019). It imports only `server-only` and `@supabase/ssr`, no
-Next.js module, and reads no cookie, environment variable or setting: the
-route's composition root passes the Supabase URL and anon key, the auth
+DEC-013 and DEC-019). It imports `server-only`, `@supabase/ssr` and the
+server-only `credentialPairProof.ts` owner, with no Next.js module or incoming
+cookie accessor. The optional proof loader reads only its dedicated server
+key; the route's composition root passes the Supabase URL and anon key, the auth
 cookie name N from the same S6-2 policy it gives the writer, a provider
 deadline (10 ms to 60 s), a fetch, the link seam (the service-role client's
 Auth admin API) and a value-free cleanup-failure signal. The link seam's
@@ -988,18 +1038,381 @@ once constructed, and its own code logs nothing; the installed library keeps
 its own logging paths. The bridge makes no direct session-read call, though
 the library's initial-session emission still reads the hold's empty storage.
 
-The bridge is dormant: no application runtime caller is introduced (no route,
-page or middleware uses it), and only its unit tests invoke it; it writes
-nothing at runtime, and it stays off every barrel, which the boundary tests
-check with TypeScript's parser. The Explorer route (S6-8) and the Guide and
-Admin route (S6-9) are its callers to come, and the first of them to import
-it must amend that dormancy test.
+Since sub-slice S6-8 the bridge has one caller: the Explorer sign-in routes'
+dependency factory builds it, with the link seam's client behind the
+non-logging, non-rejecting fetch boundary that the precondition above
+requires, and their server composition runs `exchangeExplorerLink`. The
+password sign-in has no caller yet. The bridge stays off every barrel, and
+the boundary tests check with TypeScript's parser that exactly the factory's
+reference exists. The Guide and Admin route (S6-9) is the caller to come,
+and must amend that test.
+
+Login step 6's sub-slice S6-8 adds the two Explorer sign-in routes, the first
+application callers of the login modules above:
+
+```text
+src/app/login/explorer/send/route.ts
+src/app/login/explorer/verify/route.ts
+src/lib/solmind/supabase/explorerSignInComposition.ts
+src/lib/solmind/supabase/explorerSignInDependencies.ts
+src/lib/solmind/supabase/explorerSignInRouteContract.ts
+src/lib/solmind/supabase/loginAccountLookupCallers.ts
+src/lib/solmind/supabase/loginLinkAdminClient.ts
+src/instrumentation.ts
+src/instrumentation-node.ts
+```
+
+Decided by Paul on 2026-10-07: seven things this section describes. The
+record is
+`solmind-sprints/PRJ01-SPR001/Decision_Queue/Current_Action_Queue.md`, "The
+2026-10-07 check-in: answered (first seen by the 11:30:10 clock read)"; each
+is option 1 of the item named, in Part 2 of
+`solmind-sprints/PRJ01-SPR001/Validation_Workspaces/Morning_Checkin_Packet_2026-10-07.md`.
+They are, in each option's words: the two route paths,
+"`/login/explorer/send` and `/login/explorer/verify`" (item 3); for the
+Explorer home address, "name the new page's address now, `/explorer/home`,
+and build the page with the screens" (item 4); for the wait, "a fixed wait
+of about one and a half seconds, set from the first local run. Accept the
+three limits for the local demo, and record them." (item 5); for a refused
+code, "one "code not accepted" result for every refused code, its words
+chosen with the screens" (item 6); for the link client, "a second, separate
+module used only for that one link request, exposing nothing else" (item 7);
+for a missing pepper when the server starts, "the app starts, sign-in is
+unavailable, and one fixed line with no value says so" (item 9); and, after
+a correct code, "keep the small message naming the fixed home" (item 18),
+which is the verify route's JSON answer. Each is marked `DECIDED` in the
+code. Paul approved the words shown for `code_not_accepted` on 2026-10-17
+(S6-10). Still open: the wait's exact value, which the first local run sets
+(the code uses 1,500 ms until then), and actual browser proof of the proposed
+Explorer home and connected screens.
+
+Both routes are thin, POST-only, dynamic Route Handlers. Each loads the
+trusted origin, runs the same-origin JSON guard before any other work, denies
+any query parameter, checks the body shape with an exact-key parser, and
+makes one call into `explorerSignInComposition.ts`, which holds both step
+orders and imports no Next.js module. Every answer is HTTP 200 with one of a
+closed set of results in its JSON body and the same headers: the
+session-cookie policy's three no-store headers and
+`X-Content-Type-Options: nosniff`. Nothing is taken from the client but the
+typed text, the opaque selector and the code: the identifier type `email`,
+the role `explorer` and the purpose `login` are literals in the composition,
+and a body that carries a role, an account id, a session id, a purpose or a
+return address is refused whole.
+
+Configuration first. `explorerSignInDependencies.ts` builds a request's
+dependencies before the composition makes its first database call, so a
+configuration fault spends no code, budget slot or attempt: the
+session-cookie policy; the loopback rule; login step 5's configuration and
+composition root; one more service-role client for the two lookup callers
+and the session caller; and, for the verify route, the Supabase URL and anon
+key, the link client, the identity bridge and the session caller. Any failure
+is one fixed, value-free error, and the route answers its generic deny. The
+loopback rule is on both routes: the step 5 root always composes the local
+development mail transport, for the issuer and the redeemer together, so
+both factories refuse a trusted origin whose policy is not the loopback one
+before that root is called, and both routes deny on a hosted origin until a
+provider adapter exists. A send request builds two clients with the
+service-role key (the step 5 root's own and the factory's), both through
+`serviceRoleClient.ts`; a verify request builds three, the third in
+`loginLinkAdminClient.ts`.
+
+Send a code. The composition fixes the answer time, normalizes the typed
+text (not an email: `invalid_email`, with no lookup), builds the
+dependencies, and takes a spare selector from the issuing caller with a
+fixed, structurally invalid request (an empty object), which that caller
+refuses with a fresh UUID, no slot, no database call and no mail. It then
+calls `solmind_resolve_login_account` with the type and the Explorer role
+fixed. Only for exactly one row does it issue, with both UUIDs and the email
+from that row. It never issues with null binding UUIDs, which the banked
+issuing caller and the issuance function accept for `login` with no contact
+check. From the lookup on there is one exit: the banked acknowledgment with
+a selector (the issuing caller's, or the spare one), after the wait. No
+answer of the send route sets a cookie.
+
+Verify the code and sign in, in the order of
+`../solmind-docs/execution/21_SolMind_MVP0_Auth_RLS_Login_Provisioning_Write_Path_Contract_v0_1.md`
+Sections 7.1.3 and 7.9: redeem the selected challenge; look the account up
+from the typed email with the role fixed; confirm with
+`solmind_confirm_redeemed_login_challenge` that the redeemed challenge is
+that account's own; run the bridge's Explorer exchange with the looked-up
+email and bound provider user id; create the SolMind session once; release
+the held cookies, stating the outcome that session call returned; and only
+then call the route's function that makes the success response and write
+both cookies onto it with `writeLoginSessionCookies`. The route keeps only
+the request's cookie names (every value is replaced by an empty string)
+for the writer to clear old chunks. From the same guarded read, the route
+separately captures a shared-format cleanup candidate containing the old
+access token, refresh token and optional pair proof. Only the accepted-login
+cleanup closure receives that candidate; it never authenticates the fresh
+login or reaches a login account lookup. After independent fresh provider
+verification and SolMind session acceptance, bounded cleanup may attempt
+only a provably distinct older provider session. Once a hold exists, every exit that is not the success awaits the
+hold's `discard` before it answers. A returned redemption `denied` or
+`invalid_request` is `code_not_accepted`; every other failure is the generic
+deny; the success names one server constant as its destination.
+
+The wait and its limits. The composition takes a clock and a waiter as ports
+and asks the waiter for one fixed floor (1,500 ms), measured from
+composition entry and not from the request's arrival: on the send route for
+every exit from the account lookup on, and on the verify route for every
+exit from the redemption call on except the success. Earlier refusals do not
+wait; waiter failure can return early. It is a floor, not equal timing. It
+does not hide a send that runs longer than the floor, slowness someone
+creates by flooding the send route, or the shared pool of four issuance
+slots. The tests prove the answer time the code asks for, with a fake clock
+and counted calls; they do not measure what an observer sees.
+
+What a failure can leave. No cookie reaches the browser on any failure.
+Cleanup of the transient Supabase session is attempted and can fail; a failed
+cleanup writes one fixed, value-free line through the bridge's signal and
+never changes the deny. A code is spent by any failure after it was
+redeemed. After the session call answered, the new session row exists and
+the account's earlier session has ended, also when the release or the writer
+then fails; no application code ends that session; a later sign-in of the
+same account supersedes it, and otherwise it ends by itself within the hour.
+Paul decided on 2026-10-07 to "accept it for the local demo, and record it"
+(the morning check-in packet's item 8, option 1; the record is
+`solmind-sprints/PRJ01-SPR001/Decision_Queue/Current_Action_Queue.md`, "The
+2026-10-07 check-in: answered (first seen by the 11:30:10 clock read)").
+
+`loginAccountLookupCallers.ts` holds the two lookup callers: one fixed
+function name each, a narrow RPC seam, a caller response deadline, frozen
+results, no retry and no log. `loginLinkAdminClient.ts` builds the one client
+the bridge's link seam uses: a service-role client whose fetch never rejects
+and never logs (a failed request becomes one fixed 503), handing out only
+`generateLink`. It is the composition gate the bridge's precondition names,
+and it adds no deadline of its own. `explorerSignInRouteContract.ts` holds
+the body parsers, the closed results, the fixed destination and the response
+headers.
+
+The startup check. `src/instrumentation.ts` exports `register`, which in the
+Node.js runtime only imports `src/instrumentation-node.ts` and runs
+`checkLoginVerificationConfigurationAtStartup` once. A failed check writes
+one fixed, value-free line and the server keeps starting; with no usable
+pepper the two routes then deny, because their configuration load fails. A
+hook that could not load or run the check writes a different fixed line.
+
+The five lib modules and the Node.js half of the start hook begin with the
+`server-only` import; all nine files are direct-import only and stay off
+every barrel. The proposed connected Explorer layer below calls the two
+routes (S6-10) and shared logout route. Guide/Admin request routes remain
+separate S6-9 work and their current screen entries stay previews.
+The five boundary tests that guarded the login modules as dormant now assert
+the exact list of references these files add.
 
 Supabase code should not expose service-role credentials through client-accessible variables.
 
 Never put service-role keys or bootstrap tokens in `NEXT_PUBLIC_*`.
 
 S01 does not import or call Supabase.
+
+## Prepared Guide/Admin and Explorer browser boundaries (2026-10-16)
+
+This dated section describes dormant, unbanked components under the accepted
+[solmind-sprints/PRJ01-SPR001/Validation_Workspaces/Login_Step6_S69_Design_Brief_2026-10-08/DESIGN_BRIEF_R04.md](../../solmind-sprints/PRJ01-SPR001/Validation_Workspaces/Login_Step6_S69_Design_Brief_2026-10-08/DESIGN_BRIEF_R04.md). Source descriptions of the pending Explorer/logout predecessors
+remain conditional; no new component supplies final integration or banking proof.
+
+The server-only `solmind-app/src/lib/solmind/supabase/passwordRoleSignInBodies.ts`
+reads exact fixed-role raw-string bodies. The pure
+`solmind-app/src/lib/solmind/auth/adminLoginIdentifierNormalizer.ts` owns Admin
+email/username dispatch and the approved username allowlist; it changes no stored
+name, schema or bootstrap. Guide email handling and raw passwords stay unchanged.
+The server-only `solmind-app/src/lib/solmind/supabase/passwordRoleSignInCore.ts`
+has four fixed Guide/Admin send/verify entrypoints and stays off shared barrels.
+No request supplies role, purpose, account, session, duration or destination authority.
+
+Send prepares the issuing caller's harmless spare acknowledgment before lookup,
+then uses only the eligible lookup's stored sign-in email and paired account/contact
+identities for at most one issuance. Later refusal, throw or floor-wait failure
+retains the prepared acknowledgment rather than exposing the failing stage.
+Verify follows eligible lookup, exact ownership, password authentication into a
+private hold, code redemption, provider-user assertion, same-account redeemed
+confirmation and session creation. Ownership is before password and wrong password
+does not redeem. The separate fixed `solmind_check_login_challenge_owner` read in
+`solmind-app/src/lib/solmind/supabase/loginAccountLookupCallers.ts` checks the
+challenge/account/contact-account join; it does not duplicate eligibility,
+redemption or freshness, mutate a row/audit, or widen the seven-function
+`solmind-app/src/lib/solmind/supabase/serviceRoleRpcExecutor.ts` allowlist.
+
+After an accepted `created` or `existing` SolMind result, the corrected core
+targets the logout R03 bridge's five-field hold, including
+`prepareAcceptedSession`. Preparation precedes release, preserves the actual
+session outcome, and reduces cookie lifetime for measured elapsed time and the
+remaining provider-token lifetime. Invalid clocks or nonpositive lifetime refuse
+completion. Every held failure awaits discard and discards any partial success
+response. Common pre-factor `not_matched` and the configured response floor
+cover lookup through same-account factor confirmation; earlier boundary/configuration
+and handled post-factor completion failures remain `denied`. The floor is a
+mitigation, not constant-time authentication; waiter failure preserves the chosen
+refusal. Fresh credentials stay private to the hold. Previous-cookie cleanup
+capability belongs in the identity/dependency layer, never core authentication
+input; no old-credential cleanup or production factory is added by this core.
+
+The injected ports are trusted executable dependencies. The core does not bound
+arbitrary hanging code, prove cancellation of remote effects, or roll back an
+already committed session. Concrete deadlines, safe transport and bounded cleanup
+must come from the final production dependencies. Current core correction and
+combined source assurance require their final frozen review before acceptance.
+
+`solmind-app/src/lib/solmind/supabase/passwordRoleSignInRouteContract.ts`
+describes `/login/guide/send`, `/login/guide/verify`, `/login/admin/send` and
+`/login/admin/verify`, with future `/guide/home` and `/admin/home` destinations.
+These engineering-selected constants/types implement no route, protected page,
+framework method handling, response mapping or cookie publication; the existing
+prototype-role route constants are unchanged. Future handler-generated outcomes
+share the declared status/headers; only a complete accepted success may carry
+the login writer's cookies. Real response/wire behavior remains to be integrated.
+
+The separate Explorer browser-safe owners are
+`solmind-app/src/lib/solmind/signInBrowserContract.ts`,
+`solmind-app/src/lib/solmind/explorerSignInBrowserTransport.ts` and
+`solmind-app/src/lib/solmind/explorerSignInFlowController.ts`.
+They preserve raw inputs, fixed paths and closed replies, bounded request/response
+bodies, an explicitly supplied response budget, and a private selector with
+generation invalidation before abort. Stale completions cannot publish current
+state. Cancellation ends local waiting only; it proves no remote rollback or
+absence of a session/cookie effect. They add no retry, DOM navigation, browser
+storage, operational timeout default or connected preview. Additional UI source
+authoring remains separate; combined Explorer refusal wording and usable expiry
+behavior are not selected here. Exact test owners and pending SQL/provider,
+real request/cookie/browser and timing/contention evidence are in [solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md](../../solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md#prepared-guideadmin-and-explorer-browser-components-2026-10-16).
+
+## Connected Explorer request and view boundaries (2026-10-16)
+
+The proposed source layer connects Explorer only; it is unbanked and requires
+coherent final source review/checks and actual browser proof. It preserves every
+Guide/Admin, challenge-ownership and logout boundary above. The dated isolated
+component descriptions describe their own scope, not a claim that no caller can
+now be proposed. The existing `/explorer` prototype remains independent.
+
+`solmind-app/src/components/solmind/LoginExperience.tsx` owns A1 role selection.
+`solmind-app/src/app/login/page.tsx` mounts it normally;
+`solmind-app/src/app/login/explorer/page.tsx` supplies `initialExplorer` for fixed
+re-entry. Guide/Admin use `solmind-app/src/components/solmind/SignInPreview.tsx`
+with optional `initialRole`/departure props; default preview callers retain their
+in-memory behavior and prohibitions. The Explorer branch supplies browser fetch,
+an explicit 60000ms local wait, value-free status rendering and fixed
+`location.replace('/explorer/home')` only after current accepted success. No
+query return URL, role selector or credential enters navigation. The existing
+`solmind-app/src/components/solmind/ExplorerSignIn.tsx` owns private drafts,
+selector/generation invalidation and commit-time departure cleanup.
+
+`solmind-app/src/app/explorer/home/page.tsx` is dynamic server-only request
+composition, not a client redirect guard. It reads the raw Cookie header with
+bounded framing (16384 characters, 128 pairs), preserves duplicate names and
+exact values, and rejects malformed framing without URI decoding or merging.
+The installed Next cookie collection normalizes through a Map and cannot supply
+that ambiguity evidence. A read-only accessor feeds
+`solmind-app/src/lib/solmind/auth/explorerHomeAccess.ts`; trusted server code fixes
+`/explorer/home` in `solmind-app/src/lib/solmind/routeAccess.ts`.
+
+The access owner constructs the actual direct-token principal source and narrow
+record source, then calls the current composer. Cookie format, platform identity,
+active account/role/session, selected-session binding and Explorer route access
+must all pass. Final expiry must be strictly after a fresh finite server clock
+observation. Only `{ allowed: true, expiresAt, observedAt }` or the opaque
+`{ allowed: false, reason: 'route_access_denied' }` leaves this seam. The page
+passes only the two times to the home, never account/provider/profile/session IDs
+or credentials. Missing, expired, superseded, ambiguous, wrong-role or failed
+checks render S2 without protected children. A missing profile alone introduces
+no new authentication-shell eligibility gate. GET performs no refresh, cookie
+clear, logout or audit write. Inherited direct-token network-deadline limitations
+remain; the new seam does not bound an arbitrary never-settling dependency.
+
+`solmind-app/src/components/solmind/ExplorerHome.tsx` consumes that time projection.
+Its private view lifetime owns logout and timers. `solmind-app/src/lib/solmind/logoutBrowserRequest.ts`
+issues only same-origin POST `/logout`, no query, JSON `{}`, no-store,
+same-origin credentials, redirect refusal and one owned cancellation signal.
+The explicit browser wait is 30000ms and the complete response is bounded to
+1024 bytes. Only the closed current `signed_out` result shows S1; refusal,
+malformed/missing/late answers and local failure show honest SM-OUT-01 uncertainty.
+No retry, browser cookie deletion or claim of provider rollback/administrator
+notification follows. Server outcome and safe clearing remain owned by the
+logout composition; client cancellation establishes only local abandonment.
+
+`solmind-app/src/lib/solmind/explorerLoginJourney.ts` owns value-free copy and
+advisory expiry. The browser uses trusted expiry/observation plus a wall/monotonic
+high-water elapsed clock, warns within five minutes and shows S2 at apparent
+expiry. Invalid time fails closed; resumed/cached pages require a fresh request.
+The timer neither grants authority nor extends/revokes a server session. S1/S2
+offer only `/login/explorer`. Stay signed in remains a later accepted amendment,
+not a button or renewal route in this component. Paul approved the sign-in and
+finite-session reminder wording on 2026-10-17; the exact messages are recorded in
+`solmind-docs/execution/25_SolMind_MVP0_Auth_RLS_Login_Session_Cookie_Security_Contract_v0_1.md`,
+under Explorer screen copy approved - 2026-10-17.
+
+All text rendering is value-free and ordinary React text. Credentials stay out
+of URLs, logs, storage and home props. Static rendering, fake fetch and direct
+binding tests do not exercise mounted React or a real browser. Exact planned
+coverage and unperformed proof are in
+[solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md](../../solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md#connected-explorer-proof-plan-2026-10-16).
+
+## Logout and credential-pair provenance boundary
+
+`src/app/logout/route.ts` is a thin dynamic Node.js POST handler. Under
+`src/lib/solmind/supabase/`, `logoutRouteContract.ts` owns the exact empty-JSON,
+no-query request and closed outcomes; `logoutComposition.ts` owns ordering and
+safe clearing; `logoutDependencies.ts` constructs independent database/provider
+capabilities; `userSessionLogoutCaller.ts` calls only
+`solmind_logout_user_session(account, presentedSession)` once; and
+`logoutProviderSignOut.ts` owns bounded explicit-token local cleanup. These
+server-only owners stay off shared/client barrels. No request body supplies
+account, role, session or redirect authority. The proposed Explorer home calls this route through its separate closed browser boundary.
+
+The same-origin JSON guard precedes the one cookie read. Only a readable
+cookie list and trusted policy permit `writeLogoutSessionCookieClears` to clear
+the auth and code-verifier families plus binding, preserving remembered-browser
+cookies. Later malformed request shape or missing backend settings still reaches
+safe clearing, with no unauthorized remote work. A fresh denied response replaces
+any partially written response. Only a strict database `ended`/`already_ended`
+answer plus successful clears yields `signed_out`; other completed clears yield
+`sign_out_unconfirmed`. Provider failure cannot undo confirmed SolMind termination.
+A suspended account or superseded session does not need application access to end
+its identifiable presented session; the current-session access guard stays strict
+on every protected read/write. Never substitute the account's current session.
+
+`credentialPairProof.ts` owns optional HMAC-SHA256 pair provenance. Its server key
+`SOLMIND_CREDENTIAL_PAIR_PROOF_KEY_BASE64` is documented without a value in
+`.env.example`. Only the identity bridge can mint from a trusted fresh provider
+response after account assertion and SolMind acceptance; logout receives only
+verification capability. The proof binds the exact access/refresh bytes, issuer,
+audience, account, provider-session UUID, expiry, trusted origin and auth-cookie
+name. It is the `solmind_pair_proof` property inside the existing encoded auth
+session, not a new cookie family or an authentication grant. The bridge rechunks
+the augmented session before the cookie writer publishes it with the binding.
+The 32,768-byte encoded-session cap and normal hold/release failure handling apply.
+The pure `readSessionAuthCookieCleanupCandidate` uses the shared format check and
+returns only a captured candidate; it does not verify a proof or grant authority.
+Legacy/malformed/missing proofs do not invalidate ordinary independent auth checks.
+
+Missing/invalid key configuration disables minting and proof-authorized renewal;
+no key is created or substituted. Suitable existing-token cleanup remains possible.
+A renewal requires a valid exact-pair proof before dispatch, then independent
+verification of matching renewed identity. Explicit `scope=local`, no retries,
+no global/others scope, bounded bodies/deadlines and a non-rejecting sanitized
+transport prevent widening the operation. Timeout/abort does not prove cancellation.
+
+The Explorer verify route captures prior credentials before fresh authentication.
+After fresh identity assertion and SolMind acceptance,
+`prepareAcceptedSession` invokes the optional cleanup backstop before release.
+Only a verified same-account, distinct older provider session is eligible; the
+backstop never renews, enumerates sessions, writes cookies or receives a fresh
+credential/discard capability. Insufficient release budget skips it. The identity
+hold owns at most one best-effort report attempt for failed prior-session cleanup,
+including its own deadline; late completion cannot emit a second report. The
+separate fixed line `solmind_login_prior_session_cleanup_failed` contains no values
+and makes no administrator-notification claim. Reporting failure cannot change
+fresh login. Release rechecks expiry and the composition reduces Max-Age for
+elapsed time. Existing cleanup of a failed fresh login and its separate
+`solmind_login_identity_cleanup_failed` signal remain unchanged. Server target isolation
+does not solve competing Set-Cookie responses in one browser; future UI operation
+coordination and watched browser/provider/database evidence remain required.
+
+These are implementation controls for the accepted October12 behavior, not new
+product decisions. The owning contract is
+`../solmind-docs/execution/25_SolMind_MVP0_Auth_RLS_Login_Session_Cookie_Security_Contract_v0_1.md`
+Section 9; test ownership and assurance limits are in
+`../solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md` Section 7.2.
 
 ## Admin Access Route Boundary
 
@@ -1209,9 +1622,9 @@ database. Same-value/current-version requests and exact already-applied retries
 are writeless; any request-field mismatch, stale version, unknown token, lock
 failure, or audit failure fails closed.
 
-The banked dormant DEF5-S3 issuance foundation keeps the database boundary narrow: `public.solmind_issue_verification_challenge` is a service-role-only, purpose-built `SECURITY DEFINER` operation over `identity.verification_challenge`, `identity.contact_method`, and the exact Family B `audit.audit_event` row. Its partial unique index independently limits each normalized-contact/purpose pair to one structurally open challenge. It does not authorize a route, delivery provider, invitation acceptance, session creation, self-signup, Guide assignment, or rate-limit implementation. The outer app/route layer must establish invitation or self-signup eligibility before calling it. The resend and lockout controls (AUTH-RLS-DEC-037) are implemented inside the same function by `supabase/migrations/20260929010000_verification_issuance_abuse_limits.sql` (login step 2, app `05884ed`); the function still has no runtime caller, and its comment says no runtime caller or real-user path may use it until separately gated.
+The banked dormant DEF5-S3 issuance foundation keeps the database boundary narrow: `public.solmind_issue_verification_challenge` is a service-role-only, purpose-built `SECURITY DEFINER` operation over `identity.verification_challenge`, `identity.contact_method`, and the exact Family B `audit.audit_event` row. Its partial unique index independently limits each normalized-contact/purpose pair to one structurally open challenge. It does not authorize a route, delivery provider, invitation acceptance, session creation, self-signup, Guide assignment, or rate-limit implementation. The outer app/route layer must establish invitation or self-signup eligibility before calling it. The resend and lockout controls (AUTH-RLS-DEC-037) are implemented inside the same function by `supabase/migrations/20260929010000_verification_issuance_abuse_limits.sql` (login step 2, app `05884ed`); since login step 6's sub-slice S6-8 its one runtime caller is the Explorer send route, through login step 5's issuing caller and for a loopback trusted origin only. Its stored comment still says no runtime caller or real-user path may use it until separately gated. Paul's go-ahead of 2026-10-04 for step 6's login writes, for local synthetic work only (no real users, no cloud; AUTH-RLS-DEF-011), is read as that gate; it is recorded in `../solmind-docs/execution/25_SolMind_MVP0_Auth_RLS_Login_Session_Cookie_Security_Contract_v0_1.md`, "Paul's Acceptance (2026-10-04)" and Section 1. The stored comment stays as written, because this slice changes no migration; a later database change can update it.
 
-Login step 4 adds the dormant, server-only, provider-neutral verification-code
+Login step 4 adds the server-only, provider-neutral verification-code
 delivery boundary that
 `../solmind-docs/execution/21_SolMind_MVP0_Auth_RLS_Login_Provisioning_Write_Path_Contract_v0_1.md`
 section 7.1.3 describes, and a local development transport for it:
@@ -1295,14 +1708,15 @@ composition root must bound how many sends run at once. A future provider
 adapter must state and prove its own spend ceiling and delivery proof, with
 its own idempotency, retry and elapsed-time limits, before it is activated.
 
-The three modules are dormant. Only login step 5's dormant callers and
-composition root, described next, import them; there is no runtime caller,
-route or environment wiring, and the routes belong to login step 6. The
+Only login step 5's callers and composition root, described next, import the
+three modules. Since login step 6's sub-slice S6-8 the Explorer sign-in
+routes call that root, for a loopback trusted origin only, with the settings
+of sub-slice S6-1; nothing else composes them. The
 boundary tests use injected fake transports and the transport tests use an
 in-process loopback server; none of them touches the local Supabase stack or
 its mail catcher.
 
-Login step 5 adds the dormant, server-only code module, the issuing and
+Login step 5 adds the server-only code module, the issuing and
 redeeming callers (a restricted core and a public module), and their
 composition root:
 
@@ -1417,7 +1831,7 @@ nothing is proved about what a transport does after the delivery boundary has
 returned (the local SMTP transport may still close its socket within its
 one-second QUIT grace).
 
-`verificationChallengeComposition.ts` is the dormant composition root. It
+`verificationChallengeComposition.ts` is the composition root. It
 takes no slot pool and cannot be given one. It wires the public callers to
 the service-role client from `createServiceRoleClient()`, which reads its two
 existing environment variables only when the root is called, and to login
@@ -1445,17 +1859,18 @@ reaches these modules, login step 4's or S6-1's through any of those forms.
 Reflective loading (`createRequire`, `module.require` or the `Function`
 constructor) is beyond what a source parser can see.
 
-Nothing calls the callers or the root: there is no route, server action,
-cookie, session or UI. Three duties are not provided by step 5 and are owed
-before activation: the pepper's source and the startup check that
-AUTH-RLS-DEC-032 requires; the one shared, unit-tested contact normalizer of
-AUTH-RLS-DEC-033 (the callers only check that a contact is already
-canonical); and the route-owned purpose and eligibility (the route must fix
-the purpose and prove invitation, first-Admin or account eligibility before
-it calls). The timing of the outward response and the login routes belong to
-login step 6.
+Step 5 itself has no route, server action, cookie, session or UI; since login
+step 6's sub-slice S6-8 the Explorer sign-in routes call the root. Three
+duties are not provided by step 5: the pepper's source and the startup check
+that AUTH-RLS-DEC-032 requires; the one shared, unit-tested contact
+normalizer of AUTH-RLS-DEC-033 (the callers only check that a contact is
+already canonical); and the route-owned purpose and eligibility (the route
+must fix the purpose and prove invitation, first-Admin or account
+eligibility before it calls). Sub-slice S6-1 supplies the first two, and
+S6-8 supplies the third for the Explorer sign-in, with the timing of the
+outward response.
 
-Login step 6's sub-slice S6-1 adds the first two of those duties, dormant,
+Login step 6's sub-slice S6-1 adds the first two of those duties,
 with the login route configuration that hands the step 5 root its settings:
 
 ```text
@@ -1514,11 +1929,12 @@ hands the loaded configuration to the real
 root with fake dependencies and checks that both callers are keyed by the
 loaded pepper. `checkLoginVerificationConfigurationAtStartup` is
 AUTH-RLS-DEC-032's startup check: it loads the configuration once and returns
-nothing, or throws the pepper source's fixed error. Calling it when the
-server starts (Next.js 16's `instrumentation.ts` `register`, in the Node.js
-runtime only, because the pepper path uses `node:crypto`) is the first
-activating slice's duty (S6-8), so until then the requirement is met only in
-that a route composition that loads this configuration fails closed. These
+nothing, or throws the pepper source's fixed error. Since sub-slice S6-8 the
+server start hook calls it when the server starts (Next.js 16's
+`instrumentation.ts` `register`, in the Node.js runtime only, because the
+pepper path uses `node:crypto`): a failed check writes one fixed, value-free
+line and the server keeps starting, and a route composition that loads this
+configuration still fails closed. These
 settings point at the local mail catcher only: the route composition must
 not compose the local transport unless the trusted origin is a loopback
 origin, and a hosted environment needs a provider adapter that does not
@@ -1542,18 +1958,20 @@ eligibility. Phone sign-in is outside login step 6, so phone normalization
 joins this module when phone sign-in is designed; the Admin username's
 lookup belongs to the login lookups (S6-5 and S6-9).
 
-All three are dormant: no application runtime caller is introduced, and they
-stay off every barrel. They join the login step 5 boundary test's guarded
-set (VCB-004), and their own boundary tests check, with TypeScript's parser,
-their exact imports, that `process.env` appears only as the default value of
-an `environment` parameter, and that no other application file references or
-names them. The route slice that first imports any of them (S6-8) amends
-both tests.
+Since sub-slice S6-8 the Explorer sign-in routes use all three: their server
+composition calls the normalizer, their dependency factory loads the route
+configuration, which loads the pepper, and the server start hook runs the
+startup check. All three stay off every barrel. They stay in the login step
+5 boundary test's guarded set (VCB-004), and their own boundary tests check,
+with TypeScript's parser, their exact imports, that `process.env` appears
+only as the default value of an `environment` parameter, and that exactly
+the references S6-8 added exist and no other application file references or
+names them. The next slice that imports any of them (S6-9) amends both
+tests.
 
-The banked dormant DEF5-S4 slice keeps session mutation separate from redemption and provisioning. `public.solmind_create_user_session` consumes committed account-bound `login` or `role_reentry` evidence, owns account-wide supersede-then-create serialization, and embeds its exact Family B audit rows. Its freshness policy and both uniqueness indexes are hidden database backstops, not client authorization. Corrective migration `20260716001000_user_session_creation_chronology_guard.sql`, banked in `d2fbb0e`, preserves the writeless exact-retry branch and requires never-sessionized evidence to be strictly newer by `(used_at, challenge UUID)` than every prior session-linked evidence tuple for the account; chronology denial is fixed and zero-write. The three DEF5-S4 plans contain 49/51/50 assertions, and clean reset passed 14 files / 502 assertions. The banked slice creates no caller, route, cookie, provider action, account/profile/role provisioning, invitation or Guide assignment dependency, cloud path, or real-user flow. Its only application caller is login step 6's dormant session-creation caller (sub-slice S6-6), described next, which nothing calls.
+The banked dormant DEF5-S4 slice keeps session mutation separate from redemption and provisioning. `public.solmind_create_user_session` consumes committed account-bound `login` or `role_reentry` evidence, owns account-wide supersede-then-create serialization, and embeds its exact Family B audit rows. Its freshness policy and both uniqueness indexes are hidden database backstops, not client authorization. Corrective migration `20260716001000_user_session_creation_chronology_guard.sql`, banked in `d2fbb0e`, preserves the writeless exact-retry branch and requires never-sessionized evidence to be strictly newer by `(used_at, challenge UUID)` than every prior session-linked evidence tuple for the account; chronology denial is fixed and zero-write. The three DEF5-S4 plans contain 49/51/50 assertions, and clean reset passed 14 files / 502 assertions. The banked slice creates no caller, route, cookie, provider action, account/profile/role provisioning, invitation or Guide assignment dependency, cloud path, or real-user flow. Its only application caller is login step 6's session-creation caller (sub-slice S6-6), described next, which the Explorer sign-in routes call since sub-slice S6-8.
 
-Login step 6's sub-slice S6-6 adds that caller and the duration rule it uses,
-both dormant:
+Login step 6's sub-slice S6-6 adds that caller and the duration rule it uses:
 
 ```text
 src/lib/solmind/supabase/userSessionCreationCaller.ts
@@ -1628,20 +2046,220 @@ which has also ended the account's previous session; the caller reports
 `failed`, no cookie is written, and that session ends by itself within the
 hour.
 
-No runtime caller uses the pair; the dormant session caller uses the duration
-rule. There is no composition root, route, server action, cookie or UI here.
+Since sub-slice S6-8 the session caller has one caller: the Explorer sign-in
+routes' dependency factory wires it to a service-role client, and their
+server composition calls `create` once per request; the session caller uses
+the duration rule. There is no composition root, route, server action,
+cookie or UI in the pair itself.
 The boundary tests' parser-covered source-reference checks, with TypeScript's
-parser, find no other application file that references or names either module
+parser, find exactly the factory's reference to the session caller and no
+other application file that references or names either module
 (login step 5's boundary test refuses computed references in every non-test
-file, and reflective loading is beyond a source parser); the first slice to
-import one amends them. Which provider expiry feeds the rule belongs to the
+file, and reflective loading is beyond a source parser); the next slice to
+import one (S6-9) amends them. Which provider expiry feeds the rule belongs to the
 identity bridge slice (S6-7).
 
-The dormant login step 6a logout writer keeps ending a session inside one database operation. `public.solmind_logout_user_session` takes only the server-derived account and the presented session UUID, takes the same shared account-domain advisory lock as session creation (and no evidence lock), then the presented row's lock, and only then reads its one database clock, so a session that expires during either wait is not ended. It changes that session to `logged_out` with `ended_at` only when it is the account's active, unexpired session, embedding the one Family B logout audit row in the same transaction. It reports `ended` or `already_ended`; an unknown or another account's session fails closed with one fixed identifier, and every other error raised in its body, an assertion failure included, leaves as one fixed `solmind_logout_*` identifier with no underlying message, detail, or hint. EXECUTE is granted to `service_role` only: `anon` and `authenticated` execution is denied, and service-role RPC execution through the Data API stays available, as for session creation. It never ends any other session, reads no evidence, and does not require the account or role to be active, because ending a session only removes access. It has no caller, route, cookie, Supabase sign-out, provider action, cloud path, or real-user flow; login step 6's logout route depends on it and remains separately gated.
+The dormant login step 6a logout writer keeps ending a session inside one database operation. `public.solmind_logout_user_session` takes only the server-derived account and the presented session UUID, takes the same shared account-domain advisory lock as session creation (and no evidence lock), then the presented row's lock, and only then reads its one database clock, so a session that expires during either wait is not ended. It changes that session to `logged_out` with `ended_at` only when it is the account's active, unexpired session, embedding the one Family B logout audit row in the same transaction. It reports `ended` or `already_ended`; an unknown or another account's session fails closed with one fixed identifier, and every other error raised in its body, an assertion failure included, leaves as one fixed `solmind_logout_*` identifier with no underlying message, detail, or hint. EXECUTE is granted to `service_role` only: `anon` and `authenticated` execution is denied, and service-role RPC execution through the Data API stays available, as for session creation. It never ends any other session, reads no evidence, and does not require the account or role to be active, because ending a session only removes access. Its application caller is now `userSessionLogoutCaller.ts`, through the shared logout composition. The database function itself reads/writes no browser cookie and makes no provider call. Real provider/browser proof, hosting and real-user activation remain separate.
 
-Login step 6's sub-slice S6-3 changes the banked active-session lookup `public.solmind_find_active_user_sessions(uuid)` (AUTH-RLS-DEC-026; function 3 of `../solmind-docs/execution/19_SolMind_MVP0_Auth_RLS_RPC_Function_Contract_v0_1.md`) so that each returned row also carries its `user_session_id`, the UUID that the per-request session-binding check of `../solmind-docs/execution/25_SolMind_MVP0_Auth_RLS_Login_Session_Cookie_Security_Contract_v0_1.md` (contract 25) Section 8, as Paul corrected it on 2026-10-05, compares with the binding cookie (sub-slice S6-4). `supabase/migrations/20261005000000_active_user_session_lookup_session_id.sql` drops and recreates the function in one transaction, because PostgreSQL cannot replace a function whose return columns change, and keeps everything else: the one `uuid` argument, `LANGUAGE sql`, `STABLE`, `SECURITY DEFINER` owned by `postgres`, an empty search path, one schema-qualified SELECT of `identity.user_session` with only the account and `session_status = 'active'` predicates and no expiry pre-filter, `LIMIT`, `ORDER BY`, or exception handler, and the same grants (all privileges revoked from PUBLIC, EXECUTE revoked from `anon` and `authenticated` and granted to `service_role`). It raises nothing of its own: an absent or null account returns no rows. Unlike the dormant step 6 modules, it has runtime callers: the `/admin/access` composition (`adminAuthSource.ts`) and the Suggested Waypoint request dependencies (`suggestedWaypointRequestDependencies.ts`) reach it through `serviceRoleRpcExecutor.ts`, and `supabaseAuthQueryClient.ts` reads only the four columns it names from each row, so the added column changes nothing there until S6-4 carries the UUID and `expires_at` to the allow result. The UUID grants nothing on its own and stays out of logs, errors and evidence (contract 25 Sections 8 and 14). Two pgTAP suites, `supabase/tests/active_user_session_lookup_*_test.sql`, prove its shape, hygiene, grants and real path; the real-path suite compares session UUIDs only inside SQL, so a failing assertion prints none. The banked `admin_access_rpc_*` suites are unchanged.
+Login step 6's sub-slice S6-3 changes the banked active-session lookup `public.solmind_find_active_user_sessions(uuid)` (AUTH-RLS-DEC-026; function 3 of `../solmind-docs/execution/19_SolMind_MVP0_Auth_RLS_RPC_Function_Contract_v0_1.md`) so that each returned row also carries its `user_session_id`, the UUID that the per-request session-binding check of `../solmind-docs/execution/25_SolMind_MVP0_Auth_RLS_Login_Session_Cookie_Security_Contract_v0_1.md` (contract 25) Section 8, as Paul corrected it on 2026-10-05, compares with the binding cookie (sub-slice S6-4). `supabase/migrations/20261005000000_active_user_session_lookup_session_id.sql` drops and recreates the function in one transaction, because PostgreSQL cannot replace a function whose return columns change, and keeps everything else: the one `uuid` argument, `LANGUAGE sql`, `STABLE`, `SECURITY DEFINER` owned by `postgres`, an empty search path, one schema-qualified SELECT of `identity.user_session` with only the account and `session_status = 'active'` predicates and no expiry pre-filter, `LIMIT`, `ORDER BY`, or exception handler, and the same grants (all privileges revoked from PUBLIC, EXECUTE revoked from `anon` and `authenticated` and granted to `service_role`). It raises nothing of its own: an absent or null account returns no rows. Unlike the dormant step 6 modules, it has runtime callers: the `/admin/access` composition (`adminAuthSource.ts`) and the Suggested Waypoint request dependencies (`suggestedWaypointRequestDependencies.ts`) reach it through `serviceRoleRpcExecutor.ts`, and until sub-slice S6-4 `supabaseAuthQueryClient.ts` read only the four columns it named from each row. Since S6-4, described below, it requires `user_session_id` in every row and carries the selected session's UUID and `expires_at` to the allow result. The UUID grants nothing on its own and stays out of logs, errors and evidence (contract 25 Sections 8 and 14). Two pgTAP suites, `supabase/tests/active_user_session_lookup_*_test.sql`, prove its shape, hygiene, grants and real path; the real-path suite compares session UUIDs only inside SQL, so a failing assertion prints none. The banked `admin_access_rpc_*` suites are unchanged.
 
-The dormant login step 6 sign-in lookups (sub-slice S6-5) keep a sign-in's account and evidence checks inside two read-only database functions. `public.solmind_resolve_login_account` takes only an identifier, its type (`email`, or `username` for the `admin` role only) and the role the route's login path fixes. Its stored-state predicates are ones the banked functions already use: the issuance function's sign-in contact check (an active, verified, sign-in-enabled email) and its canonical email check, applied to the contact's stored email, session creation's account and role checks (an active account and an active role assignment with no revocation time), and the one active `supabase` provider identity that the identity bridge asserts. It returns the account, the contact, that email and the bound provider user id only when exactly one candidate exists; every ineligible, unknown or ambiguous identifier gives the same zero rows, so the route can answer every identifier with one acknowledgment, and neither path returns an email the issuance function would refuse. A typed email must pass the issuance function's own check, so login step 6's contact normalizer (S6-1) and issuance accept the same set. A typed username is checked only for what the schema already requires of a username (not blank) and must already be lowercase, so that it compares with `lower(username)`, the expression of the unique username index; no other username form is imposed, and the Admin's sign-in route (S6-9) must pass it lowercased. `public.solmind_confirm_redeemed_login_challenge` takes the server-derived account, the exact selector the route has just redeemed and the expected purpose, and returns one row: `true` only when that challenge is bound to that account with a contact, has that purpose, is used and not invalidated, and is fresh under `identity.session_creation_freshness_policy` with the session function's comparison, measured from the start of the calling statement; `false` for every other state, with no reason. It is a check before the Explorer's Supabase exchange, not a consumption check: the Explorer route (S6-8) must have its own `redeemed` answer for that selector in the same request, and then `true`, before it asks Supabase for a session, so that a code one person redeemed cannot make a Supabase session for an account someone else typed; the session function still checks everything again. Both functions are STABLE, so they cannot write; a malformed argument raises one fixed identifier that carries no part of the input, and neither has an exception handler or takes a lock. EXECUTE is granted to `service_role` only: `anon` and `authenticated` execution is denied, and service-role RPC execution through the Data API stays available. They have no caller, route, cookie, provider action, cloud path, or real-user flow, and the sign-in routes remain separately gated.
+The login step 6 sign-in lookups (sub-slice S6-5) keep a sign-in's account and evidence checks inside two read-only database functions. `public.solmind_resolve_login_account` takes only an identifier, its type (`email`, or `username` for the `admin` role only) and the role the route's login path fixes. Its stored-state predicates are ones the banked functions already use: the issuance function's sign-in contact check (an active, verified, sign-in-enabled email) and its canonical email check, applied to the contact's stored email, session creation's account and role checks (an active account and an active role assignment with no revocation time), and the one active `supabase` provider identity that the identity bridge asserts. It returns the account, the contact, that email and the bound provider user id only when exactly one candidate exists; every ineligible, unknown or ambiguous identifier gives the same zero rows, so the route can answer every identifier with one acknowledgment, and neither path returns an email the issuance function would refuse. A typed email must pass the issuance function's own check, so login step 6's contact normalizer (S6-1) and issuance accept the same set. A typed username is checked only for what the schema already requires of a username (not blank) and must already be lowercase, so that it compares with `lower(username)`, the expression of the unique username index; no other username form is imposed, and the Admin's sign-in route (S6-9) must pass it lowercased. `public.solmind_confirm_redeemed_login_challenge` takes the server-derived account, the exact selector the route has just redeemed and the expected purpose, and returns one row: `true` only when that challenge is bound to that account with a contact, has that purpose, is used and not invalidated, and is fresh under `identity.session_creation_freshness_policy` with the session function's comparison, measured from the start of the calling statement; `false` for every other state, with no reason. It is a check before the Explorer's Supabase exchange, not a consumption check: the Explorer route (S6-8) must have its own `redeemed` answer for that selector in the same request, and then `true`, before it asks Supabase for a session, so that a code one person redeemed cannot make a Supabase session for an account someone else typed; the session function still checks everything again. Both functions are STABLE, so they cannot write; a malformed argument raises one fixed identifier that carries no part of the input, and neither has an exception handler or takes a lock. EXECUTE is granted to `service_role` only: `anon` and `authenticated` execution is denied, and service-role RPC execution through the Data API stays available. Since sub-slice S6-8 the Explorer sign-in routes call both, through the two server callers in `src/lib/solmind/supabase/loginAccountLookupCallers.ts`; the functions themselves add no route, cookie, provider action, cloud path, or real-user flow.
+
+Login step 6's sub-slice S6-4 is the per-request check of contract 25 Sections
+7, 8, 14 and 19: Sections 8 and 19 as Paul corrected them on 2026-10-05
+(AUTH-RLS-DEC-044), and Section 14's field check and the token-only
+verification of Sections 7 and 8 under the decision record that banks before
+this code (the entry of
+`../solmind-docs/execution/12_SolMind_MVP0_Auth_RLS_Decision_Deferral_Register_v0_1.md`
+that records the field check and the token-only verification for sub-slice
+S6-4, and the section of contract 25 that quotes the visitor-cookie question).
+It runs on the guarded read path that all 8 route handlers share:
+`/admin/access`, the three Explorer Suggested Waypoint routes and the four
+Guide ones. It adds no module, route or caller, and it changes these files:
+
+```text
+src/lib/solmind/supabase/requestAuthClient.ts
+src/lib/solmind/supabase/principalMapping.ts
+src/lib/solmind/supabase/supabaseAuthQueryClient.ts
+src/lib/solmind/supabase/serverAuthSourceAdapter.ts
+src/lib/solmind/supabase/sessionSelection.ts
+src/lib/solmind/auth/serverAuthContext.ts
+src/lib/solmind/auth/authSource.ts
+src/lib/solmind/auth/sessionCookiePolicy.ts
+tests/whole-path/suggestedWaypointLocalAuthFixture.ts
+tests/whole-path/suggestedWaypointLocalSqlFixture.ts
+```
+
+Four more files change in comments only. Five comment lines that called the
+request-auth adapter `@supabase/ssr`-backed now call it Supabase-backed, in
+`src/app/admin/access/route.ts`, `src/lib/solmind/auth/adminAccessRequest.ts`,
+`src/lib/solmind/auth/adminRouteAccess.ts` and
+`src/lib/solmind/auth/composeRequestAuthContext.ts`; no code line of those
+files changes.
+
+A request is allowed only when it presents, in the session-binding cookie, the
+UUID of the very session the lookup selected for its account. The request's
+cookies are read in one place and the comparison is made in one place, and
+every guarded route passes through both.
+
+The read is in `requestAuthClient.ts`, which both composition roots build
+(`adminAccessRequest.ts` and `suggestedWaypointRequestDependencies.ts`). At
+construction it resolves the one session-cookie policy from
+`loadTrustedApplicationOrigin()`, as the Explorer sign-in routes' dependency
+factory resolves it for the identity bridge and the login-step cookie writer
+resolves it for itself (S6-8), so
+that the writer, this adapter and logout read one name. A missing or malformed
+trusted origin, or a plain-http one that is not a loopback address, throws one
+fixed, value-free configuration error. `/admin/access` answers it with
+`{ allowed: false }` and, when the audit writer is available, writes one
+`auth_resolution_failure` audit row for every request in place of the opaque
+deny decision row (the banked handling of a construction failure). Suggested
+Waypoint requests fail closed: policy-construction failures use the fixed
+failure response; command requests rejected earlier by the origin guard use
+its fixed denial response. For each request the adapter reads the cookies once
+into a frozen snapshot and then, in this order: applies the policy's one
+shared Section 14 format check to the auth cookie, through the policy's second
+pure helper `readSessionAuthCookieAccessToken`, which gives it the accepted
+cookie's sign-in token and nothing else of the cookie, and resolves no
+principal for an absent or malformed one; requires exactly one session-binding
+cookie holding a lowercase canonical UUID, and resolves no principal for none,
+a repeated one or any other value; and only then builds a Supabase client,
+with `createClient` of `@supabase/supabase-js`, the public anon key, and
+`persistSession` false, `autoRefreshToken` false, `detectSessionInUrl` false
+and `skipAutoInitialize` true. That client is given no cookie reader, no
+cookie setter and no storage, so nothing of the request reaches the library
+but the token, and a Supabase session without the binding cookie is not even
+sent to Supabase. On a route, Next's own cookie reader keeps one entry for
+each name (the last whose value percent-decodes), so a repeated name does not
+reach the adapter there; that refusal guards any other caller.
+`getUser(token)` then asks Supabase Auth about that one token, and the UUID
+from the binding cookie travels on the principal as `presentedSessionId`,
+which `principalMapping.ts` passes through. The adapter never calls the
+accessor's `setAll`: this slice writes, refreshes and clears no cookie.
+`requestAuthClient.ts` no longer imports `@supabase/ssr`; the login
+identity bridge beside it still does (AUTH-RLS-DEC-013).
+
+The records carry the selected session's own values.
+`supabaseAuthQueryClient.ts` requires `user_session_id` in every session row,
+so a row without it fails closed, and returns the selected session's
+`user_session_id` and `expires_at` unchanged; `serverAuthSourceAdapter.ts`
+maps them to `userSessionId` and `expiresAt` and echoes the principal whole.
+`serviceRoleRpcExecutor.ts` is unchanged, and `composeRequestAuthContext.ts`
+changes only in a comment: the executor passes rows through, and the composer
+hands the principal to the record load and the loaded input to the decision,
+as before.
+
+The comparison is in `deriveTrustedServerAuthContext`
+(`serverAuthContext.ts`), which every guarded decision already calls:
+`authorizeRouteAccess`, the two Suggested Waypoint request compositions and
+the Guide list route's diagnostic. After the provider identity, the account
+and the selected session have passed, it denies unless `presentedSessionId` is
+a non-empty string exactly equal to the session's `userSessionId`, with no
+trimming or case folding. Its two new internal reasons, like the others, never
+leave the server. The UUID therefore grants nothing on its own, and a browser
+left with a superseded session's UUID, in the same role or after a login in
+another role, is denied instead of acting under the newer session. On an
+allow, `TrustedServerAuthContext` gains `session: { userSessionId, expiresAt
+}`, carried from the lookup for server use. The proposed home returns only
+expiry and a fresh observation time for its advisory warning; the session UUID
+stays server-private and neither value is logged. The in-memory auth
+source (`authSource.ts`), a test double and the deny-all default of the
+`/admin` helper, takes the presented UUID from the request and never from its
+store.
+
+Every outward result is unchanged and value-free: the routes answer a refused
+request exactly as they answer an unauthenticated one. Since sub-slice S6-8
+the Explorer verify route writes the two cookies after a successful sign-in;
+the Guide and Admin routes (S6-9) do not exist yet, while the proposed
+Explorer S6-10 screen calls its fixed routes. A request without both cookies is still denied
+by every guarded route, including one that still
+carries a Supabase cookie under the library's default name. All 8 routes now
+need `SOLMIND_TRUSTED_APP_ORIGIN`; before this slice only the two command
+routes did. `src/app/__tests__/guardedRoutes.perRequestCheck.realpath.test.ts`
+drives all 8 handlers through the real composition, and
+`src/lib/solmind/supabase/__tests__/requestAuthClient.realLibrary.test.ts` and
+`requestAuthClient.directToken.realLibrary.test.ts` run the adapter against
+the real installed library with only `fetch` replaced.
+
+The field check is the last step of the shared format check in
+`sessionCookiePolicy.ts`. The earlier steps judge the cookie's encoding (the
+allowed characters, the `base64-` start, strictly valid UTF-8); they cannot
+see what is inside. The library builds its request to Supabase Auth from the
+token text it is given, and when the platform refuses that request (a token
+holding a line feed or a NUL, which reach it as JSON escapes, or a character
+above U+00FF) the library prints the platform's error itself, which quotes the
+text or gives a position and a character code taken from it, before the
+adapter's fail-closed wrapper sees anything. So the check decodes the cookie
+exactly as the library would (a leading byte-order mark kept), parses the text
+once as JSON, drops the parser's error, and requires, each read as an own
+property of the parsed object with no copy first: `access_token` a string of
+three non-empty parts of A-Z, a-z, 0-9, `-` and `_` joined by dots (plain
+ASCII classes and no pattern flags); `refresh_token` a non-empty string, with
+no character rule; `expires_at` a positive safe integer; and `user` absent,
+null or an object that is not an array. Anything else is the same fixed
+`malformed` result as every other refusal, and nothing of a refused value is
+kept, returned, logged or thrown. So no token text that the platform refuses
+reaches the library, and neither does text that is not JSON or JSON that is
+not a session. The module stays pure and imports nothing. No guard is put
+around the library's requests: contract 25 Section 19 does not list one, and
+with the field check the study found nothing left for one to catch for this
+problem (text a visitor chooses); the line the library prints when Supabase
+Auth cannot be reached stays, as said below. `sessionCookiePolicy.test.ts`
+(`FCP-001` to `FCP-013`) and the real-library tests (`FCL-001` to `FCL-004`)
+show each hostile shape refused with nothing requested, set or printed, and
+cookies that the library's own writer produces accepted.
+
+The token-only verification is how the adapter asks Supabase who the user is
+(contract 25 Sections 7 and 8). A cookie-reading client can send the cookie's
+renewal token when loading an expired or near-expiry session. In the
+refused-renewal controls it printed the stand-in's error; with the unreachable
+stand-in it retried for about 25 seconds. The adapter therefore gives the
+library no cookie. `sessionCookiePolicy.ts` hands it the accepted cookie's
+sign-in token through `readSessionAuthCookieAccessToken`, which judges the
+cookies with the shared check itself and returns that one string; the renewal
+token, the expiry and the profile stay behind. The client's only session store
+is the empty in-memory one the library makes for itself; it cannot persist a
+session, starts no renewal timer and has no cookie setter, and the one call
+made on it is `getUser(token)`, which sends `GET /user` with that token as the
+bearer. The library asks for a renewal only for a session it has loaded from
+its store or has been handed; this client is given neither. The adapter reads
+no clock, so the time that passes between the check and the call changes
+nothing about what is sent. Whether the token is still good is Supabase Auth's
+answer, not the adapter's: when Supabase Auth refuses a token, the library
+returns that error without printing it, and the request is denied. An expiry
+rule in the adapter is not used: a first draft refused tokens with under 95
+seconds left, and review #161a showed that such a rule cannot exclude a
+renewal, because time can pass between the adapter's test and the library's
+own. `requestAuthClient.directToken.realLibrary.test.ts` (`TKL-001` to
+`TKL-009`), with `PRL-008` and `PRL-009`, runs the adapter and the real
+library on late, replayed and hand-made cookies (the expiries and renewal
+tokens its rows list), moves the clock forward by between 5,001 milliseconds
+and 30 days between the check and the call, and finds at most one request,
+`GET /user`, none to the token endpoint, nothing handed to a cookie setter,
+nothing printed except the library's one line when Supabase Auth cannot be
+reached, and no unhandled rejection; one test also finds no timer left pending
+after the call. Most of those tests are paired with a control in which a
+cookie-reading client asks for the renewal. `requestAuthClient.test.ts`
+(`TKA-001` to `TKA-007`) pins the client's options, the one call and its one
+argument, and that the adapter's own code reads no clock;
+`sessionCookiePolicy.accessToken.test.ts` (`TKP-001` to `TKP-006`) covers the
+helper.
+
+What stays open. When Supabase Auth cannot be reached, the library prints the
+platform's error for its one request; that line is the platform's own error,
+to which the library adds nothing (in the tests, with a stand-in for a refused
+connection, it held no cookie text), the request is tried once and is denied,
+and the library's request code sets no time limit on it. The tests ran the
+library on its own, with `fetch` replaced by a stand-in: what the real
+Supabase Auth answers (to a token past its end, to a forged one, or to one
+whose session has ended), and behavior on a real connection and inside a
+running Next.js server, were not tested. The construction rests on the
+installed library (`@supabase/supabase-js` and `@supabase/auth-js` 2.108.2):
+`TKL-009` pins that a client built this way holds no session and that
+`getUser(token)` makes one request, so a library change that breaks either
+fails a test. If Supabase ever issued sign-in tokens that are not three
+dot-joined parts, the field check would refuse every session until it is
+adjusted; it fails closed. SolMind's own code logs nothing.
 
 Banked `PRJ01_F-WS06-WI008-S02D` - Guide-to-Explorer invitation issuance,
 same-Guide replacement, and revocation - keeps invitation lifecycle mutation inside

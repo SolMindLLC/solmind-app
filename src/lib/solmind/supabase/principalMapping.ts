@@ -32,8 +32,15 @@ export type VerifiedSupabaseAuthUser = {
 // Map a verified Supabase auth user to the SupabaseAuthenticatedUser principal.
 // providerUserId is the trimmed auth.users.id; email/phone are never used.
 // Returns null for a blank/whitespace-only id.
+//
+// presentedSessionId is the SolMind session UUID the same request presented in
+// its session-binding cookie, or null when it presented none. The caller (the
+// request-auth adapter) reads it; this function passes it through unchanged and
+// never derives it from the Supabase user. It is not identity and not
+// authority: derivation only compares it with the selected session's UUID.
 export function toSupabaseAuthenticatedUser(
   user: VerifiedSupabaseAuthUser,
+  presentedSessionId: string | null,
 ): SupabaseAuthenticatedUser | null {
   const providerUserId = user.id.trim();
   if (providerUserId.length === 0) {
@@ -43,5 +50,6 @@ export function toSupabaseAuthenticatedUser(
   return {
     providerName: SUPABASE_PROVIDER_NAME,
     providerUserId,
+    presentedSessionId,
   };
 }

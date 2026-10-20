@@ -643,11 +643,14 @@ describe("login step 6 sub-slice S6-1 - module boundary (dormant, off every barr
     }
   });
 
-  it("LRB-004 is dormant: no other application file references or names the three modules, and the login step 5 boundary test guards them too", () => {
+  it("LRB-004 only the Explorer sign-in routes' composition, their dependency factory and the server start hook reference or name the three modules, by exactly the listed references, and the login step 5 boundary test guards them too", () => {
     // Computed references and `import.meta` in any non-test file are refused
     // by the login step 5 boundary test (VCB-004), so the literal references
     // found here are all the references there are. The route configuration
-    // may import the pepper source; nothing else may reach any of the three.
+    // may import the pepper source. Amended by the Explorer sign-in routes
+    // (login step 6, sub-slice S6-8): beyond that, exactly the references
+    // listed below reach the three modules, and nothing reaches the pepper
+    // source from outside the guarded set.
     const root = sourceRoot();
     const guarded = new Set(
       MODULE_NAMES.map((name) => path.join(root, "lib", "solmind", "auth", name).toLowerCase()),
@@ -668,16 +671,29 @@ describe("login step 6 sub-slice S6-1 - module boundary (dormant, off every barr
         }
         const resolved = resolveReference(file, reference.specifier, root);
         if (resolved !== null && guarded.has(resolved)) {
-          offenders.push(`${path.relative(root, file)}: ${reference.form} ${reference.specifier}`);
+          offenders.push(
+            `${path.relative(root, file).split(path.sep).join("/")}: ${reference.form} ${reference.specifier}`,
+          );
         }
       }
       for (const name of MODULE_NAMES) {
         if (new RegExp(`\\b${name}\\b`).test(text)) {
-          offenders.push(`${path.relative(root, file)}: mentions ${name}`);
+          offenders.push(`${path.relative(root, file).split(path.sep).join("/")}: mentions ${name}`);
         }
       }
     }
-    expect(offenders).toEqual([]);
+    // Exactly these: the server composition's import of the normalizer, the
+    // dependency factory's and the server start hook's imports of the route
+    // configuration, and each file's own mention of the module it imports.
+    // The next slice that reaches any of the three (S6-9) amends this list.
+    expect(offenders.sort()).toEqual([
+      "instrumentation-node.ts: import ./lib/solmind/auth/loginRouteConfiguration",
+      "instrumentation-node.ts: mentions loginRouteConfiguration",
+      "lib/solmind/supabase/explorerSignInComposition.ts: import ../auth/loginContactNormalizer",
+      "lib/solmind/supabase/explorerSignInComposition.ts: mentions loginContactNormalizer",
+      "lib/solmind/supabase/explorerSignInDependencies.ts: import ../auth/loginRouteConfiguration",
+      "lib/solmind/supabase/explorerSignInDependencies.ts: mentions loginRouteConfiguration",
+    ]);
 
     // Controls: a literal import from another file, and a mention by name,
     // are both found.

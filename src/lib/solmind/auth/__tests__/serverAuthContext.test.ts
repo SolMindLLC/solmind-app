@@ -20,6 +20,13 @@ const EXPLORER_PROFILE_A = "explorer-profile-a";
 const PROVIDER_NAME = "supabase";
 const GUIDE_PROVIDER_USER_ID = "auth-user-guide-1";
 
+// Synthetic session UUIDs and an expiry. SELECTED_SESSION_ID is the UUID of the
+// session the server selected for the account; a request is allowed only when
+// it presented that very UUID (login step 6, sub-slice S6-4).
+const SELECTED_SESSION_ID = "5e5510a0-0000-4000-8000-000000000001";
+const SUPERSEDED_SESSION_ID = "5e5510a0-0000-4000-8000-000000000002";
+const SESSION_EXPIRES_AT = "2999-12-31T23:59:59+00:00";
+
 // A fully-valid Guide derivation input. Individual cases override one field to
 // exercise a single denial path at a time.
 function validGuideInput(
@@ -29,6 +36,7 @@ function validGuideInput(
     authenticatedUser: {
       providerName: PROVIDER_NAME,
       providerUserId: GUIDE_PROVIDER_USER_ID,
+      presentedSessionId: SELECTED_SESSION_ID,
     },
     authProviderIdentity: {
       userAccountId: GUIDE_USER_ID,
@@ -38,9 +46,11 @@ function validGuideInput(
     },
     userAccount: { userAccountId: GUIDE_USER_ID, accountStatus: "active" },
     session: {
+      userSessionId: SELECTED_SESSION_ID,
       userAccountId: GUIDE_USER_ID,
       activeRoleContext: "guide",
       sessionStatus: "active",
+      expiresAt: SESSION_EXPIRES_AT,
     },
     activeRoleAssignment: {
       userAccountId: GUIDE_USER_ID,
@@ -70,6 +80,10 @@ describe("deriveTrustedServerAuthContext - allow cases", () => {
           guideProfileId: GUIDE_PROFILE_A,
           explorerProfileId: null,
         },
+        session: {
+          userSessionId: SELECTED_SESSION_ID,
+          expiresAt: SESSION_EXPIRES_AT,
+        },
       },
     });
   });
@@ -79,6 +93,7 @@ describe("deriveTrustedServerAuthContext - allow cases", () => {
       authenticatedUser: {
         providerName: PROVIDER_NAME,
         providerUserId: "auth-user-explorer-1",
+        presentedSessionId: SELECTED_SESSION_ID,
       },
       authProviderIdentity: {
         userAccountId: EXPLORER_USER_ID,
@@ -88,9 +103,11 @@ describe("deriveTrustedServerAuthContext - allow cases", () => {
       },
       userAccount: { userAccountId: EXPLORER_USER_ID, accountStatus: "active" },
       session: {
+        userSessionId: SELECTED_SESSION_ID,
         userAccountId: EXPLORER_USER_ID,
         activeRoleContext: "explorer",
         sessionStatus: "active",
+        expiresAt: SESSION_EXPIRES_AT,
       },
       activeRoleAssignment: {
         userAccountId: EXPLORER_USER_ID,
@@ -114,6 +131,10 @@ describe("deriveTrustedServerAuthContext - allow cases", () => {
           guideProfileId: null,
           explorerProfileId: EXPLORER_PROFILE_A,
         },
+        session: {
+          userSessionId: SELECTED_SESSION_ID,
+          expiresAt: SESSION_EXPIRES_AT,
+        },
       },
     });
   });
@@ -123,6 +144,7 @@ describe("deriveTrustedServerAuthContext - allow cases", () => {
       authenticatedUser: {
         providerName: PROVIDER_NAME,
         providerUserId: "auth-user-admin-1",
+        presentedSessionId: SELECTED_SESSION_ID,
       },
       authProviderIdentity: {
         userAccountId: ADMIN_USER_ID,
@@ -132,9 +154,11 @@ describe("deriveTrustedServerAuthContext - allow cases", () => {
       },
       userAccount: { userAccountId: ADMIN_USER_ID, accountStatus: "active" },
       session: {
+        userSessionId: SELECTED_SESSION_ID,
         userAccountId: ADMIN_USER_ID,
         activeRoleContext: "admin",
         sessionStatus: "active",
+        expiresAt: SESSION_EXPIRES_AT,
       },
       activeRoleAssignment: {
         userAccountId: ADMIN_USER_ID,
@@ -153,6 +177,10 @@ describe("deriveTrustedServerAuthContext - allow cases", () => {
           userAccountId: ADMIN_USER_ID,
           guideProfileId: null,
           explorerProfileId: null,
+        },
+        session: {
+          userSessionId: SELECTED_SESSION_ID,
+          expiresAt: SESSION_EXPIRES_AT,
         },
       },
     });
@@ -177,6 +205,10 @@ describe("deriveTrustedServerAuthContext - allow cases", () => {
           userAccountId: GUIDE_USER_ID,
           guideProfileId: null,
           explorerProfileId: null,
+        },
+        session: {
+          userSessionId: SELECTED_SESSION_ID,
+          expiresAt: SESSION_EXPIRES_AT,
         },
       },
     });
@@ -210,6 +242,7 @@ describe("deriveTrustedServerAuthContext - authentication denials", () => {
         authenticatedUser: {
           providerName: PROVIDER_NAME,
           providerUserId: "auth-user-someone-else",
+          presentedSessionId: SELECTED_SESSION_ID,
         },
       }),
     );
@@ -288,9 +321,11 @@ describe("deriveTrustedServerAuthContext - session denials", () => {
     const result = deriveTrustedServerAuthContext(
       validGuideInput({
         session: {
+          userSessionId: SELECTED_SESSION_ID,
           userAccountId: OTHER_USER_ID,
           activeRoleContext: "guide",
           sessionStatus: "active",
+          expiresAt: SESSION_EXPIRES_AT,
         },
       }),
     );
@@ -304,9 +339,11 @@ describe("deriveTrustedServerAuthContext - session denials", () => {
     const result = deriveTrustedServerAuthContext(
       validGuideInput({
         session: {
+          userSessionId: SELECTED_SESSION_ID,
           userAccountId: GUIDE_USER_ID,
           activeRoleContext: "guide",
           sessionStatus: "expired",
+          expiresAt: SESSION_EXPIRES_AT,
         },
       }),
     );
@@ -320,9 +357,11 @@ describe("deriveTrustedServerAuthContext - session denials", () => {
     const result = deriveTrustedServerAuthContext(
       validGuideInput({
         session: {
+          userSessionId: SELECTED_SESSION_ID,
           userAccountId: GUIDE_USER_ID,
           activeRoleContext: "superuser",
           sessionStatus: "active",
+          expiresAt: SESSION_EXPIRES_AT,
         },
       }),
     );
@@ -424,6 +463,237 @@ describe("deriveTrustedServerAuthContext - profile link denials", () => {
       allowed: false,
       reason: SERVER_AUTH_CONTEXT_DENY_REASONS.EXPLORER_PROFILE_LINK_MISMATCH,
     });
+  });
+});
+
+// Login step 6, sub-slice S6-4: the session binding of contract 25 Section 8
+// (its Section 15 item 7). The request is allowed only when it presented the
+// UUID of the very session the lookup selected.
+describe("deriveTrustedServerAuthContext - the session binding (contract 25 Section 8; item 7)", () => {
+  function guideInputPresenting(
+    presentedSessionId: string | null,
+    overrides: Partial<DeriveTrustedServerAuthContextInput> = {},
+  ): DeriveTrustedServerAuthContextInput {
+    return validGuideInput({
+      authenticatedUser: {
+        providerName: PROVIDER_NAME,
+        providerUserId: GUIDE_PROVIDER_USER_ID,
+        presentedSessionId,
+      },
+      ...overrides,
+    });
+  }
+
+  it("PRD-001 carries the selected session's UUID and expires_at to the allow result, unchanged", () => {
+    const expiresAt = "2026-10-06T17:58:00.123456+00:00";
+    const result = deriveTrustedServerAuthContext(
+      validGuideInput({
+        session: {
+          userSessionId: SELECTED_SESSION_ID,
+          userAccountId: GUIDE_USER_ID,
+          activeRoleContext: "guide",
+          sessionStatus: "active",
+          expiresAt,
+        },
+      }),
+    );
+    expect(result.allowed).toBe(true);
+    if (result.allowed) {
+      expect(result.context.session).toEqual({
+        userSessionId: SELECTED_SESSION_ID,
+        expiresAt,
+      });
+      expect(Object.keys(result.context).sort()).toEqual(["activeRole", "identity", "session"]);
+    }
+  });
+
+  it("PRD-002 denies a Supabase session alone: the request presented no session", () => {
+    expect(deriveTrustedServerAuthContext(guideInputPresenting(null))).toEqual({
+      allowed: false,
+      reason: SERVER_AUTH_CONTEXT_DENY_REASONS.MISSING_PRESENTED_SESSION,
+    });
+  });
+
+  it("PRD-003 denies a superseded session in the same role: the browser presents the older UUID", () => {
+    // A newer login of the same account, in the same role, made the selected
+    // session; the stale browser still presents the one it was given. By
+    // account alone this request would be allowed.
+    expect(
+      deriveTrustedServerAuthContext(guideInputPresenting(SUPERSEDED_SESSION_ID)),
+    ).toEqual({
+      allowed: false,
+      reason: SERVER_AUTH_CONTEXT_DENY_REASONS.PRESENTED_SESSION_MISMATCH,
+    });
+  });
+
+  it("PRD-004 denies a superseded session in a different role (the stale tab), which account selection alone would allow in the new role", () => {
+    // The account logged in again as an Explorer, so its selected session is
+    // the Explorer one. The stale Guide tab presents the Guide session's UUID.
+    const explorerRecords: Partial<DeriveTrustedServerAuthContextInput> = {
+      session: {
+        userSessionId: SELECTED_SESSION_ID,
+        userAccountId: GUIDE_USER_ID,
+        activeRoleContext: "explorer",
+        sessionStatus: "active",
+        expiresAt: SESSION_EXPIRES_AT,
+      },
+      activeRoleAssignment: {
+        userAccountId: GUIDE_USER_ID,
+        roleCode: "explorer",
+        roleStatus: "active",
+      },
+      guideProfile: null,
+      explorerProfile: {
+        explorerProfileId: EXPLORER_PROFILE_A,
+        userAccountId: GUIDE_USER_ID,
+        status: "active",
+      },
+    };
+    expect(
+      deriveTrustedServerAuthContext(
+        guideInputPresenting(SUPERSEDED_SESSION_ID, explorerRecords),
+      ),
+    ).toEqual({
+      allowed: false,
+      reason: SERVER_AUTH_CONTEXT_DENY_REASONS.PRESENTED_SESSION_MISMATCH,
+    });
+
+    // The same records with the newer session's own UUID are allowed, as an
+    // Explorer: only the presented UUID separates the two requests.
+    const current = deriveTrustedServerAuthContext(
+      guideInputPresenting(SELECTED_SESSION_ID, explorerRecords),
+    );
+    expect(current.allowed).toBe(true);
+    if (current.allowed) {
+      expect(current.context.activeRole).toBe("explorer");
+    }
+  });
+
+  it("PRD-005 compares exactly: no trimming, no case folding, no prefix, never an empty value, and never a session record without a UUID", () => {
+    for (const presented of [
+      SELECTED_SESSION_ID.toUpperCase(),
+      ` ${SELECTED_SESSION_ID}`,
+      `${SELECTED_SESSION_ID} `,
+      `${SELECTED_SESSION_ID}\n`,
+      SELECTED_SESSION_ID.slice(0, -1),
+      `${SELECTED_SESSION_ID}0`,
+      "00000000-0000-0000-0000-000000000000",
+    ]) {
+      expect(deriveTrustedServerAuthContext(guideInputPresenting(presented))).toEqual({
+        allowed: false,
+        reason: SERVER_AUTH_CONTEXT_DENY_REASONS.PRESENTED_SESSION_MISMATCH,
+      });
+    }
+    // An empty presented value never matches, even a session record whose
+    // UUID is empty too.
+    expect(
+      deriveTrustedServerAuthContext(
+        guideInputPresenting("", {
+          session: {
+            userSessionId: "",
+            userAccountId: GUIDE_USER_ID,
+            activeRoleContext: "guide",
+            sessionStatus: "active",
+            expiresAt: SESSION_EXPIRES_AT,
+          },
+        }),
+      ),
+    ).toEqual({
+      allowed: false,
+      reason: SERVER_AUTH_CONTEXT_DENY_REASONS.MISSING_PRESENTED_SESSION,
+    });
+    // A session record without a usable UUID can never be allowed, whatever
+    // the request presents: the UUID absent, null, or not a string. The types
+    // forbid such a record; the casts stand for a loader that breaks them.
+    for (const brokenUserSessionId of [undefined, null, 5]) {
+      const session = {
+        userAccountId: GUIDE_USER_ID,
+        activeRoleContext: "guide",
+        sessionStatus: "active",
+        expiresAt: SESSION_EXPIRES_AT,
+        ...(brokenUserSessionId === undefined ? {} : { userSessionId: brokenUserSessionId }),
+      } as unknown as DeriveTrustedServerAuthContextInput["session"];
+      expect(
+        deriveTrustedServerAuthContext(guideInputPresenting(SELECTED_SESSION_ID, { session })),
+      ).toEqual({
+        allowed: false,
+        reason: SERVER_AUTH_CONTEXT_DENY_REASONS.PRESENTED_SESSION_MISMATCH,
+      });
+    }
+  });
+
+  it("PRD-006 the UUID grants nothing on its own: every earlier check still denies a request that presents the right UUID", () => {
+    const cases: Array<[Partial<DeriveTrustedServerAuthContextInput>, string]> = [
+      [{ authenticatedUser: null }, SERVER_AUTH_CONTEXT_DENY_REASONS.MISSING_AUTHENTICATED_USER],
+      [{ authProviderIdentity: null }, SERVER_AUTH_CONTEXT_DENY_REASONS.MISSING_PROVIDER_IDENTITY],
+      [
+        {
+          authProviderIdentity: {
+            userAccountId: GUIDE_USER_ID,
+            providerName: PROVIDER_NAME,
+            providerUserId: "auth-user-someone-else",
+            status: "active",
+          },
+        },
+        SERVER_AUTH_CONTEXT_DENY_REASONS.PROVIDER_IDENTITY_USER_MISMATCH,
+      ],
+      [
+        { userAccount: { userAccountId: GUIDE_USER_ID, accountStatus: "suspended" } },
+        SERVER_AUTH_CONTEXT_DENY_REASONS.USER_ACCOUNT_NOT_ACTIVE,
+      ],
+      [{ session: null }, SERVER_AUTH_CONTEXT_DENY_REASONS.MISSING_SESSION],
+      [
+        {
+          // Another account's session, whose UUID the request presents.
+          session: {
+            userSessionId: SELECTED_SESSION_ID,
+            userAccountId: OTHER_USER_ID,
+            activeRoleContext: "guide",
+            sessionStatus: "active",
+            expiresAt: SESSION_EXPIRES_AT,
+          },
+        },
+        SERVER_AUTH_CONTEXT_DENY_REASONS.SESSION_USER_MISMATCH,
+      ],
+      [
+        {
+          session: {
+            userSessionId: SELECTED_SESSION_ID,
+            userAccountId: GUIDE_USER_ID,
+            activeRoleContext: "guide",
+            sessionStatus: "revoked",
+            expiresAt: SESSION_EXPIRES_AT,
+          },
+        },
+        SERVER_AUTH_CONTEXT_DENY_REASONS.SESSION_NOT_ACTIVE,
+      ],
+    ];
+    for (const [overrides, reason] of cases) {
+      expect(deriveTrustedServerAuthContext(validGuideInput(overrides))).toEqual({
+        allowed: false,
+        reason,
+      });
+    }
+  });
+
+  it("PRD-007 a matching UUID does not replace the later checks either", () => {
+    expect(
+      deriveTrustedServerAuthContext(validGuideInput({ activeRoleAssignment: null })),
+    ).toEqual({
+      allowed: false,
+      reason: SERVER_AUTH_CONTEXT_DENY_REASONS.MISSING_ROLE_ASSIGNMENT,
+    });
+  });
+
+  it("PRD-008 a binding denial is value-free: it carries only its fixed reason", () => {
+    for (const presented of [null, SUPERSEDED_SESSION_ID]) {
+      const result = deriveTrustedServerAuthContext(guideInputPresenting(presented));
+      expect(result.allowed).toBe(false);
+      expect(Object.keys(result).sort()).toEqual(["allowed", "reason"]);
+      const text = JSON.stringify(result);
+      expect(text).not.toContain(SELECTED_SESSION_ID);
+      expect(text).not.toContain(SUPERSEDED_SESSION_ID);
+    }
   });
 });
 

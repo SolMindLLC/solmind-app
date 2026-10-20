@@ -20,7 +20,7 @@ import {
   VERIFICATION_CODE_EMAIL_WORDING,
 } from "./verificationCodeEmailWording";
 
-// Login step 5: the dormant server composition root for verification
+// Login step 5: the server composition root for verification
 // challenges. It wires the public issuing and redeeming callers to the real
 // transports:
 //   - the database: the server-only service-role Supabase client from
@@ -53,15 +53,17 @@ import {
 // transport it was given. That is how login step 4's duty for this root, to
 // bound how many sends run at once, is met.
 //
-// Dormant: nothing calls this root, and no route, server action, cookie,
-// session or UI uses it. Tests inject the RPC client and the transport. Any
+// Called by login step 6's Explorer sign-in routes (S6-8), through their
+// request-scoped dependency factory, and only for a loopback trusted origin.
+// Tests inject the RPC client and the transport. Any
 // failure while composing becomes one fixed, value-free error, so no
 // environment value, key or dependency message escapes.
 //
-// Not provided here, and owed before activation: the pepper's source and the
-// startup check that AUTH-RLS-DEC-032 requires; the shared contact
-// normalizer of AUTH-RLS-DEC-033; and the route-owned purpose and
-// eligibility. Keep this module direct-import only and off every barrel.
+// Not provided here: the pepper's source and the startup check that
+// AUTH-RLS-DEC-032 requires (sub-slice S6-1, called at server start by
+// S6-8); the shared contact normalizer of AUTH-RLS-DEC-033 (S6-1); and the
+// route-owned purpose and eligibility (S6-8 for the Explorer). Keep this
+// module direct-import only and off every barrel.
 
 export type VerificationChallengeCompositionConfiguration = Readonly<{
   pepper: VerificationCodePepper;

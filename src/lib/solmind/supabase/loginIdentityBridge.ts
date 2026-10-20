@@ -1,6 +1,17 @@
 import "server-only";
 
-import { createServerClient } from "@supabase/ssr";
+import { createChunks, createServerClient, stringToBase64URL } from "@supabase/ssr";
+
+import {
+  CREDENTIAL_PAIR_PROOF_LIMITS,
+  CREDENTIAL_PAIR_PROOF_PROPERTY,
+  loadLoginCredentialPairProof,
+  readTrustedCredentialPairIdentity,
+  resolveCredentialPairContext,
+  type CredentialPairContext,
+  type CredentialPairIdentity,
+  type CredentialPairProof,
+} from "./credentialPairProof";
 
 // Login step 6, sub-slice S6-7: the Supabase identity bridge, hold then write.
 //
@@ -44,7 +55,7 @@ import { createServerClient } from "@supabase/ssr";
 //
 // The provider-id assertion. The answer's user id, the session's user id and
 // the access token's subject must be one id, and the held cookies must carry
-// that same access token; if not, the result is `failed`. That id must equal
+// that same access AND refresh token; if not, the result is `failed`. That id must equal
 // the bound provider user id, a lowercase canonical UUID; if not, the result
 // is `denied`. Either way the bridge immediately attempts best-effort local
 // revocation of that session. A link made for another user is `denied`
@@ -58,7 +69,20 @@ import { createServerClient } from "@supabase/ssr";
 // A refused first release while the hold is pending starts the cleanup.
 // Repeated release attempts return `refused` without another provider
 // operation. A hold is released at most once. Writing the released cookies is
-// the route's, through S6-2's writer.
+// the route's, through S6-2's writer. When configured, release mints exact-pair
+// provenance from this trusted answer only and uses the installed SSR public
+// base64/chunk utilities to add one JSON property before publication. The
+// writer still owns every attribute and clears obsolete incoming chunks. An
+// oversized augmented value is refused atomically and the hold discarded.
+// Missing MAC key or unsupported provider claims leaves a legacy pair with no
+// renewal authority; ordinary authentication never depends on this proof.
+//
+// Optional residual cleanup. The accepted caller invokes prepareAcceptedSession
+// after its SolMind session succeeds, before release. A configured callback
+// receives canonical fresh-provider facts only, with no fresh token or hold
+// mutation capability. Its closure owns the old candidate. Completion/failure
+// is bounded, cannot change the accepted login, and is single-attempt. Release
+// refuses if required preparation has not finished or the fresh token expired.
 //
 // Cleanup. `discard` is best-effort. It drops the held cookies and
 // immediately attempts best-effort local revocation of this one transient
@@ -107,7 +131,8 @@ import { createServerClient } from "@supabase/ssr";
 // cannot prevent it. So a non-logging, non-rejecting fetch boundary for that
 // client is a required precondition (an S6-8 composition gate).
 //
-// It never reads a request cookie, an environment variable or a setting;
+// It never reads a request cookie; optional dedicated MAC configuration is
+// loaded only through the identity-layer loader, with trusted context;
 // makes no direct session-read or session-write call (no user, session,
 // refresh or set-session call; the library's own initial-session emission
 // still reads the hold's empty storage), and its cleanup does not reload the
@@ -127,10 +152,9 @@ import { createServerClient } from "@supabase/ssr";
 // (AUTH-RLS-DEC-012, DEC-013 and DEC-019). It imports no Next.js module; the
 // route's composition root hands it everything.
 //
-// Dormant: no application runtime caller is introduced (no route, page,
-// middleware or other application module imports this module); the unit
-// tests invoke the bridge, and nothing is written at runtime. Keep it
-// server-only, direct-import only and off every barrel.
+// This proposal's explicit pending Explorer dependency is the only intended
+// application caller. No provider/runtime activation follows from source
+// authoring. Keep it server-only, direct-import only and off every barrel.
 
 if (typeof window !== "undefined") {
   throw new Error(
@@ -143,6 +167,7 @@ export type LoginIdentityBridgeConfiguration = Readonly<{
   anonKey: string;
   authCookieName: string;
   providerTimeoutMilliseconds: number;
+  credentialPairContext?: Omit<CredentialPairContext, "authCookieName">;
 }>;
 
 // The part of the service-role client's Auth admin API that the Explorer
@@ -159,6 +184,10 @@ export type LoginIdentityBridgeDependencies = Readonly<{
   fetch: typeof fetch;
   linkAdmin: LoginIdentityLinkAdmin;
   signalCleanupFailure: () => void;
+  // Test/identity-layer seam only; a route never receives this mint capability.
+  credentialPairProof?: CredentialPairProof;
+  cleanupPriorSession?: (fresh: CredentialPairIdentity) => Promise<void>;
+  signalPriorCleanupFailure?: () => void;
 }>;
 
 export type PasswordSignInRequest = Readonly<{ email: string; password: string }>;
@@ -183,6 +212,7 @@ export type HoldDiscardResult = Readonly<{ outcome: "discarded"; cleanup: "clean
 export type LoginIdentityHold = Readonly<{
   accessTokenExpiresAt: number;
   assertProviderUser(boundProviderUserId: string): Promise<ProviderUserAssertionResult>;
+  prepareAcceptedSession(request: HeldCookieReleaseRequest): Promise<void>;
   release(request: HeldCookieReleaseRequest): HeldCookieReleaseResult;
   discard(): Promise<HoldDiscardResult>;
 }>;
@@ -300,7 +330,7 @@ type AttemptEnd = Readonly<{
 // recovered access tokens.
 type SignInAttempt = Readonly<{ client: HoldClient; finish(): AttemptEnd }>;
 
-type ProviderSession = Readonly<{ accessToken: string; userId: string; accessTokenExpiresAt: number }>;
+type ProviderSession = Readonly<{ accessToken: string; refreshToken: string; userId: string; accessTokenExpiresAt: number }>;
 
 // A sign-in answer as read. `accessToken` is set whenever the answer carried
 // one, so that a session the bridge rejects can still be cleaned up;
@@ -324,7 +354,25 @@ type BridgeSettings = Readonly<{
   linkAdmin: object;
   generateLink: (...args: unknown[]) => unknown;
   signal: () => void;
+  pairContext: CredentialPairContext | undefined;
+  pairProof: CredentialPairProof | undefined;
+  cleanupPriorSession: ((fresh: CredentialPairIdentity) => Promise<void>) | undefined;
+  priorCleanupSignal: (() => void) | undefined;
 }>;
+
+const BACKSTOP_MAXIMUM_MILLISECONDS = 5000;
+const BACKSTOP_RESPONSE_RESERVE_SECONDS = 5;
+
+function readWithOptionalDataProperties(value: unknown, required: readonly string[], optional: readonly string[]): ReadonlyMap<string, unknown> | null {
+  try {
+    if (value === null || typeof value !== "object") return null;
+    const keys = Reflect.ownKeys(value);
+    if (keys.some((key) => typeof key !== "string" || (!required.includes(key) && !optional.includes(key)))) return null;
+    return readExactDataProperties(value, [...required, ...optional.filter((key) => keys.includes(key))]);
+  } catch {
+    return null;
+  }
+}
 
 // Reads exactly the listed keys of a plain object through own data property
 // descriptors only, so no getter, setter or Proxy `get` trap runs. Returns
@@ -405,8 +453,8 @@ function isCanonicalUuid(value: unknown): value is string {
 
 function readBridgeSettings(configuration: unknown, dependencies: unknown): BridgeSettings | null {
   try {
-    const config = readExactDataProperties(configuration, CONFIGURATION_KEYS);
-    const deps = readExactDataProperties(dependencies, DEPENDENCY_KEYS);
+    const config = readWithOptionalDataProperties(configuration, CONFIGURATION_KEYS, ["credentialPairContext"]);
+    const deps = readWithOptionalDataProperties(dependencies, DEPENDENCY_KEYS, ["credentialPairProof", "cleanupPriorSession", "signalPriorCleanupFailure"]);
     if (config === null || deps === null) {
       return null;
     }
@@ -448,6 +496,27 @@ function readBridgeSettings(configuration: unknown, dependencies: unknown): Brid
     if (typeof generateLink !== "function") {
       return null;
     }
+    const suppliedContext = config.get("credentialPairContext");
+    const contextFields = suppliedContext === undefined ? undefined : readExactDataProperties(suppliedContext, ["applicationOrigin", "providerIssuer", "providerAudience"]);
+    const resolvedPairContext = contextFields ? resolveCredentialPairContext({
+      applicationOrigin: contextFields.get("applicationOrigin"),
+      authCookieName,
+      providerIssuer: contextFields.get("providerIssuer"),
+      providerAudience: contextFields.get("providerAudience"),
+    }) : undefined;
+    const pairContext = resolvedPairContext?.providerIssuer === `${parsed.origin}/auth/v1` ? resolvedPairContext : undefined;
+    const injectedProof = deps.get("credentialPairProof");
+    const proofFields = injectedProof === undefined ? undefined : readExactDataProperties(injectedProof, ["mintTrustedPair", "verifyPair"]);
+    const validInjectedProof = pairContext !== undefined && proofFields !== null &&
+      typeof proofFields?.get("mintTrustedPair") === "function" && typeof proofFields?.get("verifyPair") === "function";
+    const pairProof = injectedProof === undefined
+      ? (pairContext === undefined ? undefined : loadLoginCredentialPairProof(pairContext))
+      : validInjectedProof ? Object.freeze({
+        mintTrustedPair: proofFields?.get("mintTrustedPair") as CredentialPairProof["mintTrustedPair"],
+        verifyPair: proofFields?.get("verifyPair") as CredentialPairProof["verifyPair"],
+      }) : undefined;
+    const cleanupPriorSession = deps.get("cleanupPriorSession");
+    const priorCleanupSignal = deps.get("signalPriorCleanupFailure");
     return Object.freeze({
       supabaseUrl,
       anonKey,
@@ -457,6 +526,10 @@ function readBridgeSettings(configuration: unknown, dependencies: unknown): Brid
       linkAdmin,
       generateLink: generateLink as (...args: unknown[]) => unknown,
       signal: signal as () => void,
+      pairContext,
+      pairProof,
+      cleanupPriorSession: pairContext !== undefined && typeof cleanupPriorSession === "function" ? cleanupPriorSession as BridgeSettings["cleanupPriorSession"] : undefined,
+      priorCleanupSignal: typeof priorCleanupSignal === "function" ? priorCleanupSignal as () => void : undefined,
     });
   } catch {
     return null;
@@ -642,7 +715,7 @@ function createHandOverCollector(baseName: string, recorder: AttemptRecorder): H
 // joins it (N alone, or `N.0` to `N.k` in order), the prefix removed, the
 // base64url decoded, and the stored session's `access_token` read. Null for
 // anything else.
-function heldSessionAccessToken(held: ReadonlyArray<HeldIdentityCookie>, baseName: string): string | null {
+function heldSessionRecord(held: ReadonlyArray<HeldIdentityCookie>, baseName: string): Record<string, unknown> | null {
   try {
     let joined = "";
     if (held.length === 1 && held[0].name === baseName) {
@@ -662,9 +735,48 @@ function heldSessionAccessToken(held: ReadonlyArray<HeldIdentityCookie>, baseNam
     if (!BASE64URL_PATTERN.test(encoded)) {
       return null;
     }
-    const stored: unknown = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
-    const accessToken = recordField(stored, "access_token");
-    return typeof accessToken === "string" && accessToken.length > 0 ? accessToken : null;
+    const bytes = Buffer.from(encoded, "base64url");
+    if (bytes.toString("base64url") !== encoded) return null;
+    const stored: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    return stored !== null && typeof stored === "object" && !Array.isArray(stored) ? stored as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+function heldSessionAccessToken(held: ReadonlyArray<HeldIdentityCookie>, baseName: string): string | null {
+  const accessToken = heldSessionRecord(held, baseName)?.access_token;
+  return typeof accessToken === "string" && accessToken.length > 0 ? accessToken : null;
+}
+
+// Same pipeline as installed SSR applyServerStorage: JSON text, base64- plus
+// stringToBase64URL, createChunks using its default 3180-byte chunk ceiling.
+// No output is released before the entire augmented value has passed bounds.
+// The writer still owns attributes, old-family removals and binding atomicity.
+function cookiesWithPairProof(
+  held: ReadonlyArray<HeldIdentityCookie>,
+  session: ProviderSession,
+  settings: BridgeSettings,
+): ReadonlyArray<HeldIdentityCookie> | null {
+  try {
+    if (held.reduce((size, cookie) => size + cookie.value.length, 0) > CREDENTIAL_PAIR_PROOF_LIMITS.maximumEncodedSessionBytes) return null;
+    if (settings.pairProof === undefined) return held;
+    const proof = settings.pairProof.mintTrustedPair(Object.freeze({
+      accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+      assertedProviderUserId: session.userId,
+    }));
+    if (proof === undefined) return held;
+    // A malformed injected capability fails closed; never publish arbitrary
+    // property bytes returned by a stand-in for the identity-layer capability.
+    if (proof.length !== 46 || !/^v1\.[A-Za-z0-9_-]{43}$/.test(proof)) return null;
+    const stored = heldSessionRecord(held, settings.authCookieName);
+    if (stored === null || stored.access_token !== session.accessToken || stored.refresh_token !== session.refreshToken ||
+        Object.prototype.hasOwnProperty.call(stored, CREDENTIAL_PAIR_PROOF_PROPERTY)) return null;
+    Object.defineProperty(stored, CREDENTIAL_PAIR_PROOF_PROPERTY, { value: proof, enumerable: true });
+    const encoded = STORED_VALUE_PREFIX + stringToBase64URL(JSON.stringify(stored));
+    if (encoded.length > CREDENTIAL_PAIR_PROOF_LIMITS.maximumEncodedSessionBytes) return null;
+    return Object.freeze(createChunks(settings.authCookieName, encoded).map(({ name, value }) => Object.freeze({ name, value })));
   } catch {
     return null;
   }
@@ -724,6 +836,7 @@ function readSessionAnswer(answer: unknown): SessionAnswer {
     // redefine it.
     const providerSession: ProviderSession = Object.freeze({
       accessToken,
+      refreshToken,
       userId,
       accessTokenExpiresAt: claims.expiresAt,
     });
@@ -743,10 +856,12 @@ function acceptedSession(
 ): Readonly<{ session: ProviderSession; held: ReadonlyArray<HeldIdentityCookie> }> | null {
   const session = read.session;
   const held = ended.held;
+  const stored = held === null ? null : heldSessionRecord(held, baseName);
   if (
     session === null ||
     held === null ||
-    heldSessionAccessToken(held, baseName) !== session.accessToken ||
+    stored?.access_token !== session.accessToken ||
+    stored?.refresh_token !== session.refreshToken ||
     !ended.recovered.every((accessToken) => accessToken === session.accessToken)
   ) {
     return null;
@@ -922,6 +1037,14 @@ export function createLoginIdentityBridge(
       accessToken: session.accessToken,
     });
     let discarding: Promise<HoldDiscardResult> | null = null;
+    let preparation: Promise<void> | null = null;
+    let preparationComplete = settings.cleanupPriorSession === undefined;
+    let priorCleanupReported = false;
+    const reportPriorCleanupFailure = () => {
+      if (priorCleanupReported) return;
+      priorCleanupReported = true;
+      try { settings.priorCleanupSignal?.(); } catch { /* Reporting cannot alter fresh login. */ }
+    };
 
     const discard = (): Promise<HoldDiscardResult> => {
       if (discarding !== null) {
@@ -954,6 +1077,34 @@ export function createLoginIdentityBridge(
       return ASSERTION_DENIED;
     };
 
+    const prepareAcceptedSession = (request: unknown): Promise<void> => {
+      if (preparation !== null) return preparation;
+      preparation = (async (): Promise<void> => {
+        const fields = readExactDataProperties(request, RELEASE_KEYS);
+        const sessionOutcome = fields?.get("sessionOutcome");
+        if (state !== "held" || !isAsserted || (sessionOutcome !== "created" && sessionOutcome !== "existing")) {
+          if (state === "held") void discard();
+          return;
+        }
+        try {
+          if (settings.cleanupPriorSession === undefined || settings.pairContext === undefined) return;
+          const fresh = readTrustedCredentialPairIdentity(session.accessToken, settings.pairContext);
+          if (fresh === undefined || fresh.subject !== session.userId || fresh.expiresAt !== session.accessTokenExpiresAt) return;
+          const available = (fresh.expiresAt - BACKSTOP_RESPONSE_RESERVE_SECONDS) * 1000 - Date.now();
+          // Do not start optional remote work if its complete response budget
+          // plus release reserve cannot fit. No timer extends the fresh token.
+          if (available < BACKSTOP_MAXIMUM_MILLISECONDS) return;
+          const completion = await settleWithin(() => settings.cleanupPriorSession!(fresh), BACKSTOP_MAXIMUM_MILLISECONDS);
+          if (!completion.settled) reportPriorCleanupFailure();
+        } catch {
+          reportPriorCleanupFailure();
+        } finally {
+          preparationComplete = true;
+        }
+      })();
+      return preparation;
+    };
+
     const release = (request: unknown): HeldCookieReleaseResult => {
       if (state !== "held") {
         return RELEASE_REFUSED;
@@ -964,19 +1115,27 @@ export function createLoginIdentityBridge(
       if (
         !isAsserted ||
         cookies === null ||
+        !preparationComplete ||
+        session.accessTokenExpiresAt * 1000 <= Date.now() ||
         (sessionOutcome !== "created" && sessionOutcome !== "existing")
       ) {
         void discard();
         return RELEASE_REFUSED;
       }
+      const publish = cookiesWithPairProof(cookies, session, settings);
+      if (publish === null) {
+        void discard();
+        return RELEASE_REFUSED;
+      }
       state = "released";
       heldCookies = null;
-      return Object.freeze({ outcome: "released", heldCookies: cookies });
+      return Object.freeze({ outcome: "released", heldCookies: publish });
     };
 
     return Object.freeze({
       accessTokenExpiresAt: session.accessTokenExpiresAt,
       assertProviderUser,
+      prepareAcceptedSession,
       release,
       discard,
     });

@@ -1,4 +1,6 @@
-import type { SolMindRole } from "./roles";
+import { SOLMIND_ROLES, type SolMindRole } from "./roles";
+
+export const EXPLORER_HOME_ROUTE = "/explorer/home" as const;
 
 export type SolMindRouteAccessRule = {
   route: string;
@@ -24,6 +26,12 @@ export const SOLMIND_ROUTE_ACCESS_RULES: SolMindRouteAccessRule[] = [
     route: "/explorer",
     label: "Explorer conversation hub",
     allowedRoles: ["explorer"],
+    requiresAuthentication: true,
+  },
+  {
+    route: EXPLORER_HOME_ROUTE,
+    label: "Explorer home",
+    allowedRoles: [SOLMIND_ROLES.EXPLORER],
     requiresAuthentication: true,
   },
 ];

@@ -16,6 +16,7 @@ function candidate(
   overrides: Partial<UserSessionSelectionCandidate> = {},
 ): UserSessionSelectionCandidate {
   return {
+    user_session_id: "5e5510a0-0000-4000-8000-000000000c01",
     user_account_id: ACCOUNT_ID,
     active_role_context: "guide",
     session_status: "active",

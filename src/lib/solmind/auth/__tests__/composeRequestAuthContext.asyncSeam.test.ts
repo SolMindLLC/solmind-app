@@ -28,9 +28,15 @@ const ADMIN_USER_ID = "user-admin-1";
 const PROVIDER_NAME = "supabase";
 const ADMIN_PROVIDER_USER_ID = "auth-user-admin-1";
 
+// Login step 6, sub-slice S6-4: the selected session's UUID, which the request
+// presents in its binding cookie, and its expiry.
+const SESSION_ID = "5e5510a0-0000-4000-8000-000000001201";
+const SESSION_EXPIRES_AT = "2999-12-31T23:59:59+00:00";
+
 const ADMIN_PRINCIPAL: SupabaseAuthenticatedUser = {
   providerName: PROVIDER_NAME,
   providerUserId: ADMIN_PROVIDER_USER_ID,
+  presentedSessionId: SESSION_ID,
 };
 
 const ADMIN_SERVER_AUTH_CONTEXT_INPUT: DeriveTrustedServerAuthContextInput = {
@@ -43,9 +49,11 @@ const ADMIN_SERVER_AUTH_CONTEXT_INPUT: DeriveTrustedServerAuthContextInput = {
   },
   userAccount: { userAccountId: ADMIN_USER_ID, accountStatus: "active" },
   session: {
+    userSessionId: SESSION_ID,
     userAccountId: ADMIN_USER_ID,
     activeRoleContext: "admin",
     sessionStatus: "active",
+    expiresAt: SESSION_EXPIRES_AT,
   },
   activeRoleAssignment: {
     userAccountId: ADMIN_USER_ID,

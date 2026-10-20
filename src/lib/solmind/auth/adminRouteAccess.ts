@@ -7,7 +7,7 @@
 //     existing composeRequestAuthContext seam with the fixed "/admin" selector;
 //   - keep the route file (src/app/admin/access/route.ts) tiny: the route is only
 //     the composition root that builds the RequestCookieAccessor from Next.js
-//     cookies() and the @supabase/ssr request-auth principal source, then delegates
+//     cookies() and the Supabase request-auth principal source, then delegates
 //     the decision here (AUTH-RLS-DEC-017, AUTH-RLS-DEC-019; AGENTS.md route-size rule).
 //
 // Architecture notes (MVP0):
@@ -66,7 +66,7 @@ export function createDeferredAdminAuthSource(): SolMindAuthSource {
 // Resolve the opaque /admin route-access decision for the current request.
 //
 //   - principalSource: the request-auth identity port (WHO). At the route
-//     composition root this is the real @supabase/ssr-backed adapter built from the
+//     composition root this is the real Supabase-backed adapter built from the
 //     request cookies; tests inject an in-memory principal source.
 //   - authSource (optional): the record-load seam (WHAT). Defaults to the deferred
 //     deny-by-default in-memory seam above. A future slice injects the real

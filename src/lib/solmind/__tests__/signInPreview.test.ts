@@ -91,7 +91,7 @@ const INPUT_FOCUS_CLASS_ATTRIBUTE = 'class="focus:outline-2 focus:outline-offset
 
 const noop = () => undefined;
 
-function render(state: SignInPreviewState, codeDraft = "", emailDraft = ""): string {
+function render(state: SignInPreviewState, codeDraft = "", emailDraft = "", options: Partial<SignInPreviewViewProps> = {}): string {
   const props: SignInPreviewViewProps = {
     state,
     emailDraft,
@@ -112,7 +112,7 @@ function render(state: SignInPreviewState, codeDraft = "", emailDraft = ""): str
     onExplain: noop,
     onDismissNotice: noop,
   };
-  return renderToStaticMarkup(createElement(SignInPreviewView, props));
+  return renderToStaticMarkup(createElement(SignInPreviewView, { ...props, ...options }));
 }
 
 /** The text between two positions in rendered markup, without its tags. */
@@ -898,7 +898,7 @@ describe("sign-in preview (approved screens A1, A2, A3, A3A, A4, M1, M2, M3)", (
       expect(partsImports).toEqual(
         expect.arrayContaining(["next/image", "react", "@/lib/solmind/roles", "@/lib/solmind/signInPreview"]),
       );
-      expect(pageImports).toEqual(expect.arrayContaining(["next", "@/components/solmind/SignInPreview"]));
+      expect(pageImports).toEqual(expect.arrayContaining(["next", "@/components/solmind/LoginExperience"]));
       for (const spelling of [
         'import { x } from "./auth.ts";',
         'export { y } from "../auth/index";',
@@ -952,13 +952,43 @@ describe("sign-in preview (approved screens A1, A2, A3, A3A, A4, M1, M2, M3)", (
       expect(authModuleImports("example.ts", "const m = require(modulePath);")).toEqual([NON_LITERAL_MODULE_PATH]);
     });
 
-    it("keeps the route thin and the client boundary in one component", () => {
+    it("keeps the route thin with separate connected composition and effect-free preview", () => {
       const [domainSource, componentSource, partsSource, pageSource] = sources.map((entry) => entry.source);
       expect(componentSource.startsWith('"use client";')).toBe(true);
       expect(/["']use client["']/.test(domainSource)).toBe(false);
       expect(/["']use client["']/.test(partsSource)).toBe(false);
       expect(/["']use client["']/.test(pageSource)).toBe(false);
-      expect(pageSource).toContain("<SignInPreview />");
+      expect(pageSource).toContain("<LoginExperience />");
     });
+  });
+});
+
+describe("optional dormant Explorer presentation without changing preview defaults", () => {
+  it("UIV01 default and explicit inactive optional props have identical markup", () => {
+    for (const state of [INITIAL_SIGN_IN_PREVIEW_STATE, explorerOnCode(), ...CODE_SCREEN_PREVIEWS.map(({ screen }) => onScreen(screen))]) {
+      const unchanged = render(state);
+      expect(render(state, "", "", { hidePreviewAdditions: false, pending: false, inputsDisabled: false, sendDisabled: false, verifyDisabled: false, resendDisabled: false }) === unchanged, "unchanged default markup").toBe(true);
+    }
+  });
+  it("UIV02 only opted-in consumers suppress preview additions and display supplied status", () => {
+    const html = render(explorerOnCode(), "", "", { hidePreviewAdditions: true, status: createElement("p", { role: "status" }, "fixed-test-status") });
+    expect(!html.includes("Preview controls") && !html.includes(EXAMPLE_SCREEN_LABEL), "preview additions omitted").toBe(true);
+    expect(html.includes("fixed-test-status") && html.includes("can receive a code"), "supplied status and accepted conditional text").toBe(true);
+  });
+  it("UIV03 pending disables submission and resend but keeps reset and departure usable", () => {
+    const html = render(explorerOnCode(), "", "", { pending: true });
+    expect(/<form aria-busy="true"/.test(html), "busy semantics").toBe(true);
+    expect(/<button[^>]*disabled=""[^>]*>Verify and sign in<\/button>/.test(html), "verification disabled").toBe(true);
+    expect(/<button[^>]*disabled=""[^>]*>Send a new code<\/button>/.test(html), "resend disabled").toBe(true);
+    for (const label of [ENTER_CODE_COPY.differentEmailLabel, "Choose a different role"]) {
+      const element = (html.match(/<button[^>]*>[\s\S]*?<\/button>/g) ?? []).find(item => item.endsWith(`${label}</button>`));
+      expect(element !== undefined && !element.includes("disabled"), "reset control remains usable").toBe(true);
+    }
+  });
+  it("UIV04 absent selector can disable verification independently of resend", () => {
+    const html = render(explorerOnCode(), "", "", { verifyDisabled: true });
+    expect(/<button[^>]*disabled=""[^>]*>Verify and sign in<\/button>/.test(html), "verification disabled").toBe(true);
+    const resend = (html.match(/<button[^>]*>[\s\S]*?<\/button>/g) ?? []).find(item => item.endsWith(`${ENTER_CODE_COPY.resendLabel}</button>`));
+    expect(resend !== undefined && !resend.includes("disabled"), "explicit resend remains usable").toBe(true);
   });
 });

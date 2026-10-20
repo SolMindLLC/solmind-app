@@ -21,13 +21,21 @@ const EXPLORER_PROFILE_ID = "44444444-4444-4444-8444-444444444444";
 const RELATIONSHIP_ID = "55555555-5555-4555-8555-555555555555";
 const TIMESTAMP = "2026-08-14T17:00:00.000Z";
 
+// Login step 6, sub-slice S6-4: the UUID of the account's selected session, which the
+// request presents in its binding cookie, an older superseded one, and the expiry.
+const SESSION_ID = "5e5510a0-0000-4000-8000-00000001801";
+const SUPERSEDED_SESSION_ID = "5e5510a0-0000-4000-8000-00000001802";
+const SESSION_EXPIRES_AT = "2999-12-31T23:59:59+00:00";
+
 const GUIDE_PRINCIPAL: SupabaseAuthenticatedUser = {
   providerName: "supabase",
   providerUserId: "guide-provider-user",
+  presentedSessionId: SESSION_ID,
 };
 const EXPLORER_PRINCIPAL: SupabaseAuthenticatedUser = {
   providerName: "supabase",
   providerUserId: "explorer-provider-user",
+  presentedSessionId: SESSION_ID,
 };
 
 function authAccount(args: {
@@ -47,9 +55,11 @@ function authAccount(args: {
       },
       userAccount: { userAccountId: args.accountId, accountStatus: "active" },
       session: {
+        userSessionId: SESSION_ID,
         userAccountId: args.accountId,
         activeRoleContext: args.role,
         sessionStatus: "active",
+        expiresAt: SESSION_EXPIRES_AT,
       },
       activeRoleAssignment: {
         userAccountId: args.accountId,
@@ -138,6 +148,31 @@ describe("resolveSuggestedWaypointRelationshipSelectorRequest", () => {
     expect(result.error).toBe(SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_DENIED);
     expect(principalSpy).not.toHaveBeenCalled();
     expect(executor.execute).not.toHaveBeenCalled();
+  });
+
+  it("PRQ-1101 denies a Guide whose request presents no session, or a superseded session's UUID, without selector IO", async () => {
+    // Login step 6, sub-slice S6-4 (contract 25 Section 8; its Section 15 item 7).
+    for (const presentedSessionId of [null, SUPERSEDED_SESSION_ID]) {
+      const executor = { execute: vi.fn() };
+      const result = await resolveSuggestedWaypointRelationshipSelectorRequest(
+        {
+          principalSource: createInMemoryRequestAuthPrincipalSource({
+            ...GUIDE_PRINCIPAL,
+            presentedSessionId,
+          }),
+          authSource: createInMemoryAuthSource(fixture()),
+          executor,
+        },
+        { pageSize: 10, cursor: null },
+      );
+
+      expect(result).toEqual({
+        ok: false,
+        data: null,
+        error: SUGGESTED_WAYPOINT_RELATIONSHIP_SELECTOR_DENIED,
+      });
+      expect(executor.execute).not.toHaveBeenCalled();
+    }
   });
 
   it("denies Explorer role and absent principals without selector IO", async () => {

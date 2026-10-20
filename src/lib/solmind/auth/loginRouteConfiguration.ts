@@ -5,13 +5,13 @@ import { loadVerificationPepper } from "./verificationPepperSource";
 
 // Login step 6, sub-slice S6-1: the login route configuration.
 //
-// What it supplies. Login step 5's dormant composition root takes "explicit
+// What it supplies. Login step 5's composition root takes "explicit
 // configuration with no defaults": the pepper handle, the local SMTP host and
 // port, the delivery time ceiling (10 ms to 15 s) and the caller response
 // deadline for database calls (10 ms to 60 s). This module supplies exactly
 // that object, in exactly the shape the root reads (a plain frozen object
-// with those five keys as own data properties), so the future route
-// composition (S6-8) can hand it to the root unchanged. Paul's 2026-10-05
+// with those five keys as own data properties), so the route composition
+// (S6-8) hands it to the root unchanged. Paul's 2026-10-05
 // evening decision 1 accepted that the settings banked decisions already
 // require (the AUTH-RLS-DEC-032 pepper, the step 5 root's delivery settings
 // and the trusted origin) are within login step 6, with no change to
@@ -24,8 +24,9 @@ import { loadVerificationPepper } from "./verificationPepperSource";
 //   - host `127.0.0.1`: login step 4's local transport accepts only the
 //     literal `127.0.0.1` or `::1`; this is the IPv4 one, as the local
 //     setup names `127.0.0.1` elsewhere too (Supabase's `site_url` is
-//     `http://127.0.0.1:3000`). No send to the local mail catcher has run
-//     yet; the route slice's database-backed run (S6-8) is the first;
+//     `http://127.0.0.1:3000`). No unit test sends to the local mail
+//     catcher; the first send is left to the route slice's database-backed
+//     run (S6-8);
 //   - port 54325: the local mail catcher's SMTP port, which
 //     `supabase/config.toml` (`[inbucket] smtp_port`) publishes for this
 //     step. A test reads that file, so the two cannot drift apart unseen;
@@ -53,19 +54,26 @@ import { loadVerificationPepper } from "./verificationPepperSource";
 // The startup check. AUTH-RLS-DEC-032 requires the pepper at startup.
 // `checkLoginVerificationConfigurationAtStartup` loads the whole
 // configuration once and returns nothing; on any failure it throws the pepper
-// source's one fixed, value-free error. Calling it when the server starts
-// (Next.js 16's `instrumentation.ts` `register`, in the Node.js runtime only,
-// since the pepper path uses `node:crypto`) is the first activating slice's
-// duty (S6-8), not this slice's: until then the requirement is met only in
-// that a route composition that loads this configuration fails closed.
+// source's one fixed, value-free error. The first activating slice (S6-8)
+// calls it when the server starts (Next.js 16's `instrumentation.ts`
+// `register`, in the Node.js runtime only, since the pepper path uses
+// `node:crypto`). A failed check there writes one fixed, value-free line and
+// the server keeps starting: for a missing pepper Paul decided on 2026-10-07
+// that "the app starts, sign-in is unavailable, and one fixed line with no
+// value says so" (morning check-in packet, item 9, option 1; record:
+// `solmind-sprints/PRJ01-SPR001/Decision_Queue/Current_Action_Queue.md`,
+// "The 2026-10-07 check-in: answered (first seen by the 11:30:10 clock
+// read)"). A route composition that loads this configuration still fails
+// closed.
 //
 // What it never does: log, write anything, read any other setting, or cache
 // a pepper; each call makes a new handle. Its type-only import of the step 5
 // root is erased at runtime, so loading this module does not load the root.
 //
-// Dormant: no application runtime caller is introduced; no application file
-// imports this module, and the unit tests do. Keep it server-only,
-// direct-import only and off every barrel.
+// Called by login step 6's Explorer sign-in routes (S6-8), through their
+// request-scoped dependency factory, and by the server start hook; the unit
+// tests import it too. Keep it server-only, direct-import only and off every
+// barrel.
 
 export const LOGIN_VERIFICATION_DELIVERY_SETTINGS = Object.freeze({
   localSmtpHost: "127.0.0.1",

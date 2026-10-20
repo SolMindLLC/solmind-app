@@ -22,6 +22,11 @@ const OTHER_RELATIONSHIP_ID = "rel-belongs-to-someone-else";
 
 const PROVIDER_NAME = "supabase";
 
+// Login step 6, sub-slice S6-4: the selected session's UUID, which the request
+// presents in its binding cookie, and its expiry.
+const SESSION_ID = "5e5510a0-0000-4000-8000-000000001001";
+const SESSION_EXPIRES_AT = "2999-12-31T23:59:59+00:00";
+
 // Build a fully-valid trusted-context input for a given canonical role, in the
 // style of serverAuthContext.test.ts. The active role is carried by the
 // server-loaded session record.
@@ -37,7 +42,11 @@ function validServerAuthContextInput(
   const providerUserId = `auth-user-${role}-1`;
 
   return {
-    authenticatedUser: { providerName: PROVIDER_NAME, providerUserId },
+    authenticatedUser: {
+      providerName: PROVIDER_NAME,
+      providerUserId,
+      presentedSessionId: SESSION_ID,
+    },
     authProviderIdentity: {
       userAccountId,
       providerName: PROVIDER_NAME,
@@ -46,9 +55,11 @@ function validServerAuthContextInput(
     },
     userAccount: { userAccountId, accountStatus: "active" },
     session: {
+      userSessionId: SESSION_ID,
       userAccountId,
       activeRoleContext: role,
       sessionStatus: "active",
+      expiresAt: SESSION_EXPIRES_AT,
     },
     activeRoleAssignment: {
       userAccountId,
@@ -100,6 +111,7 @@ describe("authorizeGuideRelationshipRead - allow", () => {
           guideProfileId: GUIDE_PROFILE_A,
           explorerProfileId: null,
         },
+        session: { userSessionId: SESSION_ID, expiresAt: SESSION_EXPIRES_AT },
       },
       relationship: activeRelationship(),
     });

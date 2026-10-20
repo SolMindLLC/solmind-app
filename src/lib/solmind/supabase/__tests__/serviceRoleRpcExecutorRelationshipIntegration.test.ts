@@ -31,6 +31,8 @@ describe("Guide relationship query-client and service-role executor integration"
       ],
       solmind_find_active_user_sessions: [
         {
+          // The lookup returns each session's own UUID since login step 6's S6-3.
+          user_session_id: "5e5510a0-0000-4000-8000-000000002101",
           user_account_id: USER_ACCOUNT_ID,
           active_role_context: "guide",
           session_status: "active",
