@@ -286,18 +286,18 @@ version identifier in a URL, and never widen Explorer projections. Guide
 correction, withdrawal, worker, provider, deployment, and real-user edges
 remain separately gated.
 
-## Sign-in Preview and Connected Explorer Boundaries
+## Sign-in Preview and Connected Role Boundaries
 
 The approved sign-in mockups remain the presentation baseline: A1, A2, A4,
 M1, M2 and M3 (2026-09-29), and Guide A3/Admin A3A (2026-09-30).
-In the proposed connected Explorer layer, keep `src/app/login/page.tsx` and
-`src/app/login/explorer/page.tsx` thin. `src/components/solmind/LoginExperience.tsx`
-owns A1 and explicit Explorer browser wiring; the latter path starts fixed
-Explorer re-entry. Guide/Admin still use the local in-memory
-`src/components/solmind/SignInPreview.tsx`, with presentation in
-`SignInPreviewParts.tsx` and deterministic preview transitions in
-`src/lib/solmind/signInPreview.ts`. Default preview callers retain their behavior.
-This source description is conditional and unbanked, not a working-browser claim.
+The banked Explorer layer keeps src/app/login/page.tsx and
+src/app/login/explorer/page.tsx thin. LoginExperience owns A1 and explicit
+Explorer wiring, with fixed Explorer re-entry. Connected Guide uses fixed
+/login/guide and separate GuideSignIn wiring; Admin still uses SignInPreview,
+SignInPreviewParts and signInPreview's pure state. Default preview callers retain
+their behavior. Source/check results alone do not establish banking; SL-070 in
+solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md
+and its linked checked receipt own current Guide publication/banking status.
 
 Each screen follows its approved mockup's layout and wording. The preview is
 not connected. It must not use a route handler, server action, cookie,
@@ -312,7 +312,7 @@ switcher between A4 and M1 to M3, and on A3 and A3A a "Preview: this browser
 is already remembered" switch; a distinctly styled "Example screen: no
 code was sent or checked" callout sits beside each code screen's claims; and
 controls that are not connected explain, beside themselves, what they will do,
-without leaving the screen. Choosing Guide opens A3 and choosing Admin opens
+without leaving the screen. Within that preview, Guide opens A3 and Admin opens
 A3A. Submitting either goes to A4 for that role, whether or not the
 remembered-browser box is ticked. With the switch on, the tick box is hidden,
 because the browser is already remembered and the box would do nothing; the
@@ -346,6 +346,44 @@ are recorded in `solmind-docs/execution/25_SolMind_MVP0_Auth_RLS_Login_Session_C
 under Explorer screen copy approved - 2026-10-17.
 `/explorer` stays a prototype; this home grants no Virtual Guide feature authority.
 See `docs/MODULE_BOUNDARIES.md` for ownership and source/runtime evidence limits.
+
+## Connected Guide boundary
+
+Keep fixed Guide page/POST entrypoints thin; browser transport/controller belong
+in src/lib/solmind and mounted UI in src/components/solmind/GuideSignIn.tsx.
+Guide uses email only, unchanged typed password and a SolMind code. Send contains
+no password. Private drafts are cleared on cancellation/disposal; logs, URLs
+and browser storage must contain no credentials, selectors or tokens.
+
+Server order is fixed-role eligible lookup, non-consuming exact challenge/
+account/contact ownership, password private hold, redemption, provider-user/
+redeemed-account confirmation, session creation, accepted-session preparation
+and release. Wrong password leaves redemption uncalled; another account's
+selector must not reach password. Refusals preserve existing cookies and publish
+no new auth/binding cookie. Await bounded discard after held failure; timeout
+does not prove remote rollback.
+
+src/lib/solmind/auth/guideHomeAccess.ts owns fixed-Guide access. Preserve
+raw-cookie ambiguity and current principal/session/role/binding checks; only
+expiry/observation times reach GuideHome. Reuse shared /logout, honest uncertainty,
+finite reminders and Guide re-entry; no GET renewal/cleanup. Admin activation and
+the broader /guide dashboard remain separate.
+
+October 21 R04 real functional/contention observations and separate app/SQL
+checks are recorded in solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md.
+Paul's 20:17:31 CDT approval in
+solmind-sprints/PRJ01-SPR001/Validation_Workspaces/Guide_Local_Risk_Approval_2026-10-21.json
+accepts disclosed small-sample timing/capacity risks and defers real exhaustion/
+induced provider/session/cookie failure timing only for private synthetic local
+use. The original full protocol is not claimed passed; deferred measurements
+remain required before broader exposure or real users. Unit fakes and Explorer
+proof do not replace real timing evidence or full assurance. Preserve accounts/
+private passwords; no blind reset or automatic setup. Future first-Admin setup
+must reuse the approved username rule.
+
+ExplorerHomeNavigation.tsx is presentation only: authenticated Waypoint inbox
+link plus collapsed explicitly fixed-script previews. Preserve the owning
+Explorer session/logout and provider/privacy boundaries.
 
 ## Secrets Boundary
 

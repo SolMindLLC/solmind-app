@@ -44,11 +44,11 @@ test("Explorer connected entry uses fixed requests and fresh destination", async
   await expect(page.getByRole("heading", { name: "Fixed navigation observed; authorization not tested" })).toBeVisible();
 });
 
-test("Guide and Admin remain previews and departure returns to chooser", async ({ page }) => {
+test("Admin remains a preview and departure returns to chooser", async ({ page }) => {
   let effects = 0;
   await page.route("**/login/*/*", route => { effects += 1; return route.abort(); });
   await page.goto("/login");
-  for (const name of [/I'm a Guide/, /I'm the Admin/]) {
+  for (const name of [/I'm the Admin/]) {
     await page.getByRole("button", { name }).click();
     await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
     await expect(page.getByText(/Sign-in preview: not connected yet/)).toBeVisible();

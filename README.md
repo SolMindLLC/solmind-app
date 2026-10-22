@@ -70,12 +70,15 @@ Current route purpose:
 | Route | Purpose |
 |---|---|
 | `/` | Public landing page (preview) |
-| `/login` | Role chooser with Explorer email-code sign-in; Guide/Admin remain previews |
+| `/login` | Explorer email-code and Guide password/code sign-in; Admin preview |
 | `/login/explorer` | Fixed Explorer sign-in and re-entry |
 | `/explorer/home` | Server-authorized minimal Explorer home with finite-session reminder and sign-out |
 | `/login/explorer/send` | Same-origin Explorer code request through the local email catcher |
 | `/login/explorer/verify` | Same-origin verification, session creation and fixed-home result |
 | `/logout` | Same-origin sign-out with explicit confirmed and uncertain outcomes |
+| `/login/guide` | Guide email/password/code sign-in and fixed re-entry |
+| `/login/guide/send` and `/login/guide/verify` | Same-origin Guide POSTs; local email only |
+| `/guide/home` | Fixed-Guide guarded home with shared sign-out |
 | `/admin` | Admin dashboard preview |
 | `/guide` | Guide dashboard preview |
 | `/guide/explorers/avery/waypoint-suggestions` | Deterministic fixture-backed Human Guide Suggested Waypoint list, draft, Pull Back, sent-detail, and receipt review surface |
@@ -553,3 +556,41 @@ October 19 instead of the earlier custom-launcher/watched-session prerequisite.
 Account setup remains Paul-run; necessary database and authorization checks,
 complete review, and application/banking assurance remain required. Stay-signed-in renewal, connected Guide/Admin
 logins and Virtual Guide conversations are separate increments.
+
+## Connected Guide and Explorer home navigation
+
+Guide connects only email/password/email-code login, protected /guide/home,
+refresh and shared /logout. Admin remains preview; /guide remains the separate
+dashboard prototype. Current publication/banking status is owned by SL-070 in
+solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md
+and any checked banking receipt linked there. Source/check results alone do not
+establish banking. SL-069's banked Explorer evidence remains unchanged; R04's
+isolated Explorer controls are regression evidence for the Guide slice.
+
+October 21 R04 genuine functional/contention observations and earlier isolated
+app/SQL checks are recorded in
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md. At 20:17:31 CDT Paul
+accepted disclosed timing/capacity risks and deferred real exhaustion/induced
+provider/session/cookie failure timing only for private synthetic local use.
+The exact approval is
+solmind-sprints/PRJ01-SPR001/Validation_Workspaces/Guide_Local_Risk_Approval_2026-10-21.json.
+The original full protocol is not claimed passed; deferred measurements remain
+required before broader exposure or real users. Other assurance/effect gates
+remain unchanged.
+
+Guide send contains no password. Verify passes typed password unchanged and
+checks non-consuming same-account/contact challenge ownership before password.
+Neither factor alone permits a session. No remembered-browser/renewal path is
+added. Provisional source timing is not constant-time proof or risk acceptance.
+
+Additive Explorer home navigation opens the existing authenticated Waypoint
+Suggestions inbox. Collapsed design previews remain explicitly fixed-script,
+not connected to an AI or human Guide, not saved/shared, and reset by refresh.
+The owning home retains its session/logout lifecycle. The inbox has its own
+authentication guard; fixed-script previews retain their no-auth boundary.
+Navigation activates no genuine Virtual Guide conversation.
+
+Keep the three existing synthetic accounts and private passwords. An outage
+does not authorize a blind shared reset or account recreation. Paul-run demo
+setup remains separate. Future first-Admin setup must reuse the approved
+username policy; no Admin setup/runtime is connected here.

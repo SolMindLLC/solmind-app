@@ -689,10 +689,16 @@ describe("login step 6 sub-slice S6-1 - module boundary (dormant, off every barr
     expect(offenders.sort()).toEqual([
       "instrumentation-node.ts: import ./lib/solmind/auth/loginRouteConfiguration",
       "instrumentation-node.ts: mentions loginRouteConfiguration",
+      "lib/solmind/auth/adminLoginIdentifierNormalizer.ts: import ./loginContactNormalizer",
+      "lib/solmind/auth/adminLoginIdentifierNormalizer.ts: mentions loginContactNormalizer",
       "lib/solmind/supabase/explorerSignInComposition.ts: import ../auth/loginContactNormalizer",
       "lib/solmind/supabase/explorerSignInComposition.ts: mentions loginContactNormalizer",
       "lib/solmind/supabase/explorerSignInDependencies.ts: import ../auth/loginRouteConfiguration",
       "lib/solmind/supabase/explorerSignInDependencies.ts: mentions loginRouteConfiguration",
+      "lib/solmind/supabase/passwordRoleSignInCore.ts: import ../auth/loginContactNormalizer",
+      "lib/solmind/supabase/passwordRoleSignInCore.ts: mentions loginContactNormalizer",
+      "lib/solmind/supabase/passwordRoleSignInDependencies.ts: import ../auth/loginRouteConfiguration",
+      "lib/solmind/supabase/passwordRoleSignInDependencies.ts: mentions loginRouteConfiguration",
     ]);
 
     // Controls: a literal import from another file, and a mention by name,

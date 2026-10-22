@@ -295,14 +295,14 @@ describe("explorerSignInRouteContract - the closed results, the destination and 
     expect(EXPLORER_SIGN_IN_RESPONSE_HEADERS["Cache-Control"]).toContain("no-store");
   });
 
-  it("ERC-009 the two route paths are the two route files' own locations", () => {
+  it("ERC-009 Explorer paths match their handlers and only approved Explorer/Guide handlers exist", () => {
     expect(EXPLORER_SIGN_IN_ROUTE_PATHS).toEqual({ send: "/login/explorer/send", verify: "/login/explorer/verify" });
     expect(Object.isFrozen(EXPLORER_SIGN_IN_ROUTE_PATHS)).toBe(true);
     const appRoot = path.join(sourceRoot(), "app");
     for (const routePath of Object.values(EXPLORER_SIGN_IN_ROUTE_PATHS)) {
       expect(fs.existsSync(path.join(appRoot, ...routePath.split("/").filter(Boolean), "route.ts")), routePath).toBe(true);
     }
-    // And no other route handler sits under /login/explorer.
+    // Closed recursive inventory: no Admin or unexpected login handler is activated.
     const handlers: string[] = [];
     const walk = (directory: string): void => {
       for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
@@ -315,7 +315,7 @@ describe("explorerSignInRouteContract - the closed results, the destination and 
       }
     };
     walk(path.join(appRoot, "login"));
-    expect(handlers.sort()).toEqual(["login/explorer/send/route.ts", "login/explorer/verify/route.ts"]);
+    expect(handlers.sort()).toEqual(["login/explorer/send/route.ts", "login/explorer/verify/route.ts", "login/guide/send/route.ts", "login/guide/verify/route.ts"]);
   });
 });
 

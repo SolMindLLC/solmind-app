@@ -1,6 +1,7 @@
 # SolMind App Agent Task Rules
 
 Version: 0.2.2
+Last Updated: 2026-10-21
 Repo: solmind-app  
 Purpose: Define safe rules for AI coding agents and AI assistants working on the SolMind MVP0 application.
 
@@ -574,8 +575,8 @@ Only the accepted current verify result permits fixed `/explorer/home`
 navigation; navigation and cookie presence are never authorization. Preserve
 server-only secrets, same-origin writes, generic identifier/code refusals and
 honest uncertain sign-out behavior. Do not connect the deterministic `/explorer`
-prototype, Guide/Admin previews or a Virtual Guide provider as an incidental
-login change.
+prototype or a Virtual Guide provider as an incidental login change. Guide
+uses its separately approved bounded connected scope; Admin remains preview.
 
 Use direct functional checks of observable behavior with established test tools.
 Do not make a general custom launcher or tests of that launcher a prerequisite
@@ -584,3 +585,38 @@ and approved direct functional Chrome proof in place of the earlier watched
 custom-launcher prerequisite. Necessary database/authorization checks and the
 complete review/application/banking assurance remain in force. This task-specific
 direction grants no provider, deployment, cleanup or real-user authority.
+
+## Bounded connected Guide login tasks
+
+The bounded connected Guide path covers email/password/email-code login,
+protected /guide/home, refresh and shared /logout. Current publication/banking
+status is owned by SL-070 in
+solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md
+and its linked checked receipt; source/check results alone do not establish
+banking. Admin preview and /guide prototype remain separate; no SMS, reset,
+provisioning, renewal or provider conversation.
+
+Use fixed server role/purpose/home, no password on send, unchanged password and
+non-consuming same-account/contact challenge ownership before password. Wrong
+password must not redeem; neither factor alone permits a session. Keep provider
+credentials private through factor/account confirmation and accepted session,
+then release. Await bounded discard; timeout never proves remote rollback.
+
+Only current principal/session/role/binding checks authorize home. Pass only
+expiry/observation times; reuse shared logout, finite reminders, Guide re-entry
+and honest uncertainty. October 21 isolated app/SQL checks and R04 genuine
+functional/contention observations are recorded in
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md. At 20:17:31 CDT Paul
+accepted disclosed timing/capacity risks and deferred real exhaustion/induced
+provider/session/cookie failure timing only for private synthetic local use;
+exact authority is
+solmind-sprints/PRJ01-SPR001/Validation_Workspaces/Guide_Local_Risk_Approval_2026-10-21.json.
+The original full protocol is not claimed passed; deferred measurements remain
+required before broader exposure or real users. Fakes/Explorer proof do not
+supply missing real timing or full assurance.
+
+Preserve existing accounts/private passwords after outage; no blind reset/setup
+rerun. Dormant Admin parsing does not implement first-Admin setup; later setup
+reuses its rule. Additive Explorer navigation may link the authenticated inbox
+and collapsed explicitly fixed-script previews; preserve session/logout,
+provider and privacy boundaries.

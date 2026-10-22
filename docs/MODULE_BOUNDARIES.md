@@ -1,14 +1,15 @@
 # SolMind App Module Boundaries
 
-> Conditional source preparation, 2026-10-16. The Explorer, direct-token,
-> logout and newer login/browser components described below include unbanked
-> proposal layers. Their source descriptions do not establish live, connected,
-> runtime-validated or banked behavior. Final predecessor reconciliation and
-> complete-slice assurance remain required; do not apply this draft.
+> Source reconciliation, 2026-10-21. Explorer login, direct-token request checks
+> and shared logout are banked under SL-069. Dated actual evidence and limits
+> remain in the execution ledger. Connected Guide source and October 21
+> observations are described below; SL-070 and its linked checked receipt own
+> current publication/banking status. Source/check results alone are not banking.
+> Earlier component descriptions retain their historical source-only limits.
 
 Version: 0.2.3
 Repo: solmind-app  
-Last Updated: 2026-10-17
+Last Updated: 2026-10-21
 Purpose: Define where code should live as the SolMind MVP0 application grows.
 
 ## Core Principle
@@ -175,12 +176,12 @@ the owner of server-side provider conversation.
 The retained sign-in preview keeps the same split: `SignInPreview.tsx` owns
 its client boundary, `SignInPreviewParts.tsx` owns presentation, and
 `signInPreview.ts` owns the approved copy and pure screen transitions.
-The proposed `/login` instead composes the connected LoginExperience boundary
-described below; Guide/Admin remain preview entries. Screens follow their approved
+Banked `/login` composes connected Explorer LoginExperience. The separate
+Guide uses its bounded connection; Admin remains preview. Screens follow their approved
 mockups; the preview's own additions are styled apart (a "Preview controls"
 band, with a remembered-browser switch on A3 and A3A, an example-screen
 callout beside each code screen's claims, and explanations beside
-unconnected controls). Choosing Guide opens A3 and choosing Admin opens A3A;
+unconnected controls). Within that preview, Guide opens A3 and Admin opens A3A;
 both go on to A4 for that role, or, with the remembered-browser switch on,
 explain beside the "Sign in" button that the code is skipped and stay. The
 password field is uncontrolled, so its value never reaches state or markup.
@@ -1038,14 +1039,13 @@ once constructed, and its own code logs nothing; the installed library keeps
 its own logging paths. The bridge makes no direct session-read call, though
 the library's initial-session emission still reads the hold's empty storage.
 
-Since sub-slice S6-8 the bridge has one caller: the Explorer sign-in routes'
-dependency factory builds it, with the link seam's client behind the
-non-logging, non-rejecting fetch boundary that the precondition above
-requires, and their server composition runs `exchangeExplorerLink`. The
-password sign-in has no caller yet. The bridge stays off every barrel, and
-the boundary tests check with TypeScript's parser that exactly the factory's
-reference exists. The Guide and Admin route (S6-9) is the caller to come,
-and must amend that test.
+The banked Explorer dependency factory builds the bridge with the link seam
+behind its required non-logging, non-rejecting fetch boundary, and Explorer
+composition calls `exchangeExplorerLink`. Connected Guide's dependency factory
+provides password authentication; Admin login remains dormant. Keep the bridge
+off every barrel and preserve only explicit server-only factory references.
+Module-call ownership is not publication or banking evidence; SL-070 in the
+execution ledger owns current Guide status.
 
 Login step 6's sub-slice S6-8 adds the two Explorer sign-in routes, the first
 application callers of the login modules above:
@@ -1194,9 +1194,9 @@ hook that could not load or run the check writes a different fixed line.
 
 The five lib modules and the Node.js half of the start hook begin with the
 `server-only` import; all nine files are direct-import only and stay off
-every barrel. The proposed connected Explorer layer below calls the two
-routes (S6-10) and shared logout route. Guide/Admin request routes remain
-separate S6-9 work and their current screen entries stay previews.
+every barrel. The banked connected Explorer layer below calls the two
+routes (S6-10) and shared logout route. The connected Guide owners below
+composes fixed request routes and screens; Admin remains preview.
 The five boundary tests that guarded the login modules as dormant now assert
 the exact list of references these files add.
 
@@ -1209,8 +1209,8 @@ S01 does not import or call Supabase.
 ## Prepared Guide/Admin and Explorer browser boundaries (2026-10-16)
 
 This dated section describes dormant, unbanked components under the accepted
-[solmind-sprints/PRJ01-SPR001/Validation_Workspaces/Login_Step6_S69_Design_Brief_2026-10-08/DESIGN_BRIEF_R04.md](../../solmind-sprints/PRJ01-SPR001/Validation_Workspaces/Login_Step6_S69_Design_Brief_2026-10-08/DESIGN_BRIEF_R04.md). Source descriptions of the pending Explorer/logout predecessors
-remain conditional; no new component supplies final integration or banking proof.
+[solmind-sprints/PRJ01-SPR001/Validation_Workspaces/Login_Step6_S69_Design_Brief_2026-10-08/DESIGN_BRIEF_R04.md](../../solmind-sprints/PRJ01-SPR001/Validation_Workspaces/Login_Step6_S69_Design_Brief_2026-10-08/DESIGN_BRIEF_R04.md). The old component reviews remain source-only history. Explorer/logout are now
+banked as SL-069; combined Guide evidence/publication status is owned by SL-070.
 
 The server-only `solmind-app/src/lib/solmind/supabase/passwordRoleSignInBodies.ts`
 reads exact fixed-role raw-string bodies. The pure
@@ -1251,17 +1251,17 @@ input; no old-credential cleanup or production factory is added by this core.
 The injected ports are trusted executable dependencies. The core does not bound
 arbitrary hanging code, prove cancellation of remote effects, or roll back an
 already committed session. Concrete deadlines, safe transport and bounded cleanup
-must come from the final production dependencies. Current core correction and
-combined source assurance require their final frozen review before acceptance.
+come from the concrete production dependencies. Current combined assurance
+and Guide publication/banking status are owned by SL-070 in the execution ledger.
 
 `solmind-app/src/lib/solmind/supabase/passwordRoleSignInRouteContract.ts`
 describes `/login/guide/send`, `/login/guide/verify`, `/login/admin/send` and
-`/login/admin/verify`, with future `/guide/home` and `/admin/home` destinations.
-These engineering-selected constants/types implement no route, protected page,
-framework method handling, response mapping or cookie publication; the existing
-prototype-role route constants are unchanged. Future handler-generated outcomes
+`/login/admin/verify`, with fixed `/guide/home` and `/admin/home` destinations.
+The constants/types themselves implement no route, protected page or cookie
+publication. The current candidate composes the Guide subset; Admin remains
+dormant and prototype-role route constants are unchanged. Handler outcomes
 share the declared status/headers; only a complete accepted success may carry
-the login writer's cookies. Real response/wire behavior remains to be integrated.
+the login writer's cookies. R04 actual Guide wire observations and their success-body capture limit are recorded in the execution test catalog.
 
 The separate Explorer browser-safe owners are
 `solmind-app/src/lib/solmind/signInBrowserContract.ts`,
@@ -1274,22 +1274,22 @@ state. Cancellation ends local waiting only; it proves no remote rollback or
 absence of a session/cookie effect. They add no retry, DOM navigation, browser
 storage, operational timeout default or connected preview. Additional UI source
 authoring remains separate; combined Explorer refusal wording and usable expiry
-behavior are not selected here. Exact test owners and pending SQL/provider,
-real request/cookie/browser and timing/contention evidence are in [solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md](../../solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md#prepared-guideadmin-and-explorer-browser-components-2026-10-16).
+behavior belong to their separate connected owners. Exact test ownership and
+dated completed/remaining SQL/provider/wire/browser/timing evidence are in [solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md](../../solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md).
 
 ## Connected Explorer request and view boundaries (2026-10-16)
 
-The proposed source layer connects Explorer only; it is unbanked and requires
-coherent final source review/checks and actual browser proof. It preserves every
-Guide/Admin, challenge-ownership and logout boundary above. The dated isolated
-component descriptions describe their own scope, not a claim that no caller can
-now be proposed. The existing `/explorer` prototype remains independent.
+Explorer connection is banked as SL-069 on October 20; its dated actual proof
+and limits remain in the execution ledger. Preserve password-role, ownership
+and logout boundaries. Earlier components retain source-only historical scope.
+Connected Guide below has its separate composition; /explorer stays independent.
 
 `solmind-app/src/components/solmind/LoginExperience.tsx` owns A1 role selection.
 `solmind-app/src/app/login/page.tsx` mounts it normally;
 `solmind-app/src/app/login/explorer/page.tsx` supplies `initialExplorer` for fixed
-re-entry. Guide/Admin use `solmind-app/src/components/solmind/SignInPreview.tsx`
-with optional `initialRole`/departure props; default preview callers retain their
+re-entry. Connected Guide supplies fixed Guide entry; Admin uses
+`solmind-app/src/components/solmind/SignInPreview.tsx` with optional
+`initialRole`/departure props; default preview callers retain their
 in-memory behavior and prohibitions. The Explorer branch supplies browser fetch,
 an explicit 60000ms local wait, value-free status rendering and fixed
 `location.replace('/explorer/home')` only after current accepted success. No
@@ -1357,7 +1357,7 @@ capabilities; `userSessionLogoutCaller.ts` calls only
 `solmind_logout_user_session(account, presentedSession)` once; and
 `logoutProviderSignOut.ts` owns bounded explicit-token local cleanup. These
 server-only owners stay off shared/client barrels. No request body supplies
-account, role, session or redirect authority. The proposed Explorer home calls this route through its separate closed browser boundary.
+account, role, session or redirect authority. The Explorer and Guide homes call this route through their closed browser boundaries.
 
 The same-origin JSON guard precedes the one cookie read. Only a readable
 cookie list and trusted policy permit `writeLogoutSessionCookieClears` to clear
@@ -1622,7 +1622,7 @@ database. Same-value/current-version requests and exact already-applied retries
 are writeless; any request-field mismatch, stale version, unknown token, lock
 failure, or audit failure fails closed.
 
-The banked dormant DEF5-S3 issuance foundation keeps the database boundary narrow: `public.solmind_issue_verification_challenge` is a service-role-only, purpose-built `SECURITY DEFINER` operation over `identity.verification_challenge`, `identity.contact_method`, and the exact Family B `audit.audit_event` row. Its partial unique index independently limits each normalized-contact/purpose pair to one structurally open challenge. It does not authorize a route, delivery provider, invitation acceptance, session creation, self-signup, Guide assignment, or rate-limit implementation. The outer app/route layer must establish invitation or self-signup eligibility before calling it. The resend and lockout controls (AUTH-RLS-DEC-037) are implemented inside the same function by `supabase/migrations/20260929010000_verification_issuance_abuse_limits.sql` (login step 2, app `05884ed`); since login step 6's sub-slice S6-8 its one runtime caller is the Explorer send route, through login step 5's issuing caller and for a loopback trusted origin only. Its stored comment still says no runtime caller or real-user path may use it until separately gated. Paul's go-ahead of 2026-10-04 for step 6's login writes, for local synthetic work only (no real users, no cloud; AUTH-RLS-DEF-011), is read as that gate; it is recorded in `../solmind-docs/execution/25_SolMind_MVP0_Auth_RLS_Login_Session_Cookie_Security_Contract_v0_1.md`, "Paul's Acceptance (2026-10-04)" and Section 1. The stored comment stays as written, because this slice changes no migration; a later database change can update it.
+The banked dormant DEF5-S3 issuance foundation keeps the database boundary narrow: `public.solmind_issue_verification_challenge` is a service-role-only, purpose-built `SECURITY DEFINER` operation over `identity.verification_challenge`, `identity.contact_method`, and the exact Family B `audit.audit_event` row. Its partial unique index independently limits each normalized-contact/purpose pair to one structurally open challenge. It does not authorize a route, delivery provider, invitation acceptance, session creation, self-signup, Guide assignment, or rate-limit implementation. The outer app/route layer must establish invitation or self-signup eligibility before calling it. The resend and lockout controls (AUTH-RLS-DEC-037) are implemented inside the same function by `supabase/migrations/20260929010000_verification_issuance_abuse_limits.sql` (login step 2, app `05884ed`); Explorer and connected Guide fixed send compositions reach it through login step 5's shared issuing caller, for a loopback trusted origin only; Admin remains inactive. Its stored comment still says no runtime caller or real-user path may use it until separately gated. Paul's go-ahead of 2026-10-04 for step 6's login writes, for local synthetic work only (no real users, no cloud; AUTH-RLS-DEF-011), is read as that gate; it is recorded in `../solmind-docs/execution/25_SolMind_MVP0_Auth_RLS_Login_Session_Cookie_Security_Contract_v0_1.md`, "Paul's Acceptance (2026-10-04)" and Section 1. The stored comment stays as written, because this slice changes no migration; a later database change can update it.
 
 Login step 4 adds the server-only, provider-neutral verification-code
 delivery boundary that
@@ -2046,18 +2046,15 @@ which has also ended the account's previous session; the caller reports
 `failed`, no cookie is written, and that session ends by itself within the
 hour.
 
-Since sub-slice S6-8 the session caller has one caller: the Explorer sign-in
-routes' dependency factory wires it to a service-role client, and their
-server composition calls `create` once per request; the session caller uses
-the duration rule. There is no composition root, route, server action,
-cookie or UI in the pair itself.
-The boundary tests' parser-covered source-reference checks, with TypeScript's
-parser, find exactly the factory's reference to the session caller and no
-other application file that references or names either module
-(login step 5's boundary test refuses computed references in every non-test
-file, and reflective loading is beyond a source parser); the next slice to
-import one (S6-9) amends them. Which provider expiry feeds the rule belongs to the
-identity bridge slice (S6-7).
+Explorer and connected Guide compositions call the session creator through
+their explicit server-only factories; Guide uses the password-role core, and
+Admin remains inactive. Each accepted verify request calls `create` once after
+its own factors and same-account confirmation. The session caller alone uses
+the duration rule; neither module owns a route, cookie writer or UI.
+Current TypeScript parser-covered boundary tests enumerate the exact factory/
+composition references, preserving off-barrel and computed-reference guards.
+Reflective loading remains beyond a source parser. The banked identity bridge
+supplies the provider expiry; incoming browser values never supply that authority.
 
 The dormant login step 6a logout writer keeps ending a session inside one database operation. `public.solmind_logout_user_session` takes only the server-derived account and the presented session UUID, takes the same shared account-domain advisory lock as session creation (and no evidence lock), then the presented row's lock, and only then reads its one database clock, so a session that expires during either wait is not ended. It changes that session to `logged_out` with `ended_at` only when it is the account's active, unexpired session, embedding the one Family B logout audit row in the same transaction. It reports `ended` or `already_ended`; an unknown or another account's session fails closed with one fixed identifier, and every other error raised in its body, an assertion failure included, leaves as one fixed `solmind_logout_*` identifier with no underlying message, detail, or hint. EXECUTE is granted to `service_role` only: `anon` and `authenticated` execution is denied, and service-role RPC execution through the Data API stays available, as for session creation. It never ends any other session, reads no evidence, and does not require the account or role to be active, because ending a session only removes access. Its application caller is now `userSessionLogoutCaller.ts`, through the shared logout composition. The database function itself reads/writes no browser cookie and makes no provider call. Real provider/browser proof, hosting and real-user activation remain separate.
 
@@ -2170,8 +2167,8 @@ store.
 Every outward result is unchanged and value-free: the routes answer a refused
 request exactly as they answer an unauthenticated one. Since sub-slice S6-8
 the Explorer verify route writes the two cookies after a successful sign-in;
-the Guide and Admin routes (S6-9) do not exist yet, while the proposed
-Explorer S6-10 screen calls its fixed routes. A request without both cookies is still denied
+Guide composes its fixed password/code routes and Admin login routes remain inactive;
+the banked Explorer screen calls its fixed routes. A request without both cookies is still denied
 by every guarded route, including one that still
 carries a Supabase cookie under the library's default name. All 8 routes now
 need `SOLMIND_TRUSTED_APP_ORIGIN`; before this slice only the two command
@@ -2348,3 +2345,78 @@ Also check the canonical documentation in:
 ```text
 ../solmind-docs
 ```
+
+## Connected Guide request and view boundaries - 2026-10-21
+
+Connected Guide is a bounded integration over the banked Explorer/auth
+foundation. Current publication/banking status is owned by SL-070 in
+solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md
+and its linked checked receipt. Source/check results alone do not establish
+banking. This description does not relabel component reviews, activate Admin
+or expand the /guide dashboard.
+
+Thin src/app/login/guide/page.tsx and its send/verify Route Handlers compose
+Guide-only entrypoints. src/lib/solmind/supabase/guideSignInHttpPorts.ts supplies
+explicit provisional timing to request-scoped dependencies and projects Next
+mutable cookie records to plain name/value entries. Preserve the strict HTTP
+reader; no auth/configuration IO at module load. LoginExperience mounts
+GuideSignIn separately; Admin/default preview callers remain effect-free.
+
+The password-role bodies/core/route/HTTP/dependencies retain raw password text
+and fixed role/login/home. Send prepares its spare acknowledgment before lookup;
+only eligible account lookup permits issuance. Send receives no password and
+writes no cookie. Verify orders eligible lookup, non-consuming exact ownership,
+password private hold, redemption, provider-user/redeemed-account confirmation,
+session creation, accepted-session preparation and release. Wrong account never
+reaches password; wrong password never redeems. Pre-factor refusals share the
+accepted message/body/status/headers and attempted floor. Earlier guard/config
+and handled post-factor completion failures remain generic denial. Await bounded
+discard; preserve existing cookies, publish no new auth/binding cookie on refusal,
+and discard partial success. Timeout/cleanup proves no remote rollback or
+absence of a committed session/supersession.
+
+The ownership migration
+supabase/migrations/20261016000000_login_challenge_ownership_lookup.sql is a
+service-role-only STABLE SECURITY DEFINER exact boolean read. Join contact back
+to the same account; separate foreign keys are insufficient. No mutation/audit/
+reservation or duplicate redemption policy. Banked loginAccountLookupCallers.ts
+and its unit suite are context; the SQL suites passed 56 assertions in the
+isolated October 21 run, included in the 680-assertion auth regression. See
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md. Keep later
+redemption, provider/account confirmation and session checks.
+
+Browser-safe passwordRoleSignInBrowserContract.ts, guideSignInBrowserTransport.ts
+and guideSignInFlowController.ts own Guide requests/results and private attempt
+state; src/components/solmind/GuideSignIn.tsx mounts it. Clear drafts on
+cancellation/disposal; no secrets/selectors in URLs, logs or browser storage.
+Only current accepted success permits fixed /guide/home navigation; stale
+completions and request-selected destinations have no authority.
+
+Dynamic src/app/guide/home/page.tsx preserves bounded raw-cookie framing,
+duplicate names and exact values. src/lib/solmind/auth/guideHomeAccess.ts uses
+current token-only principal and SolMind session/role/binding checks, with fresh
+expiry recheck. Only expiry/observation times reach
+src/components/solmind/GuideHome.tsx. Reuse finite clock/shared logout, Guide
+re-entry, confirmed-only signed-out state, honest uncertainty and fresh server
+check after cached-page restoration. No GET cleanup, retry, renewal or client
+credential clearing.
+
+src/components/solmind/ExplorerHomeNavigation.tsx is presentation only: existing
+authenticated inbox link and collapsed explicitly fixed-script previews.
+The inbox retains its authentication guard; fixed-script previews retain their
+no-auth/data boundaries. No persistence or AI/human Guide/provider connection
+is implied. ExplorerHome retains session/logout lifecycle.
+
+Four issuance/four redemption slots are per loaded module/process, not
+distributed/per-account. October 21 R04 genuine functional/contention
+observations and isolated app/SQL checks are recorded in
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md. Paul's 20:17:31 CDT
+approval in
+solmind-sprints/PRJ01-SPR001/Validation_Workspaces/Guide_Local_Risk_Approval_2026-10-21.json
+accepts disclosed small-sample timing/capacity risks and defers real exhaustion/
+induced provider/session/cookie failure timing only for private synthetic local
+use. The original full protocol is not claimed passed; deferred measurements
+remain required before broader exposure or real users. Fake clocks/Explorer
+proof cannot replace real timing or full assurance. Preserve accounts/private
+passwords; no blind reset/recreation. Dormant Admin parsing does not activate
+Admin or implement first-Admin setup; later setup reuses its policy.

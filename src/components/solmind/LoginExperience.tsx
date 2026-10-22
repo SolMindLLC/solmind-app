@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { GuideSignIn } from "./GuideSignIn";
+import { GUIDE_BROWSER_SIGN_IN_HOME } from "@/lib/solmind/passwordRoleSignInBrowserContract";
 import { ExplorerSignIn, type ExplorerSignInStatus } from "./ExplorerSignIn";
 import { SignInPreview } from "./SignInPreview";
 import { SignInPreviewView } from "./SignInPreviewParts";
@@ -15,16 +17,19 @@ const browserFetch: ExplorerSignInBrowserFetch = (path, init) => globalThis.fetc
 function navigateHome(destination: typeof EXPLORER_BROWSER_SIGN_IN_HOME) {
   if (destination === EXPLORER_BROWSER_SIGN_IN_HOME) window.location.replace(EXPLORER_BROWSER_SIGN_IN_HOME);
 }
+function navigateGuideHome(destination: typeof GUIDE_BROWSER_SIGN_IN_HOME) {
+  if (destination === GUIDE_BROWSER_SIGN_IN_HOME) window.location.replace(GUIDE_BROWSER_SIGN_IN_HOME);
+}
 function statusView(status: ExplorerSignInStatus) {
   const message = explorerStatusText(status);
   return message === null ? null : <p role="status" aria-live="polite">{message}</p>;
 }
 
-/** The role chooser uses the same approved markup; only Explorer is connected.
+/** The role chooser uses the same approved markup; Explorer and Guide are connected.
  * Function ports originate here on the client, never in Server Component props.
  */
-export function LoginExperience({ initialExplorer = false }: Readonly<{ initialExplorer?: boolean }>) {
-  const [role, setRole] = useState<SolMindRole | null>(initialExplorer ? SOLMIND_ROLES.EXPLORER : null);
+export function LoginExperience({ initialExplorer = false, initialGuide = false }: Readonly<{ initialExplorer?: boolean; initialGuide?: boolean }>) {
+  const [role, setRole] = useState<SolMindRole | null>(initialExplorer ? SOLMIND_ROLES.EXPLORER : initialGuide ? SOLMIND_ROLES.GUIDE : null);
   const [notice, setNotice] = useState<SignInNoticeKey | null>(null);
   const shownRole = useRef(role);
   useEffect(() => {
@@ -39,7 +44,11 @@ export function LoginExperience({ initialExplorer = false }: Readonly<{ initialE
     fetcher={browserFetch} responseBudgetMilliseconds={EXPLORER_RESPONSE_BUDGET_MS}
     renderStatus={statusView} onNavigate={navigateHome} onDepart={depart}
   />;
-  if (role === SOLMIND_ROLES.GUIDE || role === SOLMIND_ROLES.ADMIN) return <SignInPreview
+  if (role === SOLMIND_ROLES.GUIDE) return <GuideSignIn
+    fetcher={browserFetch} responseBudgetMilliseconds={60_000}
+    onNavigate={navigateGuideHome} onDepart={depart}
+  />;
+  if (role === SOLMIND_ROLES.ADMIN) return <SignInPreview
     key={role} initialRole={role} onChooseDifferentRole={depart}
   />;
   return <SignInPreviewView

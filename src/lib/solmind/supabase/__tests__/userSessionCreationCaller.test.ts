@@ -1161,7 +1161,7 @@ describe("loginSessionDuration and userSessionCreationCaller - module boundary (
     }
   });
 
-  it("USB-004 only the Explorer sign-in routes' dependency factory references or names the session caller, by exactly the listed references, and nothing else reaches either module", () => {
+  it("USB-004 only the exact Explorer and Guide dependency/core owners reference or name the session caller, by exactly the listed references, and nothing else reaches either module", () => {
     // Computed references and `import.meta` in any non-test file are already
     // refused by the login step 5 boundary test (VCB-004), so the literal
     // references found here are all the references there are. Amended by the
@@ -1206,6 +1206,10 @@ describe("loginSessionDuration and userSessionCreationCaller - module boundary (
     expect(offenders.sort()).toEqual([
       "lib/solmind/supabase/explorerSignInDependencies.ts: import ./userSessionCreationCaller",
       "lib/solmind/supabase/explorerSignInDependencies.ts: mentions userSessionCreationCaller",
+      "lib/solmind/supabase/passwordRoleSignInCore.ts: import ./userSessionCreationCaller",
+      "lib/solmind/supabase/passwordRoleSignInCore.ts: mentions userSessionCreationCaller",
+      "lib/solmind/supabase/passwordRoleSignInDependencies.ts: import ./userSessionCreationCaller",
+      "lib/solmind/supabase/passwordRoleSignInDependencies.ts: mentions userSessionCreationCaller",
     ]);
 
     // Controls: a literal import of either module from another file, and a

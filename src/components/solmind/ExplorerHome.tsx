@@ -1,5 +1,6 @@
 "use client";
 
+import { ExplorerHomeNavigation } from "./ExplorerHomeNavigation";
 import { useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { createLogoutBrowserRequest, type LogoutBrowserFetch } from "@/lib/solmind/logoutBrowserRequest";
 import {
@@ -162,7 +163,7 @@ export function ExplorerHome({ session }: Readonly<{ session: ExplorerExpiry }>)
   return <main style={{ maxWidth: 560, margin: "64px auto", padding: 24 }}>
     <h1>Explorer home</h1>
     <p>You are signed in as an Explorer.</p>
-    <p>This first connected page lets you review sign-in and sign-out.</p>
+    <ExplorerHomeNavigation navigationDisabled={state.pending} />
     {state.warning ? <p role="status">{SESSION_WARNING}</p> : null}
     <button type="button" disabled={state.pending} onClick={() => { void binding.signOut(); }}>
       {state.pending ? "Signing out..." : "Sign out"}

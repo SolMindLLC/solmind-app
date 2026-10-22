@@ -1833,7 +1833,7 @@ describe("loginIdentityBridge - module boundary (dormant, server-only, off every
     }
   });
 
-  it("LBB-004 only the explicitly scoped Explorer dependency factory references the bridge", () => {
+  it("LBB-004 only the exact Explorer and Guide dependency/core owners reference the bridge", () => {
     // Computed references and `import.meta` in any non-test file are already
     // refused by the login step 5 boundary test (VCB-004), so the literal
     // references found here are all the references there are. The first route
@@ -1865,6 +1865,10 @@ describe("loginIdentityBridge - module boundary (dormant, server-only, off every
     expect(offenders.sort()).toEqual([
       "lib/solmind/supabase/explorerSignInDependencies.ts: import ./loginIdentityBridge",
       "lib/solmind/supabase/explorerSignInDependencies.ts: mentions loginIdentityBridge",
+      "lib/solmind/supabase/passwordRoleSignInCore.ts: import ./loginIdentityBridge",
+      "lib/solmind/supabase/passwordRoleSignInCore.ts: mentions loginIdentityBridge",
+      "lib/solmind/supabase/passwordRoleSignInDependencies.ts: import ./loginIdentityBridge",
+      "lib/solmind/supabase/passwordRoleSignInDependencies.ts: mentions loginIdentityBridge",
     ]);
   });
 });

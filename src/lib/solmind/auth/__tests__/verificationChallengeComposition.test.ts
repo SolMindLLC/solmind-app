@@ -1060,6 +1060,8 @@ describe("verificationChallenge - server-only, dormant and off every barrel", ()
     expect(offenders.sort()).toEqual([
       "instrumentation-node.ts: import ./lib/solmind/auth/loginRouteConfiguration",
       "instrumentation-node.ts: mentions loginRouteConfiguration",
+      "lib/solmind/auth/adminLoginIdentifierNormalizer.ts: import ./loginContactNormalizer",
+      "lib/solmind/auth/adminLoginIdentifierNormalizer.ts: mentions loginContactNormalizer",
       "lib/solmind/supabase/explorerSignInComposition.ts: import ../auth/loginContactNormalizer",
       "lib/solmind/supabase/explorerSignInComposition.ts: import ../auth/verificationChallengeCallers",
       "lib/solmind/supabase/explorerSignInComposition.ts: mentions loginContactNormalizer",
@@ -1068,6 +1070,18 @@ describe("verificationChallenge - server-only, dormant and off every barrel", ()
       "lib/solmind/supabase/explorerSignInDependencies.ts: import ../auth/verificationChallengeComposition",
       "lib/solmind/supabase/explorerSignInDependencies.ts: mentions loginRouteConfiguration",
       "lib/solmind/supabase/explorerSignInDependencies.ts: mentions verificationChallengeComposition",
+      "lib/solmind/supabase/passwordRoleSignInCore.ts: import ../auth/loginContactNormalizer",
+      "lib/solmind/supabase/passwordRoleSignInCore.ts: import ../auth/verificationChallengeCallers",
+      "lib/solmind/supabase/passwordRoleSignInCore.ts: import ../auth/verificationCodeDelivery",
+      "lib/solmind/supabase/passwordRoleSignInCore.ts: mentions loginContactNormalizer",
+      "lib/solmind/supabase/passwordRoleSignInCore.ts: mentions verificationChallengeCallers",
+      "lib/solmind/supabase/passwordRoleSignInCore.ts: mentions verificationCodeDelivery",
+      "lib/solmind/supabase/passwordRoleSignInDependencies.ts: import ../auth/loginRouteConfiguration",
+      "lib/solmind/supabase/passwordRoleSignInDependencies.ts: import ../auth/verificationChallengeComposition",
+      "lib/solmind/supabase/passwordRoleSignInDependencies.ts: mentions loginRouteConfiguration",
+      "lib/solmind/supabase/passwordRoleSignInDependencies.ts: mentions verificationChallengeComposition",
+      "lib/solmind/supabase/passwordRoleSignInRouteContract.ts: import ../auth/verificationChallengeCallers",
+      "lib/solmind/supabase/passwordRoleSignInRouteContract.ts: mentions verificationChallengeCallers",
     ]);
 
     // Controls: each form, placed in each guarded login step 4 module, is an
