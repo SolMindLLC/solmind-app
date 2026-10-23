@@ -1,7 +1,7 @@
 # SolMind App Agent Task Rules
 
 Version: 0.2.2
-Last Updated: 2026-10-21
+Last Updated: 2026-10-23
 Repo: solmind-app  
 Purpose: Define safe rules for AI coding agents and AI assistants working on the SolMind MVP0 application.
 
@@ -576,7 +576,8 @@ navigation; navigation and cookie presence are never authorization. Preserve
 server-only secrets, same-origin writes, generic identifier/code refusals and
 honest uncertain sign-out behavior. Do not connect the deterministic `/explorer`
 prototype or a Virtual Guide provider as an incidental login change. Guide
-uses its separately approved bounded connected scope; Admin remains preview.
+uses its separately approved bounded connected scope; Admin has its separate
+connected source boundary below.
 
 Use direct functional checks of observable behavior with established test tools.
 Do not make a general custom launcher or tests of that launcher a prerequisite
@@ -593,7 +594,8 @@ protected /guide/home, refresh and shared /logout. Current publication/banking
 status is owned by SL-070 in
 solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md
 and its linked checked receipt; source/check results alone do not establish
-banking. Admin preview and /guide prototype remain separate; no SMS, reset,
+banking. Admin has its separate connected source boundary; /guide remains a
+prototype. The Guide increment adds no SMS, reset,
 provisioning, renewal or provider conversation.
 
 Use fixed server role/purpose/home, no password on send, unchanged password and
@@ -612,11 +614,72 @@ provider/session/cookie failure timing only for private synthetic local use;
 exact authority is
 solmind-sprints/PRJ01-SPR001/Validation_Workspaces/Guide_Local_Risk_Approval_2026-10-21.json.
 The original full protocol is not claimed passed; deferred measurements remain
-required before broader exposure or real users. Fakes/Explorer proof do not
+required before broader exposure or real users. This dated Guide-only decision
+accepts no Admin residual risk. Fakes/Explorer proof do not
 supply missing real timing or full assurance.
 
 Preserve existing accounts/private passwords after outage; no blind reset/setup
-rerun. Dormant Admin parsing does not implement first-Admin setup; later setup
+rerun. Admin parsing alone does not implement first-Admin setup; later setup
 reuses its rule. Additive Explorer navigation may link the authenticated inbox
 and collapsed explicitly fixed-script previews; preserve session/logout,
 provider and privacy boundaries.
+
+
+## Bounded connected Admin login tasks
+
+Keep chooser/fixed /login/admin, its two same-origin POSTs and protected
+/admin/home within the explicit Admin scope. Reuse existing password-role
+bodies/core/handlers/dependencies, exact ownership and cookie/session/logout
+owners. Use approved email/username normalization, stored verified email for
+provider authentication and unchanged typed password. Send carries no password;
+wrong-account ownership must not reach password, and wrong password must not
+redeem. Neither factor alone permits a session; awaited cleanup is not rollback.
+
+Home must use the fixed /admin/home server-only audited chain once, not a bare
+Guide guard. Require guarded-read persistence first, allow-decision persistence
+second, then final expiry/clock validation. Preserve the public /admin/access
+{ allowed } shape and existing server actor contract; pass only expiry/observation
+times to AdminHome. Keep duplicate raw cookies visible to validation, shared
+logout uncertainty honest and re-entry fixed to Admin. GET does not renew, clear
+cookies or sign out; the Admin home allow still requires its audit writes.
+The /admin prototype grants no new dashboard, private-data or provisioning power.
+
+Admin configuration is explicit/provisional; see docs/MODULE_BOUNDARIES.md.
+Obtain Admin's own genuine positive journey, audit/failure/role/session evidence
+and adopted timing/shared-capacity measurements with an Admin-specific residual-
+risk disposition. Guide's October 21 proof/private-local approval is historical
+Guide evidence only. A source check, fake clock or mock browser is not that proof;
+source descriptions establish no assurance/publication/banking result. Use the
+current complete-slice execution ledger and its checked receipt as status owner.
+
+Preserve original accounts/private passwords. First-Admin setup, password reset,
+SMS, remembered browser/activity renewal, broader Admin workflows, new SQL/schema/
+grants/dependencies, provider activation, cloud/production/deployment, real users
+and cleanup movement retain their separate scope/authority.
+
+### Admin-specific local evidence and acceptance - 2026-10-23
+
+Admin's own isolated real browser/provider/database/mail proof completed the
+functional login, authorization, refresh and shared-logout paths. Separate real
+measurements covered four-slot admission/recovery, actual code exhaustion and
+idle induced failures. Ordinary refusals were about 1.51-1.53 seconds; provider
+failure about 5.06 seconds and session-lock failure about 2.50 seconds. These
+single observations retain timing/capacity clues. A timed-out redemption later
+spent its code. An induced second cookie-setter failure returned a fresh
+cookieless denial, while one unpublished application session and its created
+audit had committed; the test separately observed and ended that session.
+This response-local handler trial does not measure natural browser-cookie
+failure or guarantee remote rollback.
+
+Paul explicitly accepted these disclosed limits for PRIVATE SYNTHETIC LOCAL
+Admin use on 2026-10-23. Repeated timing distributions, partial/maintained-load
+comparisons, natural browser-cookie failure timing and induced home-audit-write
+failure timing are deferred. The original full protocol remains INCOMPLETE,
+not passed. The pressure-comparison startup timed out before authentication
+runtime; its disposable resources were fully torn down. Full source assurance,
+all other checks and exact application/publication/banking gates remain required.
+Broader exposure and real-user use retain separate gates. The detailed evidence,
+Admin-specific decision and current slice status are owned by
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md,
+solmind-docs/execution/12_SolMind_MVP0_Auth_RLS_Decision_Deferral_Register_v0_1.md and
+solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md.

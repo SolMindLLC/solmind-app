@@ -44,14 +44,16 @@ test("Explorer connected entry uses fixed requests and fresh destination", async
   await expect(page.getByRole("heading", { name: "Fixed navigation observed; authorization not tested" })).toBeVisible();
 });
 
-test("Admin remains a preview and departure returns to chooser", async ({ page }) => {
+test("Connected Admin selection and departure return to chooser without requests", async ({ page }) => {
   let effects = 0;
   await page.route("**/login/*/*", route => { effects += 1; return route.abort(); });
   await page.goto("/login");
   for (const name of [/I'm the Admin/]) {
     await page.getByRole("button", { name }).click();
     await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
-    await expect(page.getByText(/Sign-in preview: not connected yet/)).toBeVisible();
+    await expect(page.getByLabel("Email, or the Admin username", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute("type", "password");
+    await expect(page.getByText(/Sign-in preview: not connected yet/)).toHaveCount(0);
     await page.getByRole("button", { name: "Choose a different role", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Welcome back", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Welcome back", exact: true })).toBeFocused();

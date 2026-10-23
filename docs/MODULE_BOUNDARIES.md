@@ -9,7 +9,7 @@
 
 Version: 0.2.3
 Repo: solmind-app  
-Last Updated: 2026-10-21
+Last Updated: 2026-10-23
 Purpose: Define where code should live as the SolMind MVP0 application grows.
 
 ## Core Principle
@@ -177,7 +177,7 @@ The retained sign-in preview keeps the same split: `SignInPreview.tsx` owns
 its client boundary, `SignInPreviewParts.tsx` owns presentation, and
 `signInPreview.ts` owns the approved copy and pure screen transitions.
 Banked `/login` composes connected Explorer LoginExperience. The separate
-Guide uses its bounded connection; Admin remains preview. Screens follow their approved
+Guide and Admin use their separate bounded connections. Screens follow their approved
 mockups; the preview's own additions are styled apart (a "Preview controls"
 band, with a remembered-browser switch on A3 and A3A, an example-screen
 callout beside each code screen's claims, and explanations beside
@@ -457,7 +457,7 @@ Current home (banked):
 src/lib/solmind/auth/
 ```
 
-This directory now holds the banked, deny-by-default request-auth boundary, role-context resolution, route-access decisions, relationship read guards, the real Admin auth-source port, the bounded Auth/RLS audit event model, and the audit event writer. As of AUD-3 the `/admin/access` composition (`adminAccessRequest.ts`) persists those audit events at runtime through the closed-allowlist writer chain. Server-only modules are kept off the shared client barrel. Extend it in small slices; the login/provisioning write path remains deferred.
+This directory now holds the banked, deny-by-default request-auth boundary, role-context resolution, route-access decisions, relationship read guards, the real Admin auth-source port, the bounded Auth/RLS audit event model, and the audit event writer. As of AUD-3 the `/admin/access` composition (`adminAccessRequest.ts`) persists those audit events at runtime through the closed-allowlist writer chain. Server-only modules are kept off the shared client barrel. Extend it in small slices; the separate connected-role login owners below do not implement the remaining provisioning write paths.
 
 Authentication code should handle:
 
@@ -1041,8 +1041,8 @@ the library's initial-session emission still reads the hold's empty storage.
 
 The banked Explorer dependency factory builds the bridge with the link seam
 behind its required non-logging, non-rejecting fetch boundary, and Explorer
-composition calls `exchangeExplorerLink`. Connected Guide's dependency factory
-provides password authentication; Admin login remains dormant. Keep the bridge
+composition calls `exchangeExplorerLink`. Separate Guide and Admin dependency
+factories provide fixed-role password authentication. Keep the bridge
 off every barrel and preserve only explicit server-only factory references.
 Module-call ownership is not publication or banking evidence; SL-070 in the
 execution ledger owns current Guide status.
@@ -1195,8 +1195,8 @@ hook that could not load or run the check writes a different fixed line.
 The five lib modules and the Node.js half of the start hook begin with the
 `server-only` import; all nine files are direct-import only and stay off
 every barrel. The banked connected Explorer layer below calls the two
-routes (S6-10) and shared logout route. The connected Guide owners below
-composes fixed request routes and screens; Admin remains preview.
+routes (S6-10) and shared logout route. Separate connected Guide and Admin
+owners below compose their fixed request routes and screens.
 The five boundary tests that guarded the login modules as dormant now assert
 the exact list of references these files add.
 
@@ -1258,8 +1258,8 @@ and Guide publication/banking status are owned by SL-070 in the execution ledger
 describes `/login/guide/send`, `/login/guide/verify`, `/login/admin/send` and
 `/login/admin/verify`, with fixed `/guide/home` and `/admin/home` destinations.
 The constants/types themselves implement no route, protected page or cookie
-publication. The current candidate composes the Guide subset; Admin remains
-dormant and prototype-role route constants are unchanged. Handler outcomes
+publication. Separate Guide and Admin connections compose their fixed subsets;
+prototype-role route constants are unchanged. Handler outcomes
 share the declared status/headers; only a complete accepted success may carry
 the login writer's cookies. R04 actual Guide wire observations and their success-body capture limit are recorded in the execution test catalog.
 
@@ -1287,10 +1287,10 @@ Connected Guide below has its separate composition; /explorer stays independent.
 `solmind-app/src/components/solmind/LoginExperience.tsx` owns A1 role selection.
 `solmind-app/src/app/login/page.tsx` mounts it normally;
 `solmind-app/src/app/login/explorer/page.tsx` supplies `initialExplorer` for fixed
-re-entry. Connected Guide supplies fixed Guide entry; Admin uses
-`solmind-app/src/components/solmind/SignInPreview.tsx` with optional
-`initialRole`/departure props; default preview callers retain their
-in-memory behavior and prohibitions. The Explorer branch supplies browser fetch,
+re-entry. Connected Guide and Admin supply their own fixed entry pages and
+separate SignIn components. Standalone `solmind-app/src/components/solmind/SignInPreview.tsx`
+callers retain optional `initialRole`/departure props, in-memory behavior and
+prohibitions. The Explorer branch supplies browser fetch,
 an explicit 60000ms local wait, value-free status rendering and fixed
 `location.replace('/explorer/home')` only after current accepted success. No
 query return URL, role selector or credential enters navigation. The existing
@@ -2046,9 +2046,9 @@ which has also ended the account's previous session; the caller reports
 `failed`, no cookie is written, and that session ends by itself within the
 hour.
 
-Explorer and connected Guide compositions call the session creator through
-their explicit server-only factories; Guide uses the password-role core, and
-Admin remains inactive. Each accepted verify request calls `create` once after
+Explorer, Guide and Admin compositions call the session creator through their
+explicit server-only factories; Guide/Admin use the shared fixed-role
+password-role core. Each accepted verify request calls `create` once after
 its own factors and same-account confirmation. The session caller alone uses
 the duration rule; neither module owns a route, cookie writer or UI.
 Current TypeScript parser-covered boundary tests enumerate the exact factory/
@@ -2167,7 +2167,7 @@ store.
 Every outward result is unchanged and value-free: the routes answer a refused
 request exactly as they answer an unauthenticated one. Since sub-slice S6-8
 the Explorer verify route writes the two cookies after a successful sign-in;
-Guide composes its fixed password/code routes and Admin login routes remain inactive;
+Guide and Admin compose their separate fixed password/code routes;
 the banked Explorer screen calls its fixed routes. A request without both cookies is still denied
 by every guarded route, including one that still
 carries a Supabase cookie under the library's default name. All 8 routes now
@@ -2360,7 +2360,8 @@ Guide-only entrypoints. src/lib/solmind/supabase/guideSignInHttpPorts.ts supplie
 explicit provisional timing to request-scoped dependencies and projects Next
 mutable cookie records to plain name/value entries. Preserve the strict HTTP
 reader; no auth/configuration IO at module load. LoginExperience mounts
-GuideSignIn separately; Admin/default preview callers remain effect-free.
+GuideSignIn separately; Admin has its separate connection below and standalone
+preview callers remain effect-free.
 
 The password-role bodies/core/route/HTTP/dependencies retain raw password text
 and fixed role/login/home. Send prepares its spare acknowledgment before lookup;
@@ -2417,6 +2418,131 @@ accepts disclosed small-sample timing/capacity risks and defers real exhaustion/
 induced provider/session/cookie failure timing only for private synthetic local
 use. The original full protocol is not claimed passed; deferred measurements
 remain required before broader exposure or real users. Fake clocks/Explorer
-proof cannot replace real timing or full assurance. Preserve accounts/private
-passwords; no blind reset/recreation. Dormant Admin parsing does not activate
-Admin or implement first-Admin setup; later setup reuses its policy.
+proof cannot replace real timing or full assurance. This dated Guide-only
+approval supplies no Admin residual-risk acceptance. Preserve accounts/private
+passwords; no blind reset/recreation. Admin parsing alone implements no
+first-Admin setup; later setup reuses its policy.
+
+
+## Connected Admin request and view boundaries - 2026-10-23
+
+This source connection adds the Admin chooser branch, fixed /login/admin,
+POST /login/admin/send, POST /login/admin/verify and protected /admin/home.
+src/components/solmind/LoginExperience.tsx mounts AdminSignIn separately from
+Explorer/Guide. Standalone preview callers and prototype /admin stay separate.
+The home is a finite-session confirmation/sign-out surface, not new dashboard,
+private Guide/Explorer-data or provisioning authority.
+
+src/lib/solmind/supabase/adminSignInHttpPorts.ts constructs request-scoped ports
+for the existing fixed Admin HTTP handlers and password-role dependencies.
+Keep imports direct/server-only/off barrels, configuration before remote work,
+no module-load auth/configuration IO and plain name/value projection from Next's
+mutable cookie store into the strict reader. The shared core fixes role, login
+purpose and home. A browser chooses none of those authorities.
+
+Admin accepts the approved username or unchanged email normalization: at most
+512 typed characters before username trimming, outer U+0020 spaces only,
+ASCII letters/digits/period/underscore/hyphen and lowercase ASCII folding.
+Input containing @ uses the email normalizer with no username fallback; wider
+existing usernames retain email sign-in. Lookup supplies the verified stored
+sign-in email for delivery/password authentication; never construct an email
+from a username or reveal its stored value. No first-Admin setup/name migration
+is implemented.
+
+Send carries no password. Verify preserves typed password text and orders
+eligible fixed-role lookup, non-consuming exact challenge/account/contact
+ownership, private password hold, atomic redemption, provider-user assertion,
+redeemed-account confirmation, session creation, accepted-session preparation
+and release. Wrong-account ownership must not reach password; wrong password
+leaves redemption uncalled. Neither factor alone permits a session. Refusals
+retain the shared message/body/status/headers in the accepted interval, publish
+no new auth/binding cookie, preserve existing browser cookies and await bounded
+discard. Cleanup/timeout cannot undo or disprove a committed remote effect.
+
+src/lib/solmind/adminSignInBrowserTransport.ts uses the existing browser
+builders/parsers with fixed Admin POST paths, same-origin credentials, no-store,
+redirect rejection, bounded streamed JSON and explicit cancellation/budget.
+src/lib/solmind/adminSignInFlowController.ts privately owns the current opaque
+selector/generation and rejects stale, cancelled or disposed continuations.
+src/components/solmind/AdminSignIn.tsx keeps password only in an uncontrolled
+field/current verify request; send never reads it. Identifier changes/resend clear
+password/code drafts; departure, disposal and pagehide retire the active attempt.
+Only current accepted success allows fixed /admin/home navigation. No credential,
+selector, token or private server detail enters logs, URLs, storage or home props;
+password values are not serialized into React state/markup.
+
+src/app/admin/home/page.tsx is dynamic and reads the wire cookie header before
+Next can merge/decode it; preserve duplicate names and exact values for strict
+validation. src/lib/solmind/auth/adminHomeAccess.ts delegates once to
+resolveAdminHomeForRequest in src/lib/solmind/auth/adminAccessRequest.ts.
+That trusted internal path uses resolveAdminHomeRouteAccess from
+src/lib/solmind/auth/adminRouteAccess.ts against the fixed /admin/home rule in
+src/lib/solmind/routeAccess.ts. It cannot borrow /admin policy or accept a
+request-selected route. Verify the principal, current account/role/session
+records and exact binding through the existing guarded read.
+
+On a would-be home allow, require the post-resolution guarded_service_role_read
+write FIRST and admin_route_access_decision/allow write SECOND; both must persist.
+Preserve the existing fail-closed write ordering and accepted residual-read-row
+behavior on second-write failure. After both awaited writes, recheck current
+expiry/clock before projecting home times. Final projection/expiry denial does
+not rerun the read or invent a third resolution-failure row; prior committed
+audit rows may remain. Do not imply rollback or widen the audit vocabulary.
+The public /admin/access probe retains exactly { allowed }; legacy server-only
+resolveAdminActorForRequest callers retain exactly the existing allowed/actor
+projection. No expiry field is added to either old contract.
+
+Only expiresAt/observedAt reach src/components/solmind/AdminHome.tsx. Its reused
+finite clock is advisory, refresh/cached-page restoration obtains fresh server
+verification, and shared POST /logout preserves confirmed signed_out versus
+honest uncertainty. Session denial/expiry uses fixed /login/admin re-entry.
+GET never renews, clears cookies or signs out. Shared logout owns termination,
+bounded provider cleanup and owned-cookie clearing; add no second logout route.
+
+ADMIN_SIGN_IN_CONFIGURATION explicitly uses a provisional 1,500 ms floor;
+3,000 ms each for account lookup, ownership and confirmation; 5,000 ms provider
+and 18,000 ms session deadlines. LoginExperience supplies an explicit 60,000 ms
+browser response budget. These values supply no measured adequacy, constant-time
+proof, rollback guarantee or whole-flow wall-clock bound. Shared issuance and
+redemption capacity is per loaded module/process, not distributed/per-account.
+
+Source/component checks do not establish Admin genuine journey, actual audit/
+failure effects, timing/capacity, residual-risk acceptance, complete assurance,
+publication or banking. Guide's dated October 21 proof and private-synthetic-local
+risk acceptance remain Guide-only history. Admin requires its own actual evidence
+and risk disposition under the adopted protocol. Current complete-slice evidence
+and status are owned by solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md
+and solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md with its exact
+checked receipt; no result is inferred from this source description.
+
+Preserve existing accounts/private passwords and all separately gated first-Admin
+setup, invitation/provisioning, password reset, SMS, remembered browser/activity
+renewal, broader Admin workflow, new SQL/schema/grant/dependency, provider/
+cloud/production/deployment/real-user and cleanup boundaries.
+
+### Admin-specific local evidence and acceptance - 2026-10-23
+
+Admin's own isolated real browser/provider/database/mail proof completed the
+functional login, authorization, refresh and shared-logout paths. Separate real
+measurements covered four-slot admission/recovery, actual code exhaustion and
+idle induced failures. Ordinary refusals were about 1.51-1.53 seconds; provider
+failure about 5.06 seconds and session-lock failure about 2.50 seconds. These
+single observations retain timing/capacity clues. A timed-out redemption later
+spent its code. An induced second cookie-setter failure returned a fresh
+cookieless denial, while one unpublished application session and its created
+audit had committed; the test separately observed and ended that session.
+This response-local handler trial does not measure natural browser-cookie
+failure or guarantee remote rollback.
+
+Paul explicitly accepted these disclosed limits for PRIVATE SYNTHETIC LOCAL
+Admin use on 2026-10-23. Repeated timing distributions, partial/maintained-load
+comparisons, natural browser-cookie failure timing and induced home-audit-write
+failure timing are deferred. The original full protocol remains INCOMPLETE,
+not passed. The pressure-comparison startup timed out before authentication
+runtime; its disposable resources were fully torn down. Full source assurance,
+all other checks and exact application/publication/banking gates remain required.
+Broader exposure and real-user use retain separate gates. The detailed evidence,
+Admin-specific decision and current slice status are owned by
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md,
+solmind-docs/execution/12_SolMind_MVP0_Auth_RLS_Decision_Deferral_Register_v0_1.md and
+solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md.

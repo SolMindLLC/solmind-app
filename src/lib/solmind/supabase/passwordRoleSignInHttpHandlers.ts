@@ -15,7 +15,7 @@ import { GUIDE_SIGN_IN_ROUTE_PATHS, ADMIN_SIGN_IN_ROUTE_PATHS, GUIDE_SIGN_IN_SIG
   type GuideSignInVerifyBodyResult, type AdminSignInVerifyBodyResult } from "./passwordRoleSignInRouteContract";
 
 // Adapters for adopted Guide/Admin R04, with its review clarification.
-// Four fixed entry points; the connected Guide candidate registers only Guide.
+// Four fixed entry points; separate connected Guide and Admin roots register them.
 // Next route registration and production factories remain separate owners. No environment defaults, provider, logging, retry or new floor.
 // Trusted executable seams below are supplied only by server composition. They
 // must be bounded and resolve configuration before remote work. Neither a browser

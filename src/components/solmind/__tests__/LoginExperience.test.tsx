@@ -6,6 +6,7 @@ import { SignInPreview } from "../SignInPreview";
 import LoginPage, { metadata } from "../../../app/login/page";
 import ExplorerLoginPage from "../../../app/login/explorer/page";
 import GuideLoginPage from "../../../app/login/guide/page";
+import AdminLoginPage from "../../../app/login/admin/page";
 import { SOLMIND_ROLES } from "../../../lib/solmind/roles";
 import { PREVIEW_DISCLOSURE } from "../../../lib/solmind/signInPreview";
 
@@ -15,10 +16,10 @@ beforeEach(() => {
 });
 afterEach(() => { expect(vi.mocked(globalThis.fetch).mock.calls.length).toBe(0); vi.restoreAllMocks(); });
 
-describe("connected Explorer and Guide composition without mounted claims", () => {
+describe("connected Explorer, Guide and Admin composition without mounted claims", () => {
   it("L01 chooser retains all three approved role choices with honest availability", () => {
     const html = renderToStaticMarkup(createElement(LoginExperience));
-    expect(html.includes("How do you use SolMind?") && html.includes("Explorer and Guide sign-in are connected.") && html.includes("Admin sign-in is a preview.")).toBe(true);
+    expect(html.includes("How do you use SolMind?") && html.includes("Explorer, Guide and Admin sign-in are connected.") && !html.includes("Admin sign-in is a preview.")).toBe(true);
     expect(html.includes("I'm an Explorer") || html.includes("I&#x27;m an Explorer")).toBe(true);
     expect(html.includes(PREVIEW_DISCLOSURE)).toBe(false);
   });
@@ -30,6 +31,11 @@ describe("connected Explorer and Guide composition without mounted claims", () =
   it("L06 fixed Guide entry shows password-plus-code without preview controls", () => {
     const html = renderToStaticMarkup(createElement(LoginExperience, { initialGuide: true }));
     expect(html.includes("Guide") && html.includes("type=\"password\"") && html.includes("Send my code")).toBe(true);
+    expect(html.includes("Preview controls") || html.includes("Example screen")).toBe(false);
+  });
+  it("L07 fixed Admin entry shows the connected identifier/password view", () => {
+    const html = renderToStaticMarkup(createElement(LoginExperience, { initialAdmin: true }));
+    expect(html.includes("Admin") && html.includes("type=\"password\"") && html.includes("Send my code")).toBe(true);
     expect(html.includes("Preview controls") || html.includes("Example screen")).toBe(false);
   });
   it("L03 retained direct preview callers remain effect-free", () => {
@@ -47,9 +53,11 @@ describe("connected Explorer and Guide composition without mounted claims", () =
     const start = LoginPage();
     const role = ExplorerLoginPage();
     const guide = GuideLoginPage();
+    const admin = AdminLoginPage();
+    expect(admin.type === LoginExperience && admin.props.initialAdmin === true && Object.keys(admin.props).length === 1).toBe(true);
     expect(guide.type === LoginExperience && guide.props.initialGuide === true && Object.keys(guide.props).length === 1).toBe(true);
     expect(start.type === LoginExperience && Object.keys(start.props).length === 0).toBe(true);
     expect(role.type === LoginExperience && role.props.initialExplorer === true && Object.keys(role.props).length === 1).toBe(true);
-    expect(metadata.description?.includes("Admin sign-in remains a preview.")).toBe(true);
+    expect(metadata.description?.includes("Guide and Admin sign-in with a password plus emailed code.")).toBe(true);
   });
 });

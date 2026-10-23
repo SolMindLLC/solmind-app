@@ -4,6 +4,8 @@ export const EXPLORER_HOME_ROUTE = "/explorer/home" as const;
 
 export const GUIDE_HOME_ROUTE = "/guide/home" as const;
 
+export const ADMIN_HOME_ROUTE = "/admin/home" as const;
+
 export type SolMindRouteAccessRule = {
   route: string;
   label: string;
@@ -40,6 +42,12 @@ export const SOLMIND_ROUTE_ACCESS_RULES: SolMindRouteAccessRule[] = [
     route: GUIDE_HOME_ROUTE,
     label: "Guide home",
     allowedRoles: [SOLMIND_ROLES.GUIDE],
+    requiresAuthentication: true,
+  },
+  {
+    route: ADMIN_HOME_ROUTE,
+    label: "Admin home",
+    allowedRoles: [SOLMIND_ROLES.ADMIN],
     requiresAuthentication: true,
   },
 ];

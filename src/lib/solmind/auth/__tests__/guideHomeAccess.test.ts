@@ -100,7 +100,7 @@ describe("fixed Guide home server access", () => {
 
   it("adds one exact Guide rule and leaves prototype destinations unchanged", () => {
     expect(GUIDE_HOME_ROUTE).toBe("/guide/home");
-    expect(SOLMIND_ROUTE_ACCESS_RULES.length).toBe(5);
+    expect(SOLMIND_ROUTE_ACCESS_RULES.length).toBe(6);
     expect(SOLMIND_ROUTE_ACCESS_RULES.slice(0, 3).map((rule) => rule.route)).toEqual(["/admin", "/guide", "/explorer"]);
     expect(SOLMIND_ROLE_HOME_ROUTES.guide).toBe("/guide");
     expect(canSolMindRoleAccessRoute(SOLMIND_ROLES.GUIDE, GUIDE_HOME_ROUTE)).toBe(true);

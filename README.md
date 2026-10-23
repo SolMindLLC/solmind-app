@@ -39,6 +39,10 @@ User-facing routes:
 /login
 /login/explorer
 /explorer/home
+/login/guide
+/guide/home
+/login/admin
+/admin/home
 /admin
 /guide
 /guide/explorers/avery/waypoint-suggestions
@@ -57,6 +61,10 @@ Server route handlers:
 /admin/access
 /login/explorer/send
 /login/explorer/verify
+/login/guide/send
+/login/guide/verify
+/login/admin/send
+/login/admin/verify
 /logout
 /guide/waypoint-suggestions/relationships
 /guide/waypoint-suggestions/[relationshipId]/suggestions
@@ -70,7 +78,7 @@ Current route purpose:
 | Route | Purpose |
 |---|---|
 | `/` | Public landing page (preview) |
-| `/login` | Explorer email-code and Guide password/code sign-in; Admin preview |
+| `/login` | Explorer email-code and Guide/Admin password/code sign-in |
 | `/login/explorer` | Fixed Explorer sign-in and re-entry |
 | `/explorer/home` | Server-authorized minimal Explorer home with finite-session reminder and sign-out |
 | `/login/explorer/send` | Same-origin Explorer code request through the local email catcher |
@@ -79,6 +87,9 @@ Current route purpose:
 | `/login/guide` | Guide email/password/code sign-in and fixed re-entry |
 | `/login/guide/send` and `/login/guide/verify` | Same-origin Guide POSTs; local email only |
 | `/guide/home` | Fixed-Guide guarded home with shared sign-out |
+| `/login/admin` | Admin email-or-approved-username/password/code sign-in and fixed re-entry |
+| `/login/admin/send` and `/login/admin/verify` | Same-origin fixed-Admin POSTs; local email only |
+| `/admin/home` | Fixed-Admin audited home with finite-session reminder and shared sign-out |
 | `/admin` | Admin dashboard preview |
 | `/guide` | Guide dashboard preview |
 | `/guide/explorers/avery/waypoint-suggestions` | Deterministic fixture-backed Human Guide Suggested Waypoint list, draft, Pull Back, sent-detail, and receipt review surface |
@@ -199,7 +210,7 @@ Backend foundations present in the repository (high level):
   16,384-byte bounded stream, and Unicode-scalar integrity at the existing
   command-composition boundary. It adds no POST route or database caller.
 - Auth/RLS audit persistence for `/admin/access`: the bounded audit event model, the `public.solmind_record_audit_event` database writer function, the closed-allowlist app writer chain, and the runtime wiring.
-- Verification and session database primitives: the Explorer server composition calls verification-challenge issuance/redemption, account lookup, redeemed-challenge confirmation and account-bound session creation; logout ends the presented session through its separate writer. The all-history chronology correction and role/session checks remain database backstops. Guide/Admin runtime sign-in stays separate.
+- Verification and session database primitives: the Explorer server composition calls verification-challenge issuance/redemption, account lookup, redeemed-challenge confirmation and account-bound session creation; logout ends the presented session through its separate writer. The all-history chronology correction and role/session checks remain database backstops. Guide and Admin use their separately composed fixed password/code paths.
 - Dormant Explorer invitation foundations: the protected invitation-acceptance preparation helper, capacity and lock-key behavior, shared invited-identity provisioning, Guide-to-Explorer invitation issuance, replacement, revocation, and Explorer invitation acceptance with one `intake_pending` relationship.
 - Dormant Explorer S02 foundations: a protected 1-100 day Shared Snapshot sendability setting (default 7), a server-only fixed-key reader, a service-role-only audited mutation, and a manually invoked local synthetic Guide/Explorer fixture.
 - Dormant Summary and Shared Snapshot persistence foundation: immutable Guide-authored Summary revisions and sections, an authoritative publication record and fail-closed Explorer projection, Explorer-private exact-review drafts, immutable Explorer-confirmed Shared Snapshots with preserved lineage, and bounded service-role-only publication, unpublication, confirmation, and integrity surfaces. It has no application caller, permissive RLS policy, direct-table role grant, hosted data, provider action, deployment, or real-user path.
@@ -560,7 +571,8 @@ logins and Virtual Guide conversations are separate increments.
 ## Connected Guide and Explorer home navigation
 
 Guide connects only email/password/email-code login, protected /guide/home,
-refresh and shared /logout. Admin remains preview; /guide remains the separate
+refresh and shared /logout. Admin has its separate connected boundary below;
+/guide remains the separate
 dashboard prototype. Current publication/banking status is owned by SL-070 in
 solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md
 and any checked banking receipt linked there. Source/check results alone do not
@@ -576,7 +588,7 @@ The exact approval is
 solmind-sprints/PRJ01-SPR001/Validation_Workspaces/Guide_Local_Risk_Approval_2026-10-21.json.
 The original full protocol is not claimed passed; deferred measurements remain
 required before broader exposure or real users. Other assurance/effect gates
-remain unchanged.
+remain unchanged. This dated Guide-only decision supplies no Admin risk acceptance.
 
 Guide send contains no password. Verify passes typed password unchanged and
 checks non-consuming same-account/contact challenge ownership before password.
@@ -593,4 +605,67 @@ Navigation activates no genuine Virtual Guide conversation.
 Keep the three existing synthetic accounts and private passwords. An outage
 does not authorize a blind shared reset or account recreation. Paul-run demo
 setup remains separate. Future first-Admin setup must reuse the approved
-username policy; no Admin setup/runtime is connected here.
+username policy. This Guide increment supplied no Admin setup; the separate
+Admin login boundary below implements no first-Admin setup.
+
+
+## Connected Admin source boundary
+
+The Admin chooser branch and fixed /login/admin entry compose email or the
+approved Admin username, unchanged password and a SolMind email code. Fixed
+POST /login/admin/send contains no password; POST /login/admin/verify uses the
+latest typed password and code. Only accepted success permits fixed /admin/home
+navigation. Stored account/contact facts never become a browser authority claim.
+
+The dynamic home preserves raw-cookie ambiguity, verifies the current principal,
+Admin role, active session and exact binding, and uses the server-only audited
+Admin chain once. The post-resolution guarded-read audit write precedes the
+Admin allow-decision write; both are required, then expiry is checked again.
+Only expiresAt/observedAt reach AdminHome. Refresh re-enters this guard. Reuse the
+finite reminder and shared /logout with honest uncertainty and fixed Admin
+re-entry; GET does not renew, clear cookies or sign out. /admin remains the
+separate prototype, and the home grants no new dashboard or provisioning power.
+
+src/lib/solmind/supabase/adminSignInHttpPorts.ts explicitly selects a provisional
+1,500 ms response floor; 3,000 ms lookup/ownership/confirmation deadlines;
+5,000 ms provider and 18,000 ms session deadlines. These values and the 60,000 ms
+browser response budget establish no adequacy, constant-time or whole-flow bound.
+Guide's October 21 evidence and bounded private-local risk acceptance do not
+supply Admin measurements or risk acceptance.
+
+Source descriptions alone establish no Admin runtime, assurance, publication or
+banking result. Record actual Admin evidence and residual-risk disposition in
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md and use the current slice
+entry/checked receipt in
+solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md for publication/banking.
+Preserve the three existing accounts/private passwords. No first-Admin setup,
+account recreation, password reset, SMS, remembered-browser/activity renewal,
+new SQL function/schema, provider conversation or broader Admin workflow is added.
+See docs/MODULE_BOUNDARIES.md for exact owner and audit-contract boundaries.
+
+### Admin-specific local evidence and acceptance - 2026-10-23
+
+Admin's own isolated real browser/provider/database/mail proof completed the
+functional login, authorization, refresh and shared-logout paths. Separate real
+measurements covered four-slot admission/recovery, actual code exhaustion and
+idle induced failures. Ordinary refusals were about 1.51-1.53 seconds; provider
+failure about 5.06 seconds and session-lock failure about 2.50 seconds. These
+single observations retain timing/capacity clues. A timed-out redemption later
+spent its code. An induced second cookie-setter failure returned a fresh
+cookieless denial, while one unpublished application session and its created
+audit had committed; the test separately observed and ended that session.
+This response-local handler trial does not measure natural browser-cookie
+failure or guarantee remote rollback.
+
+Paul explicitly accepted these disclosed limits for PRIVATE SYNTHETIC LOCAL
+Admin use on 2026-10-23. Repeated timing distributions, partial/maintained-load
+comparisons, natural browser-cookie failure timing and induced home-audit-write
+failure timing are deferred. The original full protocol remains INCOMPLETE,
+not passed. The pressure-comparison startup timed out before authentication
+runtime; its disposable resources were fully torn down. Full source assurance,
+all other checks and exact application/publication/banking gates remain required.
+Broader exposure and real-user use retain separate gates. The detailed evidence,
+Admin-specific decision and current slice status are owned by
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md,
+solmind-docs/execution/12_SolMind_MVP0_Auth_RLS_Decision_Deferral_Register_v0_1.md and
+solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md.

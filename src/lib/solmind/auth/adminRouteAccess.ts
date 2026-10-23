@@ -1,10 +1,10 @@
 // SolMind MVP0 server-only /admin route-access composition helper.
 //
 // Purpose:
-//   - provide the single, narrowly-scoped server-only helper that the /admin
+//   - provide fixed, narrowly-scoped server-only helpers that the Admin
 //     read-only route boundary calls to turn a request-auth principal source into
-//     an opaque allow/deny decision for the "/admin" route, by composing the
-//     existing composeRequestAuthContext seam with the fixed "/admin" selector;
+//     an opaque probe decision or internal home result, by composing the
+//     existing composeRequestAuthContext seam with fixed /admin or /admin/home policy;
 //   - keep the route file (src/app/admin/access/route.ts) tiny: the route is only
 //     the composition root that builds the RequestCookieAccessor from Next.js
 //     cookies() and the Supabase request-auth principal source, then delegates
@@ -19,8 +19,8 @@
 //     is the import-time guard, backed by the runtime browser guard, matching the
 //     existing server-only family.
 //   - It introduces NO new record loading. The SolMind auth source (the WHAT/record
-//     side) is an injected seam. Real service-role record loading is NOT wired yet
-//     (AUTH-RLS-DEF-009, AUTH-RLS-DEF-010): when no auth source is injected, the
+//     side) is an injected seam. Request composition injects the existing real
+//     service-role source; when no auth source is injected, the
 //     helper uses an empty in-memory seam that denies by default. This contains no
 //     service-role key and performs no DB access. Identity (WHO) stays entirely on
 //     the injected principal source (AUTH-RLS-DEC-015).
@@ -32,6 +32,8 @@
 //     assembles no Explorer-private or Guide-private context and blends no AI roles.
 
 import "server-only";
+
+import { ADMIN_HOME_ROUTE } from "../routeAccess";
 
 import { type SolMindRequestAuthPrincipalSource } from "./requestAuthPrincipalSource";
 import { createInMemoryAuthSource, type SolMindAuthSource } from "./authSource";
@@ -94,5 +96,22 @@ export async function resolveAdminRouteAccess(args: {
       onAuthResolutionFailure: args.onAuthResolutionFailure,
     },
     { selectors: { requestedRoute: ADMIN_ACCESS_ROUTE } },
+  );
+}
+
+// Fixed home policy: deliberately separate from the banked /admin probe. A
+// missing or changed /admin/home rule must deny the home rather than borrow
+// another route's authorization. The caller cannot supply a route selector.
+export async function resolveAdminHomeRouteAccess(
+  args: Parameters<typeof resolveAdminRouteAccess>[0],
+): Promise<AuthorizeRouteAccessResult> {
+  return composeRequestAuthContext(
+    {
+      principalSource: args.principalSource,
+      authSource: args.authSource ?? createDeferredAdminAuthSource(),
+      onServiceRoleRead: args.onServiceRoleRead,
+      onAuthResolutionFailure: args.onAuthResolutionFailure,
+    },
+    { selectors: { requestedRoute: ADMIN_HOME_ROUTE } },
   );
 }

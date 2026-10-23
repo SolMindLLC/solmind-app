@@ -76,7 +76,7 @@
 
 import "server-only";
 
-import { resolveAdminRouteAccess } from "./adminRouteAccess";
+import { resolveAdminRouteAccess, resolveAdminHomeRouteAccess } from "./adminRouteAccess";
 import { type SolMindAuthSource } from "./authSource";
 import { type SolMindRequestAuthPrincipalSource } from "./requestAuthPrincipalSource";
 import { type RequestCookieAccessor } from "./requestCookieAccessor";
@@ -175,9 +175,16 @@ function toAdminAccessDecisionEvent(
 // persisted. Every other outcome -- including any thrown principal-source /
 // auth-source construction or load error, an unavailable audit writer, or a failed
 // required audit write -- returns { allowed: false } with no detail.
-export async function resolveAdminActorForRequest(
+// Expiry is retained only inside this audited server composition. Existing actor
+// and public-probe callers receive the same exact projections as before.
+type AuditedAdminSessionResult =
+  | Readonly<{ allowed: true; actorUserAccountId: string; expiresAt: string }>
+  | Readonly<{ allowed: false }>;
+
+async function resolveAuditedAdminSessionForRequest(
   deps: AdminAccessRequestDependencies,
-): Promise<AdminActorResult> {
+  resolveRoute: typeof resolveAdminRouteAccess,
+): Promise<AuditedAdminSessionResult> {
   // The bounded, value-free operational signal (default no-op). Guarded so a
   // throwing injected signal can never flip an outcome, leak, or route into the
   // fail-closed catch below (which would mint a false failure row).
@@ -259,7 +266,7 @@ export async function resolveAdminActorForRequest(
     // the persisted guarded-read row is written post-resolution below -- exactly
     // once per allowed request, with no double emission. Only the genuine
     // auth-resolution-failure seam is bridged, best-effort, through the writer.
-    const result = await resolveAdminRouteAccess({
+    const result = await resolveRoute({
       principalSource,
       authSource,
       onAuthResolutionFailure: () =>
@@ -296,7 +303,7 @@ export async function resolveAdminActorForRequest(
         return Object.freeze({ allowed: false });
       }
 
-      return Object.freeze({ allowed: true, actorUserAccountId });
+      return Object.freeze({ allowed: true, actorUserAccountId, expiresAt: result.context.session.expiresAt });
     }
 
     // Genuine DENY (verified non-Admin, null principal, or an inner resolution
@@ -330,4 +337,41 @@ export async function resolveAdminAccessForRequest(
 ): Promise<AdminAccessResult> {
   const result = await resolveAdminActorForRequest(deps);
   return Object.freeze({ allowed: result.allowed });
+}
+
+// Preserve the banked server actor contract: the new internal expiry projection
+// must not add fields to existing provisioning/audit callers.
+export async function resolveAdminActorForRequest(
+  deps: AdminAccessRequestDependencies,
+): Promise<AdminActorResult> {
+  const result = await resolveAuditedAdminSessionForRequest(deps, resolveAdminRouteAccess);
+  return result.allowed
+    ? Object.freeze({ allowed: true, actorUserAccountId: result.actorUserAccountId })
+    : Object.freeze({ allowed: false });
+}
+
+export type AdminHomeRequestResult =
+  | Readonly<{ allowed: true; expiresAt: string; observedAt: string }>
+  | Readonly<{ allowed: false }>;
+
+// Resolve once through the existing audited Admin chain, against the fixed home
+// rule. Both required writes finish before the final display-time expiry check.
+export async function resolveAdminHomeForRequest(
+  deps: AdminAccessRequestDependencies,
+): Promise<AdminHomeRequestResult> {
+  const result = await resolveAuditedAdminSessionForRequest(deps, resolveAdminHomeRouteAccess);
+  if (!result.allowed) return Object.freeze({ allowed: false });
+  try {
+    const observed = (deps.now ?? (() => new Date()))();
+    const observedMs = observed.getTime();
+    const expiresMs = Date.parse(result.expiresAt);
+    if (!Number.isFinite(observedMs) || !Number.isFinite(expiresMs) || expiresMs <= observedMs) {
+      return Object.freeze({ allowed: false });
+    }
+    return Object.freeze({ allowed: true, expiresAt: result.expiresAt, observedAt: observed.toISOString() });
+  } catch {
+    // This is a projection/clock failure, not a new authentication resolution
+    // failure. Do not invent a third audit row or duplicate the completed read.
+    return Object.freeze({ allowed: false });
+  }
 }

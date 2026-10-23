@@ -293,9 +293,9 @@ M1, M2 and M3 (2026-09-29), and Guide A3/Admin A3A (2026-09-30).
 The banked Explorer layer keeps src/app/login/page.tsx and
 src/app/login/explorer/page.tsx thin. LoginExperience owns A1 and explicit
 Explorer wiring, with fixed Explorer re-entry. Connected Guide uses fixed
-/login/guide and separate GuideSignIn wiring; Admin still uses SignInPreview,
-SignInPreviewParts and signInPreview's pure state. Default preview callers retain
-their behavior. Source/check results alone do not establish banking; SL-070 in
+/login/guide and separate GuideSignIn wiring. Connected Admin uses fixed
+/login/admin and separate AdminSignIn wiring. Standalone SignInPreview,
+SignInPreviewParts and signInPreview callers retain their in-memory behavior. Source/check results alone do not establish banking; SL-070 in
 solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md
 and its linked checked receipt own current Guide publication/banking status.
 
@@ -323,7 +323,7 @@ memory, and nothing is remembered. The password field is uncontrolled, so
 what is typed in it never reaches the preview's state or markup, and it is
 never logged or put in the URL. `LoginOptionList.tsx` and `loginOptions.ts`
 are retained but no longer used by `/login`. These restrictions apply to the
-preview, not to the separately named connected Explorer owners below.
+preview, not to the separately named connected role owners below.
 
 The connected Explorer boundary uses `src/components/solmind/ExplorerSignIn.tsx`
 and its browser contract/transport/controller for exactly the send and verify
@@ -366,8 +366,8 @@ does not prove remote rollback.
 src/lib/solmind/auth/guideHomeAccess.ts owns fixed-Guide access. Preserve
 raw-cookie ambiguity and current principal/session/role/binding checks; only
 expiry/observation times reach GuideHome. Reuse shared /logout, honest uncertainty,
-finite reminders and Guide re-entry; no GET renewal/cleanup. Admin activation and
-the broader /guide dashboard remain separate.
+finite reminders and Guide re-entry; no GET renewal/cleanup. Admin has its
+separate connected boundary below; the broader /guide dashboard remains separate.
 
 October 21 R04 real functional/contention observations and separate app/SQL
 checks are recorded in solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md.
@@ -376,7 +376,8 @@ solmind-sprints/PRJ01-SPR001/Validation_Workspaces/Guide_Local_Risk_Approval_202
 accepts disclosed small-sample timing/capacity risks and defers real exhaustion/
 induced provider/session/cookie failure timing only for private synthetic local
 use. The original full protocol is not claimed passed; deferred measurements
-remain required before broader exposure or real users. Unit fakes and Explorer
+remain required before broader exposure or real users. This dated Guide-only
+approval supplies no Admin risk acceptance. Unit fakes and Explorer
 proof do not replace real timing evidence or full assurance. Preserve accounts/
 private passwords; no blind reset or automatic setup. Future first-Admin setup
 must reuse the approved username rule.
@@ -384,6 +385,35 @@ must reuse the approved username rule.
 ExplorerHomeNavigation.tsx is presentation only: authenticated Waypoint inbox
 link plus collapsed explicitly fixed-script previews. Preserve the owning
 Explorer session/logout and provider/privacy boundaries.
+
+## Connected Admin boundary
+
+Keep src/app/login/admin/page.tsx and its two fixed POST Route Handlers thin.
+LoginExperience owns chooser/direct-entry wiring; AdminSignIn, its separate
+transport/controller and fixed /admin/home destination own the browser flow.
+Use approved email/username normalization, unchanged typed password and the
+same-account/contact ownership-before-password order. Send carries no password;
+read it only from the uncontrolled field for verify. Clear private drafts on
+departure/disposal; credentials/selectors/tokens never enter logs, URLs, storage
+or home props. Refusals preserve existing cookies; bounded discard is not rollback.
+
+The fixed /admin/home rule uses adminHomeAccess and resolveAdminHomeForRequest,
+not a bare Guide guard or the public access probe. The server-only audited chain
+runs once. On a would-be allow, guarded-read write first and allow-decision write
+second must both persist, then a final expiry/clock check must pass. Do not add a duplicate read or third audit event.
+Preserve resolveAdminAccessForRequest's exact { allowed } result and
+resolveAdminActorForRequest's existing server-only actor projection. Only
+expiresAt/observedAt reach AdminHome; preserve raw duplicate cookie names/values.
+Reuse shared /logout, finite reminders, honest uncertainty and /login/admin
+re-entry. /admin stays a prototype; this home adds no dashboard/provisioning power.
+
+Admin timing configuration is explicit and provisional; see
+src/lib/solmind/supabase/adminSignInHttpPorts.ts and docs/MODULE_BOUNDARIES.md.
+Guide's dated proof/private-local risk acceptance does not accept Admin risk.
+Source checks alone establish no runtime/timing/assurance/publication/banking
+result; current complete-slice evidence and its checked receipt remain required.
+First-Admin setup, SMS, reset, remembered browser/renewal, broader Admin work,
+new SQL/schema/grants/dependencies and provider activation stay separate.
 
 ## Secrets Boundary
 
@@ -439,3 +469,30 @@ Stop and report:
 3. What you are unsure about
 4. What command failed, if any
 5. Recommended next step
+
+### Admin-specific local evidence and acceptance - 2026-10-23
+
+Admin's own isolated real browser/provider/database/mail proof completed the
+functional login, authorization, refresh and shared-logout paths. Separate real
+measurements covered four-slot admission/recovery, actual code exhaustion and
+idle induced failures. Ordinary refusals were about 1.51-1.53 seconds; provider
+failure about 5.06 seconds and session-lock failure about 2.50 seconds. These
+single observations retain timing/capacity clues. A timed-out redemption later
+spent its code. An induced second cookie-setter failure returned a fresh
+cookieless denial, while one unpublished application session and its created
+audit had committed; the test separately observed and ended that session.
+This response-local handler trial does not measure natural browser-cookie
+failure or guarantee remote rollback.
+
+Paul explicitly accepted these disclosed limits for PRIVATE SYNTHETIC LOCAL
+Admin use on 2026-10-23. Repeated timing distributions, partial/maintained-load
+comparisons, natural browser-cookie failure timing and induced home-audit-write
+failure timing are deferred. The original full protocol remains INCOMPLETE,
+not passed. The pressure-comparison startup timed out before authentication
+runtime; its disposable resources were fully torn down. Full source assurance,
+all other checks and exact application/publication/banking gates remain required.
+Broader exposure and real-user use retain separate gates. The detailed evidence,
+Admin-specific decision and current slice status are owned by
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md,
+solmind-docs/execution/12_SolMind_MVP0_Auth_RLS_Decision_Deferral_Register_v0_1.md and
+solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md.
