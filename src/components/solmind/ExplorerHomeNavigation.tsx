@@ -17,6 +17,11 @@ export function ExplorerHomeNavigation({
       </h2>
       <nav aria-label="Explorer workspace" aria-busy={navigationDisabled || undefined}>
         {navigationDisabled ? (
+          <span aria-disabled="true" className={`${destinationClassName} mb-3 opacity-60`}>Conversation and Compass</span>
+        ) : (
+          <a href="/explorer/conversation" className={`${destinationClassName} mb-3 hover:border-teal-700`}>Conversation and Compass</a>
+        )}
+        {navigationDisabled ? (
           <span aria-disabled="true" className={`${destinationClassName} opacity-60`}>
             Waypoint Suggestions
           </span>

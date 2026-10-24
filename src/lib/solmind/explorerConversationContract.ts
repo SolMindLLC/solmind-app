@@ -1,0 +1,170 @@
+// Browser-safe feature shapes. All identifiers are opaque selections, never authority.
+export const EXPLORER_CONVERSATION_VERSION = "explorer-conversation.v1" as const;
+export const EXPLORER_CONVERSATION_LIMITS = Object.freeze({
+  messageCharacters: 8_192,
+  labelCharacters: 160,
+  waypointCharacters: 1_000,
+  messages: 100,
+  compassItems: 8,
+  waypoints: 20,
+});
+
+export type ExplorerConversationMessage = Readonly<{
+  id: string;
+  role: "explorer" | "virtualGuide";
+  body: string;
+  createdAt: string;
+}>;
+export type ExplorerConversationCompassItem = Readonly<{
+  id: string;
+  sourceMessageId: string;
+  label: string;
+}>;
+export type ExplorerConversationWaypoint = Readonly<{
+  id: string;
+  sourceMessageId: string;
+  destination: string;
+  meaning: string;
+  arrivalSignal: string;
+  status: "chosen" | "reached";
+}>;
+export type ExplorerConversationState = Readonly<{
+  version: typeof EXPLORER_CONVERSATION_VERSION;
+  conversationId: string | null;
+  revision: number;
+  pendingTurn: boolean;
+  providerState: "unavailable" | "available";
+  messages: readonly ExplorerConversationMessage[];
+  compassItems: readonly ExplorerConversationCompassItem[];
+  priorityId: string | null;
+  attentionId: string | null;
+  waypoints: readonly ExplorerConversationWaypoint[];
+}>;
+type CommandBase = Readonly<{ operationId: string; expectedRevision: number }>;
+export type ExplorerConversationCommand = CommandBase & (
+  | Readonly<{ kind: "send"; body: string }>
+  | Readonly<{ kind: "add_compass"; sourceMessageId: string; label: string }>
+  | Readonly<{ kind: "confirm_priority"; itemId: string }>
+  | Readonly<{ kind: "set_attention"; itemId: string }>
+  | Readonly<{ kind: "confirm_waypoint"; sourceMessageId: string; destination: string;
+      meaning: string; arrivalSignal: string }>
+  | Readonly<{ kind: "confirm_reached"; waypointId: string; evidence: string }>
+);
+export type ExplorerConversationError =
+  | "unavailable" | "denied" | "refresh_required" | "provider_unavailable";
+export type ExplorerConversationResult =
+  | Readonly<{ ok: true; state: ExplorerConversationState; error: null }>
+  | Readonly<{ ok: false; state: null; error: ExplorerConversationError }>;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+function object(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+function keys(value: Record<string, unknown>, expected: readonly string[]): boolean {
+  const actual = Object.keys(value);
+  return actual.length === expected.length && actual.every((key) => expected.includes(key));
+}
+function id(value: unknown): value is string { return typeof value === "string" && UUID.test(value); }
+function text(value: unknown, maximum: number, multiline = false): value is string {
+  if (typeof value !== "string" || !value.trim() || value.length > maximum) return false;
+  if ((multiline ? /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/ : /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/).test(value)) return false;
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(++index);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+    } else if (code >= 0xdc00 && code <= 0xdfff) return false;
+  }
+  return true;
+}
+function revision(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 2_147_483_647;
+}
+function instant(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?(?:Z|\+00:00)$/.test(value)) return false;
+  const milliseconds = Date.parse(value);
+  return Number.isFinite(milliseconds) && new Date(milliseconds).toISOString().slice(0, 19) === value.slice(0, 19);
+}
+export function parseExplorerConversationCommand(value: unknown): ExplorerConversationCommand | null {
+  if (!object(value) || !id(value.operationId) || !revision(value.expectedRevision)) return null;
+  const base = ["kind", "operationId", "expectedRevision"];
+  switch (value.kind) {
+    case "send":
+      if (!keys(value, [...base, "body"]) || !text(value.body, EXPLORER_CONVERSATION_LIMITS.messageCharacters, true)) return null;
+      break;
+    case "add_compass":
+      if (!keys(value, [...base, "sourceMessageId", "label"]) || !id(value.sourceMessageId) || !text(value.label, EXPLORER_CONVERSATION_LIMITS.labelCharacters)) return null;
+      break;
+    case "confirm_priority": case "set_attention":
+      if (!keys(value, [...base, "itemId"]) || !id(value.itemId)) return null;
+      break;
+    case "confirm_waypoint":
+      if (!keys(value, [...base, "sourceMessageId", "destination", "meaning", "arrivalSignal"]) || !id(value.sourceMessageId) ||
+          !text(value.destination, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) ||
+          !text(value.meaning, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) ||
+          !text(value.arrivalSignal, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true)) return null;
+      break;
+    case "confirm_reached":
+      if (!keys(value, [...base, "waypointId", "evidence"]) || !id(value.waypointId) || !text(value.evidence, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true)) return null;
+      break;
+    default: return null;
+  }
+  return Object.freeze({ ...value }) as ExplorerConversationCommand;
+}
+
+export function parseExplorerConversationResult(value: unknown): ExplorerConversationResult | null {
+  if (!object(value) || !keys(value, ["ok", "state", "error"])) return null;
+  if (value.ok === false && value.state === null &&
+      ["unavailable", "denied", "refresh_required", "provider_unavailable"].includes(value.error as string)) {
+    return Object.freeze({ ok: false, state: null, error: value.error as ExplorerConversationError });
+  }
+  if (value.ok !== true || value.error !== null || !object(value.state)) return null;
+  const state = value.state;
+  if (!keys(state, ["version", "conversationId", "revision", "pendingTurn", "providerState", "messages", "compassItems", "priorityId", "attentionId", "waypoints"]) ||
+      state.version !== EXPLORER_CONVERSATION_VERSION || !revision(state.revision) ||
+      typeof state.pendingTurn !== "boolean" ||
+      !(state.conversationId === null || id(state.conversationId)) ||
+      !["available", "unavailable"].includes(state.providerState as string) ||
+      !Array.isArray(state.messages) || state.messages.length > EXPLORER_CONVERSATION_LIMITS.messages ||
+      !Array.isArray(state.compassItems) || state.compassItems.length > EXPLORER_CONVERSATION_LIMITS.compassItems ||
+      !Array.isArray(state.waypoints) || state.waypoints.length > EXPLORER_CONVERSATION_LIMITS.waypoints) return null;
+  const messages: ExplorerConversationMessage[] = [];
+  const messageIds = new Set<string>();
+  for (const message of state.messages) {
+    if (!object(message) || !keys(message, ["id", "role", "body", "createdAt"]) || !id(message.id) || messageIds.has(message.id) ||
+        !["explorer", "virtualGuide"].includes(message.role as string) || !text(message.body, EXPLORER_CONVERSATION_LIMITS.messageCharacters, true) ||
+        !instant(message.createdAt)) return null;
+    messageIds.add(message.id);
+    messages.push(Object.freeze({ id: message.id, role: message.role as ExplorerConversationMessage["role"], body: message.body, createdAt: message.createdAt }));
+  }
+  const compassItems: ExplorerConversationCompassItem[] = [];
+  const compassIds = new Set<string>();
+  for (const item of state.compassItems) {
+    if (!object(item) || !keys(item, ["id", "sourceMessageId", "label"]) || !id(item.id) || compassIds.has(item.id) ||
+        !id(item.sourceMessageId) || !messageIds.has(item.sourceMessageId) || !text(item.label, EXPLORER_CONVERSATION_LIMITS.labelCharacters)) return null;
+    compassIds.add(item.id);
+    compassItems.push(Object.freeze({ id: item.id, sourceMessageId: item.sourceMessageId, label: item.label }));
+  }
+  if (!(state.priorityId === null || (id(state.priorityId) && compassIds.has(state.priorityId))) ||
+      !(state.attentionId === null || (id(state.attentionId) && compassIds.has(state.attentionId)))) return null;
+  const waypoints: ExplorerConversationWaypoint[] = [];
+  const waypointIds = new Set<string>();
+  for (const item of state.waypoints) {
+    if (!object(item) || !keys(item, ["id", "sourceMessageId", "destination", "meaning", "arrivalSignal", "status"]) ||
+        !id(item.id) || waypointIds.has(item.id) || !id(item.sourceMessageId) || !messageIds.has(item.sourceMessageId) ||
+        !text(item.destination, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) || !text(item.meaning, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) ||
+        !text(item.arrivalSignal, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) || !["chosen", "reached"].includes(item.status as string)) return null;
+    waypointIds.add(item.id);
+    waypoints.push(Object.freeze({ id: item.id, sourceMessageId: item.sourceMessageId, destination: item.destination,
+      meaning: item.meaning, arrivalSignal: item.arrivalSignal, status: item.status as ExplorerConversationWaypoint["status"] }));
+  }
+  if (state.conversationId === null && (state.revision !== 0 || state.pendingTurn || messages.length || compassItems.length || waypoints.length)) return null;
+  return Object.freeze({ ok: true, error: null, state: Object.freeze({ version: EXPLORER_CONVERSATION_VERSION,
+    conversationId: state.conversationId as string | null, revision: state.revision,
+    pendingTurn: state.pendingTurn,
+    providerState: state.providerState as ExplorerConversationState["providerState"], messages: Object.freeze(messages),
+    compassItems: Object.freeze(compassItems), priorityId: state.priorityId as string | null,
+    attentionId: state.attentionId as string | null, waypoints: Object.freeze(waypoints) }) });
+}

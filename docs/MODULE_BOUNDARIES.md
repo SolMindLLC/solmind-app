@@ -9,7 +9,7 @@
 
 Version: 0.2.3
 Repo: solmind-app  
-Last Updated: 2026-10-23
+Last Updated: 2026-10-24
 Purpose: Define where code should live as the SolMind MVP0 application grows.
 
 ## Core Principle
@@ -579,6 +579,92 @@ Conversation code should not own:
 S01 uses a fixed local script and exact Explorer-entered text. It must not
 claim semantic interpretation or a genuine model response. S03 owns the first
 server-side provider conversation.
+
+### Explorer conversation composition construction - 2026-10-24
+
+This provider-held increment does not establish a genuine AI response or
+complete the connected demo. Actual proof and checked publication status belong
+to `solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md` and
+`solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md`.
+
+`src/app/explorer/conversation/page.tsx` composes only the client shell and
+renders no protected account/message/session props. The private data boundary
+is freshly authorized GET `/explorer/conversation/state` and guarded same-origin
+JSON POST `/explorer/conversation/commands`. Keep both handlers thin, no-store,
+without query-selected authority. Authentication preserves duplicate raw cookie
+names/values and reuses fixed Explorer authorization through
+`src/lib/solmind/supabase/explorerConversationRequestDependencies.ts`.
+Feature authority is separately rechecked in closed database operations.
+`src/lib/solmind/supabase/explorerConversationRepository.ts` exposes only
+read/prepare/complete/mutate service-role capabilities.
+
+`src/lib/solmind/explorerConversationContract.ts` is browser-safe and owns
+closed bounded command/result shapes, exact UUID selections, expected revision
+and required `pendingTurn` boolean. Browser actor, account, application-session,
+relationship, policy and provider fields grant no authority.
+`src/components/solmind/ExplorerConversation.tsx` owns fetch, exact result
+decoding, view invalidation, one operation/revision and byte-identical uncertain
+retry. Unmount/clear private drafts when authority is lost. No browser storage.
+A saved pending turn blocks fresh commands; read-only reload may check it
+without claiming completion. A failed/uncertain send never invents a reply.
+Exact replay is recognized before new context assembly and never redispatches;
+changed-byte reuse is refused.
+
+`src/lib/solmind/virtual-guide/explorerConversationComposition.ts` owns
+server-scoped conversation/message/snapshot/invocation/reply identities,
+command fingerprints, replay preflight, prepare-before-dispatch order and
+closed terminal settlement. The injected provider is optional, and the
+concrete dependency factory deliberately supplies none. With provider or
+context builder absent, a new send returns provider unavailable before any
+new turn write. No silent fake, automatic provider retry or runtime credential
+selection exists in this source increment.
+
+`src/lib/solmind/virtual-guide/explorerConversationContext.ts` requires explicit
+trusted server configuration: methodology pack version ID, prompt/instruction/
+role versions and versioned global policy, role behavior, crisis behavior and
+methodology text. It imports the real S03A assembler and S03C composer.
+Actual `supportNow` is its sole intake content source, using the actual intake
+response-set ID. The other five intake answers, prior conversations,
+Reflections, summaries and Guide-private records are omitted. The last 24
+saved owned messages and immediate Explorer message bind to the current
+Explorer/conversation. Final source revalidation rejects revoked or changed
+authority/history. Fingerprint the exact compact assembled bytes and retain
+sorted source IDs and exact version bindings.
+
+`supabase/migrations/20261024000000_explorer_conversation_composition.sql`
+proposes private conversation-state/operation/Compass and Waypoint storage over
+existing interaction-session/message owners. Its four public RPCs are
+`public.solmind_read_explorer_conversation`,
+`public.solmind_prepare_explorer_conversation_turn`,
+`public.solmind_complete_explorer_conversation_turn` and
+`public.solmind_mutate_explorer_conversation`; only `service_role` may execute
+them. Internal helpers and tables are not browser capabilities. Require current
+Explorer application-session/account/role, active or paused relationship,
+approved active Practice/Organization, intake/adult/consent and clear restricted
+mode, bounded locks, revision protection and exact replay. AV2/
+`virtual-guide-predispatch-evidence.v2` adds source/version/intake bindings and
+atomic ordered message, snapshot, invocation and audit preparation before I/O.
+Retain v1 record values without retrospective enrichment; no v1-only dispatch.
+A completed reply requires fresh full authority. Internal failed/canceled
+closure can settle the exact retained actor/session/operation/invocation after
+logout or expiry, without a reply or private state projection. It cannot
+authorize a browser read, new dispatch or downgrade of completed evidence.
+Unknown settlement retains honest pending state. The first-turn prepare also
+rechecks under the Explorer lock that another tab has not created an active
+conversation since the earlier empty read. UI and server reserve two message
+slots before sending; formation remains available at the message limit.
+
+`src/components/solmind/ExplorerConversationFormation.tsx` is controlled by
+authoritative state, busy and a command-intent callback; pure validation is in
+`src/lib/solmind/explorerConversationFormation.ts`. The parent owns operation
+identity/retry and persistence. Empty Discovery is valid. Points use an exact
+saved owned source and Explorer-supplied label; Priority confirmation and
+attention remain separate. A private Waypoint requires destination, meaning,
+arrival signal and explicit choice; chosen displays In progress. Later Reached
+requires new supporting evidence and explicit confirmation. No sharing, model
+interpretation, clinical score, automatic lifecycle change, Guide-private
+projection or broader Guide work is added. Existing prototypes, S03A-S03E
+foundations and all login/session/logout owners retain their boundaries.
 
 ## Explorer Sharing Boundary
 
@@ -2402,11 +2488,12 @@ re-entry, confirmed-only signed-out state, honest uncertainty and fresh server
 check after cached-page restoration. No GET cleanup, retry, renewal or client
 credential clearing.
 
-src/components/solmind/ExplorerHomeNavigation.tsx is presentation only: existing
-authenticated inbox link and collapsed explicitly fixed-script previews.
-The inbox retains its authentication guard; fixed-script previews retain their
-no-auth/data boundaries. No persistence or AI/human Guide/provider connection
-is implied. ExplorerHome retains session/logout lifecycle.
+src/components/solmind/ExplorerHomeNavigation.tsx is presentation only:
+Conversation and Compass entry, authenticated inbox link and collapsed
+fixed-script previews. Each destination retains its own authorization and data
+boundary; the previews remain unconnected. Navigation grants no persistence,
+AI/human Guide/provider or session authority. ExplorerHome retains its
+session/logout lifecycle.
 
 Four issuance/four redemption slots are per loaded module/process, not
 distributed/per-account. October 21 R04 genuine functional/contention

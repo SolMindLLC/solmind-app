@@ -1,7 +1,7 @@
 # SolMind App AI Maintenance Map
 
 Version: 0.3.3
-Last Updated: 2026-10-23
+Last Updated: 2026-10-24
 Repo: solmind-app  
 Purpose: Help AI coding assistants safely understand, maintain, and extend the SolMind MVP0 application.
 
@@ -558,6 +558,46 @@ finite-session reminder text on 2026-10-17; their exact words are recorded in
 under Explorer screen copy approved - 2026-10-17. Source tests and static rendering do
 not establish mounted behavior, cookie delivery, protected reload or logout.
 
+## Explorer conversation construction - 2026-10-24
+
+This provider-held source increment is separate from retained fixed-script
+previews and the three banked logins. Its actual proof and checked publication
+status belong to `solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md` and
+`solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md`.
+
+| Owner | Proposed responsibility |
+| --- | --- |
+| `src/app/explorer/conversation/page.tsx`; `src/app/explorer/conversation/state/route.ts`; `src/app/explorer/conversation/commands/route.ts` | Public data-free shell; freshly authorized private no-store read; guarded same-origin JSON command. The shell and home link confer no authority. |
+| `src/components/solmind/ExplorerConversation.tsx`; `src/lib/solmind/explorerConversationContract.ts` | Closed browser projection, saved-history view, pending-turn hold, stable operation/revision and exact uncertain retry. No browser identity or provider authority. |
+| `src/components/solmind/ExplorerConversationFormation.tsx`; `src/lib/solmind/explorerConversationFormation.ts` | Empty Discovery, exact saved-source selection, Explorer label and Priority confirmation, independent attention, confirmed private chosen Waypoint and later evidence-backed Reached. |
+| `src/lib/solmind/supabase/explorerConversationRequestDependencies.ts`; `src/lib/solmind/supabase/explorerConversationRepository.ts` | Existing fixed Explorer authentication with raw duplicate-cookie preservation; four closed service-role feature RPC capabilities. |
+| `src/lib/solmind/virtual-guide/explorerConversationComposition.ts`; `src/lib/solmind/virtual-guide/explorerConversationContext.ts` | Server-derived turn identities and exact replay preflight; real S03A/S03C context assembly with final revalidation and exact-byte fingerprint/evidence binding. |
+| `supabase/migrations/20261024000000_explorer_conversation_composition.sql` | Private persistence and AV2/v2 successor evidence, atomic ordered message/snapshot/invocation/audit preparation, pending/revision controls, closed settlement and formation commands; no provider I/O. |
+| `tests/browser/explorerConversation.pw.ts` and co-located feature tests | Authored browser/fake and focused contract cases. Their existence is not passing execution, real database/provider proof or source assurance. |
+
+Context requires injected trusted versioned configuration. Its first allowlist
+is actual `supportNow` with one intake response-set source, the last 24 saved
+owned current-conversation messages and the immediate turn. The other five
+intake answers, prior sessions, Reflections, summaries and Guide-private data
+are omitted. Source IDs and required prompt, policy, behavior, crisis, role,
+instruction and methodology bindings remain explicit. Original v1 evidence
+is not retrospectively enriched or sufficient for dispatch.
+
+The concrete request factory supplies neither provider nor context builder.
+It reads no runtime provider credential and sends no synthetic reply. A new
+send remains unavailable without writing a turn while activation is held.
+A saved pending turn or uncertain command holds fresh controls; replay uses
+the existing exact operation and never dispatches again. Read-only reload
+shows authoritative saved state and cannot invent success.
+
+Chosen Waypoints display In progress until a later explicit Reached review
+with new supporting evidence and confirmation. No sharing or Guide-private
+projection is added. Full Compass categorization/Route history, broader
+Waypoint lifecycle, safety runtime and genuine provider activation retain
+their separate scope and gates. Governing provenance and evidence requirements
+remain in `solmind-docs/execution/04_SolMind_AI_Orchestration_Spec_v1_0.md` and
+`solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md`.
+
 ## S01 Privacy and Visibility Rules
 
 - Submitted onboarding answers become Guide-visible only after form submission.
@@ -781,7 +821,7 @@ banking.
 | supabase/migrations/20261016000000_login_challenge_ownership_lookup.sql | Non-consuming service-role-only exact challenge/account/contact join; banked loginAccountLookupCallers.ts is context; SQL suites 29/27 PASS in the isolated October 21 run |
 | src/lib/solmind/passwordRoleSignInBrowserContract.ts, guideSignInBrowserTransport.ts, guideSignInFlowController.ts; src/components/solmind/GuideSignIn.tsx | Guide-only requests/results and private attempt state; no password on send, storage/logging or request-selected authority |
 | src/lib/solmind/auth/guideHomeAccess.ts; src/app/guide/home/page.tsx; src/components/solmind/GuideHome.tsx | Current principal/session/role/binding guard, raw-cookie ambiguity, minimal time projection, finite reminder and shared logout/Guide re-entry |
-| src/components/solmind/ExplorerHomeNavigation.tsx | Presentational authenticated inbox link and collapsed explicitly fixed-script previews; no provider/session authority |
+| src/components/solmind/ExplorerHomeNavigation.tsx | Presentational Conversation and Compass entry, authenticated inbox link and collapsed fixed-script previews; each feature retains its own authorization; no provider/session authority |
 | src/lib/solmind/auth/adminLoginIdentifierNormalizer.ts | Shared approved Admin parser, unused by Guide; consumed by the separate Admin connection; no first-Admin setup |
 
 October 21 R04 genuine functional/contention observations and isolated app/

@@ -174,6 +174,60 @@ S03E is a dormant transport adapter: the pre-dispatch gate (an S03D `created`
 outcome plus server composition), the authenticated route, message persistence,
 safety handling, deployment and runtime activation remain separate gates.
 
+## Connected Explorer conversation construction - 2026-10-24
+
+This provider-held construction increment does not complete the connected demo.
+Current proof and checked publication status are owned by
+`solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md` and
+`solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md`. Preserve existing
+S01/S01R2 previews, S03A-S03E contracts and login/session/logout owners.
+
+`src/app/explorer/conversation/page.tsx` renders a public shell with no private
+props. Its private GET `/explorer/conversation/state` and same-origin JSON POST
+`/explorer/conversation/commands` perform fresh server authorization; the shell
+or a home link supplies no feature authority. Keep handlers thin and no-store.
+`src/lib/solmind/supabase/explorerConversationRequestDependencies.ts` preserves
+raw duplicate cookies and reuses the fixed Explorer request-auth boundary;
+`src/lib/solmind/supabase/explorerConversationRepository.ts` exposes only the
+four closed feature RPC capabilities.
+
+`src/lib/solmind/explorerConversationContract.ts` owns closed browser shapes.
+`src/components/solmind/ExplorerConversation.tsx` owns fetch, view lifetime,
+bounded results and one operation identity/revision with exact uncertain retry
+bytes. Browser IDs are selections, never actor/session/provider authority.
+A server `pendingTurn` holds new commands; pending or failed transport must
+never appear as a confirmed saved reply. Exact replay never redispatches.
+
+`src/components/solmind/ExplorerConversationFormation.tsx` and
+`src/lib/solmind/explorerConversationFormation.ts` keep empty Discovery valid,
+take an exact owned saved message and Explorer label, confirm Priority
+separately from attention, and require explicit destination/meaning/arrival
+confirmation for a private chosen Waypoint. Show chosen as In progress.
+Reached needs a later explicit evidence review and confirmation. No sharing,
+automatic interpretation, clinical score or browser storage is introduced.
+
+The server-only owners
+`src/lib/solmind/virtual-guide/explorerConversationComposition.ts` and
+`src/lib/solmind/virtual-guide/explorerConversationContext.ts` compose the
+existing S03A/S03C/S03B contracts. Context requires injected trusted versioned
+policy/behavior/crisis/methodology configuration; no fabricated default pack.
+Include only actual `supportNow`, its intake response-set source, the last
+24 saved owned messages and the immediate message. Omit the other five intake
+answers, prior conversations, summaries, Reflections and Guide-private data.
+Bind exact compact bytes, fingerprint, source IDs and configuration versions
+to successor evidence before any separately authorized provider attempt.
+
+`supabase/migrations/20261024000000_explorer_conversation_composition.sql`
+proposes service-role-only read/prepare/complete/mutate RPCs, private
+Compass/Waypoint persistence, pending/revision/replay controls and AV2/v2
+snapshot evidence. Preserve v1 records without retrospective enrichment;
+v1 evidence alone supplies no Explorer dispatch authority. No direct browser
+table grant, permissive policy, seed or provider call belongs in this migration.
+The concrete request factory deliberately omits provider and context builder:
+send stays unavailable and writes no new turn while activation is held.
+No fake production fallback, provider activation, deployment, sharing,
+real-user effect or assurance/banking result is granted by these source files.
+
 ## PRJ01_V-WS05-WI022 Suggested Waypoint UI Boundaries
 
 `ExplorerSuggestedWaypointWorkspace.tsx` remains deterministic fixture-backed
@@ -382,9 +436,10 @@ proof do not replace real timing evidence or full assurance. Preserve accounts/
 private passwords; no blind reset or automatic setup. Future first-Admin setup
 must reuse the approved username rule.
 
-ExplorerHomeNavigation.tsx is presentation only: authenticated Waypoint inbox
-link plus collapsed explicitly fixed-script previews. Preserve the owning
-Explorer session/logout and provider/privacy boundaries.
+ExplorerHomeNavigation.tsx is presentation only: Conversation and Compass entry,
+authenticated Waypoint inbox link and collapsed fixed-script previews. Each
+feature keeps its own authorization; preserve Explorer session/logout and
+provider/privacy boundaries.
 
 ## Connected Admin boundary
 

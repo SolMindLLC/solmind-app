@@ -1,7 +1,7 @@
 # SolMind App Agent Task Rules
 
 Version: 0.2.2
-Last Updated: 2026-10-23
+Last Updated: 2026-10-24
 Repo: solmind-app  
 Purpose: Define safe rules for AI coding agents and AI assistants working on the SolMind MVP0 application.
 
@@ -370,6 +370,59 @@ Fake HTTP belongs only in tests. S03E does not select a runtime credential,
 persist a snapshot/invocation/message, create S03D evidence, expose a route,
 connect the screen, deploy or activate a provider call. Those effects require
 their separately reviewed owners and gates.
+
+### Connected Explorer conversation construction - 2026-10-24
+
+These source boundaries describe a provider-held construction increment.
+Use `solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md` and
+`solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md` for actual proof
+and checked publication status; source guidance alone supplies no assurance.
+
+- Keep `src/app/explorer/conversation/page.tsx` a public data-free shell.
+  Fresh authentication and feature authority belong to its state/commands
+  handlers and server-only owners, not to navigation or browser input.
+- Keep raw duplicate cookies intact in
+  `src/lib/solmind/supabase/explorerConversationRequestDependencies.ts`.
+  Reuse fixed Explorer request-auth; never renew or write a cookie here.
+  The feature repository exposes only read, prepare, complete and mutate RPCs.
+- `src/lib/solmind/explorerConversationContract.ts` owns exact command/result
+  keys, opaque UUID selections, revision and required boolean `pendingTurn`.
+  Reject actor, session, relationship, policy and provider input fields.
+- `src/components/solmind/ExplorerConversation.tsx` owns private view lifetime,
+  bounded reads/writes and exact uncertain retry bytes. Hold new commands
+  while pending or uncertain. Replay settles the existing operation;
+  it is never permission for another provider dispatch.
+- Formation stays in
+  `src/lib/solmind/explorerConversationFormation.ts` and
+  `src/components/solmind/ExplorerConversationFormation.tsx`.
+  Discovery can remain empty. Require exact owned saved source and Explorer
+  label; confirm Priority separately from attention. Only explicit
+  destination/meaning/arrival confirmation chooses a private Waypoint.
+  Chosen displays In progress; Reached needs later explicit supporting
+  evidence and confirmation. Never auto-share or infer model interpretation.
+- Keep `src/lib/solmind/virtual-guide/explorerConversationContext.ts`
+  server-only and off client barrels. Require injected trusted versioned
+  policy/behavior/crisis/methodology configuration with no fake defaults.
+  Reuse S03A and S03C for actual `supportNow` plus its intake source, the last
+  24 saved owned messages and the immediate message. Omit the other five
+  answers and all Guide-private, prior-conversation, Reflection/summary data.
+- `src/lib/solmind/virtual-guide/explorerConversationComposition.ts` binds
+  exact compact serialization/fingerprint, canonical source IDs and required
+  versions to new AV2/v2 preparation before a single authorized dispatch.
+  Revalidate authority/history first. Preserve v1 evidence; never enrich it
+  later or treat it alone as Explorer-facing dispatch authority.
+- Keep `supabase/migrations/20261024000000_explorer_conversation_composition.sql`
+  service-role-only, deny-by-default, lock-bounded and atomic for ordered
+  message/evidence/audit persistence. Preserve wrong-account/non-Explorer,
+  stale/expired session, revoked consent, restricted mode and changed-byte
+  operation refusal. No browser grants, seed or provider I/O.
+- The concrete dependency factory omits provider/context activation.
+  A new send is unavailable without new turn writes. No scripted fallback,
+  invented saved reply, sharing, activation, deploy or real-user effect.
+  Test fakes stay explicit and separate from genuine database/provider/browser
+  evidence and final source assurance.
+- Preserve S01/S01R2 previews, original S03A-S03E modules and existing
+  Explorer/Guide/Admin login/session/logout behavior.
 
 ### Explorer Suggested Waypoint deterministic UI
 
