@@ -28,14 +28,14 @@ The application sessions are predeclared synthetic SQL fixtures. Therefore this 
 
 - Fresh concrete request dependencies derive the actual primary/other Explorer account and bound application-session UUID from real verified JWTs and SQL. Missing cookies, duplicate binding, Guide and Admin authority deny. No fake principal/auth source is installed.
 - Real in-process GET returns a no-store, empty, provider-held state. A held send returns `provider_unavailable`; reread remains empty. Root's SQL receipt below independently checks that no held operation or evidence was written.
-- A synthetic transport traverses the real source/context assembly, S03B validator and SQL prepare/complete. Its context includes the real fixture's `supportNow`; the other five intake answers, other Explorer support and Guide private canary are excluded. One real local send yields exactly one saved Explorer message and one explicitly labelled synthetic reply.
+- A synthetic transport traverses the real source/context assembly, S03B validator and SQL prepare/complete. Its current context includes the real fixture's six submitted onboarding continuity fields under one actual response-set UUID; other-Explorer support and the Guide-private canary remain excluded. One real local send yields exactly one saved Explorer message and one explicitly labelled synthetic reply.
 - A fresh dependency instance reloads the saved state. An identical operation/revision/body replay after history growth returns existing state without another transport call; changed bytes and a stale new operation demand refresh without transport redispatch.
 - Saved owned-message selection creates Compass; explicit commands independently confirm Priority and attention, choose a Waypoint (`chosen`, UI In progress), and confirm Reached with fresh supporting evidence. Fresh reload preserves them. No formation operation calls the transport.
 - Other Explorer sees its own empty state and cannot import the primary saved message. Guide/Admin cannot read or command the Explorer feature. Successful synthetic transport calls remain one.
 - A real pre-revoked application-session binding is rejected using the still-valid real provider JWT. This is a persisted revocation-state check, not a live revocation race.
 - A separate other-Explorer send invokes a synthetic transport that logs out that exact real application session through the banked logout writer and then throws. The engine returns unavailable and fresh reads deny. Root's postgres receipt must verify failed terminal closure/no reply/no pending pointer; the test cannot read private state through an ended session and adds no privilege to do so.
 - Before primary logout, installed Playwright launches only the exact Root-pinned existing Chrome path, headless, with a fresh nonpersistent context. Actual already-published cookies are added privately. No route interception, mocked HTTP response, persistent profile, trace/video or cookie/token logging is used. Real HTTP GET displays the persisted explicitly synthetic reply and disables sending while production provider activation remains held. Four real browser POST commands add a second Compass from the owned saved AI reply, explicitly change Priority while retaining the first point as attention, choose a second private Waypoint and confirm Reached with supporting evidence. Reload preserves both points, the independent Priority/attention and both reached Waypoints. Primary totals become ten operations and revision eleven; no synthetic transport redispatch occurs.
-- The real browser captures full-page screenshots at desktop 1280x900 and narrow 390x844 under exactly `C:\_Apollo\Projects\Solmind\.validation\explorer-conversation-20261024-r01\real-browser-r03\desktop-1280x900.png` and `...\narrow-390x844.png`. Existing screenshot files cause a stop before browser launch; nothing is overwritten or removed. For screenshots it may create only this owned directory, and it always closes its browser in `finally`. A separate fresh anonymous browser context verifies actual UI denial without saved history, synthetic reply or Guide-private canary. Screenshots require Root's subsequent visual inspection before any layout assurance claim.
+- The real browser captures full-page screenshots at desktop 1280x900 and narrow 390x844 under exactly `C:\_Apollo\Projects\Solmind\.validation\explorer-conversation-20261024-r01\real-browser-r04\desktop-1280x900.png` and `...\narrow-390x844.png`. Existing screenshot files cause a stop before browser launch; nothing is overwritten or removed. For screenshots it may create only this owned directory, and it always closes its browser in `finally`. A separate fresh anonymous browser context verifies actual UI denial without saved history, synthetic reply or Guide-private canary. Screenshots require Root's subsequent visual inspection before any layout assurance claim.
 - The primary logout uses the banked real provider identify, provider-to-account lookup and exact session-ending capability. Retained cookies then fail fresh authentication/read/command. This proves database logout binding and refusal; provider-token sign-out and HTTP/UI cookie-clearing are outside this test.
 
 ## Required separate Root postgres readback
@@ -138,8 +138,40 @@ No shared demo data/passwords, shared database migration, real AI credential or
 provider call was used. The production dependency factory remains provider-held.
 Before genuine AI activation, approved operational policy/crisis/methodology
 configuration and context/exclusion/safety acceptance remain required. In
-particular, the narrow supportNow-only context omits the other five onboarding
-answers, including doNotEmphasize; this synthetic proof cannot accept that
-omission for real AI use. S03A's narrower field/byte limits still apply and can
+particular, the original R03 proof used supportNow-only context and could not
+accept that omission for real AI use. The same-scope follow-through changes the
+context builder and opt-in assertions to include all six existing submitted
+continuity fields, including doNotEmphasize, under one real intake UUID, while
+keeping Guide-private and other-Explorer canaries absent. Required blanks reject;
+optional blanks omit. The compact selection revision is
+wi007-v0.1+onboarding-fields-v2; exact historical replay remains before the builder.
+The follow-through R04 test passed at03:06:57CDT in14.19seconds (14.81seconds
+total). It asserted all six actual fields and one actual intake UUID; fresh real
+Auth/cookies, SQL, browser commands/reload, role denial, exact replay and logout
+passed with explicitly fake AI transport. Vitest suppressed console metadata for
+the passing test. Root separately read the actual first-send snapshot, message
+and intake facts and independently reconstructed compact context in Python; its
+SHA-256 exactly matched the persisted context fingerprint. No captured-stdout
+claim substitutes for that receipt. Thirteen independent SQL conditions and the
+additional source/version/hash checks passed in CONTEXT_REAL_READBACK_R04.json.
+Root inspected new real-browser-r04 desktop/narrow images with no visible clipping
+observed; this is not comprehensive accessibility certification.
+
+The new startup took403.975seconds within its predeclared900-second budget. The
+earlier240-second startup timed out before the test; Root observed that deadline
+20seconds late and closed its exact resources. A first fixture connection lacked
+the required session marker and was rejected before writes; Root verified empty
+state and supplied the prescribed marker on the corrected connection. Both failed
+receipts remain retained. DB_SOURCE_MAPPING_R03.json maps all49 migration inputs:
+48 raw-identical, and the final input retains one extra terminal blank line versus
+published SQL, with all statements byte-identical under the reviewed EOF mapping.
+No full SQL assertion rerun is claimed for this context-only correction.
+
+RESOURCE_CLOSEOUT_R04.json passed03:11:18CDT: owned app/Chrome/containers/disposable
+volume/network gone; three original shared volume identities unchanged; no running
+containers. All filesystem evidence is retained; Docker is no longer required by
+this proof. Publication remains conditional on the separate context banking
+receipt at PUBLICATION_CONTEXT_R02/STATUS_CLOSEOUT.json under the proposal root.
+S03A's narrower field/byte limits still apply and can
 refuse an oversized configuration/intake/history without preparing a turn.
 No inference cost, availability, model quality or safety behavior was measured.

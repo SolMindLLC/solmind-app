@@ -523,6 +523,7 @@ function parseContinuityCandidates(
 
   const approved: ApprovedContinuityItem[] = [];
   const allIdentities = new Set<string>();
+  const onboardingFields = new Map<string, Set<ExplorerOnboardingContinuityField>>();
   const allOrders = new Set<number>();
 
   for (const candidate of value) {
@@ -576,7 +577,21 @@ function parseContinuityCandidates(
     if (parseUuid(object.continuityBindingId) !== binding.continuityBindingId) {
       fail("explorer_context_invalid_role_alignment");
     }
-    if (allIdentities.has(sourceId)) {
+    // Intake answers are fields of one real response-set row, not separate
+    // source rows. Only this validated family may qualify identity by field.
+    // A UUID may still never be reused across source families.
+    if (object.kind === "onboarding_answer") {
+      if (!EXPLORER_ONBOARDING_CONTINUITY_FIELDS.includes(object.field as ExplorerOnboardingContinuityField)) {
+        fail("explorer_context_invalid_candidate_kind");
+      }
+      const fields = onboardingFields.get(sourceId);
+      if ((allIdentities.has(sourceId) && !fields) || fields?.has(object.field as ExplorerOnboardingContinuityField)) {
+        fail("explorer_context_duplicate_source");
+      }
+      const updated = fields ?? new Set<ExplorerOnboardingContinuityField>();
+      updated.add(object.field as ExplorerOnboardingContinuityField);
+      onboardingFields.set(sourceId, updated);
+    } else if (allIdentities.has(sourceId)) {
       fail("explorer_context_duplicate_source");
     }
     if (allOrders.has(order)) {

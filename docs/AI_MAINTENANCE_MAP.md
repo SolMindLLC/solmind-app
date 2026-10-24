@@ -575,11 +575,16 @@ status belong to `solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md` and
 | `supabase/migrations/20261024000000_explorer_conversation_composition.sql` | Private persistence and AV2/v2 successor evidence, atomic ordered message/snapshot/invocation/audit preparation, pending/revision controls, closed settlement and formation commands; no provider I/O. |
 | `tests/browser/explorerConversation.pw.ts` and co-located feature tests | Authored browser/fake and focused contract cases. Their existence is not passing execution, real database/provider proof or source assurance. |
 
-Context requires injected trusted versioned configuration. Its first allowlist
-is actual `supportNow` with one intake response-set source, the last 24 saved
-owned current-conversation messages and the immediate turn. The other five
-intake answers, prior sessions, Reflections, summaries and Guide-private data
-are omitted. Source IDs and required prompt, policy, behavior, crisis, role,
+Context requires injected trusted versioned configuration. Its submitted intake
+allowlist is `supportNow`, `usefulOutcome`, `supportStyle`, `guideContext`,
+`communicationPreference`, `doNotEmphasize`, in that order, with required blanks
+rejected and optional blanks absent. The actual response-set UUID is qualified by
+approved field inside S03A, but appears once in physical source evidence. Duplicate
+fields and cross-kind UUID reuse reject. Serialized selection revision is
+`wi007-v0.1+onboarding-fields-v2`. The last24 owned current-conversation messages
+and immediate turn remain; prior sessions, Reflections, summaries and Guide-private
+data stay omitted. Explorer preferences do not populate Guide guardrails.
+Source IDs and required prompt, policy, behavior, crisis, role,
 instruction and methodology bindings remain explicit. Original v1 evidence
 is not retrospectively enriched or sufficient for dispatch.
 

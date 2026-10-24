@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
   createExplorerConversationContextBuilder,
+  EXPLORER_CONVERSATION_CONTEXT_SELECTION_VERSION,
   type ExplorerConversationContextConfiguration,
 } from "./explorerConversationContext";
 import type {
@@ -36,9 +37,9 @@ function authority() {
     authorizationVersion, onboarding: {
       responseId: uuid(14), answers: {
         supportNow: "I want to make room for a calmer morning.",
-        usefulOutcome: "OMITTED_USEFUL_OUTCOME", supportStyle: "OMITTED_SUPPORT_STYLE",
-        guideContext: "OMITTED_GUIDE_CONTEXT", communicationPreference: "OMITTED_COMMUNICATION_PREFERENCE",
-        doNotEmphasize: "OMITTED_DO_NOT_EMPHASIZE",
+        usefulOutcome: "I want to find one useful next step.", supportStyle: "Reflection with a gentle pace.",
+        guideContext: "I prefer to start with my own words.", communicationPreference: "Brief and clear.",
+        doNotEmphasize: "Please do not focus on productivity.",
       },
     }, requiredConsentDocumentIds: [uuid(16), uuid(15)],
   };
@@ -101,15 +102,16 @@ describe("Explorer conversation actual S03A/S03C context composition (synthetic 
     expect(f.mutate).not.toHaveBeenCalled();
   });
 
-  it("includes actual supportNow with its one response-set source and omits the other five intake answers", async () => {
+  it("includes the six submitted continuity fields under one real response-set source", async () => {
     const f = fixture();
     const result = await f.build(f.input);
     const context = assembled(result.request.authorizedContext);
-    expect(context.approvedContinuity).toEqual([{
+    expect(context.approvedContinuity).toEqual(Object.entries(authority().onboarding.answers).map(([field, content], order) => ({
       kind: "onboarding_answer", sourceId: authority().onboarding.responseId,
-      order: 0, field: "supportNow", content: authority().onboarding.answers.supportNow,
-    }]);
-    expect(result.request.authorizedContext).not.toContain("OMITTED_");
+      order, field, content,
+    })));
+    expect(context.contractVersion).toBe(EXPLORER_CONVERSATION_CONTEXT_SELECTION_VERSION);
+    expect((result.evidence.p_context_source_ids as string[]).filter(id => id === authority().onboarding.responseId)).toHaveLength(1);
     expect(context.sessionContext).toMatchObject({
       explorerId: authority().explorerId, sessionId: ids.conversationId,
       continuityBindingId: authority().relationshipId, activeFocusItems: [],
@@ -160,7 +162,54 @@ describe("Explorer conversation actual S03A/S03C context composition (synthetic 
     expect(result.evidence.p_context_source_ids).toEqual([
       ids.messageId, f.config.methodologyContextPackVersionId, authority().onboarding.responseId,
     ].sort());
-    expect(context.approvedContinuity).toHaveLength(1);
+    expect(context.approvedContinuity).toHaveLength(6);
+  });
+
+  it("skips blank optional answers and assigns dense banked order independently of JSON key order", async () => {
+    const facts = authority();
+    facts.onboarding.answers = {
+      doNotEmphasize: "Keep the focus on reflection.", communicationPreference: " \r\n\t ", guideContext: "",
+      supportStyle: facts.onboarding.answers.supportStyle, usefulOutcome: facts.onboarding.answers.usefulOutcome,
+      supportNow: facts.onboarding.answers.supportNow,
+    };
+    const f = fixture({ facts });
+    const result = await f.build(f.input);
+    const context = assembled(result.request.authorizedContext);
+    expect(context.approvedContinuity.map(item => [item.field, item.order])).toEqual([
+      ["supportNow", 0], ["usefulOutcome", 1], ["supportStyle", 2], ["doNotEmphasize", 3],
+    ]);
+    expect(context.sessionContext.explorerSafeGuardrail).toBeNull();
+  });
+
+  it("binds changes in every included preference to new exact context bytes and fingerprint", async () => {
+    const original = fixture();
+    const prior = await original.build(original.input);
+    for (const field of Object.keys(authority().onboarding.answers)) {
+      const facts = authority();
+      facts.onboarding.answers[field as keyof typeof facts.onboarding.answers] += " Changed selection.";
+      const changed = fixture({ facts });
+      const next = await changed.build(changed.input);
+      expect(next.request.authorizedContext).not.toBe(prior.request.authorizedContext);
+      expect(next.request.contextFingerprint).not.toBe(prior.request.contextFingerprint);
+      expect(next.evidence.p_context_source_ids).toEqual(prior.evidence.p_context_source_ids);
+    }
+  });
+
+  it("fails closed on oversized optional preferences without truncating or omitting them", async () => {
+    for (const field of ["guideContext", "communicationPreference", "doNotEmphasize"] as const) {
+      const facts = authority(); facts.onboarding.answers[field] = "x".repeat(2_001);
+      const f = fixture({ facts });
+      await expect(f.build(f.input)).rejects.toMatchObject({ code: "authorized_virtual_guide_context_invalid_context" });
+      expect(f.read).not.toHaveBeenCalled();
+    }
+  });
+
+  it("rejects a changed preference during final authority revalidation", async () => {
+    const initial = authority();
+    const changed = authority(); changed.onboarding.answers.doNotEmphasize = "Changed concurrently.";
+    const f = fixture({ facts: initial, current: { outcome: "ok", authority_context: changed, conversation_state: state() } });
+    await expect(f.build(f.input)).rejects.toMatchObject({ code: "authorized_virtual_guide_context_source_failed" });
+    expect(f.read).toHaveBeenCalledOnce();
   });
 
   it("requires valid snapshot/invocation identities and a distinct immediate-message source", async () => {
@@ -239,12 +288,14 @@ describe("Explorer conversation actual S03A/S03C context composition (synthetic 
     }
   });
 
-  it("lets S03A reject missing or excessive actual supportNow instead of inventing continuity text", async () => {
-    for (const supportNow of [" ", "x".repeat(2_001)]) {
-      const facts = authority(); facts.onboarding.answers.supportNow = supportNow;
-      const f = fixture({ facts });
-      await expect(f.build(f.input)).rejects.toMatchObject({ code: "authorized_virtual_guide_context_invalid_context" });
-      expect(f.read).not.toHaveBeenCalled();
+  it("lets S03A reject missing or excessive required answers instead of inventing continuity text", async () => {
+    for (const field of ["supportNow", "usefulOutcome", "supportStyle"] as const) {
+      for (const content of [" ", "x".repeat(2_001)]) {
+        const facts = authority(); facts.onboarding.answers[field] = content;
+        const f = fixture({ facts });
+        await expect(f.build(f.input)).rejects.toMatchObject({ code: "authorized_virtual_guide_context_invalid_context" });
+        expect(f.read).not.toHaveBeenCalled();
+      }
     }
   });
 

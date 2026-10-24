@@ -146,8 +146,24 @@ localDescribe("REAL isolated Auth/cookies/SQL; SYNTHETIC Virtual Guide transport
     expect(saved.messages.map((message) => message.role)).toEqual(["explorer", "virtualGuide"]);
     expect(saved.messages[1].body).toBe("SYNTHETIC LOCAL TRANSPORT: consider one small step you choose.");
     expect(saved.pendingTurn).toBe(false);
-    expect(captured[0].authorizedContext).toContain("Synthetic support source");
-    for (const excluded of ["Synthetic useful outcome", "Synthetic style", "Synthetic shared answer", "Synthetic preference", "Synthetic excluded topic", "Synthetic Guide Private Canary", "Synthetic other support"]) {
+    const actualContext = JSON.parse(captured[0].authorizedContext);
+    expect(actualContext.contractVersion).toBe(context.EXPLORER_CONVERSATION_CONTEXT_SELECTION_VERSION);
+    expect(actualContext.approvedContinuity.map((item: { field: string; content: string; order: number }) => [item.field, item.content, item.order])).toEqual([
+      ["supportNow", "Synthetic support source", 0], ["usefulOutcome", "Synthetic useful outcome", 1],
+      ["supportStyle", "Synthetic style", 2], ["guideContext", "Synthetic shared answer", 3],
+      ["communicationPreference", "Synthetic preference", 4], ["doNotEmphasize", "Synthetic excluded topic", 5],
+    ]);
+    expect(new Set(actualContext.approvedContinuity.map((item: { sourceId: string }) => item.sourceId)).size).toBe(1);
+    expect(actualContext.approvedContinuity.every((item: { sourceId: string }) => item.sourceId === cid(52))).toBe(true);
+    expect(actualContext.sessionContext.explorerSafeGuardrail).toBeNull();
+    // Synthetic proof metadata only: no cookies, credentials or source text.
+    console.info("ONBOARDING_CONTEXT_PROOF", JSON.stringify({
+      selectionVersion: actualContext.contractVersion,
+      fingerprint: captured[0].contextFingerprint,
+      fields: actualContext.approvedContinuity.map((item: { field: string }) => item.field),
+      intakeSourceId: actualContext.approvedContinuity[0].sourceId,
+    }));
+    for (const excluded of ["Synthetic Guide Private Canary", "Synthetic other support"]) {
       expect(captured[0].authorizedContext).not.toContain(excluded);
     }
     const reloaded = state(await engine.readExplorerConversation(fresh()));
@@ -230,7 +246,7 @@ localDescribe("REAL isolated Auth/cookies/SQL; SYNTHETIC Virtual Guide transport
       import("@playwright/test"), import("node:fs/promises"),
       import("../../src/lib/solmind/explorerConversationContract"),
     ]);
-    const screenshotDirectory = "C:\\_Apollo\\Projects\\Solmind\\.validation\\explorer-conversation-20261024-r01\\real-browser-r03";
+    const screenshotDirectory = "C:\\_Apollo\\Projects\\Solmind\\.validation\\explorer-conversation-20261024-r01\\real-browser-r04";
     const desktopScreenshot = `${screenshotDirectory}\\desktop-1280x900.png`;
     const narrowScreenshot = `${screenshotDirectory}\\narrow-390x844.png`;
     // Preserve an earlier receipt; screenshot creation must not overwrite it.

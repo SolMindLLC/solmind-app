@@ -4,6 +4,12 @@ import {
   composeAuthorizedVirtualGuideContext,
 } from "./authorizedVirtualGuideContext";
 import type { ExplorerConversationDependencies } from "./explorerConversationComposition";
+import { EXPLORER_ONBOARDING_CONTINUITY_FIELDS } from "../context/explorerSafeContext";
+import { SOLMIND_EXPLORER_STRUCTURED_FORM_FIELDS } from "../onboarding";
+
+// Selection revision is serialized into each new context and fingerprint.
+// Historical supportNow-only snapshots keep their original version and bytes.
+export const EXPLORER_CONVERSATION_CONTEXT_SELECTION_VERSION = "wi007-v0.1+onboarding-fields-v2";
 
 type VersionedText = Readonly<{ version: string; text: string }>;
 // Supplied only by a future explicitly approved server activation. This is not
@@ -27,7 +33,8 @@ type Authority = {
   requiredConsentDocumentIds: string[];
 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const FIELDS = ["supportNow", "usefulOutcome", "supportStyle", "guideContext", "communicationPreference", "doNotEmphasize"];
+const FIELDS = EXPLORER_ONBOARDING_CONTINUITY_FIELDS;
+const REQUIRED_FIELDS = new Set(SOLMIND_EXPLORER_STRUCTURED_FORM_FIELDS.filter(field => field.required).map(field => field.key));
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value) &&
     [Object.prototype, null].includes(Object.getPrototypeOf(value));
@@ -78,19 +85,20 @@ export function createExplorerConversationContextBuilder(input: {
     const facts = authority(row.authority_context);
     if (signal?.aborted || facts.accountId !== actor.accountId || facts.applicationSessionId !== actor.applicationSessionId) invalid();
     const binding = { explorerId: facts.explorerId, sessionId: ids.conversationId, continuityBindingId: facts.relationshipId };
-    // Deliberately narrow first context: actual supportNow only. The other five
-    // intake answers, Reflections, summaries, prior conversations and Guide-private
-    // data are omitted; no per-answer source IDs or retrospective evidence invented.
+    // These are the existing submitted continuity fields, in banked form order.
+    // Blank optional answers carry no context. Required blanks remain candidates
+    // so the assembler rejects them; neither text nor per-answer IDs are invented.
+    const selectedFields = FIELDS.filter(field => REQUIRED_FIELDS.has(field) || facts.onboarding.answers[field].trim().length > 0);
     const recent = state.messages.slice(-24);
     const contextInput = {
-      contractVersion: "wi007-v0.1", aiRole: "solmind_virtual_guide", actorRoleContext: "explorer",
+      contractVersion: EXPLORER_CONVERSATION_CONTEXT_SELECTION_VERSION, aiRole: "solmind_virtual_guide", actorRoleContext: "explorer",
       explorerBinding: binding,
       globalPolicy: config.globalPolicy, roleBehavior: config.roleBehavior,
       crisisBehavior: config.crisisBehavior, methodologyContext: config.methodologyContext,
       sessionContext: { sessionType: "explorer_virtual_guide", ...binding, explorerDisplayName: null,
         activeFocusItems: [], nextAppointment: null, explorerSafeGuardrail: null },
-      continuityCandidates: [{ kind: "onboarding_answer", sourceId: facts.onboarding.responseId, order: 0,
-        ...binding, field: "supportNow", content: facts.onboarding.answers.supportNow }],
+      continuityCandidates: selectedFields.map((field, order) => ({ kind: "onboarding_answer",
+        sourceId: facts.onboarding.responseId, order, ...binding, field, content: facts.onboarding.answers[field] })),
       currentSessionMessages: recent.map((message, order) => ({ messageId: message.id, order,
         explorerId: facts.explorerId, sessionId: ids.conversationId,
         role: message.role === "explorer" ? "explorer" : "solmind_virtual_guide", content: message.body })),

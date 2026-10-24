@@ -211,9 +211,14 @@ The server-only owners
 `src/lib/solmind/virtual-guide/explorerConversationContext.ts` compose the
 existing S03A/S03C/S03B contracts. Context requires injected trusted versioned
 policy/behavior/crisis/methodology configuration; no fabricated default pack.
-Include only actual `supportNow`, its intake response-set source, the last
-24 saved owned messages and the immediate message. Omit the other five intake
-answers, prior conversations, summaries, Reflections and Guide-private data.
+Include the six existing submitted onboarding continuity fields in banked form
+order, with required blanks rejected and optional blanks absent, plus the last
+24 saved owned messages and immediate message. Qualify onboarding identity by
+actual response-set UUID and approved field; reject duplicate fields and
+cross-kind UUID reuse. Keep one physical intake UUID in source evidence and
+serialize selection revision `wi007-v0.1+onboarding-fields-v2`. Prior conversations,
+summaries, Reflections and Guide-private data remain omitted. Explorer preferences
+must never masquerade as the Guide-authored `explorerSafeGuardrail`.
 Bind exact compact bytes, fingerprint, source IDs and configuration versions
 to successor evidence before any separately authorized provider attempt.
 

@@ -403,9 +403,13 @@ and checked publication status; source guidance alone supplies no assurance.
 - Keep `src/lib/solmind/virtual-guide/explorerConversationContext.ts`
   server-only and off client barrels. Require injected trusted versioned
   policy/behavior/crisis/methodology configuration with no fake defaults.
-  Reuse S03A and S03C for actual `supportNow` plus its intake source, the last
-  24 saved owned messages and the immediate message. Omit the other five
-  answers and all Guide-private, prior-conversation, Reflection/summary data.
+  Reuse S03A and S03C for the six existing submitted continuity fields in banked
+  form order, the last24 owned messages and immediate message. Required blanks
+  reject; optional blanks omit. Only onboarding identity is qualified by real
+  response-set UUID plus approved field; duplicate fields and cross-kind reuse
+  reject. Keep the physical source UUID once and serialize selection revision
+  `wi007-v0.1+onboarding-fields-v2`. Preserve Guide-private, prior-conversation and
+  Reflection/summary exclusions; Explorer preferences are not Guide guardrails.
 - `src/lib/solmind/virtual-guide/explorerConversationComposition.ts` binds
   exact compact serialization/fingerprint, canonical source IDs and required
   versions to new AV2/v2 preparation before a single authorized dispatch.

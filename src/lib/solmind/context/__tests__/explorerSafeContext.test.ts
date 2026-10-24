@@ -568,6 +568,64 @@ describe("PRJ01_R-WS09-WI021-S03A Explorer-safe context kernel", () => {
     }
   });
 
+  it("preserves six distinct approved fields of one real intake source", () => {
+    const input = validInput();
+    const base = (input.continuityCandidates as Array<Record<string, unknown>>)[3];
+    input.continuityCandidates = EXPLORER_ONBOARDING_CONTINUITY_FIELDS.map((field, order) => ({
+      ...base, order, field, content: `Submitted ${field}`,
+    }));
+    const result = assembleExplorerSafeContext(input);
+    expect(result.context.approvedContinuity).toEqual(EXPLORER_ONBOARDING_CONTINUITY_FIELDS.map((field, order) => ({
+      kind: "onboarding_answer", sourceId: IDS.onboarding, order, field, content: `Submitted ${field}`,
+    })));
+    expect(JSON.parse(result.serialized).approvedContinuity).toEqual(result.context.approvedContinuity);
+  });
+
+  it("rejects duplicate intake fields even when their order or content differs", () => {
+    const input = validInput();
+    const base = (input.continuityCandidates as Array<Record<string, unknown>>)[3];
+    input.continuityCandidates = [{ ...base, order: 0 }, { ...base, order: 1, content: "Different text" }];
+    expectCode(input, "explorer_context_duplicate_source");
+  });
+
+  it("rejects intake UUID reuse across every other source family in either order", () => {
+    for (let family = 0; family < 3; family += 1) {
+      for (const onboardingFirst of [false, true]) {
+        const input = validInput();
+        const candidates = input.continuityCandidates as Array<Record<string, unknown>>;
+        const other = { ...candidates[family], sourceId: IDS.onboarding };
+        const intake = { ...candidates[3] };
+        input.continuityCandidates = (onboardingFirst ? [intake, other] : [other, intake]).map((item, order) => ({ ...item, order }));
+        expectCode(input, "explorer_context_duplicate_source");
+      }
+    }
+  });
+
+  it("does not collapse the same approved field from two distinct real sources", () => {
+    const input = validInput();
+    const base = (input.continuityCandidates as Array<Record<string, unknown>>)[3];
+    input.continuityCandidates = [{ ...base, order: 0 }, { ...base, sourceId: IDS.snapshot, order: 1 }];
+    expect(assembleExplorerSafeContext(input).context.approvedContinuity.map(item => item.sourceId))
+      .toEqual([IDS.onboarding, IDS.snapshot]);
+  });
+
+  it("retains field validation, binding, ordering and text limits for shared intake identity", () => {
+    for (const [change, code] of [
+      [{ field: "unknown_field" }, "explorer_context_invalid_candidate_kind"],
+      [{ explorerId: IDS.snapshot }, "explorer_context_invalid_role_alignment"],
+      [{ sessionId: IDS.snapshot }, "explorer_context_invalid_role_alignment"],
+      [{ continuityBindingId: IDS.snapshot }, "explorer_context_invalid_role_alignment"],
+      [{ order: 0 }, "explorer_context_invalid_order"],
+      [{ order: 2 }, "explorer_context_invalid_order"],
+      [{ content: "x".repeat(EXPLORER_SAFE_CONTEXT_LIMITS.onboardingAnswerCharacters + 1) }, "explorer_context_text_limit_exceeded"],
+    ] as const) {
+      const input = validInput();
+      const base = (input.continuityCandidates as Array<Record<string, unknown>>)[3];
+      input.continuityCandidates = [{ ...base, order: 0 }, Object.assign({}, base, { field: "supportStyle", order: 1 }, change)];
+      expectCode(input, code);
+    }
+  });
+
   it("rejects duplicate identity, duplicate order, and missing order", () => {
     const duplicateIdentity = validInput();
     const candidates = duplicateIdentity.continuityCandidates as Array<Record<string, unknown>>;

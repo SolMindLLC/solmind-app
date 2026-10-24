@@ -623,9 +623,14 @@ selection exists in this source increment.
 trusted server configuration: methodology pack version ID, prompt/instruction/
 role versions and versioned global policy, role behavior, crisis behavior and
 methodology text. It imports the real S03A assembler and S03C composer.
-Actual `supportNow` is its sole intake content source, using the actual intake
-response-set ID. The other five intake answers, prior conversations,
-Reflections, summaries and Guide-private records are omitted. The last 24
+The six existing submitted onboarding continuity fields use their actual intake
+response-set ID, in banked form order. Required blanks reject; optional blanks
+omit. Only onboarding identity may use (real UUID, approved field); duplicate
+fields and cross-kind UUID reuse reject. The physical UUID appears once in source
+evidence; selection revision `wi007-v0.1+onboarding-fields-v2` is fingerprinted in
+the compact context. Guide-authored guardrails stay separate from Explorer
+preferences. Prior conversations, Reflections, summaries and Guide-private records
+remain omitted. The last 24
 saved owned messages and immediate Explorer message bind to the current
 Explorer/conversation. Final source revalidation rejects revoked or changed
 authority/history. Fingerprint the exact compact assembled bytes and retain
