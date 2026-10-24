@@ -286,6 +286,32 @@ describe("Explorer conversation composition with synthetic ports", () => {
     expect(f.complete.mock.calls.some(([parameters]) => parameters.p_status === "completed")).toBe(false);
   });
 
+  it.each(["completed", "refused", "safety_redirect"])("E19A oversized %s reply settles failed without content, retry or a success write", async finishReason => {
+    const f = fixture();
+    const oversized = Array.from({ length: 301 }, () => "privateoversizedreply").join(" ");
+    f.generate.mockImplementation(async request => ({ ...providerResponse(request), finishReason,
+      assistantMessage: { messageId: ID.providerMessage, role: "solmind_virtual_guide", content: oversized } }));
+    expect(await commandExplorerConversation({ command: send, dependencies: f.dependencies })).toEqual(unavailable);
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.complete.mock.calls).toHaveLength(1);
+    expect(f.complete.mock.calls[0][0]).toMatchObject({ p_status: "failed", p_reply_message_id: null, p_reply_body: null });
+    expect(JSON.stringify(f.complete.mock.calls)).not.toContain("privateoversizedreply");
+    f.read.mockResolvedValueOnce(row({ ...state(), revision: 5 }, "exact_replay"));
+    const replay = await commandExplorerConversation({ command: send, dependencies: f.dependencies });
+    expect(replay.ok).toBe(true);
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.complete).toHaveBeenCalledOnce();
+  });
+
+  it("E19B exactly300 words reach successful persistence unchanged", async () => {
+    const f = fixture(); const content = Array.from({ length: 300 }, () => "calm").join(" ");
+    f.generate.mockImplementation(async request => ({ ...providerResponse(request),
+      assistantMessage: { messageId: ID.providerMessage, role: "solmind_virtual_guide", content } }));
+    expect((await commandExplorerConversation({ command: send, dependencies: f.dependencies })).ok).toBe(true);
+    expect(f.complete.mock.calls).toHaveLength(1);
+    expect(f.complete.mock.calls[0][0]).toMatchObject({ p_status: "completed", p_reply_body: content });
+  });
+
   it("E20 failed terminal persistence stays unavailable without a fabricated saved reply", async () => {
     const f = fixture(); f.complete.mockRejectedValue(new Error("private_database_failure"));
     expect(await commandExplorerConversation({ command: send, dependencies: f.dependencies })).toEqual(unavailable);

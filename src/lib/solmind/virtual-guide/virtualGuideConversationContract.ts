@@ -6,6 +6,7 @@ export const VIRTUAL_GUIDE_CONVERSATION_CONTRACT_VERSION =
 export const VIRTUAL_GUIDE_CONVERSATION_LIMITS = Object.freeze({
   authorizedContextUtf8Bytes: 524_288,
   assistantMessageCharacters: 8_192,
+  assistantMessageWords: 300,
   minimumTimeoutMilliseconds: 10,
   maximumTimeoutMilliseconds: 60_000,
 } as const);
@@ -87,6 +88,7 @@ const SHA256_PATTERN = /^[0-9a-f]{64}$/i;
 const PROHIBITED_TEXT_PATTERN =
   /[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u200b-\u200d\u202a-\u202e\u2060\u2066-\u2069\ufeff]/u;
 const ABORT_SENTINEL = Object.freeze({ kind: "virtual_guide_abort" });
+const ASSISTANT_WORD_SEGMENTER = new Intl.Segmenter("en", { granularity: "word" });
 
 function fail(code: VirtualGuideConversationErrorCode): never {
   throw new VirtualGuideConversationError(code);
@@ -194,6 +196,14 @@ function parseAssistantContent(value: unknown): string {
     VIRTUAL_GUIDE_CONVERSATION_LIMITS.assistantMessageCharacters
   ) {
     fail("virtual_guide_conversation_limit_exceeded");
+  }
+  // Count Unicode word-like segments, including unspaced script and punctuation-
+  // separated words. Reject the whole reply; never truncate or invent a fallback.
+  let words = 0;
+  for (const segment of ASSISTANT_WORD_SEGMENTER.segment(normalized)) {
+    if (segment.isWordLike && ++words > VIRTUAL_GUIDE_CONVERSATION_LIMITS.assistantMessageWords) {
+      fail("virtual_guide_conversation_limit_exceeded");
+    }
   }
   return normalized;
 }

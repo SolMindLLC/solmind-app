@@ -903,3 +903,18 @@ Admin-specific decision and current slice status are owned by
 solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md,
 solmind-docs/execution/12_SolMind_MVP0_Auth_RLS_Decision_Deferral_Register_v0_1.md and
 solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md.
+
+### Provider-held response-length follow-through - 2026-10-24
+
+The S03B response parser enforces the existing canonical 300-word hard cap after
+normalization and the independent 8,192-character check. It counts Unicode
+word-like segments with Intl.Segmenter (en, word), so punctuation-separated words
+and unspaced scripts cannot bypass the cap through whitespace counting. Exactly
+300 segments pass unchanged; 301 rejects the whole reply with the existing
+value-free limit error. Completed, refused and safety_redirect envelopes share
+this boundary. Connected composition settles failure with null reply fields,
+never truncates or invents a fallback, and exact replay does not redispatch.
+The response shape and wire version stay unchanged. This deterministic guard
+does not prove the 40-150-word target, one question, semantic pacing,
+classification, crisis handling or genuine model safety. No provider, environment,
+factory, SQL, shared database or context-source behavior is activated or widened.

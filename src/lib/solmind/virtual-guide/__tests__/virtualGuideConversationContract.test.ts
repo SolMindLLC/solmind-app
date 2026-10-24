@@ -142,6 +142,32 @@ describe("virtualGuideConversationContract", () => {
     expect(Object.isFrozen(parsed.assistantMessage)).toBe(true);
   });
 
+  it.each(["completed", "refused", "safety_redirect"])("VGC-006A accepts exactly300 words for %s without truncation", finishReason => {
+    const content = Array.from({ length: 300 }, () => "calm").join("\n");
+    const parsed = parseVirtualGuideConversationResponse(response({ finishReason,
+      assistantMessage: { messageId: IDS.message, role: "solmind_virtual_guide", content },
+    }), IDS.invocation);
+    expect(parsed.assistantMessage.content).toBe(content);
+  });
+
+  it.each([
+    Array.from({ length: 301 }, () => "calm").join(" "),
+    Array.from({ length: 301 }, () => "calm").join(","),
+    Array.from({ length: 301 }, () => "calm").join("\u00a0"),
+    "你好。".repeat(301),
+  ])("VGC-006B rejects over300 Unicode word-like segments below the character cap", content => {
+    expect(content.length).toBeLessThan(8192);
+    expect(() => parseVirtualGuideConversationResponse(response({
+      assistantMessage: { messageId: IDS.message, role: "solmind_virtual_guide", content },
+    }), IDS.invocation)).toThrowError("virtual_guide_conversation_limit_exceeded");
+  });
+
+  it("VGC-006C retains the independent character cap for one unbroken token", () => {
+    expect(() => parseVirtualGuideConversationResponse(response({
+      assistantMessage: { messageId: IDS.message, role: "solmind_virtual_guide", content: "a".repeat(8193) },
+    }), IDS.invocation)).toThrowError("virtual_guide_conversation_limit_exceeded");
+  });
+
   it("VGC-007 rejects response over-disclosure, role drift, and invocation drift", () => {
     for (const candidate of [
       response({ provider: "hidden-provider" }),
