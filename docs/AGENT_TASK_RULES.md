@@ -778,3 +778,46 @@ to the future governed caller and storage flow. There is no provider, environmen
 HTTP, database, timer, log, UI or factory wiring in this contract. A parsed pass
 cannot activate a pack. Preserve the independent provider-held factory and the
 existing response-length guard. Focused tests use artificial data only.
+
+
+### Dormant methodology storage foundation - 2026-10-24
+
+`supabase/migrations/20261024010000_methodology_storage_foundation.sql`
+creates only the logical methodology pack and immutable version tables, one
+internal invoker trigger and their constraints. Typed scope foreign keys,
+same-pack version/predecessor links, exact UTF-8 content digest, immutable
+content/provenance and once-set screen/Admin/Guide/effective evidence are
+structural controls. Both tables enable RLS with zero policies. Explicit schema,
+table and trigger-function revocations deny PUBLIC, anon, authenticated and
+service_role access, including inherited creation defaults. No workflow RPC,
+service-role DML grant, seed, actual screen, actor approval or active data exists.
+
+The owner-written test fixtures prove structure only. An FK-valid session/audit
+record does not prove current role authority, event semantics or actual model
+screening. An owner can structurally select a draft active pointer; the missing
+closed workflow must enforce approved status and exact scope before any runtime
+use. The schema is dormant and cannot safely activate methodology by itself.
+Owner/superuser powers are not represented as RLS protection.
+
+Existing context snapshots, legacy/v1 and synthetic v2 writers and fixtures are
+unchanged. No blanket methodology FK or backfill is added: NOT VALID would still
+enforce new writes and break existing arbitrary synthetic UUIDs. A future governed
+successor must bind a real approved version, exact text/digest, screen/Admin/Guide
+and audit evidence prospectively; load/revalidate effective context each new turn,
+preserve old provenance and perform no extra dispatch on exact replay.
+
+`supabase/tests/methodology_storage_foundation_test.sql` adds 67 rollback-only
+structural/ACL/denial/immutability assertions. Normal full SQL regression,
+character validation, current Executor assurance, exact application and checked
+publication remain required. The earlier standalone 67-case draft proof is
+separate from the migration candidate's regression; neither is operational AI
+screening or human approval. Banking is final only when the current purpose
+root's PUBLICATION_METHODOLOGY_STORAGE_R05/STATUS_CLOSEOUT.json is PASS.
+
+Provider/context factory wiring, UI, current request/response contracts, shared
+demo schema/data/passwords and package dependencies stay unchanged. No shared
+database migration, provider activation, external AI or real-user effect follows
+from source publication. Governed registration/screen persistence/closed audit,
+focused Admin review, actual Guide-role checklist/approval, effective-version
+resolution and affected safety/privacy runtime remain unfinished. No new slice
+identity, sprint outcome, forecast, readiness or genuine-AI acceptance credit.
