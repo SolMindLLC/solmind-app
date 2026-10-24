@@ -571,3 +571,26 @@ The response shape and wire version stay unchanged. This deterministic guard
 does not prove the 40-150-word target, one question, semantic pacing,
 classification, crisis handling or genuine model safety. No provider, environment,
 factory, SQL, shared database or context-source behavior is activated or widened.
+
+
+### Provider-held methodology screening contract - 2026-10-24
+
+`src/lib/solmind/virtual-guide/methodologySafetyScreenContract.ts` is a
+direct-import, server-only synchronous data boundary, absent from shared barrels.
+It binds a closed version-UUID/content subject to its exact UTF-8 SHA-256, using
+the existing 24,000-character methodology cap without text normalization. It
+rejects unsafe controls, isolated surrogates, unknown/accessor/proxy properties
+and widened or sparse findings. The closed result permits only pass/review/fail,
+the exact subject digest and at most 16 findings from 18 declared criteria.
+Citations must be exact nonempty subject substrings of at most 512 characters;
+explanations are bounded to 768 characters. Duplicate criterion/excerpt pairs
+and inconsistent outcomes reject. The result is a deeply frozen copy with the
+server-selected version UUID. Errors contain only fixed codes.
+
+This proves structural and byte linkage only. It does not prove semantic truth,
+stored version/scope existence, invocation/policy-version provenance, screening,
+Admin compliance, Guide approval, audit persistence or activation. Those belong
+to the future governed caller and storage flow. There is no provider, environment,
+HTTP, database, timer, log, UI or factory wiring in this contract. A parsed pass
+cannot activate a pack. Preserve the independent provider-held factory and the
+existing response-length guard. Focused tests use artificial data only.
