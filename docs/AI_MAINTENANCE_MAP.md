@@ -1,7 +1,7 @@
 # SolMind App AI Maintenance Map
 
 Version: 0.3.3
-Last Updated: 2026-10-24
+Last Updated: 2026-10-25
 Repo: solmind-app  
 Purpose: Help AI coding assistants safely understand, maintain, and extend the SolMind MVP0 application.
 
@@ -1042,3 +1042,42 @@ at this capture; banking is final only at
 PUBLICATION_GOVERNANCE_R06/STATUS_CLOSEOUT.json PASS in the retained purpose root.
 Default factories/provider/shared demo remain held; no real screen, operational
 human approval, new slice/outcome, genuine-AI acceptance or wider effect follows.
+
+
+### Provider-held exact-field exclusion matcher construction - 2026-10-25
+
+This is current pure proposal construction, NOT validated, assurance-passed,
+applied, published or banked. Current proof belongs to
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md. Earlier governed-workflow
+proof and publication retain their exact payload/date and do not prove this
+increment. The default factory, dispatch path and shared database stay unchanged.
+
+| Owner | Narrow responsibility |
+| --- | --- |
+| src/lib/solmind/virtual-guide/explorerContextExclusionGuard.ts | Pure bounded identifier/whole-field content matcher over supplied context/manifest. |
+| src/lib/solmind/virtual-guide/explorerContextExclusionGuard.test.ts | Artificial clean/contaminated input, binding, hostile shape, normalization and intentional limitation cases. |
+| src/lib/solmind/context/__tests__/explorerSafeContext.test.ts | Root-owned actual S03A forbidden-source/byte-absence canaries. |
+| src/lib/solmind/virtual-guide/explorerConversationContext.test.ts | Root-owned S03C/builder canaries and test-only guard refusal before preparation/provider. |
+
+No concrete denylist source or production composition owner is connected.
+Detailed proof states/counts/results are owned by the test plan, not this map.
+A clear result is only absence of a match in the supplied manifest. It proves
+neither authorization nor index completeness/freshness. Whole-field content
+hashing misses a private passage embedded inside a longer string, paraphrases,
+encoded/Unicode-equivalent variants and content absent from the supplied index.
+Typed isolation, an authoritative relationship-bound hash-only source with final
+revalidation, runtime abort/audit handling and scheduled snapshot/Admin control
+remain necessary before operational exclusion protection is complete.
+
+
+### Pure matcher technical proof update - 2026-10-25 00:22:49 CDT
+
+The preceding R07 unrun labels retain their initial-authorship meaning. Current
+focused149/full4659/typecheck/lint/build checks passed; Root corrected one test
+identity collision under cycle1of2, with original failures retained and no
+matcher/runtime change. Detailed results/limits belong to
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md. Complete-folder Root
+assurance/application/publication remain gated at this capture; banking is final
+only at PUBLICATION_EXCLUSION_R07/STATUS_CLOSEOUT.json PASS in the retained
+purpose root. No authoritative source/freshness, complete exclusion coverage,
+runtime audit/default wiring, scheduled control or genuine AI follows.

@@ -697,3 +697,46 @@ at this capture; banking is final only at
 PUBLICATION_GOVERNANCE_R06/STATUS_CLOSEOUT.json PASS in the retained purpose root.
 Default factories/provider/shared demo remain held; no real screen, operational
 human approval, new slice/outcome, genuine-AI acceptance or wider effect follows.
+
+
+### Provider-held exact-field exclusion matcher construction - 2026-10-25
+
+This is current pure proposal construction, NOT validated, assurance-passed,
+applied, published or banked. Current proof belongs to
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md. Earlier governed-workflow
+proof and publication retain their exact payload/date and do not prove this
+increment. The default factory, dispatch path and shared database stay unchanged.
+
+src/lib/solmind/virtual-guide/explorerContextExclusionGuard.ts is a direct-import
+server-only pure matcher. Keep it off shared/client barrels and unconnected to
+default builders or request factories. Its only input is the exact compact
+S03A serialized context, source IDs, expected binding and supplied manifest.
+It checks excluded UUIDs and exact normalized whole decoded string values;
+normalization is CRLF/CR to LF plus outer trim, without Unicode normalization.
+
+Only private_note, trigger_observation and summary_revision manifest families
+exist here. Reject hostile/malformed/mismatched inputs with the single fixed
+explorer_context_exclusion_unavailable error. Return a new frozen clear/blocked
+result; references stay server-only and content/digests never enter errors.
+No raw-content hashing helper, repository, source loader, timer, provider,
+environment, logging, audit, persistence, classification or mutation capability.
+A clear result is only absence of a match in the supplied manifest. It proves
+neither authorization nor index completeness/freshness. Whole-field content
+hashing misses a private passage embedded inside a longer string, paraphrases,
+encoded/Unicode-equivalent variants and content absent from the supplied index.
+Typed isolation, an authoritative relationship-bound hash-only source with final
+revalidation, runtime abort/audit handling and scheduled snapshot/Admin control
+remain necessary before operational exclusion protection is complete.
+
+
+### Pure matcher technical proof update - 2026-10-25 00:22:49 CDT
+
+The preceding R07 unrun labels retain their initial-authorship meaning. Current
+focused149/full4659/typecheck/lint/build checks passed; Root corrected one test
+identity collision under cycle1of2, with original failures retained and no
+matcher/runtime change. Detailed results/limits belong to
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md. Complete-folder Root
+assurance/application/publication remain gated at this capture; banking is final
+only at PUBLICATION_EXCLUSION_R07/STATUS_CLOSEOUT.json PASS in the retained
+purpose root. No authoritative source/freshness, complete exclusion coverage,
+runtime audit/default wiring, scheduled control or genuine AI follows.

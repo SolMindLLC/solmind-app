@@ -9,7 +9,7 @@
 
 Version: 0.2.3
 Repo: solmind-app  
-Last Updated: 2026-10-24
+Last Updated: 2026-10-25
 Purpose: Define where code should live as the SolMind MVP0 application grows.
 
 ## Core Principle
@@ -2793,3 +2793,51 @@ at this capture; banking is final only at
 PUBLICATION_GOVERNANCE_R06/STATUS_CLOSEOUT.json PASS in the retained purpose root.
 Default factories/provider/shared demo remain held; no real screen, operational
 human approval, new slice/outcome, genuine-AI acceptance or wider effect follows.
+
+
+### Provider-held exact-field exclusion matcher construction - 2026-10-25
+
+This is current pure proposal construction, NOT validated, assurance-passed,
+applied, published or banked. Current proof belongs to
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md. Earlier governed-workflow
+proof and publication retain their exact payload/date and do not prove this
+increment. The default factory, dispatch path and shared database stay unchanged.
+
+The pure input has exactly serializedContext, includedSourceIds, expectedBinding
+and manifest. The compact S03A object must retain its exact canonical bytes,
+twelve output keys, Virtual Guide/Explorer roles and expected Explorer/session/
+relationship continuity binding. Full prior authorized assembly stays mandatory;
+this matcher does not replace or duplicate its complete source allowlist.
+
+Defensive local bounds are 524288 serialized UTF-8 bytes, 256 unique source IDs,
+128 manifest entries with unique entity IDs and JSON nesting at most 64. These
+are matcher input bounds, not production capacity/token policy. Inputs reject
+proxy/accessor/exotic/unknown/symbol/hidden/sparse/extra-array shapes before any
+hostile trap/getter can run. Digests are exactly 64 uppercase hex characters.
+
+Check each excluded UUID against source evidence and every decoded string leaf,
+including embedded identifier text. Content matching hashes each whole decoded
+string leaf after CRLF/CR-to-LF and outer trim only. Identifier-first/manifest
+order is deterministic. Hashes remain request-local ephemeral data; no content,
+digest, assembly or exception cause appears in the frozen result or fixed error.
+No raw hashing export or cache/idempotency fingerprint use is introduced.
+A clear result is only absence of a match in the supplied manifest. It proves
+neither authorization nor index completeness/freshness. Whole-field content
+hashing misses a private passage embedded inside a longer string, paraphrases,
+encoded/Unicode-equivalent variants and content absent from the supplied index.
+Typed isolation, an authoritative relationship-bound hash-only source with final
+revalidation, runtime abort/audit handling and scheduled snapshot/Admin control
+remain necessary before operational exclusion protection is complete.
+
+
+### Pure matcher technical proof update - 2026-10-25 00:22:49 CDT
+
+The preceding R07 unrun labels retain their initial-authorship meaning. Current
+focused149/full4659/typecheck/lint/build checks passed; Root corrected one test
+identity collision under cycle1of2, with original failures retained and no
+matcher/runtime change. Detailed results/limits belong to
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md. Complete-folder Root
+assurance/application/publication remain gated at this capture; banking is final
+only at PUBLICATION_EXCLUSION_R07/STATUS_CLOSEOUT.json PASS in the retained
+purpose root. No authoritative source/freshness, complete exclusion coverage,
+runtime audit/default wiring, scheduled control or genuine AI follows.

@@ -2,6 +2,11 @@ import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
+import {
+  EXPLORER_CONTEXT_EXCLUSION_MATCHER_VERSION,
+  inspectExplorerContextExclusions,
+} from "../../virtual-guide/explorerContextExclusionGuard";
 
 import { SOLMIND_EXPLORER_STRUCTURED_FORM_FIELDS } from "../../onboarding";
 import {
@@ -682,6 +687,43 @@ describe("PRJ01_R-WS09-WI021-S03A Explorer-safe context kernel", () => {
     expect(result.context.immediateExplorerMessage.content).not.toBe(
       "caf\u00e9\nsecond\nline",
     );
+  });
+
+  it.each(["guide_only", "sensitive_observation", "trigger_observation", "safety_review"])(
+    "excludes an actual ineligible Summary section (%s) from object and bytes",
+    (sectionType) => {
+      const input = validInput();
+      const summary = (input.continuityCandidates as Array<Record<string, unknown>>)[1];
+      const canary = `EXCLUDED_SECTION_${sectionType}_D7B9`;
+      summary.sectionType = sectionType;
+      summary.content = canary;
+      const output = assembleExplorerSafeContext(input);
+      expect(output.context.approvedContinuity).toHaveLength(3);
+      expect(JSON.stringify(output.context)).not.toContain(canary);
+      expect(new TextDecoder().decode(new TextEncoder().encode(output.serialized))).not.toContain(canary);
+    },
+  );
+
+  it("detects private content after it contaminates an otherwise eligible S03A field", () => {
+    const canary = "PRIVATE_NOTE_CANARY_9A2B\nsecond line";
+    const manifest = {
+      contractVersion: EXPLORER_CONTEXT_EXCLUSION_MATCHER_VERSION,
+      explorerId: IDS.explorer, relationshipId: IDS.binding,
+      entries: [{ entityType: "private_note", entityId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        normalizedContentSha256: createHash("sha256").update(canary).digest("hex").toUpperCase() }],
+    };
+    const expectedBinding = { explorerId: IDS.explorer, sessionId: IDS.session, relationshipId: IDS.binding };
+    const clear = assembleExplorerSafeContext(validInput());
+    expect(clear.serialized).not.toContain(canary);
+    expect(inspectExplorerContextExclusions({ serializedContext: clear.serialized,
+      includedSourceIds: [IDS.onboarding], expectedBinding, manifest })).toEqual({ status: "clear" });
+    const contaminated = validInput();
+    (contaminated.immediateExplorerMessage as Record<string, unknown>).content = `  ${canary.replace(/\n/g, "\r\n")}  `;
+    const assembled = assembleExplorerSafeContext(contaminated);
+    expect(assembled.context.immediateExplorerMessage.content).toBe(canary);
+    expect(inspectExplorerContextExclusions({ serializedContext: assembled.serialized,
+      includedSourceIds: [IDS.onboarding], expectedBinding, manifest })).toEqual({ status: "blocked",
+      reason: "excluded_content", entityType: "private_note", entityId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" });
   });
 
   it("rejects prohibited control, bidi, and invisible characters", () => {

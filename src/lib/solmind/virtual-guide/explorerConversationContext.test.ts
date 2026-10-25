@@ -14,6 +14,10 @@ import type {
   ExplorerConversationRpcRow,
 } from "./explorerConversationComposition";
 import { EXPLORER_CONVERSATION_VERSION, type ExplorerConversationState } from "../explorerConversationContract";
+import {
+  EXPLORER_CONTEXT_EXCLUSION_MATCHER_VERSION,
+  inspectExplorerContextExclusions,
+} from "./explorerContextExclusionGuard";
 import type { ExplorerSafeContext } from "../context/explorerSafeContext";
 
 const uuid = (number: number) => `00000000-0000-4000-8000-${number.toString(16).padStart(12, "0")}`;
@@ -81,6 +85,83 @@ function fixture(options: {
 function assembled(serialization: string): ExplorerSafeContext {
   return JSON.parse(serialization) as ExplorerSafeContext;
 }
+
+describe("Held exclusion matcher with actual S03A/S03C assembly (injected test wrapper only)", () => {
+  const canary = "GUIDE_PRIVATE_CANARY_58E2";
+  const manifest = Object.freeze({
+    contractVersion: EXPLORER_CONTEXT_EXCLUSION_MATCHER_VERSION,
+    explorerId: authority().explorerId, relationshipId: authority().relationshipId,
+    entries: Object.freeze([Object.freeze({ entityType: "private_note" as const, entityId: uuid(901),
+      normalizedContentSha256: createHash("sha256").update(canary).digest("hex").toUpperCase() })]),
+  });
+  function wrapper(build: NonNullable<ExplorerConversationDependencies["buildContext"]>) {
+    return async (turn: BuildInput) => {
+      const context = await build(turn);
+      const inspection = inspectExplorerContextExclusions({ serializedContext: context.request.authorizedContext,
+        includedSourceIds: context.evidence.p_context_source_ids,
+        expectedBinding: { explorerId: authority().explorerId, sessionId: turn.ids.conversationId,
+          relationshipId: authority().relationshipId }, manifest });
+      if (inspection.status !== "clear") throw new Error("explorer_conversation_context_unavailable");
+      return context;
+    };
+  }
+
+  it.each(["supportNow", "usefulOutcome", "supportStyle", "guideContext", "communicationPreference", "doNotEmphasize"])(
+    "blocks an allowed onboarding field contaminated with private content (%s) before writes or provider",
+    async (field) => {
+      const facts = authority(); facts.onboarding.answers[field as keyof typeof facts.onboarding.answers] = canary;
+      const f = fixture({ facts }); const generate = vi.fn();
+      const result = await commandExplorerConversation({ command: f.input.command, dependencies: {
+        authenticate: async () => actor, repository: { read: f.read, prepare: f.prepare, complete: f.complete, mutate: f.mutate },
+        buildContext: wrapper(f.build), provider: { generate },
+      } });
+      expect(result).toEqual({ ok: false, state: null, error: "unavailable" });
+      expect(JSON.stringify(result)).not.toContain(canary);
+      expect(f.prepare).not.toHaveBeenCalled(); expect(f.complete).not.toHaveBeenCalled(); expect(generate).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["methodology", "history", "immediate"])(
+    "blocks whole-field contamination in %s through the actual builder",
+    async (layer) => {
+      const original = configuration();
+      const config = layer === "methodology" ? { ...original, methodologyContext: { ...original.methodologyContext, text: canary } } : original;
+      const previous = state();
+      const history = layer === "history" ? { ...previous, messages: previous.messages.map((message, index) => index === 0 ? { ...message, body: canary } : message) } : previous;
+      const f = fixture({ config, history });
+      const command = layer === "immediate" ? { ...f.input.command, body: canary } : f.input.command;
+      const generate = vi.fn();
+      const result = await commandExplorerConversation({ command, dependencies: {
+        authenticate: async () => actor, repository: { read: f.read, prepare: f.prepare, complete: f.complete, mutate: f.mutate },
+        buildContext: wrapper(f.build), provider: { generate },
+      } });
+      expect(result).toEqual({ ok: false, state: null, error: "unavailable" });
+      expect(f.prepare).not.toHaveBeenCalled(); expect(generate).not.toHaveBeenCalled();
+    },
+  );
+
+  it("allows a clean actual assembly to reach the existing refused preparation gate", async () => {
+    const f = fixture(); const prepare = vi.fn<ExplorerConversationRepository["prepare"]>().mockResolvedValue({ outcome: "denied", conversation_state: null });
+    const generate = vi.fn();
+    const result = await commandExplorerConversation({ command: f.input.command, dependencies: {
+      authenticate: async () => actor, repository: { read: f.read, prepare, complete: f.complete, mutate: f.mutate },
+      buildContext: wrapper(f.build), provider: { generate },
+    } });
+    expect(result).toEqual({ ok: false, state: null, error: "denied" });
+    expect(prepare).toHaveBeenCalledOnce(); expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("settles exact replay without invoking the injected guard wrapper or provider", async () => {
+    const f = fixture(); f.read.mockResolvedValue({ ...f.row, outcome: "exact_replay" });
+    const build = vi.fn(wrapper(f.build)); const generate = vi.fn();
+    const result = await commandExplorerConversation({ command: f.input.command, dependencies: {
+      authenticate: async () => actor, repository: { read: f.read, prepare: f.prepare, complete: f.complete, mutate: f.mutate },
+      buildContext: build, provider: { generate },
+    } });
+    expect(result.ok).toBe(true); expect(build).not.toHaveBeenCalled();
+    expect(f.prepare).not.toHaveBeenCalled(); expect(generate).not.toHaveBeenCalled();
+  });
+});
 
 describe("Explorer conversation actual S03A/S03C context composition (synthetic repository only)", () => {
   it("builds a real bound request and exact evidence without provider or write capabilities", async () => {

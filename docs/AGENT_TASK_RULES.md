@@ -1,7 +1,7 @@
 # SolMind App Agent Task Rules
 
 Version: 0.2.2
-Last Updated: 2026-10-24
+Last Updated: 2026-10-25
 Repo: solmind-app  
 Purpose: Define safe rules for AI coding agents and AI assistants working on the SolMind MVP0 application.
 
@@ -882,3 +882,45 @@ at this capture; banking is final only at
 PUBLICATION_GOVERNANCE_R06/STATUS_CLOSEOUT.json PASS in the retained purpose root.
 Default factories/provider/shared demo remain held; no real screen, operational
 human approval, new slice/outcome, genuine-AI acceptance or wider effect follows.
+
+
+### Provider-held exact-field exclusion matcher construction - 2026-10-25
+
+This is current pure proposal construction, NOT validated, assurance-passed,
+applied, published or banked. Current proof belongs to
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md. Earlier governed-workflow
+proof and publication retain their exact payload/date and do not prove this
+increment. The default factory, dispatch path and shared database stay unchanged.
+
+Keep this task limited to the pure matcher, adjacent artificial-data tests and
+Root-owned real assembly/builder canaries. A test-injected wrapper is not default
+runtime wiring. Match identifiers before content, with manifest order deciding
+the first blocked result. Identifier text matching is case-insensitive; content
+hashing performs no case folding, Unicode normalization or whitespace collapse.
+Malformed input and a stale/absent authoritative source must never be promoted
+to operational permission by a shaped clear result.
+
+Do not add an audit writer/register change or invent a confirmed incident for
+uncertain input. A later writer needs the exact closed tuple/posture/register
+contract first; do not widen AUD-1. No scheduled scan, page, notification,
+classification, provider or shared-database effect follows from this task.
+A clear result is only absence of a match in the supplied manifest. It proves
+neither authorization nor index completeness/freshness. Whole-field content
+hashing misses a private passage embedded inside a longer string, paraphrases,
+encoded/Unicode-equivalent variants and content absent from the supplied index.
+Typed isolation, an authoritative relationship-bound hash-only source with final
+revalidation, runtime abort/audit handling and scheduled snapshot/Admin control
+remain necessary before operational exclusion protection is complete.
+
+
+### Pure matcher technical proof update - 2026-10-25 00:22:49 CDT
+
+The preceding R07 unrun labels retain their initial-authorship meaning. Current
+focused149/full4659/typecheck/lint/build checks passed; Root corrected one test
+identity collision under cycle1of2, with original failures retained and no
+matcher/runtime change. Detailed results/limits belong to
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md. Complete-folder Root
+assurance/application/publication remain gated at this capture; banking is final
+only at PUBLICATION_EXCLUSION_R07/STATUS_CLOSEOUT.json PASS in the retained
+purpose root. No authoritative source/freshness, complete exclusion coverage,
+runtime audit/default wiring, scheduled control or genuine AI follows.
