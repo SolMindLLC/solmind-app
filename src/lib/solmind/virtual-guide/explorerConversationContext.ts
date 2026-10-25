@@ -6,6 +6,15 @@ import {
 import type { ExplorerConversationDependencies } from "./explorerConversationComposition";
 import { EXPLORER_ONBOARDING_CONTINUITY_FIELDS } from "../context/explorerSafeContext";
 import { SOLMIND_EXPLORER_STRUCTURED_FORM_FIELDS } from "../onboarding";
+import { types } from "node:util";
+import {
+  effectiveMethodologySignalAborted,
+  parseEffectiveMethodologyReadInput,
+  parseEffectiveMethodologyScope,
+  parseEffectiveMethodologySelection,
+  type EffectiveMethodologyScope,
+  type EffectiveMethodologySource,
+} from "./effectiveMethodologyContext";
 
 // Selection revision is serialized into each new context and fingerprint.
 // Historical supportNow-only snapshots keep their original version and bytes.
@@ -24,6 +33,10 @@ export type ExplorerConversationContextConfiguration = Readonly<{
   crisisBehavior: VersionedText;
   methodologyContext: VersionedText;
 }>;
+export type GovernedExplorerConversationContextConfiguration = Omit<
+  ExplorerConversationContextConfiguration,
+  "methodologyContextPackVersionId" | "methodologyContext"
+>;
 type Authority = {
   accountId: string; explorerId: string; relationshipId: string; guideId: string;
   practiceId: string; organizationId: string; applicationSessionId: string;
@@ -138,5 +151,93 @@ export function createExplorerConversationContextBuilder(input: {
       p_behavior_version: config.roleBehavior.version, p_crisis_version: config.crisisBehavior.version,
       p_role_version: config.roleVersion, p_instruction_version: config.instructionVersion,
     }) });
+  };
+}
+
+function governedConfiguration(input: GovernedExplorerConversationContextConfiguration): GovernedExplorerConversationContextConfiguration {
+  function copy(value: unknown, keys: readonly string[]): Record<string, unknown> {
+    if (value === null || typeof value !== "object" || Array.isArray(value) || types.isProxy(value)) invalid();
+    if (![Object.prototype, null].includes(Object.getPrototypeOf(value))) invalid();
+    const ownKeys = Reflect.ownKeys(value);
+    if (ownKeys.length !== keys.length || ownKeys.some(key => typeof key !== "string" || !keys.includes(key))) invalid();
+    const result: Record<string, unknown> = Object.create(null);
+    for (const key of keys) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !descriptor.enumerable || !("value" in descriptor)) invalid();
+      result[key] = descriptor.value;
+    }
+    return result;
+  }
+  try {
+    const raw = copy(input, ["promptVersion", "instructionVersion", "roleVersion", "globalPolicy", "roleBehavior", "crisisBehavior"]);
+    const label = (value: unknown): string => {
+      if (typeof value !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/.test(value)) invalid();
+      return value;
+    };
+    const text = (value: unknown): VersionedText => {
+      const part = copy(value, ["version", "text"]);
+      if (typeof part.text !== "string") invalid();
+      return Object.freeze({ version: label(part.version), text: part.text });
+    };
+    return Object.freeze({
+      promptVersion: label(raw.promptVersion), instructionVersion: label(raw.instructionVersion), roleVersion: label(raw.roleVersion),
+      globalPolicy: text(raw.globalPolicy), roleBehavior: text(raw.roleBehavior), crisisBehavior: text(raw.crisisBehavior),
+    });
+  } catch { return invalid(); }
+}
+
+/**
+ * Prospective governed builder only. The shipped request factory intentionally
+ * supplies neither this builder nor a provider. A real closed SQL source and
+ * governed prepare repository are required before separate activation.
+ */
+export function createGovernedExplorerConversationContextBuilder(input: {
+  repository: ExplorerConversationDependencies["repository"];
+  configuration: GovernedExplorerConversationContextConfiguration;
+  packId: string;
+  expectedScope: EffectiveMethodologyScope;
+  methodologySource: EffectiveMethodologySource;
+}): NonNullable<ExplorerConversationDependencies["buildContext"]> {
+  const config = governedConfiguration(input.configuration);
+  const expectedScope = parseEffectiveMethodologyScope(input.expectedScope);
+  const packId = input.packId;
+  if (typeof packId !== "string" || !UUID.test(packId)) invalid();
+  return async (turn) => {
+    try {
+      const facts = authority(turn.row.authority_context);
+      if (facts.accountId !== turn.actor.accountId || facts.applicationSessionId !== turn.actor.applicationSessionId ||
+          expectedScope.id !== facts.guideId || effectiveMethodologySignalAborted(turn.signal)) invalid();
+      const request = parseEffectiveMethodologyReadInput({
+        actor: turn.actor, packId, expectedScope, ...(turn.signal === undefined ? {} : { signal: turn.signal }),
+      });
+      const load = async () => {
+        if (effectiveMethodologySignalAborted(turn.signal)) invalid();
+        const selection = parseEffectiveMethodologySelection(await input.methodologySource.read(request), { packId, expectedScope });
+        if (effectiveMethodologySignalAborted(turn.signal)) invalid();
+        return selection;
+      };
+      // Never pin methodology to a conversation or to builder construction.
+      // The old synthetic builder still owns the exact S03A/S03C assembly.
+      const selected = await load();
+      const build = createExplorerConversationContextBuilder({
+        repository: input.repository,
+        configuration: {
+          ...config, methodologyContextPackVersionId: selected.versionId,
+          methodologyContext: { version: `methodology:${selected.versionId}`, text: selected.contentMarkdown },
+        },
+      });
+      const context = await build(turn);
+      // S03C has just reread authority/history. Re-resolve methodology before
+      // releasing context; atomic governed SQL preparation closes the remaining
+      // cross-transaction race, including a change after this final read.
+      const current = await load();
+      if (JSON.stringify(current) !== JSON.stringify(selected)) invalid();
+      return Object.freeze({ request: context.request, evidence: Object.freeze({
+        ...context.evidence,
+        p_methodology_context_pack_id: selected.packId,
+        p_methodology_content_sha256: selected.contentSha256,
+        p_methodology_authorization_version: selected.methodologyAuthorizationVersion,
+      }) });
+    } catch { return invalid(); }
   };
 }

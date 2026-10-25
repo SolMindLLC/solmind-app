@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ExplorerConversationRepository } from "../../virtual-guide/explorerConversationComposition";
-import { createExplorerConversationRepository } from "../explorerConversationRepository";
+import { createExplorerConversationRepository, createGovernedExplorerConversationRepository } from "../explorerConversationRepository";
 
 // Synthetic transport-only fixtures: no Supabase client construction, table
 // access, authentication, database, provider or network operation occurs here.
@@ -10,6 +10,8 @@ const ACTOR = Object.freeze({
   accountId: "11111111-1111-4111-8111-111111111111",
   applicationSessionId: "22222222-2222-4222-8222-222222222222",
 });
+
+
 const OPERATION_ID = "33333333-3333-4333-8333-333333333333";
 const CONVERSATION_ID = "44444444-4444-4444-8444-444444444444";
 const MESSAGE_ID = "55555555-5555-4555-8555-555555555555";
@@ -199,5 +201,44 @@ describe("explorerConversationRepository closed transport boundary", () => {
     await expectUnavailable(createExplorerConversationRepository(transport({ data: [ROW], error: hostile }).client).read(ACTOR));
     const row = Object.defineProperty({}, "outcome", { get() { throw new Error(PRIVATE_DETAIL); } });
     await expectUnavailable(createExplorerConversationRepository(transport({ data: [row], error: null }).client).read(ACTOR));
+  });
+});
+
+describe("explicit governed Explorer repository factory (synthetic transport only)", () => {
+  const governedPrepare = Object.freeze({ ...PREPARE,
+    p_logical_operation_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    p_methodology_context_pack_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    p_methodology_content_sha256: "B".repeat(64),
+    p_methodology_authorization_version: `MV1:${"C".repeat(64)}`,
+  });
+
+  it.each(CALLS)("$method retains its closed capability; only prepare uses the governed wrapper", async ({ method, functionName, parameters, invoke }) => {
+    const f = transport(); const repository = createGovernedExplorerConversationRepository(f.client);
+    const expectedFunction = method === "prepare" ? "solmind_prepare_governed_explorer_conversation_turn" : functionName;
+    if (method === "prepare") await repository.prepare(governedPrepare); else await invoke(repository);
+    expect(f.rpc).toHaveBeenCalledExactlyOnceWith(expectedFunction, method === "prepare" ? governedPrepare : parameters);
+    expect(f.accesses).toEqual([]);
+    expect(Object.isFrozen(repository)).toBe(true);
+    expect(Object.keys(repository).sort()).toEqual(["complete", "mutate", "prepare", "read"]);
+  });
+
+  it("does not silently upgrade the existing factory or erase governed evidence", async () => {
+    const legacy = transport(); const governed = transport();
+    await createExplorerConversationRepository(legacy.client).prepare(PREPARE);
+    await createGovernedExplorerConversationRepository(governed.client).prepare(governedPrepare);
+    expect(legacy.rpc.mock.calls[0][0]).toBe("solmind_prepare_explorer_conversation_turn");
+    expect(governed.rpc.mock.calls[0][0]).toBe("solmind_prepare_governed_explorer_conversation_turn");
+    expect(governed.rpc.mock.calls[0][1]).toBe(governedPrepare);
+    expect(governedPrepare.p_methodology_authorization_version).toBe(`MV1:${"C".repeat(64)}`);
+  });
+
+  it("preserves the 12-second bound and fixed transport errors without fallback", async () => {
+    const f = transport(); const signal = new AbortController().signal;
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(signal);
+    f.abortSignal.mockRejectedValueOnce(new Error(PRIVATE_DETAIL));
+    await expectUnavailable(createGovernedExplorerConversationRepository(f.client).prepare(governedPrepare));
+    expect(timeout).toHaveBeenCalledExactlyOnceWith(12_000);
+    expect(f.abortSignal).toHaveBeenCalledExactlyOnceWith(signal);
+    expect(f.rpc).toHaveBeenCalledTimes(1); expect(f.accesses).toEqual([]);
   });
 });

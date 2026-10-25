@@ -2,9 +2,12 @@ import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
   createExplorerConversationContextBuilder,
+  createGovernedExplorerConversationContextBuilder,
   EXPLORER_CONVERSATION_CONTEXT_SELECTION_VERSION,
   type ExplorerConversationContextConfiguration,
 } from "./explorerConversationContext";
+import { commandExplorerConversation } from "./explorerConversationComposition";
+import type { EffectiveMethodologySelection, EffectiveMethodologySource } from "./effectiveMethodologyContext";
 import type {
   ExplorerConversationDependencies,
   ExplorerConversationRepository,
@@ -393,5 +396,201 @@ describe("Explorer conversation actual S03A/S03C context composition (synthetic 
       expect(["explorer_conversation_context_unavailable", "authorized_virtual_guide_context_invalid_context"])
         .toContain((outcome.error as Error).message);
     }
+  });
+});
+
+function governedSelection(): EffectiveMethodologySelection {
+  const contentMarkdown = "Synthetic methodology: ask reflectively and preserve the Explorer's agency.\nThis is test data only.";
+  return {
+    packId: uuid(80), scopeType: "guide", scopeId: authority().guideId, versionId: uuid(81), versionNumber: 1,
+    contentMarkdown, contentSha256: createHash("sha256").update(contentMarkdown, "utf8").digest("hex").toUpperCase(),
+    methodologyAuthorizationVersion: `MV1:${"A".repeat(64)}`,
+  };
+}
+function governedFixture(options: Parameters<typeof fixture>[0] = {}) {
+  const f = fixture(options);
+  const selected = governedSelection();
+  const methodologyRead = vi.fn<EffectiveMethodologySource["read"]>().mockResolvedValue(selected);
+  const higherConfiguration = {
+    promptVersion: f.config.promptVersion, instructionVersion: f.config.instructionVersion, roleVersion: f.config.roleVersion,
+    globalPolicy: structuredClone(f.config.globalPolicy), roleBehavior: structuredClone(f.config.roleBehavior),
+    crisisBehavior: structuredClone(f.config.crisisBehavior),
+  };
+  const factoryInput = {
+    repository: { read: f.read, prepare: f.prepare, complete: f.complete, mutate: f.mutate },
+    configuration: higherConfiguration, packId: selected.packId,
+    expectedScope: { type: "guide" as const, id: selected.scopeId },
+    methodologySource: { read: methodologyRead },
+  };
+  const build = createGovernedExplorerConversationContextBuilder(factoryInput);
+  return { ...f, selected, methodologyRead, factoryInput, build };
+}
+
+describe("governed Explorer context (synthetic SQL-shaped source and policy only)", () => {
+  it("uses exact selected content/version, retains all existing context sources and adds the three governed bindings", async () => {
+    const f = governedFixture(); const result = await f.build(f.input);
+    const context = assembled(result.request.authorizedContext);
+    expect(context.methodologyContext).toEqual({ version: `methodology:${f.selected.versionId}`, text: f.selected.contentMarkdown });
+    expect(context.approvedContinuity).toHaveLength(6); expect(context.currentSessionMessages).toHaveLength(2);
+    expect(context.sessionContext.explorerSafeGuardrail).toBeNull();
+    expect(result.evidence).toMatchObject({
+      p_methodology_context_pack_id: f.selected.packId,
+      p_methodology_context_pack_version_id: f.selected.versionId,
+      p_methodology_content_sha256: f.selected.contentSha256,
+      p_methodology_authorization_version: f.selected.methodologyAuthorizationVersion,
+      p_authorization_version: authorizationVersion,
+    });
+    expect(result.evidence.p_context_source_ids).toEqual([
+      ids.messageId, authority().onboarding.responseId, f.selected.versionId, ...state().messages.map(message => message.id),
+    ].sort());
+    expect(result.request.contextFingerprint).toBe(createHash("sha256").update(result.request.authorizedContext, "utf8").digest("hex").toUpperCase());
+    expect(f.methodologyRead).toHaveBeenCalledTimes(2); expect(f.read).toHaveBeenCalledExactlyOnceWith(actor);
+    expect(f.methodologyRead.mock.calls.map(([request]) => request)).toEqual([
+      { actor, packId: f.selected.packId, expectedScope: f.factoryInput.expectedScope },
+      { actor, packId: f.selected.packId, expectedScope: f.factoryInput.expectedScope },
+    ]);
+    expect(Object.isFrozen(result)).toBe(true); expect(Object.isFrozen(result.evidence)).toBe(true);
+    expect(f.prepare).not.toHaveBeenCalled(); expect(f.complete).not.toHaveBeenCalled(); expect(f.mutate).not.toHaveBeenCalled();
+    for (const identifier of [f.selected.packId, f.selected.methodologyAuthorizationVersion, f.selected.contentSha256, authority().guideId]) {
+      expect(result.request.authorizedContext).not.toContain(identifier);
+    }
+  });
+
+  it("selects a newly current version on the next response without restarting the conversation", async () => {
+    const f = governedFixture(); const first = await f.build(f.input);
+    const nextText = "A changed synthetic method, effective for the next turn.";
+    const next = { ...f.selected, versionId: uuid(82), versionNumber: 2, contentMarkdown: nextText,
+      contentSha256: createHash("sha256").update(nextText, "utf8").digest("hex").toUpperCase(),
+      methodologyAuthorizationVersion: `MV1:${"B".repeat(64)}` };
+    f.methodologyRead.mockResolvedValue(next);
+    const second = await f.build({ ...f.input, command: { ...f.input.command, operationId: uuid(83), body: "Another synthetic turn." } });
+    expect(second.request.sessionId).toBe(first.request.sessionId);
+    expect(second.request.contextFingerprint).not.toBe(first.request.contextFingerprint);
+    expect(second.evidence.p_methodology_context_pack_version_id).toBe(next.versionId);
+    expect(assembled(second.request.authorizedContext).methodologyContext.text).toBe(nextText);
+    expect(first.evidence.p_methodology_context_pack_version_id).toBe(f.selected.versionId);
+    expect(assembled(first.request.authorizedContext).methodologyContext.text).toBe(f.selected.contentMarkdown);
+    expect(f.methodologyRead).toHaveBeenCalledTimes(4);
+  });
+
+  it.each([
+    { versionId: uuid(82) }, { versionNumber: 2 }, { methodologyAuthorizationVersion: `MV1:${"B".repeat(64)}` },
+  ])("refuses final selected-version/proof drift before releasing context: %#", async (change) => {
+    const f = governedFixture();
+    f.methodologyRead.mockResolvedValueOnce(f.selected).mockResolvedValueOnce({ ...f.selected, ...change });
+    await expect(f.build(f.input)).rejects.toThrow("explorer_conversation_context_unavailable");
+    expect(f.methodologyRead).toHaveBeenCalledTimes(2); expect(f.prepare).not.toHaveBeenCalled();
+  });
+
+  it("refuses a newly edited content/digest pair during final selection rather than silently rebuilding", async () => {
+    const f = governedFixture(); const changed = "Different exact synthetic content.";
+    f.methodologyRead.mockResolvedValueOnce(f.selected).mockResolvedValueOnce({ ...f.selected, contentMarkdown: changed,
+      contentSha256: createHash("sha256").update(changed, "utf8").digest("hex").toUpperCase() });
+    await expect(f.build(f.input)).rejects.toThrow("explorer_conversation_context_unavailable");
+    expect(f.methodologyRead).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    { packId: uuid(99) }, { scopeId: uuid(99) }, { scopeType: "practice" },
+    { contentSha256: "F".repeat(64) }, { methodologyAuthorizationVersion: "MV1:invalid" },
+  ])("rejects false scope/digest/authorization data on the first resolver read: %#", async change => {
+    const f = governedFixture(); f.methodologyRead.mockResolvedValue({ ...f.selected, ...change } as EffectiveMethodologySelection);
+    await expect(f.build(f.input)).rejects.toThrow("explorer_conversation_context_unavailable");
+    expect(f.read).not.toHaveBeenCalled(); expect(f.prepare).not.toHaveBeenCalled();
+  });
+
+  it("refuses source failures on initial and final reads without leaking their detail", async () => {
+    for (const final of [false, true]) {
+      const f = governedFixture();
+      if (final) f.methodologyRead.mockResolvedValueOnce(f.selected);
+      f.methodologyRead.mockRejectedValueOnce(new Error("PRIVATE_GOVERNANCE_DETAIL"));
+      await expect(f.build(f.input)).rejects.toThrow("explorer_conversation_context_unavailable");
+      expect(f.prepare).not.toHaveBeenCalled();
+    }
+  });
+
+  it("refuses another Guide's configured scope and a mismatched actor before any methodology lookup", async () => {
+    const f = governedFixture();
+    const otherScope = createGovernedExplorerConversationContextBuilder({ ...f.factoryInput, expectedScope: { type: "guide", id: uuid(99) } });
+    await expect(otherScope(f.input)).rejects.toThrow("explorer_conversation_context_unavailable");
+    await expect(f.build({ ...f.input, actor: { ...actor, accountId: uuid(98) } })).rejects.toThrow("explorer_conversation_context_unavailable");
+    expect(f.methodologyRead).not.toHaveBeenCalled(); expect(f.read).not.toHaveBeenCalled();
+  });
+
+  it("preserves existing authority/history final revalidation and never accepts a revoked result", async () => {
+    const f = governedFixture({ current: { outcome: "denied", conversation_state: null } });
+    await expect(f.build(f.input)).rejects.toThrow("explorer_conversation_context_unavailable");
+    expect(f.methodologyRead).toHaveBeenCalledTimes(1); expect(f.read).toHaveBeenCalledOnce();
+    expect(f.prepare).not.toHaveBeenCalled();
+  });
+
+  it("copies higher policy and trusted scope at construction while selecting methodology per turn", async () => {
+    const f = governedFixture();
+    const originalPolicy = structuredClone(f.factoryInput.configuration.globalPolicy);
+    (f.factoryInput.configuration.globalPolicy as { text: string }).text = "Changed caller-owned policy";
+    f.factoryInput.expectedScope.id = uuid(99);
+    const result = await f.build(f.input);
+    expect(assembled(result.request.authorizedContext).globalPolicy).toEqual(originalPolicy);
+    expect(f.methodologyRead.mock.calls[0][0].expectedScope.id).toBe(f.selected.scopeId);
+  });
+
+  it("rejects configuration-supplied methodology and executable configuration fields", () => {
+    const f = governedFixture();
+    expect(() => createGovernedExplorerConversationContextBuilder({ ...f.factoryInput,
+      configuration: { ...f.factoryInput.configuration, methodologyContext: { version: "fake", text: "Unreviewed" } } as never,
+    })).toThrow("explorer_conversation_context_unavailable");
+    const getter = vi.fn(() => f.factoryInput.configuration.globalPolicy);
+    const hostile = Object.defineProperty({ ...f.factoryInput.configuration }, "globalPolicy", { enumerable: true, get: getter });
+    expect(() => createGovernedExplorerConversationContextBuilder({ ...f.factoryInput, configuration: hostile })).toThrow("explorer_conversation_context_unavailable");
+    expect(getter).not.toHaveBeenCalled(); expect(f.methodologyRead).not.toHaveBeenCalled();
+  });
+
+  it("cancels before initial lookup and after a resolved lookup without continuing assembly", async () => {
+    const before = governedFixture(); const first = new AbortController(); first.abort();
+    await expect(before.build({ ...before.input, signal: first.signal })).rejects.toThrow("explorer_conversation_context_unavailable");
+    expect(before.methodologyRead).not.toHaveBeenCalled();
+    const after = governedFixture(); const second = new AbortController();
+    after.methodologyRead.mockImplementationOnce(async () => { second.abort(); return after.selected; });
+    await expect(after.build({ ...after.input, signal: second.signal })).rejects.toThrow("explorer_conversation_context_unavailable");
+    expect(after.read).not.toHaveBeenCalled(); expect(after.methodologyRead).toHaveBeenCalledOnce();
+  });
+
+  it("settles exact old-command replay before builder, methodology, prepare or provider work", async () => {
+    const f = governedFixture(); f.read.mockResolvedValue({ ...f.row, outcome: "exact_replay" });
+    f.methodologyRead.mockRejectedValue(new Error("The current methodology must not be needed for old replay"));
+    const generate = vi.fn(); const build = vi.fn(f.build);
+    const result = await commandExplorerConversation({ command: f.input.command, dependencies: {
+      authenticate: async () => actor, repository: f.factoryInput.repository, buildContext: build, provider: { generate },
+    } });
+    expect(result.ok).toBe(true); expect(build).not.toHaveBeenCalled(); expect(f.methodologyRead).not.toHaveBeenCalled();
+    expect(f.prepare).not.toHaveBeenCalled(); expect(f.complete).not.toHaveBeenCalled(); expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("passes the real builder's governed evidence to preparation and stops on a refused gate", async () => {
+    const f = governedFixture();
+    const prepare = vi.fn<ExplorerConversationRepository["prepare"]>().mockResolvedValue({ outcome: "denied", conversation_state: null });
+    const generate = vi.fn();
+    const result = await commandExplorerConversation({ command: f.input.command, dependencies: {
+      authenticate: async () => actor,
+      repository: { ...f.factoryInput.repository, prepare }, buildContext: f.build, provider: { generate },
+    } });
+    expect(result).toEqual({ ok: false, state: null, error: "denied" });
+    expect(prepare).toHaveBeenCalledOnce();
+    expect(prepare.mock.calls[0][0]).toMatchObject({
+      p_methodology_context_pack_id: f.selected.packId, p_methodology_context_pack_version_id: f.selected.versionId,
+      p_methodology_content_sha256: f.selected.contentSha256, p_methodology_authorization_version: f.selected.methodologyAuthorizationVersion,
+    });
+    expect(f.methodologyRead).toHaveBeenCalledTimes(2); expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("a final pointer drift produces no preparation, invocation or invented reply in actual composition", async () => {
+    const f = governedFixture();
+    f.methodologyRead.mockResolvedValueOnce(f.selected).mockResolvedValueOnce({ ...f.selected, versionId: uuid(82), versionNumber: 2 });
+    const generate = vi.fn();
+    const result = await commandExplorerConversation({ command: f.input.command, dependencies: {
+      authenticate: async () => actor, repository: f.factoryInput.repository, buildContext: f.build, provider: { generate },
+    } });
+    expect(result).toEqual({ ok: false, state: null, error: "unavailable" });
+    expect(f.prepare).not.toHaveBeenCalled(); expect(f.complete).not.toHaveBeenCalled(); expect(generate).not.toHaveBeenCalled();
   });
 });

@@ -984,3 +984,61 @@ from source publication. Governed registration/screen persistence/closed audit,
 focused Admin review, actual Guide-role checklist/approval, effective-version
 resolution and affected safety/privacy runtime remain unfinished. No new slice
 identity, sprint outcome, forecast, readiness or genuine-AI acceptance credit.
+
+
+### Provider-held governed methodology construction - 2026-10-24
+
+This successor is current proposal construction, NOT validated, assurance-passed,
+applied, published or banked. Earlier storage/parser/response-length notes retain
+their dated evidence and limits; original global object counts and no-workflow-RPC
+statements describe that earlier foundation, not this additive candidate. Current
+proof/publication status remains owned by
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md and
+solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md.
+
+The initial governed path is one explicit trusted-server-selected Guide-scoped
+pack. Admin-assisted immutable preparation, a bound system screen, focused Admin
+consistency review and the owning Guide's authenticated checklist/approval are
+separate transitions. Other scope kinds refuse; no precedence, merge, fallback,
+direct Guide authoring or new disclosure/retention policy is introduced. A failed
+screen cannot be overridden into effectiveness.
+
+Actual AI screening/inference, an approved operational pack, real human approval,
+shared-demo migration/data, the default context/provider factory and genuine
+connected-demo acceptance remain absent or held. Synthetic fixtures and a shaped
+result are not actual model or human evidence. The approved metadata-only check
+is consumed: credential_absent, no HTTP or inference. No new credential search
+or retry follows. Preserve all existing private-local role-login limits,
+provider boundaries and the 300-word guard.
+
+| Owner | Narrow candidate responsibility |
+| --- | --- |
+| src/lib/solmind/virtual-guide/effectiveMethodologyContext.ts | Closed immutable Guide selection and exact content/digest validation. |
+| src/lib/solmind/supabase/effectiveMethodologySource.ts | One closed resolver RPC with bounded cancellation, no raw table source. |
+| src/lib/solmind/virtual-guide/explorerConversationContext.ts | Separate governed builder; per-turn selection and final authority/history/methodology revalidation; legacy builder retained. |
+| src/lib/solmind/supabase/explorerConversationRepository.ts | Separate governed factory; only prepare changes, not read/complete/mutate. |
+| supabase/migrations/20261024020000_methodology_governed_workflow.sql | Closed registration/read/screen/Admin/Guide transitions, atomic audit/effectiveness, resolver and prospective binding. |
+
+Focused artificial-data proof owners are
+src/lib/solmind/virtual-guide/effectiveMethodologyContext.test.ts,
+src/lib/solmind/supabase/__tests__/effectiveMethodologySource.test.ts,
+src/lib/solmind/virtual-guide/explorerConversationContext.test.ts and
+src/lib/solmind/supabase/__tests__/explorerConversationRepository.test.ts.
+Composition replay/refusal integration belongs in the context test without
+requiring a composition source change. This map supplies no actual result/count.
+
+
+### Governed workflow technical evidence update - 2026-10-24 23:32:36 CDT
+
+The earlier construction/unrun labels are dated authorship state. This candidate
+now has passing focused198/full4582/typecheck/lint/build and51-migration,
+65-file/3400-assertion SQL evidence, including217 governance checks and five
+actual overlap scenarios; zero-fixture/restored-trigger/owned-resource closeout
+also passed. The full evidence, failures, two-cycle reconciliation and precise
+synthetic-versus-genuine limits are owned by
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md. Do not duplicate its
+proof protocol here. Full source assurance/application/publication remain gated
+at this capture; banking is final only at
+PUBLICATION_GOVERNANCE_R06/STATUS_CLOSEOUT.json PASS in the retained purpose root.
+Default factories/provider/shared demo remain held; no real screen, operational
+human approval, new slice/outcome, genuine-AI acceptance or wider effect follows.

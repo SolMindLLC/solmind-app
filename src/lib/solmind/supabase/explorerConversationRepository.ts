@@ -5,6 +5,18 @@ import type { ExplorerConversationRepository, ExplorerConversationRpcRow } from 
 const FAILED = "explorer_conversation_repository_unavailable";
 // This feature executor exposes four closed functions, never a generic select/RPC port.
 export function createExplorerConversationRepository(client: SupabaseClient): ExplorerConversationRepository {
+  return createRepository(client, "solmind_prepare_explorer_conversation_turn");
+}
+
+// This explicit alternative cannot replace or activate the shipped factory.
+// Its only difference is the closed prospective governed preparation capability.
+export function createGovernedExplorerConversationRepository(client: SupabaseClient): ExplorerConversationRepository {
+  return createRepository(client, "solmind_prepare_governed_explorer_conversation_turn");
+}
+
+function createRepository(client: SupabaseClient, prepareFunction:
+  "solmind_prepare_explorer_conversation_turn" | "solmind_prepare_governed_explorer_conversation_turn",
+): ExplorerConversationRepository {
   async function call(name: string, parameters: Readonly<Record<string, unknown>>): Promise<ExplorerConversationRpcRow> {
     try {
       const { data, error } = await client.rpc(name, parameters).abortSignal(AbortSignal.timeout(12_000));
@@ -28,7 +40,7 @@ export function createExplorerConversationRepository(client: SupabaseClient): Ex
       p_operation_id: operation?.operationId ?? null,
       p_command_fingerprint: operation?.fingerprint ?? null,
     }),
-    prepare: (parameters) => call("solmind_prepare_explorer_conversation_turn", parameters),
+    prepare: (parameters) => call(prepareFunction, parameters),
     complete: (parameters) => call("solmind_complete_explorer_conversation_turn", parameters),
     mutate: (parameters) => call("solmind_mutate_explorer_conversation", parameters),
   });

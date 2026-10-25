@@ -1,5 +1,7 @@
 -- SolMind MVP0 dormant methodology storage foundation SQL regression.
--- The migration supplies the two tables; this test does not recreate their DDL.
+-- The foundation migration supplies its two tables; this test does not recreate DDL.
+-- Additive workflow objects are tested separately; foundation counts are name-scoped.
+-- Internal helper denial remains schema-wide, not weakened to one trigger.
 -- Direct-owner synthetic FK/constraint fixtures do not prove Auth sign-in,
 -- active human roles, genuine AI screening, semantic audit validity, human
 -- checklist/approval or operational activation. No real users or provider I/O.
@@ -15,11 +17,13 @@ select plan(67);
 
 select is((select count(*)::integer from pg_catalog.pg_class c
   join pg_catalog.pg_namespace n on n.oid = c.relnamespace
-  where n.nspname = 'methodology' and c.relkind = 'r'), 2,
-  'exactly the two proposed methodology tables exist');
+  where n.nspname = 'methodology' and c.relkind = 'r'
+    and c.relname in ('methodology_context_pack', 'methodology_context_pack_version')), 2,
+  'both named foundation tables remain present after additive workflow');
 select is((select count(*)::integer from pg_catalog.pg_class c
   join pg_catalog.pg_namespace n on n.oid = c.relnamespace
   where n.nspname = 'methodology' and c.relkind = 'r'
+    and c.relname in ('methodology_context_pack', 'methodology_context_pack_version')
     and c.relrowsecurity and not c.relforcerowsecurity), 2,
   'both tables have enabled non-forced RLS');
 select is((select count(*)::integer from pg_catalog.pg_policies
@@ -44,7 +48,7 @@ select ok((select bool_and(not pg_catalog.has_table_privilege(r, c.oid,
   cross join pg_catalog.pg_class c
   join pg_catalog.pg_namespace n on n.oid = c.relnamespace
   where n.nspname = 'methodology' and c.relkind = 'r'),
-  'all three API roles lack effective table privileges on both tables');
+  'all three API roles lack effective table privileges on all methodology tables');
 select ok(not exists(select 1 from pg_catalog.pg_class c
   join pg_catalog.pg_namespace n on n.oid = c.relnamespace
   cross join lateral pg_catalog.aclexplode(coalesce(c.relacl,
@@ -77,11 +81,13 @@ select is((select count(*)::integer from pg_catalog.pg_proc p
   join pg_catalog.pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'methodology' and p.proname = 'guard_methodology_version_immutability'
     and p.prorettype = 'pg_catalog.trigger'::regtype and not p.prosecdef), 1,
-  'the only intended helper is an invoker trigger, not an approval RPC');
-select is((select count(*)::integer from pg_catalog.pg_proc p
+  'the named foundation guard remains an invoker trigger');
+select ok((select bool_and(not pg_catalog.has_function_privilege(r, p.oid, 'EXECUTE'))
+  from unnest(array['anon', 'authenticated', 'service_role']) r
+  cross join pg_catalog.pg_proc p
   join pg_catalog.pg_namespace n on n.oid = p.pronamespace
-  where n.nspname = 'methodology'), 1,
-  'no screen, human approval or activation stub function exists');
+  where n.nspname = 'methodology'),
+  'all methodology internal helpers remain unavailable to API roles');
 
 -- Actual negative role execution supplements effective-privilege inspection.
 set local role anon;

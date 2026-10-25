@@ -2719,3 +2719,77 @@ from source publication. Governed registration/screen persistence/closed audit,
 focused Admin review, actual Guide-role checklist/approval, effective-version
 resolution and affected safety/privacy runtime remain unfinished. No new slice
 identity, sprint outcome, forecast, readiness or genuine-AI acceptance credit.
+
+
+### Provider-held governed methodology construction - 2026-10-24
+
+This successor is current proposal construction, NOT validated, assurance-passed,
+applied, published or banked. Earlier storage/parser/response-length notes retain
+their dated evidence and limits; original global object counts and no-workflow-RPC
+statements describe that earlier foundation, not this additive candidate. Current
+proof/publication status remains owned by
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md and
+solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md.
+
+The initial governed path is one explicit trusted-server-selected Guide-scoped
+pack. Admin-assisted immutable preparation, a bound system screen, focused Admin
+consistency review and the owning Guide's authenticated checklist/approval are
+separate transitions. Other scope kinds refuse; no precedence, merge, fallback,
+direct Guide authoring or new disclosure/retention policy is introduced. A failed
+screen cannot be overridden into effectiveness.
+
+Actual AI screening/inference, an approved operational pack, real human approval,
+shared-demo migration/data, the default context/provider factory and genuine
+connected-demo acceptance remain absent or held. Synthetic fixtures and a shaped
+result are not actual model or human evidence. The approved metadata-only check
+is consumed: credential_absent, no HTTP or inference. No new credential search
+or retry follows. Preserve all existing private-local role-login limits,
+provider boundaries and the 300-word guard.
+
+The effective source's single closed read capability is
+public.solmind_resolve_explorer_methodology. It derives current Explorer,
+account-bound session, relationship/topology, exact owning Guide scope and
+trusted pack; requires the approved effective version, exact immutable digest,
+completed nonfail screen, Admin review, Guide checklist and atomic audits; and
+returns one exact row or a fixed value-free error. MV1 plus 64 uppercase hex
+characters is SQL-derived evidence, not a caller permission token.
+
+The additive governed builder resolves methodology for each new turn with
+configuration version methodology: plus immutable version UUID. It retains
+exact bytes/fingerprint and refuses final pointer/version/content/scope/MV1
+drift. The additive governed repository changes prepare only; browser routes,
+request dependencies, default factories and shared/client barrels stay unchanged.
+
+For new operations the wrapper takes existing authority locks before methodology
+locks, uses READ COMMITTED/bounded contention, rederives selected digest/MV1 and
+calls v2 prepare in the same transaction. Append-only
+methodology.explorer_methodology_binding links the new snapshot to exact
+pack/version/SHA/MV1 under explorer-methodology-governance.v1 before dispatch
+permission. No lock spans provider I/O. No immutable snapshot rewrite or old
+invocation-CHECK widening manufactures governance evidence.
+
+Browser-command replay settles before builder/source loading. Direct governed
+prepare retry must match original full v2 fingerprint and stored governance
+binding after a later version activates; missing/changed binding cannot upgrade
+legacy evidence. Owner/superuser powers are outside RLS protection.
+
+Screen citations/explanations belong on the protected version. Operation/audit
+rows remain closed ID/hash/status or exact catalog metadata. Provenance shape
+is Admin-attested metadata, not rights proof. Caller/policy approval, semantic
+model safety and genuine human actions require actual independent evidence.
+
+
+### Governed workflow technical evidence update - 2026-10-24 23:32:36 CDT
+
+The earlier construction/unrun labels are dated authorship state. This candidate
+now has passing focused198/full4582/typecheck/lint/build and51-migration,
+65-file/3400-assertion SQL evidence, including217 governance checks and five
+actual overlap scenarios; zero-fixture/restored-trigger/owned-resource closeout
+also passed. The full evidence, failures, two-cycle reconciliation and precise
+synthetic-versus-genuine limits are owned by
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md. Do not duplicate its
+proof protocol here. Full source assurance/application/publication remain gated
+at this capture; banking is final only at
+PUBLICATION_GOVERNANCE_R06/STATUS_CLOSEOUT.json PASS in the retained purpose root.
+Default factories/provider/shared demo remain held; no real screen, operational
+human approval, new slice/outcome, genuine-AI acceptance or wider effect follows.
