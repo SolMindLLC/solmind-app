@@ -2841,3 +2841,61 @@ assurance/application/publication remain gated at this capture; banking is final
 only at PUBLICATION_EXCLUSION_R07/STATUS_CLOSEOUT.json PASS in the retained
 purpose root. No authoritative source/freshness, complete exclusion coverage,
 runtime audit/default wiring, scheduled control or genuine AI follows.
+
+
+### Held methodology screening caller construction - 2026-10-25
+
+R08 is held construction, not a tested or activated caller. Detailed evidence
+belongs to solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md.
+The composition and repository are separate direct-import server-only owners.
+
+The repository exposes only readOwnedDraft/prepare/settle over injected rpc:
+solmind_read_methodology_version, solmind_prepare_methodology_screen and
+solmind_record_methodology_screen. Read sends four SQL arguments and locally
+checks expected Guide scope, own preparing Admin, draft status and exact
+content/digest. Only the eleven-key projected draft DTO leaves the full stored
+version record; ordinary unselected columns are not copied or provider-sent.
+There is no table/query/default-client/alternate-RPC capability.
+
+The synchronous trusted builder returns a nonempty exact valid-Unicode request
+body, at most 524288 UTF-8 bytes, without normalization or Promise coercion.
+The frozen request binds fixed task/protocol/provider/model, subject/version,
+policy manifest and exact request hash. Those values attest intended bytes;
+actual approved policy, HTTP correspondence, model envelope/refusal/incomplete/
+usage/cost/budget assurance remain with a later real builder/adapter.
+
+Prepare has exactly ten SQL parameters; settlement exactly seven. A completed
+SQL result has exactly result, subject_sha256 and findings: omit the parser's
+methodologyContextPackVersionId and bind version separately. Completed result
+fail differs from execution failed/null. No extra telemetry or audit field is
+invented outside the existing ports.
+
+Capture functions/configuration before awaiting. Execute once only after fresh
+durable permission. Use linked native caller/transport-abort signals, then drain
+owned work; cancellation/timeout sets a single immutable canceled/failed intent.
+Use independent terminal-cleanup signal/deadline and await one settle. A failed,
+unknown or malformed receipt returns unconfirmed with no changed intent/retry.
+The local repository requests abort after twelve seconds; transport requests
+abort at its explicitly supplied 10-60000ms bound. Neither bounds an
+uncooperative injected promise's wall-time or proves operational capacity.
+
+
+### Held screening caller technical proof - 2026-10-25 01:15:50 CDT
+
+Earlier R08 unrun labels retain their initial-authorship meaning. Current
+269 focused/4826 full tests, type checking, lint and normal build passed.
+The targeted real-SQL/fake-model bridge passed eight cases; exact invocation/
+audit state and no approval/activation were checked. Both disposable databases
+were closed with shared three-volume identities unchanged. Root cycle 1 and
+all initial regression/harness failures are retained. Detailed results and
+limits belong to solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md.
+
+Immediate capability returns must be ordinary native Promises, descriptor-
+checked before await. This does not undo work/resolution inside a trusted port.
+Independent cleanup requests abort at twelve seconds, then owned work drains;
+no real-adapter wall-time or operational latency guarantee is supplied.
+No actual HTTP/model/policy/human approval, active pack, default wiring, audit
+class, telemetry capability or SQL change follows. Current full-folder Root
+assurance/application/publication remain gates. Checked banking becomes final
+only at PUBLICATION_SCREENING_R08/STATUS_CLOSEOUT.json PASS in the retained
+purpose root; no extra slice/outcome/forecast/readiness credit follows.

@@ -924,3 +924,45 @@ assurance/application/publication remain gated at this capture; banking is final
 only at PUBLICATION_EXCLUSION_R07/STATUS_CLOSEOUT.json PASS in the retained
 purpose root. No authoritative source/freshness, complete exclusion coverage,
 runtime audit/default wiring, scheduled control or genuine AI follows.
+
+
+### Held methodology screening caller construction - 2026-10-25
+
+The held screening caller remains initial unvalidated construction; current
+counts/results belong to solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md.
+Keep work within the explicit caller/repository capabilities and their tests.
+
+Copy validated actor/selectors/configuration and capture port functions before
+the first await. Reject hostile factory/input/response shapes with fixed
+value-free outcomes. The trusted synchronous request builder supplies exact
+bytes; the caller neither invents nor defaults a prompt, schema or policy.
+A hash binds accepted bytes and does not prove policy approval or HTTP behavior.
+
+Only fresh ok/dispatch_permitted=true with the exact planned invocation permits
+one execute. Prepare uncertainty never grants takeover; exact replay means no
+execute and no settle. Freeze completed/failed/canceled intent once, project
+the exact SQL result shape and await one independent cleanup settlement.
+Unconfirmed persistence never becomes success, automatic retry or another call.
+No invocation telemetry stamping, new audit class, register change, review/
+approval, provider activation or default runtime wiring belongs in this task.
+
+
+### Held screening caller technical proof - 2026-10-25 01:15:50 CDT
+
+Earlier R08 unrun labels retain their initial-authorship meaning. Current
+269 focused/4826 full tests, type checking, lint and normal build passed.
+The targeted real-SQL/fake-model bridge passed eight cases; exact invocation/
+audit state and no approval/activation were checked. Both disposable databases
+were closed with shared three-volume identities unchanged. Root cycle 1 and
+all initial regression/harness failures are retained. Detailed results and
+limits belong to solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md.
+
+Immediate capability returns must be ordinary native Promises, descriptor-
+checked before await. This does not undo work/resolution inside a trusted port.
+Independent cleanup requests abort at twelve seconds, then owned work drains;
+no real-adapter wall-time or operational latency guarantee is supplied.
+No actual HTTP/model/policy/human approval, active pack, default wiring, audit
+class, telemetry capability or SQL change follows. Current full-folder Root
+assurance/application/publication remain gates. Checked banking becomes final
+only at PUBLICATION_SCREENING_R08/STATUS_CLOSEOUT.json PASS in the retained
+purpose root; no extra slice/outcome/forecast/readiness credit follows.
