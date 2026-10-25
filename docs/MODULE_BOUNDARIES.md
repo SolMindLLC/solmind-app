@@ -2899,3 +2899,45 @@ class, telemetry capability or SQL change follows. Current full-folder Root
 assurance/application/publication remain gates. Checked banking becomes final
 only at PUBLICATION_SCREENING_R08/STATUS_CLOSEOUT.json PASS in the retained
 purpose root; no extra slice/outcome/forecast/readiness credit follows.
+
+
+### Explorer assembly static source isolation construction - 2026-10-25
+
+The local plugin rule
+solmind-explorer-source-isolation/approved-dependencies applies only to the
+eleven exact EXPLORER_SOURCE_PROFILES. Each profile closes runtimeImports and
+typeImports to exact specifier strings. Static imports and reexports are checked;
+unknown profiles deliberately given the rule fail with a fixed message. Keep
+existing Next presets/default ignores and unrelated-file configuration intact.
+
+The two additional composition edges are type-only and erase at build time.
+Mixed declarations, empty named lists, default/namespace values and side-effect
+imports are runtime edges, never vacuous type-only permission. ImportExpression,
+TSImportEqualsDeclaration and TSImportType are conservatively refused. No alias
+or barrel spelling silently expands the graph.
+
+Installed no-restricted-globals runs at error severity on the same profiles,
+with checkGlobalObject true, covering process, module, require, fetch, WebSocket,
+XMLHttpRequest, eval, Function, globalThis, global, window and self. Fixed lint
+messages contain no module/private fixture text and offer no fix or mutation.
+
+This is static source policy, not module-resolution isolation or a JavaScript
+sandbox. It cannot undo trusted-port work, prove injected data/source currency,
+exhaust reflected-code tricks, enforce runtime dispatch abort/audit or certify
+content/semantic safety. Detailed unrun proof is owned by
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md.
+
+
+### Explorer assembly import-boundary technical proof - 2026-10-25 01:50:01 CDT
+
+Earlier R09 unrun labels retain initial-authorship meaning. Current188focused/
+4926full/type/lint/normalbuild checks passed; no correction cycle was needed.
+Actual plugin/config/eleven current modules and parsed negative fixtures were
+tested. Detailed evidence and limits belong to
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md. This is a static source
+boundary, not a sandbox or runtime/source-currentness/audit/model guarantee.
+No productionTypeScript/SQL/provider/default/dependency change. Character/
+Rootformalreview/application/live/publication/checked banking remain gates;
+only PUBLICATION_SOURCE_ISOLATION_R09/STATUS_CLOSEOUT.json PASS is final banking.
+Required productprivacy control does not adopt deferred optional process work
+or add an accepted outcome. Source/currency gaps remain explicit preparation.

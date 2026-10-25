@@ -782,3 +782,37 @@ class, telemetry capability or SQL change follows. Current full-folder Root
 assurance/application/publication remain gates. Checked banking becomes final
 only at PUBLICATION_SCREENING_R08/STATUS_CLOSEOUT.json PASS in the retained
 purpose root; no extra slice/outcome/forecast/readiness credit follows.
+
+
+### Explorer assembly static source isolation construction - 2026-10-25
+
+R09 is an unvalidated proposal for the existing product privacy boundary in
+solmind-docs/execution/04_SolMind_AI_Orchestration_Spec_v1_0.md Section 5.2.
+It is not the deferred optional process-improvement work. Detailed prospective
+checks are owned by solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md.
+
+Keep eslint-rules/explorer-source-isolation.mjs and its local flat configuration
+limited to the eleven explicit EXPLORER_SOURCE_PROFILES. Only their exact
+runtime/type specifiers are permitted; two composition type-only edges erase
+and grant no value import or side effect. Restricted globals apply to those
+profiles only. No default/source/runtime/provider behavior changes.
+
+Static dependency lint is not a JavaScript sandbox or proof that injected data,
+trusted ports or the complete current source index are safe. Typed assembly and
+byte-absence tests remain required; full source/currency, runtime abort/audit,
+scheduled integrity and genuine model controls remain unfinished.
+
+
+### Explorer assembly import-boundary technical proof - 2026-10-25 01:50:01 CDT
+
+Earlier R09 unrun labels retain initial-authorship meaning. Current188focused/
+4926full/type/lint/normalbuild checks passed; no correction cycle was needed.
+Actual plugin/config/eleven current modules and parsed negative fixtures were
+tested. Detailed evidence and limits belong to
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md. This is a static source
+boundary, not a sandbox or runtime/source-currentness/audit/model guarantee.
+No productionTypeScript/SQL/provider/default/dependency change. Character/
+Rootformalreview/application/live/publication/checked banking remain gates;
+only PUBLICATION_SOURCE_ISOLATION_R09/STATUS_CLOSEOUT.json PASS is final banking.
+Required productprivacy control does not adopt deferred optional process work
+or add an accepted outcome. Source/currency gaps remain explicit preparation.

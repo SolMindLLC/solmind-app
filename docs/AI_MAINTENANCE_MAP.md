@@ -1120,3 +1120,34 @@ class, telemetry capability or SQL change follows. Current full-folder Root
 assurance/application/publication remain gates. Checked banking becomes final
 only at PUBLICATION_SCREENING_R08/STATUS_CLOSEOUT.json PASS in the retained
 purpose root; no extra slice/outcome/forecast/readiness credit follows.
+
+
+### Explorer assembly static source isolation construction - 2026-10-25
+
+R09 source isolation is current unvalidated construction. The prospective proof
+catalog belongs to solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md.
+
+| Owner | Narrow responsibility |
+| --- | --- |
+| eslint-rules/explorer-source-isolation.mjs | Frozen eleven-file dependency profiles and fixed-message approved-dependencies rule. |
+| eslint.config.mjs | Existing presets/ignores plus the exact profile-scoped local error rule and installed restricted-global rule. |
+| test/eslint/explorerSourceIsolation.test.ts | Actual plugin/config checks, current-source graph and parse-only hostile mutants. |
+
+No product TypeScript, SQL, route, provider, default factory, dependency,
+CI/service setting or assistant-workflow owner changes. Runtime source coverage,
+currency and exclusion/audit/scheduled controls remain separate unfinished work.
+
+
+### Explorer assembly import-boundary technical proof - 2026-10-25 01:50:01 CDT
+
+Earlier R09 unrun labels retain initial-authorship meaning. Current188focused/
+4926full/type/lint/normalbuild checks passed; no correction cycle was needed.
+Actual plugin/config/eleven current modules and parsed negative fixtures were
+tested. Detailed evidence and limits belong to
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md. This is a static source
+boundary, not a sandbox or runtime/source-currentness/audit/model guarantee.
+No productionTypeScript/SQL/provider/default/dependency change. Character/
+Rootformalreview/application/live/publication/checked banking remain gates;
+only PUBLICATION_SOURCE_ISOLATION_R09/STATUS_CLOSEOUT.json PASS is final banking.
+Required productprivacy control does not adopt deferred optional process work
+or add an accepted outcome. Source/currency gaps remain explicit preparation.
