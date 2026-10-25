@@ -1,4 +1,5 @@
 import "server-only";
+import { types } from "node:util";
 
 export const VIRTUAL_GUIDE_CONVERSATION_CONTRACT_VERSION =
   "virtual-guide-conversation.v1" as const;
@@ -221,6 +222,21 @@ function parseTimeout(value: unknown): number {
   return value as number;
 }
 
+function isOrdinaryTransportPromise(value: unknown): value is Promise<unknown> {
+  // Check the native brand before reflection, without consulting then or a
+  // constructor accessor. Work already started inside the port is not undone.
+  if (
+    !types.isPromise(value) ||
+    Object.getPrototypeOf(value) !== Promise.prototype ||
+    Object.getOwnPropertyDescriptor(value, "then") !== undefined
+  ) {
+    return false;
+  }
+  const constructor = Object.getOwnPropertyDescriptor(value, "constructor");
+  return constructor === undefined ||
+    ("value" in constructor && constructor.value === Promise);
+}
+
 export function parseVirtualGuideConversationRequest(
   input: unknown,
 ): VirtualGuideConversationRequest {
@@ -359,10 +375,19 @@ export async function invokeVirtualGuideConversation(input: {
       { once: true },
     );
   });
+  // Observe this owned rejection even if generate aborts synchronously and
+  // throws or returns an unsupported value before the race can subscribe.
+  void abort.catch(() => undefined);
 
   try {
+    const generated = generate(request, controller.signal);
+    if (!isOrdinaryTransportPromise(generated)) {
+      // Keep the ordinary-error path so an already observed caller cancellation
+      // retains its existing priority over a transport failure.
+      throw new Error("virtual_guide_conversation_invalid_transport_return");
+    }
     const rawResponse = await Promise.race([
-      generate(request, controller.signal),
+      generated,
       abort,
     ]);
     return parseVirtualGuideConversationResponse(

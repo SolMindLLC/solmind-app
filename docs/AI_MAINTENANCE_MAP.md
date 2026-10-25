@@ -1151,3 +1151,42 @@ Rootformalreview/application/live/publication/checked banking remain gates;
 only PUBLICATION_SOURCE_ISOLATION_R09/STATUS_CLOSEOUT.json PASS is final banking.
 Required productprivacy control does not adopt deferred optional process work
 or add an accepted outcome. Source/currency gaps remain explicit preparation.
+
+
+### Virtual Guide immediate transport-return guard construction - 2026-10-25
+
+R10 is current, unvalidated proposal construction for the existing transport
+boundary. Ownership stays narrow:
+
+| Owner | Narrow responsibility |
+| --- | --- |
+| src/lib/solmind/virtual-guide/virtualGuideConversationContract.ts | Ordinary same-realm native Promise guard before race; handled observer on its owned abort sentinel before generate; existing cancellation priority and value-free errors. |
+| eslint-rules/explorer-source-isolation.mjs | Add only node:util after server-only in the contract's existing static profile. |
+| src/lib/solmind/virtual-guide/__tests__/virtualGuideConversationTransportReturn.test.ts | Actual-call hostile immediate-return regressions with plain counted transports. |
+| test/eslint/explorerSourceIsolation.test.ts | Update only the matching exact profile expectation. |
+
+There is no default adapter/provider, timeout, late-drain, replay, policy,
+restricted-state, SQL or dependency change. Internal trusted-port assimilation
+and failures cannot be undone; uncooperative ports may outlive returned outcomes.
+Source/currentness writer participation is preparation, not implementation.
+
+Detailed prospective proof belongs to
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md. All current R10
+checks, counts, durations and results are UNRUN; Root retains formal review,
+exact application, live validation and publication. Checked banking is final
+only when PUBLICATION_TRANSPORT_RETURN_R10/STATUS_CLOSEOUT.json is PASS in
+the retained purpose root. Earlier dated evidence is not current R10 proof.
+
+
+### Virtual Guide transport-return technical proof - 2026-10-25 02:24:15 CDT
+
+Earlier R10 UNRUN statements retain initial-authorship meaning. Current initial
+candidate205focused/4944full/type/lint/normalbuild passed, zero correction
+cycles. Retained R09 pre-guard diagnostic10FAIL/8PASS/oneunhandled demonstrates
+the defect; it is not current candidate evidence. Detailed proof/limits belong
+to solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md. Immediate native
+Promise validation and owned abort observation preserve existing timeout/cancel/
+parser/adapter/composition/replay behavior; no late drain, safety-state/policy,
+SQL/default/provider/dependency change. Characters/Rootformalreview/application/
+live/publication/checked banking remain gates; final banking only at
+PUBLICATION_TRANSPORT_RETURN_R10/STATUS_CLOSEOUT.json PASS. No outcome credit.

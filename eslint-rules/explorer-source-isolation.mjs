@@ -20,6 +20,7 @@ export const EXPLORER_SOURCE_PROFILES = Object.freeze([
   ]),
   profile("src/lib/solmind/virtual-guide/virtualGuideConversationContract.ts", [
     "server-only",
+    "node:util",
   ]),
   profile("src/lib/solmind/virtual-guide/authorizedVirtualGuideContext.ts", [
     "server-only",

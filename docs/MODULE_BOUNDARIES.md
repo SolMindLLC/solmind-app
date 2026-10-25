@@ -2941,3 +2941,43 @@ Rootformalreview/application/live/publication/checked banking remain gates;
 only PUBLICATION_SOURCE_ISOLATION_R09/STATUS_CLOSEOUT.json PASS is final banking.
 Required productprivacy control does not adopt deferred optional process work
 or add an accepted outcome. Source/currency gaps remain explicit preparation.
+
+
+### Virtual Guide immediate transport-return guard construction - 2026-10-25
+
+In the current R10 proposal, virtualGuideConversationContract.ts checks the
+native Promise brand before reflection, then requires exact Promise.prototype,
+no own then descriptor and no own constructor except a data property whose value
+is Promise. This explicitly permits ordinary same-realm native Promises only.
+Shape decisions must not invoke getters, then bodies or proxy traps. Unsupported
+returns use the existing generic transport-failed path, with the existing
+synchronous caller-cancellation priority.
+
+Attach a handled observer to the owned abort-sentinel Promise before generate;
+keep that same Promise in the race. No new await/drain/retry, timeout, replay,
+settlement, policy or restricted-state lifecycle is introduced. The exact static
+profile gains node:util after server-only and no other edge or config change.
+The guard cannot reverse port-internal assimilation/failures, sandbox mutated
+intrinsics or guarantee late drain; an uncooperative port may outlive the outcome.
+SQL, provider/default/dependency and source/currentness implementation are absent.
+
+Detailed prospective proof belongs to
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md. All current R10
+checks, counts, durations and results are UNRUN; Root retains formal review,
+exact application, live validation and publication. Checked banking is final
+only when PUBLICATION_TRANSPORT_RETURN_R10/STATUS_CLOSEOUT.json is PASS in
+the retained purpose root. Earlier dated evidence is not current R10 proof.
+
+
+### Virtual Guide transport-return technical proof - 2026-10-25 02:24:15 CDT
+
+Earlier R10 UNRUN statements retain initial-authorship meaning. Current initial
+candidate205focused/4944full/type/lint/normalbuild passed, zero correction
+cycles. Retained R09 pre-guard diagnostic10FAIL/8PASS/oneunhandled demonstrates
+the defect; it is not current candidate evidence. Detailed proof/limits belong
+to solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md. Immediate native
+Promise validation and owned abort observation preserve existing timeout/cancel/
+parser/adapter/composition/replay behavior; no late drain, safety-state/policy,
+SQL/default/provider/dependency change. Characters/Rootformalreview/application/
+live/publication/checked banking remain gates; final banking only at
+PUBLICATION_TRANSPORT_RETURN_R10/STATUS_CLOSEOUT.json PASS. No outcome credit.

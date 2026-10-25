@@ -29,7 +29,7 @@ const EXPECTED_PROFILES: readonly Profile[] = [
   profile("context/aiRoleContext.ts", ["../roles"]),
   profile("context/explorerContext.ts", []),
   profile("context/explorerSafeContext.ts", ["server-only", "./aiRoleContext", "./explorerContext"]),
-  profile("virtual-guide/virtualGuideConversationContract.ts", ["server-only"]),
+  profile("virtual-guide/virtualGuideConversationContract.ts", ["server-only", "node:util"]),
   profile("virtual-guide/authorizedVirtualGuideContext.ts", ["server-only", "node:crypto",
     "@/lib/solmind/context/explorerSafeContext", "@/lib/solmind/virtual-guide/virtualGuideConversationContract"]),
   profile("virtual-guide/effectiveMethodologyContext.ts", ["server-only", "node:util", "./methodologySafetyScreenContract"],

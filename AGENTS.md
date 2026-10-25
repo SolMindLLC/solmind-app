@@ -816,3 +816,40 @@ Rootformalreview/application/live/publication/checked banking remain gates;
 only PUBLICATION_SOURCE_ISOLATION_R09/STATUS_CLOSEOUT.json PASS is final banking.
 Required productprivacy control does not adopt deferred optional process work
 or add an accepted outcome. Source/currency gaps remain explicit preparation.
+
+
+### Virtual Guide immediate transport-return guard construction - 2026-10-25
+
+R10 is current proposal authorship, not validated, assurance-passed, applied,
+published or banked. Keep the server-only Virtual Guide contract's immediate
+transport return limited to an ordinary same-realm native Promise before it
+enters Promise.race. Observe the owned abort-sentinel rejection before calling
+generate, while preserving existing cancellation priority and generic errors.
+
+The contract's exact static profile gains only node:util after server-only.
+There is no late-drain, timeout, replay, policy, restricted-state, SQL, provider,
+default-factory or dependency change. The guard cannot undo trusted-port work,
+internal assimilation or failures; an uncooperative port may outlive the outcome.
+Source/currentness writer participation remains separate preparation, not an
+implemented complete reader, race protocol or runtime exclusion/audit control.
+
+Detailed prospective proof belongs to
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md. All current R10
+checks, counts, durations and results are UNRUN; Root retains formal review,
+exact application, live validation and publication. Checked banking is final
+only when PUBLICATION_TRANSPORT_RETURN_R10/STATUS_CLOSEOUT.json is PASS in
+the retained purpose root. Earlier dated evidence is not current R10 proof.
+
+
+### Virtual Guide transport-return technical proof - 2026-10-25 02:24:15 CDT
+
+Earlier R10 UNRUN statements retain initial-authorship meaning. Current initial
+candidate205focused/4944full/type/lint/normalbuild passed, zero correction
+cycles. Retained R09 pre-guard diagnostic10FAIL/8PASS/oneunhandled demonstrates
+the defect; it is not current candidate evidence. Detailed proof/limits belong
+to solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md. Immediate native
+Promise validation and owned abort observation preserve existing timeout/cancel/
+parser/adapter/composition/replay behavior; no late drain, safety-state/policy,
+SQL/default/provider/dependency change. Characters/Rootformalreview/application/
+live/publication/checked banking remain gates; final banking only at
+PUBLICATION_TRANSPORT_RETURN_R10/STATUS_CLOSEOUT.json PASS. No outcome credit.
