@@ -53,6 +53,16 @@ export const EXPLORER_SOURCE_PROFILES = Object.freeze([
     "node:util",
     "./effectiveMethodologyContext",
   ], ["./explorerConversationComposition"]),
+  profile("src/lib/solmind/explorerConversationContract.ts", []),
+  profile("src/lib/solmind/virtual-guide/explorerConversationComposition.ts", ["server-only", "node:crypto", "../explorerConversationContract", "./virtualGuideConversationContract"]),
+  profile("src/lib/solmind/virtual-guide/explorerPrivateConfigurationCandidate.ts", ["server-only"]),
+  profile("src/lib/solmind/virtual-guide/explorerPrivateConfiguration.ts", ["server-only", "node:crypto", "node:util", "./explorerPrivateConfigurationCandidate"]),
+  profile("src/lib/solmind/virtual-guide/explorerSafetyReplyContract.ts", ["server-only", "node:crypto"]),
+  profile("src/lib/solmind/virtual-guide/explorerSafetyReplyInvocation.ts", ["server-only", "node:util", "./explorerSafetyReplyContract"]),
+  profile("src/lib/solmind/virtual-guide/explorerConversationSafety.ts", ["server-only", "./explorerSafetyReplyContract"], ["./explorerPrivateConfiguration"]),
+  profile("src/lib/solmind/virtual-guide/openAiLunaExplorerSafetyTransport.ts", ["server-only", "./explorerSafetyReplyContract"], ["./explorerSafetyReplyInvocation"]),
+  profile("src/lib/solmind/virtual-guide/explorerPrivateConversationComposition.ts", ["server-only", "node:crypto", "node:util", "../explorerConversationContract", "./explorerConversationComposition", "./explorerPrivateConfiguration", "./explorerSafetyReplyContract", "./explorerSafetyReplyInvocation", "./explorerConversationSafety"]),
+  profile("src/lib/solmind/supabase/explorerPrivateConversationRepository.ts", ["server-only", "node:util"], ["@supabase/supabase-js", "../virtual-guide/explorerPrivateConversationComposition"]),
 ]);
 
 function selectedProfile(filename) {

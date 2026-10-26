@@ -1,4 +1,6 @@
--- Rollback-only, synthetic SQL contract fixture. UNRUN initial proposal.
+-- Rollback-only synthetic predecessor-body regression under the postgres owner.
+-- The private successor retires direct service-role writes; owner calls below
+-- preserve historical implementation coverage and grant no application capability.
 -- Direct postgres fixtures model a trusted Root request. They do not prove Auth
 -- login, cookie authorization, browser composition or actual provider behavior.
 -- The context/config and terminal reply below are explicitly synthetic. No Auth
@@ -102,8 +104,8 @@ select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid=
   where n.nspname='public' and p.proname in ('solmind_read_explorer_conversation','solmind_prepare_explorer_conversation_turn',
     'solmind_complete_explorer_conversation_turn','solmind_mutate_explorer_conversation')
     and p.prosecdef and has_function_privilege('service_role',p.oid,'EXECUTE')
-    and not has_function_privilege('anon',p.oid,'EXECUTE') and not has_function_privilege('authenticated',p.oid,'EXECUTE')),4,
-  'exact four SECURITY DEFINER RPCs expose only service-role execution');
+    and not has_function_privilege('anon',p.oid,'EXECUTE') and not has_function_privilege('authenticated',p.oid,'EXECUTE')),1,
+  'only the legacy read RPC retains service-role execution; three legacy write RPCs are retired');
 select ok(not has_function_privilege('service_role','ai.solmind_conversation_authority(uuid,uuid,uuid)','EXECUTE'),
   'internal authority helper is not an application RPC');
 

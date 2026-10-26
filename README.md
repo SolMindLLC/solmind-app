@@ -51,6 +51,7 @@ User-facing routes:
 /guide/waypoint-suggestions/[relationshipId]/[suggestedWaypointId]
 /explorer
 /explorer/compass-comparison
+/explorer/conversation
 /explorer/waypoints
 /explorer/waypoints/[suggestedWaypointId]
 ```
@@ -66,6 +67,8 @@ Server route handlers:
 /login/admin/send
 /login/admin/verify
 /logout
+/explorer/conversation/state
+/explorer/conversation/commands
 /guide/waypoint-suggestions/relationships
 /guide/waypoint-suggestions/[relationshipId]/suggestions
 /guide/waypoint-suggestions/[relationshipId]/[suggestedWaypointId]/detail
@@ -95,6 +98,9 @@ Current route purpose:
 | `/guide/explorers/avery/waypoint-suggestions` | Deterministic fixture-backed Human Guide Suggested Waypoint list, draft, Pull Back, sent-detail, and receipt review surface |
 | `/explorer` | Deterministic Explorer onboarding, First Compass, Waypoint, exact-summary review, and non-live Guide-boundary prototype |
 | `/explorer/compass-comparison` | Deterministic Explorer conversation-first review surface with a fixed local Virtual Guide script, Compass and Forming Waypoint, provenance-linked quotations, and three independent sharing explanations |
+| `/explorer/conversation` | Public data-free conversation shell; private state and commands require separate server authorization |
+| `/explorer/conversation/state` | Uncached authenticated Explorer conversation/history read |
+| `/explorer/conversation/commands` | Same-origin bounded JSON command boundary; default AI/provider configuration remains held |
 | `/explorer/waypoints` | Authenticated read-only Explorer Suggested Waypoint inbox over the banked `explorer.list` request composition |
 | `/explorer/waypoints/[suggestedWaypointId]` | Authenticated read-only Explorer Suggested Waypoint detail over the banked `explorer.get` request composition |
 | `/admin/access` | Opaque server-side Admin access probe returning only `{ allowed }` |
@@ -136,6 +142,23 @@ Unbuilt destinations say `Not connected yet`; no sharing action grants access.
 Its typed message composer receives only fixed local replies. It makes no
 provider, persistence, authentication, database, notification, or real-user
 call, and refresh/reset clears its local state.
+
+The separate `/explorer/conversation` shell contains no private server-rendered
+props. Its uncached state read and same-origin JSON commands derive current
+Explorer authority on the server. Browser operation IDs select exact retries;
+they do not identify the actor or authorize a provider call. Private history,
+Compass items and chosen Waypoints have protected persistence owners, while the
+deterministic previews above retain their browser-memory-only behavior.
+
+The default conversation request factory supplies authentication and the retained
+repository, with no provider, context builder or private operational readiness.
+Its deliberate formation method uses the atomic v3 mutation wrapper, which
+requires current known-clear policy; the old write grant stays retired.
+The separate private controller and safety transport require explicitly supplied
+trusted capabilities. Their presence does not activate the browser, approve a
+methodology pack or verify resource contacts. Saved pending work, unknown command
+acknowledgment and transient assistance must not appear as a confirmed saved reply;
+exact replay never authorizes another provider dispatch.
 
 The separate `/explorer/waypoints` route now composes an authenticated,
 read-only inbox and suggestion detail over the server-derived Explorer
@@ -186,24 +209,34 @@ Backend foundations present in the repository (high level):
   source is injected and synthetic in tests. It does not load a concrete
   database, persist a snapshot, create pre-provider audit evidence, select/call
   a model, expose a route, connect the UI, deploy, or affect a real user.
-- Virtual Guide S03D pre-dispatch evidence foundation: one service-role-only,
-  security-definer transaction revalidates the current Explorer account, role,
-  session type/status, onboarding, relationship, single-Guide topology,
-  Practice binding, restricted mode, active/approved Practice and
-  Organization, adult affirmation, and complete active required-consent set,
-  using null-safe comparisons throughout. It then
-  creates exactly one bounded context snapshot, one started model invocation,
-  and two value-free Family E audit rows for one logical operation. Exact retry
-  returns a no-dispatch disposition and creates no duplicate evidence. The
-  function has no provider I/O, route, message persistence, credential reader,
-  deployment, or real-user activation.
-- OpenAI Luna S03E transport adapter: a direct-import, server-only implementation
-  of the S03B transport seam for the Responses API. It fixes model
+- Protected pre-dispatch evidence: security-definer transactions bind current
+  actor/session/role, consent, relationship, Practice/Organization, exact context
+  bytes and immutable provenance before any separately authorized provider call.
+  Historical evidence remains unchanged. The private successor uses AV3 authority
+  with separately bound current conversation policy and governed methodology;
+  AV2 remains a distinct legacy contract. No retained evidence or exact replay
+  grants a second dispatch or operational approval.
+- OpenAI Luna prose transport adapter: a direct-import, server-only implementation
+  of the provider-neutral conversation seam for the Responses API. It fixes model
   `gpt-5.6-luna`, medium reasoning, `store: false`, one endpoint and one bounded
   plain-text response. Tests inject fake HTTP and a deterministic message ID.
   The adapter reads no environment variable, makes no call by itself, is not
-  wired to a route or UI, and must not be invoked unless the S03D transaction returns
-  `created` and the later composition/activation gates also pass.
+  wired to a route or UI. Its legacy predispatch write capability is retired;
+  retained historical receipts cannot authorize a new call. The private safety
+  adapter is a separate boundary with its own protocol and activation gates.
+- Private conversation safety/configuration: server-only literal candidate data
+  is parsed into a copied frozen projection. The candidate contains no operational
+  readiness, actual human approval or approved methodology identity. Pinned fallback
+  helpers and the same-call safety result preserve valid classification separately
+  from candidate prose. The private controller injects governed context, provider,
+  verified rendering and bounded operational-signal capabilities; the default
+  factory supplies none. Structural checks and fake transports cannot prove
+  detection quality, clinical quality, resource suitability or genuine model safety.
+- Closed private conversation repository: six scalar RPC capabilities own read,
+  first-send ensure, fallback observation, governed preparation, terminal settlement
+  and deliberate Compass/Waypoint mutation. The repository accepts an injected
+  server client and exposes no generic select or RPC method. The old browser
+  contract remains separate from the unactivated private result wrapper.
 - Auth/RLS request-auth boundary, real Admin auth-source loading, server-only hardening, and enumerated RPC transport under `src/lib/solmind/auth` and `src/lib/solmind/supabase`.
 - Suggested Waypoint first-write security predecessor: one server-only trusted
   application-origin configuration, one same-origin JSON request guard with a
@@ -249,9 +282,19 @@ Backend foundations present in the repository (high level):
 Important technical boundaries:
 
 - `/admin/access` is an opaque JSON probe that returns only `{ allowed }`. It does not yet mean the `/admin`, `/guide`, or `/explorer` pages are fully protected runtime workflows.
-- Permissive or role-aware RLS policies, grants, and runtime access enforcement remain deferred; RLS stays deny-by-default.
-- Runtime audit persistence exists ONLY for the `/admin/access` boundary: the enumerated `public.solmind_record_audit_event` function writes bounded Auth/RLS rows into `audit.audit_event` (guarded-read row first, then the decision row, both required before an outward allow). No broader audit wiring, no permissive RLS policy, and no table or schema grants exist; the `audit` schema stays off the Data API.
-- The verification, session, provisioning, invitation, Summary-publication, and Shared-Snapshot foundations remain dormant substrate. Provider delivery, application callers, runtime routes, cookie/session bridging, consent, persistent onboarding/Compass/Route/Waypoint state, conversation storage, operational send/expiry timing, and the safety escalation runtime workflow are not yet implemented.
+- Direct application-table access stays deny-by-default. Feature authorization
+  belongs to closed server/request and SQL capabilities; permissive RLS policies
+  or broader table/schema grants require separately reviewed authority.
+- Audit persistence is path-specific. The bounded `/admin/access` writer requires
+  its guarded-read row before the decision row and outward allow. Protected
+  conversation creation, positive-evidence enrichment and policy transitions use
+  their own closed inline accountability tuples. A generic event grants no routine
+  access to private source records; the `audit` schema stays off the Data API.
+- Verification/session callers and local role-login routes are separate from the
+  dormant provisioning, invitation, Summary and Shared Snapshot workflows. Private
+  conversation storage and deterministic formation owners do not establish a
+  genuine AI conversation, complete Route/Waypoint lifecycle, operational timing,
+  safety responder, notification, deployment or real-user workflow.
 - The Explorer prototype does not turn those foundations into a runtime path.
   The additional Explorer persistence owners, application callers, operational
   timing, and genuine server-side Virtual Guide conversation require separately
@@ -269,6 +312,56 @@ Important technical boundaries:
   denial clears the previously displayed page. They do not activate human commands, delivery scheduling,
   worker authorization, providers, deployment, or real-user readiness. All
   server-only S03 owners stay off client/shared barrels.
+
+Protected conversation storage uses `ai.ai_interaction_session`,
+`ai.ai_interaction_message`, immutable `ai.ai_context_snapshot` records and bound
+`ai.ai_model_invocation` provenance, `ai.explorer_conversation_state`,
+`ai.explorer_conversation_operation`, `ai.explorer_conversation_compass_item` and
+`content.waypoint`. The private successor adds nullable/no-backfill policy state
+and `ai.explorer_safety_evidence`. An actually new first-Send container alone may
+initialize clear policy after complete operational configuration and current
+authority; a held configuration or read creates nothing. Existing unknown state
+must not be repaired or replaced with a fresh clear conversation.
+
+Minimum private evidence requires an actual numerical positive observation.
+Level 0 creates no safety row; minor-only 0 uses the distinct monotonic adult-policy
+stop. Private evidence stores no copied conversation text and grants no routine
+Guide/Admin access. Prior private safety records never enter the model context.
+Manual sensitive-content retention and
+closed actor-authorized capabilities remain required. Terminal settlement may
+preserve observed positives after login ends, while final current authority gates
+outward content. One terminal intent is attempted once; unknown acknowledgment
+does not authorize a retry, contradictory post or provider redispatch.
+
+The six private RPC names are fixed:
+
+```text
+public.solmind_read_explorer_conversation_v3
+public.solmind_ensure_explorer_conversation_v3
+public.solmind_observe_explorer_conversation_fallback_v3
+public.solmind_prepare_explorer_conversation_turn_v3
+public.solmind_settle_explorer_conversation_turn_v3
+public.solmind_mutate_explorer_conversation_v3
+```
+
+The private successor retires direct service-role execution of
+`public.solmind_prepare_virtual_guide_predispatch`,
+`public.solmind_prepare_explorer_conversation_turn`,
+`public.solmind_prepare_governed_explorer_conversation_turn`,
+`public.solmind_complete_explorer_conversation_turn` and
+`public.solmind_mutate_explorer_conversation`. The first retirement covers every
+formerly allowed session type. Definitions and historical evidence remain;
+owner-only access and old receipts do not restore a dispatch/write capability.
+The unchanged default factory does not silently switch to the private repository.
+
+Final private preparation inspects the actual allowed onboarding/history/immediate
+sources and excluded source fields under bounded locks. It keeps identity checks
+separate from whole decoded-value matching, preserves actual Summary-section and
+containing-revision provenance, and refuses busy, unknown or overflowing inspection.
+A confirmed exclusion must commit its content-free audit without dispatch evidence.
+Whole-field matching does not prove semantic origin or catch every private fragment
+or paraphrase. Scheduled snapshot-integrity/Admin paging, genuine operational
+configuration, human approval and provider activation remain separate prerequisites.
 
 Authoritative implementation status and exact evidence are tracked in:
 
@@ -320,6 +413,9 @@ src/
     admin/access/route.ts
     guide/page.tsx
     explorer/page.tsx
+    explorer/conversation/page.tsx
+    explorer/conversation/state/route.ts
+    explorer/conversation/commands/route.ts
 
   components/
     solmind/
@@ -327,6 +423,8 @@ src/
       ConversationPreview.tsx
       DashboardCard.tsx
       ExplorerExperiencePrototype.tsx
+      ExplorerConversation.tsx
+      ExplorerConversationFormation.tsx
       ExplorerResponseComposer.tsx
       ExplorerTopicList.tsx
       LoginOptionList.tsx
@@ -344,6 +442,8 @@ src/
       conversation.ts
       dashboardPanels.ts
       explorerExperience.ts
+      explorerConversationContract.ts
+      explorerConversationFormation.ts
       invitations.ts
       loginOptions.ts
       navigation.ts
@@ -357,10 +457,26 @@ src/
       auth/        server-side deny-by-default authorization and the request-auth boundary
       context/     Explorer-facing and AI-role context assembly helpers
       supabase/    server-side Supabase integration (request-auth client, service-role loader, mapping)
+        explorerPrivateConversationRepository.ts  six closed injected private RPC ports
+      virtual-guide/
+        explorerConversationContext.ts  strict legacy and explicit AV3 context entries
+        explorerPrivateConfigurationCandidate.ts  inert server-only literal candidate
+        explorerPrivateConfiguration.ts  copied/frozen candidate validation
+        explorerSafetyReplyContract.ts  same-call classification and optional prose
+        explorerSafetyReplyInvocation.ts  one bounded injected invocation
+        openAiLunaExplorerSafetyTransport.ts  dormant injected HTTP adapter
+        explorerConversationSafety.ts  pinned fallback and trusted selection
+        explorerPrivateConversationComposition.ts  unactivated private controller
+
+eslint-rules/
+  explorer-source-isolation.mjs  exact production-source import profiles
+eslint.config.mjs
 
 supabase/
   config.toml
   migrations/    MVP0 schema foundations with Row Level Security enabled deny-by-default
+    20261025010000_explorer_source_exclusion.sql  internal final-source inspection/audit
+    20261025020000_explorer_private_safety_lifecycle.sql  private policy/evidence and scalar lifecycle
   seed.sql
 ```
 
@@ -378,6 +494,15 @@ The Explorer prototype boundary is intentionally narrow:
   distinct required-form/optional-First-Compass states.
 
 Server-only modules under `src/lib/solmind/auth` and `src/lib/solmind/supabase` are kept off the shared client barrels, and each module area has co-located `__tests__` unit tests.
+
+Server-only `src/lib/solmind/virtual-guide/` owners also stay off shared/client
+barrels. The explicit source-isolation graph covers 21 profiles with six erased
+type-only edges. Preserve its exact runtime/type specifiers and restricted globals;
+the private repository's SDK import remains type-only. This static boundary is
+not a JavaScript sandbox or proof of injected capabilities or source currentness.
+AV3 context entries coexist with strict AV2 entries; the compact input selection
+remains `wi007-v0.1+onboarding-fields-v2`, separate from the private safety output
+protocol and request mode. Candidate configuration getters never activate a factory.
 
 ## Module Boundary Pattern
 

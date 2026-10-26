@@ -247,12 +247,12 @@ select is(
   'pre-dispatch return shape is exact'
 );
 select ok(
-  has_function_privilege(
+  not has_function_privilege(
     'service_role',
     'public.solmind_prepare_virtual_guide_predispatch(uuid,uuid,uuid,uuid,uuid,uuid,uuid,text,uuid[],uuid[],text)',
     'EXECUTE'
   ),
-  'service_role may execute the pre-dispatch transaction'
+  'service_role cannot execute the retired legacy pre-dispatch transaction'
 );
 select ok(
   not has_function_privilege(

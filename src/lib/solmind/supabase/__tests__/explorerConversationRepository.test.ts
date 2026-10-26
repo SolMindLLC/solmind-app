@@ -88,7 +88,7 @@ const CALLS: ReadonlyArray<Readonly<{
     invoke: (repository) => repository.prepare(PREPARE) },
   { method: "complete", functionName: "solmind_complete_explorer_conversation_turn", parameters: COMPLETE,
     invoke: (repository) => repository.complete(COMPLETE) },
-  { method: "mutate", functionName: "solmind_mutate_explorer_conversation", parameters: MUTATE,
+  { method: "mutate", functionName: "solmind_mutate_explorer_conversation_v3", parameters: MUTATE,
     invoke: (repository) => repository.mutate(MUTATE) },
 ];
 
@@ -165,6 +165,33 @@ describe("explorerConversationRepository closed transport boundary", () => {
   ])("keeps generic or smuggled database errors opaque: %#", async (error) => {
     const fixture = transport({ data: [ROW], error });
     await expectUnavailable(createExplorerConversationRepository(fixture.client).read(ACTOR));
+  });
+
+  it.each([
+    ["solmind_explorer_private_denied", "denied"],
+    ["solmind_explorer_private_invalid_input", "denied"],
+    ["solmind_explorer_private_operation_conflict", "operation_conflict"],
+  ])("maps exact private %s only on the atomic formation capability", async (message, outcome) => {
+    const fixture = transport({ data: [{ ...ROW, authority_context: PRIVATE_DETAIL, dispatch_permitted: true }],
+      error: { code: "P0001", message, details: PRIVATE_DETAIL, hint: PRIVATE_DETAIL } });
+    const result = await createExplorerConversationRepository(fixture.client).mutate(MUTATE);
+    expect(result).toEqual({ outcome, conversation_state: null });
+    expect(fixture.rpc).toHaveBeenCalledExactlyOnceWith("solmind_mutate_explorer_conversation_v3", MUTATE);
+    expect(JSON.stringify(result)).not.toContain(PRIVATE_DETAIL);
+    const foreignCapability = transport({ data: [ROW], error: { code: "P0001", message } });
+    await expectUnavailable(createExplorerConversationRepository(foreignCapability.client).read(ACTOR));
+  });
+
+  it.each([
+    { code: "42501", message: "solmind_explorer_private_denied" },
+    { code: "P0001", message: "solmind_explorer_private_denied " },
+    { code: "P0001", message: "solmind_explorer_private_unavailable" },
+    { code: "P0001", message: `solmind_explorer_private_denied\n${PRIVATE_DETAIL}` },
+  ])("keeps unrecognized atomic mutation errors opaque without another post: %#", async (error) => {
+    const fixture = transport({ data: [ROW], error });
+    await expectUnavailable(createExplorerConversationRepository(fixture.client).mutate(MUTATE));
+    expect(fixture.rpc).toHaveBeenCalledExactlyOnceWith("solmind_mutate_explorer_conversation_v3", MUTATE);
+    expect(fixture.accesses).toEqual([]);
   });
 
   it("keeps thrown transport errors opaque", async () => {

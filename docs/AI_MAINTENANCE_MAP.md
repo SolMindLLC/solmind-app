@@ -1190,3 +1190,34 @@ parser/adapter/composition/replay behavior; no late drain, safety-state/policy,
 SQL/default/provider/dependency change. Characters/Rootformalreview/application/
 live/publication/checked banking remain gates; final banking only at
 PUBLICATION_TRANSPORT_RETURN_R10/STATUS_CLOSEOUT.json PASS. No outcome credit.
+
+
+## Private Explorer successor ownership
+
+The current private construction and its six v3 ports are owned by
+solmind-app/AGENTS.md and solmind-app/README.md. The older v1/v2/AV2 descriptions
+and dated eleven-profile proof above retain their predecessor scope. The current
+source graph has21 exact profiles and six erased type-only edges; do not infer
+new imports or activation from the older counts.
+
+Keep explorerPrivateConfigurationCandidate.ts and explorerPrivateConfiguration.ts,
+explorerSafetyReplyContract.ts, explorerSafetyReplyInvocation.ts,
+openAiLunaExplorerSafetyTransport.ts, explorerConversationSafety.ts and
+explorerPrivateConversationComposition.ts direct-import server-only under
+src/lib/solmind/virtual-guide/. The six-port closed repository is
+src/lib/solmind/supabase/explorerPrivateConversationRepository.ts. AV3 entries in
+src/lib/solmind/virtual-guide/explorerConversationContext.ts are separate from
+strict AV2 entries; compact input remains wi007-v0.1+onboarding-fields-v2.
+
+supabase/migrations/20261025010000_explorer_source_exclusion.sql owns bounded
+current-source inspection and committed content-free exclusion accountability;
+supabase/migrations/20261025020000_explorer_private_safety_lifecycle.sql owns the
+real first-Send container, minimum actual positive private evidence, monotonic
+conversation policy and atomic terminal/formation transitions. Five legacy direct
+service-role writes are retired, including all former v1 session types; preserve
+definitions/history without restoring a bypass. Read-only/owner fixture evidence
+grants no dispatch. The original browser/default factory remains held and supplies
+none of the private provider, builder, reviewed resource/renderer or operational
+signal capabilities. Actual assurance and unfinished gates belong to
+solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md and
+solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md.

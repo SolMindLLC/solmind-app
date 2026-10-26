@@ -21,6 +21,14 @@ function createRepository(client: SupabaseClient, prepareFunction:
     try {
       const { data, error } = await client.rpc(name, parameters).abortSignal(AbortSignal.timeout(12_000));
       if (error?.code === "P0001") {
+        if (name === "solmind_mutate_explorer_conversation_v3") {
+          if (["solmind_explorer_private_denied", "solmind_explorer_private_invalid_input"].includes(error.message)) {
+            return { outcome: "denied", conversation_state: null };
+          }
+          if (error.message === "solmind_explorer_private_operation_conflict") {
+            return { outcome: "operation_conflict", conversation_state: null };
+          }
+        }
         if (["solmind_explorer_conversation_denied", "solmind_explorer_conversation_invalid_input"].includes(error.message)) {
           return { outcome: "denied", conversation_state: null };
         }
@@ -42,6 +50,8 @@ function createRepository(client: SupabaseClient, prepareFunction:
     }),
     prepare: (parameters) => call(prepareFunction, parameters),
     complete: (parameters) => call("solmind_complete_explorer_conversation_turn", parameters),
-    mutate: (parameters) => call("solmind_mutate_explorer_conversation", parameters),
+    // Deliberate formation uses the atomic current-policy wrapper. The legacy
+    // write grant stays retired; this supplies no provider/private controller.
+    mutate: (parameters) => call("solmind_mutate_explorer_conversation_v3", parameters),
   });
 }

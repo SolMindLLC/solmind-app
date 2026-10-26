@@ -71,9 +71,12 @@ select ok(
 );
 
 select ok(
-  (select bool_and(has_function_privilege('service_role', fn_oid, 'EXECUTE'))
+  (select bool_and(has_function_privilege('service_role', fn_oid, 'EXECUTE') =
+      (proname not in ('solmind_prepare_virtual_guide_predispatch',
+        'solmind_prepare_explorer_conversation_turn','solmind_prepare_governed_explorer_conversation_turn',
+        'solmind_complete_explorer_conversation_turn','solmind_mutate_explorer_conversation')))
      from solmind_public_functions),
-  'service_role can EXECUTE every public.solmind_ function'
+  'service_role executes every current capability and cannot execute any of the five retired legacy write names'
 );
 
 select ok(

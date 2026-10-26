@@ -56,14 +56,14 @@ function exact(value: Record<string, unknown>, names: readonly string[]): boolea
   return Object.keys(value).length === names.length && names.every((name) => Object.hasOwn(value, name));
 }
 function invalid(): never { throw new Error("explorer_conversation_context_unavailable"); }
-function authority(value: unknown): Authority {
+function authority(value: unknown, expectedContract: "AV2" | "AV3" = "AV2"): Authority {
   const ids = ["accountId", "explorerId", "relationshipId", "guideId", "practiceId", "organizationId", "applicationSessionId"];
   if (!record(value) || !exact(value, [...ids, "applicationSessionExpiresAt", "relationshipStatus", "onboardingStatus",
     "adultAffirmation", "authorizationVersion", "onboarding", "requiredConsentDocumentIds"]) ||
     !ids.every((key) => typeof value[key] === "string" && UUID.test(value[key] as string)) ||
     !["active", "paused"].includes(value.relationshipStatus as string) || value.onboardingStatus !== "active" ||
     value.adultAffirmation !== true || typeof value.authorizationVersion !== "string" ||
-    !/^AV2:[A-F0-9]{64}$/.test(value.authorizationVersion) ||
+    !(expectedContract === "AV2" ? /^AV2:[A-F0-9]{64}$/ : /^AV3:[A-F0-9]{64}$/).test(value.authorizationVersion) ||
     typeof value.applicationSessionExpiresAt !== "string" || !Number.isFinite(Date.parse(value.applicationSessionExpiresAt)) ||
     !record(value.onboarding) || !exact(value.onboarding, ["responseId", "answers"]) ||
     typeof value.onboarding.responseId !== "string" || !UUID.test(value.onboarding.responseId) ||
@@ -89,13 +89,16 @@ function configuration(value: ExplorerConversationContextConfiguration): Explore
   return structuredClone(value);
 }
 
-export function createExplorerConversationContextBuilder(input: {
-  repository: ExplorerConversationDependencies["repository"];
+type ConversationContextBuilderInput = {
+  repository: Pick<ExplorerConversationDependencies["repository"], "read">;
   configuration: ExplorerConversationContextConfiguration;
-}): NonNullable<ExplorerConversationDependencies["buildContext"]> {
+};
+function createConversationContextBuilder(input: ConversationContextBuilderInput,
+  authorizationContract: "AV2" | "AV3",
+): NonNullable<ExplorerConversationDependencies["buildContext"]> {
   const config = configuration(input.configuration);
   return async ({ actor, row, state, command, ids, signal }) => {
-    const facts = authority(row.authority_context);
+    const facts = authority(row.authority_context, authorizationContract);
     if (signal?.aborted || facts.accountId !== actor.accountId || facts.applicationSessionId !== actor.applicationSessionId) invalid();
     const binding = { explorerId: facts.explorerId, sessionId: ids.conversationId, continuityBindingId: facts.relationshipId };
     // These are the existing submitted continuity fields, in banked form order.
@@ -134,7 +137,7 @@ export function createExplorerConversationContextBuilder(input: {
           if (signal?.aborted) invalid();
           const current = await input.repository.read(actor);
           if (signal?.aborted || current.outcome !== "ok" ||
-              JSON.stringify(authority(current.authority_context)) !== JSON.stringify(facts) ||
+              JSON.stringify(authority(current.authority_context, authorizationContract)) !== JSON.stringify(facts) ||
               JSON.stringify(current.conversation_state) !== JSON.stringify(row.conversation_state) ||
               proof.actorAccountId !== facts.accountId || proof.relationshipId !== facts.relationshipId) invalid();
           return { authorizationVersion: facts.authorizationVersion, status: "current" };
@@ -191,20 +194,23 @@ function governedConfiguration(input: GovernedExplorerConversationContextConfigu
  * supplies neither this builder nor a provider. A real closed SQL source and
  * governed prepare repository are required before separate activation.
  */
-export function createGovernedExplorerConversationContextBuilder(input: {
-  repository: ExplorerConversationDependencies["repository"];
+type GovernedConversationContextBuilderInput = {
+  repository: Pick<ExplorerConversationDependencies["repository"], "read">;
   configuration: GovernedExplorerConversationContextConfiguration;
   packId: string;
   expectedScope: EffectiveMethodologyScope;
   methodologySource: EffectiveMethodologySource;
-}): NonNullable<ExplorerConversationDependencies["buildContext"]> {
+};
+function createGovernedConversationContextBuilder(input: GovernedConversationContextBuilderInput,
+  authorizationContract: "AV2" | "AV3",
+): NonNullable<ExplorerConversationDependencies["buildContext"]> {
   const config = governedConfiguration(input.configuration);
   const expectedScope = parseEffectiveMethodologyScope(input.expectedScope);
   const packId = input.packId;
   if (typeof packId !== "string" || !UUID.test(packId)) invalid();
   return async (turn) => {
     try {
-      const facts = authority(turn.row.authority_context);
+      const facts = authority(turn.row.authority_context, authorizationContract);
       if (facts.accountId !== turn.actor.accountId || facts.applicationSessionId !== turn.actor.applicationSessionId ||
           expectedScope.id !== facts.guideId || effectiveMethodologySignalAborted(turn.signal)) invalid();
       const request = parseEffectiveMethodologyReadInput({
@@ -219,13 +225,13 @@ export function createGovernedExplorerConversationContextBuilder(input: {
       // Never pin methodology to a conversation or to builder construction.
       // The old synthetic builder still owns the exact S03A/S03C assembly.
       const selected = await load();
-      const build = createExplorerConversationContextBuilder({
+      const build = createConversationContextBuilder({
         repository: input.repository,
         configuration: {
           ...config, methodologyContextPackVersionId: selected.versionId,
           methodologyContext: { version: `methodology:${selected.versionId}`, text: selected.contentMarkdown },
         },
-      });
+      }, authorizationContract);
       const context = await build(turn);
       // S03C has just reread authority/history. Re-resolve methodology before
       // releasing context; atomic governed SQL preparation closes the remaining
@@ -240,4 +246,28 @@ export function createGovernedExplorerConversationContextBuilder(input: {
       }) });
     } catch { return invalid(); }
   };
+}
+
+// Explicit entry points keep legacy AV2 meaning unchanged. AV3 means the
+// successor owned/support authority plus separately bound current policy;
+// accepting it here grants neither readiness nor a provider capability.
+export function createExplorerConversationContextBuilder(
+  input: ConversationContextBuilderInput,
+): NonNullable<ExplorerConversationDependencies["buildContext"]> {
+  return createConversationContextBuilder(input, "AV2");
+}
+export function createGovernedExplorerConversationContextBuilder(
+  input: GovernedConversationContextBuilderInput,
+): NonNullable<ExplorerConversationDependencies["buildContext"]> {
+  return createGovernedConversationContextBuilder(input, "AV2");
+}
+export function createPrivateExplorerConversationContextBuilder(
+  input: ConversationContextBuilderInput,
+): NonNullable<ExplorerConversationDependencies["buildContext"]> {
+  return createConversationContextBuilder(input, "AV3");
+}
+export function createPrivateGovernedExplorerConversationContextBuilder(
+  input: GovernedConversationContextBuilderInput,
+): NonNullable<ExplorerConversationDependencies["buildContext"]> {
+  return createGovernedConversationContextBuilder(input, "AV3");
 }

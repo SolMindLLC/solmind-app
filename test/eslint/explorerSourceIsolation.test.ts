@@ -38,9 +38,26 @@ const EXPECTED_PROFILES: readonly Profile[] = [
   profile("virtual-guide/explorerContextExclusionGuard.ts", ["server-only", "node:crypto", "node:util", "../context/explorerSafeContext"]),
   profile("virtual-guide/explorerConversationContext.ts", ["server-only", "./authorizedVirtualGuideContext",
     "../context/explorerSafeContext", "../onboarding", "node:util", "./effectiveMethodologyContext"], ["./explorerConversationComposition"]),
+  profile("explorerConversationContract.ts", []),
+  profile("virtual-guide/explorerConversationComposition.ts", ["server-only", "node:crypto", "../explorerConversationContract", "./virtualGuideConversationContract"]),
+  profile("virtual-guide/explorerPrivateConfigurationCandidate.ts", ["server-only"]),
+  profile("virtual-guide/explorerPrivateConfiguration.ts", ["server-only", "node:crypto", "node:util", "./explorerPrivateConfigurationCandidate"]),
+  profile("virtual-guide/explorerSafetyReplyContract.ts", ["server-only", "node:crypto"]),
+  profile("virtual-guide/explorerSafetyReplyInvocation.ts", ["server-only", "node:util", "./explorerSafetyReplyContract"]),
+  profile("virtual-guide/explorerConversationSafety.ts", ["server-only", "./explorerSafetyReplyContract"], ["./explorerPrivateConfiguration"]),
+  profile("virtual-guide/openAiLunaExplorerSafetyTransport.ts", ["server-only", "./explorerSafetyReplyContract"], ["./explorerSafetyReplyInvocation"]),
+  profile("virtual-guide/explorerPrivateConversationComposition.ts", ["server-only", "node:crypto", "node:util", "../explorerConversationContract", "./explorerConversationComposition", "./explorerPrivateConfiguration", "./explorerSafetyReplyContract", "./explorerSafetyReplyInvocation", "./explorerConversationSafety"]),
+  profile("supabase/explorerPrivateConversationRepository.ts", ["server-only", "node:util"], ["@supabase/supabase-js", "../virtual-guide/explorerPrivateConversationComposition"]),
 ];
 const CONTEXT_FILE = "src/lib/solmind/virtual-guide/explorerConversationContext.ts";
-const TYPE_EDGE_FILES = ["src/lib/solmind/virtual-guide/effectiveMethodologyContext.ts", CONTEXT_FILE];
+const TYPE_EDGES = [
+  { file: "src/lib/solmind/virtual-guide/effectiveMethodologyContext.ts", specifier: "./explorerConversationComposition" },
+  { file: CONTEXT_FILE, specifier: "./explorerConversationComposition" },
+  { file: "src/lib/solmind/virtual-guide/explorerConversationSafety.ts", specifier: "./explorerPrivateConfiguration" },
+  { file: "src/lib/solmind/virtual-guide/openAiLunaExplorerSafetyTransport.ts", specifier: "./explorerSafetyReplyInvocation" },
+  { file: "src/lib/solmind/supabase/explorerPrivateConversationRepository.ts", specifier: "@supabase/supabase-js" },
+  { file: "src/lib/solmind/supabase/explorerPrivateConversationRepository.ts", specifier: "../virtual-guide/explorerPrivateConversationComposition" },
+] as const;
 const GLOBALS = ["process", "module", "require", "fetch", "WebSocket", "XMLHttpRequest", "eval", "Function",
   "globalThis", "global", "window", "self"];
 const absolute = (file: string) => resolve(APP_ROOT, file);
@@ -90,7 +107,7 @@ function expectFixedFailure(result: ESLint.LintResult, messageId: keyof typeof M
 const severity = (entry: unknown) => Array.isArray(entry) ? entry[0] : entry;
 
 describe("actual Explorer assembly source-isolation plugin and flat configuration", () => {
-  it("exports exactly the eleven reviewed direct-source profiles, deeply frozen", () => {
+  it("exports exactly the twenty-one reviewed direct-source profiles, deeply frozen", () => {
     expect(EXPLORER_SOURCE_PROFILES).toEqual(EXPECTED_PROFILES);
     expect(Object.isFrozen(EXPLORER_SOURCE_PROFILES)).toBe(true);
     for (const entry of EXPLORER_SOURCE_PROFILES) {
@@ -137,34 +154,36 @@ describe("actual Explorer assembly source-isolation plugin and flat configuratio
       }
     });
 
-  it.each(TYPE_EDGE_FILES)("allows only erased, nonempty static composition edges for %s", async file => {
+  it.each(TYPE_EDGES)("allows only erased, nonempty edge $file -> $specifier", async ({ file, specifier }) => {
+    const source = JSON.stringify(specifier);
     for (const code of [
-      'import type { SyntheticPort } from "./explorerConversationComposition";',
-      'import { type SyntheticPort } from "./explorerConversationComposition";',
-      'import type SyntheticDefault from "./explorerConversationComposition";',
-      'import type * as SyntheticNamespace from "./explorerConversationComposition";',
-      'export type { SyntheticPort } from "./explorerConversationComposition";',
-      'export { type SyntheticPort } from "./explorerConversationComposition";',
-      'export type * from "./explorerConversationComposition";',
-      'export type * as SyntheticNamespace from "./explorerConversationComposition";',
+      `import type { SyntheticPort } from ${source};`,
+      `import { type SyntheticPort } from ${source};`,
+      `import type SyntheticDefault from ${source};`,
+      `import type * as SyntheticNamespace from ${source};`,
+      `export type { SyntheticPort } from ${source};`,
+      `export { type SyntheticPort } from ${source};`,
+      `export type * from ${source};`,
+      `export type * as SyntheticNamespace from ${source};`,
     ]) expect(targetMessages(await lint(code, file))).toEqual([]);
   });
 
-  it.each(TYPE_EDGE_FILES)("rejects value, mixed, empty and side-effect composition edges for %s", async file => {
+  it.each(TYPE_EDGES)("rejects value, mixed, empty and side-effect edge $file -> $specifier", async ({ file, specifier }) => {
+    const source = JSON.stringify(specifier);
     for (const code of [
-      'import { SyntheticPort } from "./explorerConversationComposition";',
-      'import { type SyntheticPort, syntheticValue } from "./explorerConversationComposition";',
-      'import SyntheticDefault from "./explorerConversationComposition";',
-      'import * as SyntheticNamespace from "./explorerConversationComposition";',
-      'import "./explorerConversationComposition";',
-      'import {} from "./explorerConversationComposition";',
-      'import type {} from "./explorerConversationComposition";',
-      'export {} from "./explorerConversationComposition";',
-      'export type {} from "./explorerConversationComposition";',
-      'export { SyntheticPort } from "./explorerConversationComposition";',
-      'export { type SyntheticPort, syntheticValue } from "./explorerConversationComposition";',
-      'export * from "./explorerConversationComposition";',
-      'export * as SyntheticNamespace from "./explorerConversationComposition";',
+      `import { SyntheticPort } from ${source};`,
+      `import { type SyntheticPort, syntheticValue } from ${source};`,
+      `import SyntheticDefault from ${source};`,
+      `import * as SyntheticNamespace from ${source};`,
+      `import ${source};`,
+      `import {} from ${source};`,
+      `import type {} from ${source};`,
+      `export {} from ${source};`,
+      `export type {} from ${source};`,
+      `export { SyntheticPort } from ${source};`,
+      `export { type SyntheticPort, syntheticValue } from ${source};`,
+      `export * from ${source};`,
+      `export * as SyntheticNamespace from ${source};`,
     ]) expectFixedFailure(await lint(code, file), "unapprovedDependency");
   });
 

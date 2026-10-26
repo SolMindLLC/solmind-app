@@ -37,8 +37,8 @@ select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid=
     'solmind_decide_methodology_guide_review','solmind_resolve_explorer_methodology','solmind_prepare_governed_explorer_conversation_turn')
     and p.prosecdef and p.proowner='postgres'::regrole and has_function_privilege('service_role',p.oid,'EXECUTE')
     and not has_function_privilege('anon',p.oid,'EXECUTE') and not has_function_privilege('authenticated',p.oid,'EXECUTE')
-    and 'search_path=""'=any(p.proconfig) and 'lock_timeout=2000ms'=any(p.proconfig)),8,
-  'exact eight postgres SECURITY DEFINER closed ports have empty path, bounded locks and service-only execution');
+    and 'search_path=""'=any(p.proconfig) and 'lock_timeout=2000ms'=any(p.proconfig)),7,
+  'seven governance ports retain bounded service-only execution; the legacy governed write capability is retired');
 select ok(not exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
   cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
   where (n.nspname='methodology' or (n.nspname='public' and p.proname in

@@ -1,0 +1,119 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { describe, expect, it, vi } from "vitest";
+import { createExplorerPrivateConversationRepository } from "../explorerPrivateConversationRepository";
+import type { ExplorerPrivateEnsureParameters, ExplorerPrivateObserveParameters, ExplorerPrivatePrepareParameters,
+  ExplorerPrivateSettleParameters, ExplorerPrivateMutateParameters } from "../../virtual-guide/explorerPrivateConversationComposition";
+
+const UUID = "00000000-0000-4000-8000-000000000001"; const SHA = "A".repeat(64);
+const ACTOR = { p_actor_user_account_id: UUID, p_user_session_id: UUID };
+const METHODOLOGY = { p_methodology_context_pack_id: UUID, p_methodology_context_pack_version_id: UUID,
+  p_methodology_content_sha256: SHA, p_methodology_authorization_version: "MV1:" + SHA };
+function ensure(): ExplorerPrivateEnsureParameters { return { ...ACTOR, ...METHODOLOGY, p_candidate_conversation_id: UUID, p_expected_revision: 0, p_configuration_fingerprint: SHA }; }
+function observe(): ExplorerPrivateObserveParameters { return { ...ACTOR, p_conversation_id: UUID, p_operation_id: UUID,
+  p_logical_operation_id: UUID, p_expected_revision: 0, p_command_fingerprint: SHA, p_protocol_version: "explorer-safety-reply.v1",
+  p_fallback_policy_version: "synthetic-fallback.v1", p_model_policy_version: "synthetic-model.v1", p_configuration_fingerprint: SHA,
+  p_fallback_level: 0, p_fallback_minor_indicated: false }; }
+function prepare(): ExplorerPrivatePrepareParameters { return { ...observe(), ...METHODOLOGY,
+  p_context_source_ids: [UUID], p_authorization_version: "AV3:" + SHA, p_intake_response_set_id: UUID,
+  p_prompt_version: "synthetic.v1", p_policy_version: "synthetic.v1", p_behavior_version: "synthetic.v1", p_crisis_version: "synthetic.v1",
+  p_role_version: "synthetic.v1", p_instruction_version: "synthetic.v1", p_message_id: UUID, p_snapshot_id: UUID, p_invocation_id: UUID,
+  p_body: "Synthetic only.", p_context_serialization: "{}", p_context_fingerprint_sha256: SHA, p_request_mode: "classification_and_reply",
+  p_trusted_response_version: "synthetic.v1", p_resource_policy_version: "synthetic.v1", p_expected_safety_version: 0 }; }
+function settle(): ExplorerPrivateSettleParameters { return { ...ACTOR, p_conversation_id: UUID, p_operation_id: UUID,
+  p_status: "completed", p_reply_message_id: null, p_reply_kind: "none", p_reply_body: null, p_model_level: 0, p_model_minor_indicated: false,
+  p_protocol_version: "explorer-safety-reply.v1", p_request_mode: "classification_only", p_configuration_fingerprint: SHA,
+  p_fallback_policy_version: "synthetic.v1", p_model_policy_version: "synthetic.v1", p_trusted_response_version: "synthetic.v1",
+  p_resource_policy_version: "synthetic.v1", p_fallback_level: 0, p_fallback_minor_indicated: false, p_delivery_interested: false }; }
+function mutate(): ExplorerPrivateMutateParameters { return { ...ACTOR, p_conversation_id: UUID, p_operation_id: UUID,
+  p_expected_revision: 0, p_command_fingerprint: SHA, p_kind: "set_attention", p_source_message_id: null, p_item_id: UUID,
+  p_waypoint_id: null, p_label: null, p_destination: null, p_meaning: null, p_arrival_signal: null, p_evidence: null }; }
+function fixture(row: unknown) {
+  const abortSignal = vi.fn(async (_signal: AbortSignal) => ({ data: [row], error: null as { code: string; message: string } | null }));
+  const rpc = vi.fn((_name: string, _parameters: unknown) => ({ abortSignal }));
+  const repository = createExplorerPrivateConversationRepository({ rpc } as unknown as SupabaseClient);
+  return { repository, rpc, abortSignal };
+}
+describe("Closed private Explorer RPC repository (synthetic client)", () => {
+  it("exposes six named v3 ports including atomic deliberate mutation, without generic access", () => {
+    const f = fixture(null);
+    expect(Object.keys(f.repository).sort()).toEqual(["ensure", "mutate", "observe", "prepare", "read", "settle"]);
+    expect(Object.isFrozen(f.repository)).toBe(true);
+  });
+  it("read derives exact actor fields and paired operation selectors", async () => {
+    const f = fixture({ outcome: "ok", conversation_state: null, authority_context: null, policy_state: null });
+    await f.repository.read({ accountId: UUID, applicationSessionId: UUID }, { operationId: UUID, fingerprint: SHA });
+    expect(f.rpc).toHaveBeenCalledWith("solmind_read_explorer_conversation_v3", { ...ACTOR,
+      p_conversation_id: null, p_operation_id: UUID, p_command_fingerprint: SHA });
+    expect(f.abortSignal.mock.calls[0][0]).toBeInstanceOf(AbortSignal); expect(f.rpc).toHaveBeenCalledOnce();
+  });
+  it("ensure sends no attempted body, operation row or dispatch parameter", async () => {
+    const f = fixture({ outcome: "created", conversation_state: null, authority_context: null, policy_state: null });
+    await f.repository.ensure(ensure());
+    expect(f.rpc).toHaveBeenCalledWith("solmind_ensure_explorer_conversation_v3", ensure());
+    expect(f.rpc.mock.calls[0][1]).not.toHaveProperty("p_body"); expect(f.rpc.mock.calls[0][1]).not.toHaveProperty("p_operation_id");
+  });
+  it("uses the exact observe, governed prepare, settlement and deliberate formation names", async () => {
+    const f = fixture({ outcome: "ok", policy_state: null }); await f.repository.observe(observe());
+    expect(f.rpc).toHaveBeenCalledWith("solmind_observe_explorer_conversation_fallback_v3", observe());
+    const p = fixture({ outcome: "ok", conversation_state: null, dispatch_permitted: false, policy_state: null }); await p.repository.prepare(prepare());
+    expect(p.rpc).toHaveBeenCalledWith("solmind_prepare_explorer_conversation_turn_v3", prepare());
+    const s = fixture({ outcome: "ok", conversation_state: null, policy_state: null, saved_reply: false }); await s.repository.settle(settle());
+    expect(s.rpc).toHaveBeenCalledWith("solmind_settle_explorer_conversation_turn_v3", settle());
+    const m = fixture({ outcome: "ok", conversation_state: null }); await m.repository.mutate!(mutate());
+    expect(m.rpc).toHaveBeenCalledWith("solmind_mutate_explorer_conversation_v3", mutate());
+  });
+  it("refuses extra/missing/getter parameters before any RPC", async () => {
+    for (const input of [{ ...ensure(), p_unreviewed: true }, { ...ensure(), p_configuration_fingerprint: undefined }]) {
+      const f = fixture(null); await expect(f.repository.ensure(input as ExplorerPrivateEnsureParameters)).rejects.toThrowError("explorer_private_repository_unavailable");
+      expect(f.rpc).not.toHaveBeenCalled();
+    }
+    const f = fixture(null); const input = ensure(); const getter = vi.fn();
+    Object.defineProperty(input, "p_configuration_fingerprint", { enumerable: true, get: getter });
+    await expect(f.repository.ensure(input)).rejects.toThrow(); expect(getter).not.toHaveBeenCalled(); expect(f.rpc).not.toHaveBeenCalled();
+  });
+  it("copies the exact source identity array before issuing the preparation call", async () => {
+    const f = fixture({ outcome: "ok", conversation_state: null, dispatch_permitted: false, policy_state: null });
+    const input = prepare(); const pending = f.repository.prepare(input);
+    expect(f.rpc.mock.calls[0][1]).not.toBe(input);
+    expect((f.rpc.mock.calls[0][1] as ExplorerPrivatePrepareParameters).p_context_source_ids).not.toBe(input.p_context_source_ids);
+    await pending;
+  });
+  it.each([{ outcome: "invented", policy_state: null }, { outcome: "ok", policy_state: null, extra: true },
+    { outcome: "ok" }, null])("rejects malformed/expanded observe results: %j", async (row) => {
+    const f = fixture(row); await expect(f.repository.observe(observe())).rejects.toThrowError("explorer_private_repository_unavailable");
+  });
+  it("requires real boolean dispatch/save outcomes", async () => {
+    const p = fixture({ outcome: "ok", conversation_state: null, policy_state: null, dispatch_permitted: "true" });
+    await expect(p.repository.prepare(prepare())).rejects.toThrow();
+    const s = fixture({ outcome: "ok", conversation_state: null, policy_state: null, saved_reply: 1 });
+    await expect(s.repository.settle(settle())).rejects.toThrow();
+  });
+  it("maps only closed private denial/conflict sentinels without leaking detail", async () => {
+    for (const [message, outcome] of [["solmind_explorer_private_denied", "denied"], ["solmind_explorer_private_evidence_conflict", "operation_conflict"]]) {
+      const f = fixture(null); f.abortSignal.mockResolvedValue({ data: [], error: { code: "P0001", message } });
+      expect(await f.repository.ensure(ensure())).toEqual({ outcome }); expect(f.rpc).toHaveBeenCalledOnce();
+    }
+  });
+  it("unknown acknowledgement stays opaque with one attempt", async () => {
+    const f = fixture(null); f.abortSignal.mockRejectedValue(new Error("private database detail"));
+    await expect(f.repository.settle(settle())).rejects.toThrowError("explorer_private_repository_unavailable");
+    expect(f.rpc).toHaveBeenCalledOnce(); expect(f.abortSignal).toHaveBeenCalledOnce();
+  });
+});
+
+describe("Root cycle1 source identity hostile arrays", () => {
+  it("rejects index accessors without executing them or issuing any RPC", async () => {
+    const f = fixture(null); const input = prepare(); const ids = [UUID]; const getter = vi.fn(() => UUID);
+    Object.defineProperty(ids, "0", { enumerable: true, configurable: true, get: getter });
+    await expect(f.repository.prepare({ ...input, p_context_source_ids: ids })).rejects.toThrow("explorer_private_repository_unavailable");
+    expect(getter).not.toHaveBeenCalled(); expect(f.rpc).not.toHaveBeenCalled();
+  });
+  it("rejects proxy/sparse/expanded/subclass arrays without reading trapped elements", async () => {
+    const trap = vi.fn(); class Extended extends Array<string> {}
+    const proxy = new Proxy([UUID], { get: trap }); const expanded = [UUID]; Object.defineProperty(expanded, "secret", { value: UUID });
+    for (const ids of [proxy, new Array<string>(1), expanded, Extended.of(UUID)]) {
+      const f = fixture(null); await expect(f.repository.prepare({ ...prepare(), p_context_source_ids: ids })).rejects.toThrow(); expect(f.rpc).not.toHaveBeenCalled();
+    }
+    expect(trap).not.toHaveBeenCalled();
+  });
+});

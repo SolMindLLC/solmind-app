@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createExplorerConversationContextBuilder,
   createGovernedExplorerConversationContextBuilder,
+  createPrivateExplorerConversationContextBuilder,
+  createPrivateGovernedExplorerConversationContextBuilder,
   EXPLORER_CONVERSATION_CONTEXT_SELECTION_VERSION,
   type ExplorerConversationContextConfiguration,
 } from "./explorerConversationContext";
@@ -673,5 +675,50 @@ describe("governed Explorer context (synthetic SQL-shaped source and policy only
     } });
     expect(result).toEqual({ ok: false, state: null, error: "unavailable" });
     expect(f.prepare).not.toHaveBeenCalled(); expect(f.complete).not.toHaveBeenCalled(); expect(generate).not.toHaveBeenCalled();
+  });
+});
+
+describe("Explicit held private AV3 context entry points", () => {
+  const privateVersion = `AV3:${"B".repeat(64)}`;
+  it("uses AV3 current proof with the unchanged exact input envelope", async () => {
+    const f = fixture({ facts: { ...authority(), authorizationVersion: privateVersion } });
+    const build = createPrivateExplorerConversationContextBuilder({ repository: { read: f.read }, configuration: f.config });
+    const result = await build(f.input);
+    expect(result.evidence.p_authorization_version).toBe(privateVersion);
+    expect(assembled(result.request.authorizedContext).contractVersion).toBe(EXPLORER_CONVERSATION_CONTEXT_SELECTION_VERSION);
+    expect(f.read).toHaveBeenCalledOnce();
+    expect(f.prepare).not.toHaveBeenCalled(); expect(f.complete).not.toHaveBeenCalled();
+  });
+  it("refuses AV2 at the private entry and AV3 at the legacy entry", async () => {
+    const legacy = fixture();
+    const privateBuild = createPrivateExplorerConversationContextBuilder({ repository: { read: legacy.read }, configuration: legacy.config });
+    await expect(privateBuild(legacy.input)).rejects.toThrow("explorer_conversation_context_unavailable");
+    const successor = fixture({ facts: { ...authority(), authorizationVersion: privateVersion } });
+    await expect(successor.build(successor.input)).rejects.toThrow("explorer_conversation_context_unavailable");
+    expect(legacy.read).not.toHaveBeenCalled(); expect(successor.read).not.toHaveBeenCalled();
+  });
+  it("does not downgrade a final private read to an AV2 token", async () => {
+    const f = fixture({ facts: { ...authority(), authorizationVersion: privateVersion } });
+    f.read.mockResolvedValueOnce({ ...f.row, authority_context: authority() });
+    const build = createPrivateExplorerConversationContextBuilder({ repository: { read: f.read }, configuration: f.config });
+    await expect(build(f.input)).rejects.toThrow("authorized_virtual_guide_context_source_failed");
+    expect(f.read).toHaveBeenCalledOnce(); expect(f.prepare).not.toHaveBeenCalled();
+  });
+  it("resolves and revalidates actual injected methodology under explicit AV3", async () => {
+    const f = governedFixture();
+    (f.row.authority_context as ReturnType<typeof authority>).authorizationVersion = privateVersion;
+    const build = createPrivateGovernedExplorerConversationContextBuilder(f.factoryInput);
+    const result = await build(f.input);
+    expect(result.evidence.p_authorization_version).toBe(privateVersion);
+    expect(result.evidence.p_methodology_context_pack_version_id).toBe(f.selected.versionId);
+    expect(assembled(result.request.authorizedContext).methodologyContext.text).toBe(f.selected.contentMarkdown);
+    expect(f.methodologyRead).toHaveBeenCalledTimes(2);
+    expect(f.prepare).not.toHaveBeenCalled(); expect(f.complete).not.toHaveBeenCalled();
+  });
+  it("refuses private governed AV2 before methodology access", async () => {
+    const f = governedFixture();
+    const build = createPrivateGovernedExplorerConversationContextBuilder(f.factoryInput);
+    await expect(build(f.input)).rejects.toThrow("explorer_conversation_context_unavailable");
+    expect(f.methodologyRead).not.toHaveBeenCalled(); expect(f.prepare).not.toHaveBeenCalled();
   });
 });

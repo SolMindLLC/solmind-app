@@ -137,12 +137,12 @@ not persist the supplied context-snapshot ID, make final pre-provider evidence,
 select/call a provider, log or audit, expose a route, or activate a user path;
 S03D and later owners retain those duties.
 
-The bounded S03D owner is
+The historical bounded S03D owner is
 `public.solmind_prepare_virtual_guide_predispatch(...)` in
 `supabase/migrations/20260924000000_virtual_guide_predispatch_evidence.sql`,
 hardened by
 `supabase/migrations/20260927000000_virtual_guide_predispatch_evidence_hardening.sql`.
-Keep it service-role-only, security-definer, empty-search-path, lock-bounded,
+Its retained definition is security-definer, empty-search-path, lock-bounded,
 atomic and null-safe in every authority and exact-retry comparison. It
 revalidates current Explorer authority, one of the three allowed Explorer
 session types, active session/account/profile/onboarding, active or paused
@@ -160,7 +160,10 @@ authority proof; the context fingerprint and source IDs are caller-attested, so
 evidence alone never authorizes an Explorer-facing dispatch (see
 `docs/AGENT_TASK_RULES.md`). S03D owns no context loading, provider
 call, route, message persistence, safety response, deployment or real-user
-activation.
+activation. The private successor below retires its direct service-role write
+capability for all three formerly allowed session types. Preserve the definition
+and stored evidence; neither owner access nor an old `created` receipt supplies
+current dispatch authority.
 
 The bounded S03E owner is
 `src/lib/solmind/virtual-guide/openAiLunaVirtualGuideTransport.ts`. Keep the
@@ -170,9 +173,11 @@ Accept the credential and HTTP function only through the server composition
 root; do not read environment state here. Send only the already-authorized S03B
 context bytes as provider input, never separate Explorer/session/snapshot IDs or
 metadata. Provider bodies and errors remain value-free at the S03B boundary.
-S03E is a dormant transport adapter: the pre-dispatch gate (an S03D `created`
-outcome plus server composition), the authenticated route, message persistence,
-safety handling, deployment and runtime activation remain separate gates.
+S03E is a dormant prose transport adapter. Its historical S03D `created` premise
+does not reopen the retired service capability or authorize the private successor
+protocol. The private safety transport below is a separate owner; authenticated
+composition, message persistence, safety handling, deployment and runtime
+activation retain their own gates.
 
 ## Connected Explorer conversation construction - 2026-10-24
 
@@ -232,6 +237,119 @@ The concrete request factory deliberately omits provider and context builder:
 send stays unavailable and writes no new turn while activation is held.
 No fake production fallback, provider activation, deployment, sharing,
 real-user effect or assurance/banking result is granted by these source files.
+
+## Private Explorer conversation construction boundary
+
+The private successor is provider-held construction. Current technical evidence
+and the complete-slice assurance/application state belong to
+`solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md` and
+`solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md`. Source presence,
+synthetic fixtures and passing structural checks do not establish genuine model
+behavior, operational configuration, resource suitability, clinical quality or
+actual human approval. Preserve every unrelated role-login and prototype boundary.
+
+Keep these owners direct-import, server-only and off shared/client barrels:
+
+- `src/lib/solmind/virtual-guide/explorerPrivateConfigurationCandidate.ts` owns
+  inert literal candidate data; `src/lib/solmind/virtual-guide/explorerPrivateConfiguration.ts`
+  validates and returns a copied frozen projection. Neither its parser nor getter
+  supplies operational readiness, an approved methodology pack or verified resources.
+- `src/lib/solmind/virtual-guide/explorerSafetyReplyContract.ts` owns the closed
+  `explorer-safety-request.v2` request and `explorer-safety-reply.v1` result.
+  `src/lib/solmind/virtual-guide/explorerSafetyReplyInvocation.ts` admits one
+  bounded injected invocation and retains valid classification independently of
+  unusable candidate prose or canceled delivery. Missing observation is not zero.
+- `src/lib/solmind/virtual-guide/openAiLunaExplorerSafetyTransport.ts` owns only
+  the fixed, dormant HTTP adapter with injected credential/HTTP capabilities.
+  It reads no environment and is not supplied by the default request factory.
+- `src/lib/solmind/virtual-guide/explorerConversationSafety.ts` owns pure pinned
+  fallback, combination and trusted-response selection. It imports candidate
+  types only; no arbitrary configured regex, contact rendering or activation.
+- `src/lib/solmind/virtual-guide/explorerPrivateConversationComposition.ts` owns
+  the unactivated private controller with explicitly injected readiness, governed
+  context, provider, reviewed renderer and bounded operational-signal capabilities.
+  Its server-only transient assistance is never a fabricated saved message or
+  human-notification claim. A no-op signal or inert resource candidate cannot
+  satisfy an operational prerequisite.
+- `src/lib/solmind/supabase/explorerPrivateConversationRepository.ts` accepts an
+  injected server client and exposes only six exact v3 methods, with closed
+  scalar arguments/results and no generic table reader or public RPC executor:
+  `public.solmind_read_explorer_conversation_v3`,
+  `public.solmind_ensure_explorer_conversation_v3`,
+  `public.solmind_observe_explorer_conversation_fallback_v3`,
+  `public.solmind_prepare_explorer_conversation_turn_v3`,
+  `public.solmind_settle_explorer_conversation_turn_v3` and
+  `public.solmind_mutate_explorer_conversation_v3`.
+
+The existing `src/lib/solmind/virtual-guide/explorerConversationContext.ts`
+provides explicit `createPrivateExplorerConversationContextBuilder` and
+`createPrivateGovernedExplorerConversationContextBuilder` entries for AV3 only.
+Keep the older AV2 entries strict and unchanged. AV3 binds current owned/support
+authority plus known/unknown policy, safety version, restricted floor and adult
+stop; pre-anchor absence is not a clear classification. Keep `authority_context`
+shape and server-only `policy_state` separate. The compact model input remains
+`wi007-v0.1+onboarding-fields-v2`; output protocol/mode/configuration bindings
+are recorded separately on v3 evidence. Use actual governed methodology resolution
+and immutable bindings, never a fabricated UUID, reviewer or candidate-ready flag.
+
+`supabase/migrations/20261025010000_explorer_source_exclusion.sql` owns ungranted
+source-inspection/audit helpers. Final v3 preparation rederives the exact allowed
+onboarding/history/immediate source set, checks field-qualified excluded identities
+and normalized whole decoded values under finite source locks, and refuses unknown,
+busy, malformed or overflowing inspection. Preserve independent section identity
+and actual containing-revision provenance. Confirmed exclusion returns after its
+content-free audit so the transaction can commit; raising afterward would erase
+that evidence. Whole-field checks do not prove semantic origin, fragment/paraphrase
+coverage or complete operational protection. Prior private safety rows never enter
+the model context. Scheduled snapshot-integrity/Admin paging remains unfinished.
+
+`supabase/migrations/20261025020000_explorer_private_safety_lifecycle.sql`
+owns the additive private state/evidence and six-port lifecycle. Only a deliberate
+first Send with complete operational configuration/current authority may create or
+reuse one real visible empty conversation. Signing in, reading or held configuration
+creates nothing. New-container creation and its closed audit are atomic and save
+no attempted body, ordinary send row or false dispatch evidence. Initialize clear
+policy only for an actually new container; existing missing policy stays unknown
+without backfill, repair or a replacement-session escape.
+
+`ai.explorer_safety_evidence` stores only the approved minimum actual numerical 1-4
+observations and protected provenance. Level 0 creates no safety row; minor-only 0
+uses the distinct monotonic adult-reflection stop and state audit. Keep private
+evidence, restricted floor and adult stop separate from human-facing safety signals
+or responders. Do not copy detector payloads into invocation safety_result, browser
+results, logs or audit metadata. Admit accepted positives under lock before reply
+selection; technical settlement after login ends may preserve positives but must
+not return private state or save outward content without full current authority.
+Use one exact terminal intent and one settlement attempt. Unknown acknowledgment
+never authorizes another post, contradictory failure settlement or redispatch.
+
+The successor retires direct service-role EXECUTE on these five legacy write
+capabilities while preserving their definitions, old records, authorized history
+and exact no-dispatch replay:
+
+- `public.solmind_prepare_virtual_guide_predispatch` (all formerly allowed session types);
+- `public.solmind_prepare_explorer_conversation_turn`;
+- `public.solmind_prepare_governed_explorer_conversation_turn`;
+- `public.solmind_complete_explorer_conversation_turn`;
+- `public.solmind_mutate_explorer_conversation`.
+
+Do not restore those grants or treat owner-only fixture execution as application
+authority. The existing repository rebinds deliberate formation only to the atomic
+v3 mutation wrapper and maps only its exact closed denial/conflict errors. New
+formation requires known-clear current policy; UNKNOWN remains held. The old
+private controller/provider/context-builder is not activated by this binding.
+The old browser result, handlers and default
+`src/lib/solmind/supabase/explorerConversationRequestDependencies.ts` remain held
+and unchanged: no private-wrapper/provider/builder/readiness activation. Old write
+callers do not bypass the retired capabilities. Candidate validity is no authority
+to wire the private controller, render unverified contacts or affect real users.
+
+Keep `eslint-rules/explorer-source-isolation.mjs` and `eslint.config.mjs` closed to
+21 exact source profiles and six erased type-only edges, preserving all older
+constraints. The private controller's legacy composition fingerprint import is an
+explicit runtime edge; the repository's SDK/controller imports remain type-only.
+No wildcard, barrel, alternate spelling, dynamic import or unrestricted global
+permission follows. Static source isolation is not a sandbox or runtime proof.
 
 ## PRJ01_V-WS05-WI022 Suggested Waypoint UI Boundaries
 
@@ -791,11 +909,12 @@ solmind-docs/execution/04_SolMind_AI_Orchestration_Spec_v1_0.md Section 5.2.
 It is not the deferred optional process-improvement work. Detailed prospective
 checks are owned by solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md.
 
-Keep eslint-rules/explorer-source-isolation.mjs and its local flat configuration
-limited to the eleven explicit EXPLORER_SOURCE_PROFILES. Only their exact
-runtime/type specifiers are permitted; two composition type-only edges erase
-and grant no value import or side effect. Restricted globals apply to those
-profiles only. No default/source/runtime/provider behavior changes.
+The R09 predecessor covered eleven explicit EXPLORER_SOURCE_PROFILES and two
+erased composition type-only edges. Its dated evidence below retains that exact
+scope. The private successor boundary above extends the current graph to 21 exact
+profiles and six erased type-only edges. Keep exact runtime/type specifiers and
+profile-scoped restricted globals; no wildcard, value-import permission for an
+erased edge or default/provider activation follows.
 
 Static dependency lint is not a JavaScript sandbox or proof that injected data,
 trusted ports or the complete current source index are safe. Typed assembly and

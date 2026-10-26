@@ -1,3 +1,5 @@
+-- Preserved legacy body regression runs as postgres owner after direct service-role retirement.
+-- This does not prove or grant an application dispatch path; private-v3 tests prove API denials.
 -- Local ephemeral database only. This test commits reserved synthetic fixture
 -- rows so two dblink sessions can contend first on one logical operation and
 -- then with two different logical operations on one session. It removes only
@@ -373,14 +375,14 @@ select is(
   'connection B statement timeout is bounded'
 );
 select is(
-  dblink_exec('s03d_predispatch_a', 'set role service_role'),
+  dblink_exec('s03d_predispatch_a', 'set role postgres'),
   'SET',
-  'connection A uses only the service-role entry point'
+  'connection A covers the preserved legacy body as owner; service-role entry is retired'
 );
 select is(
-  dblink_exec('s03d_predispatch_b', 'set role service_role'),
+  dblink_exec('s03d_predispatch_b', 'set role postgres'),
   'SET',
-  'connection B uses only the service-role entry point'
+  'connection B covers the preserved legacy body as owner; service-role entry is retired'
 );
 
 create temp table virtual_guide_concurrency_pids as
