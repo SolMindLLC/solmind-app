@@ -15,7 +15,7 @@ import { isCanonicalVerificationEmail } from "../verificationCodeDelivery";
 const CONSOLE_METHODS = ["log", "info", "warn", "error", "debug", "trace"] as const;
 
 // The migration that holds the current definition of the issuance function.
-const ISSUANCE_MIGRATION = "20260929010000_verification_issuance_abuse_limits.sql";
+const ISSUANCE_MIGRATION = "20261027000000_verification_issuance_unused_code_limits.sql";
 const ISSUANCE_DEFINITION = "create or replace function public.solmind_issue_verification_challenge(";
 
 // Every printable ASCII character, 0x21 to 0x7E, and the space.

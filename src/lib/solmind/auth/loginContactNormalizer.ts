@@ -8,7 +8,7 @@
 // activation. The canonical form is the one the database already enforces:
 // `execution/03_SolMind_Phase0_Data_Model_Spec_v1_1.md` keeps
 // `normalized_contact_value` as a lowercase email, and the current issuance
-// function (`supabase/migrations/20260929010000_verification_issuance_abuse_limits.sql`)
+// function (`supabase/migrations/20261027000000_verification_issuance_unused_code_limits.sql`)
 // accepts an email contact only if it is 3 to 254 characters, equal to its
 // own lowercase form, matches that function's pattern (copied below as
 // `CANONICAL_EMAIL_PATTERN`) and has no `..`. The invitation issuance

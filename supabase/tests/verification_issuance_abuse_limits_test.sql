@@ -3,7 +3,7 @@
 -- 5a590059- and contacts under limits-*@synthetic.invalid; history rows are inserted directly with created_at in the
 -- past to place them in or out of the rolling hour. Everything rolls back.
 begin;
-select plan(29);
+select plan(43);
 
 -- History helper: n committed-looking issuances for a contact, the k-th at "minutes_ago[k]" minutes before now.
 create function pg_temp.limits_history(p_contact text, p_minutes_ago int[], p_purpose text default 'login')
@@ -163,6 +163,126 @@ select ok((select f.created_at <= f.invalidated_at and f.invalidated_at = s.crea
   where f.verification_challenge_id = '5a590059-0000-4000-8000-000000000911'
     and s.verification_challenge_id = '5a590059-0000-4000-8000-000000000912'),
   'the first is invalidated at the second''s issuance time, after its own creation');
+-- Card 5: 14 used-code counting assertions; the original stale-transaction check stays last.
+create function pg_temp.used_limits_complete_six()
+returns table(attempt integer, issue_outcome text, redeem_outcome text)
+language plpgsql as $$
+declare n integer; selector uuid;
+begin
+  for n in 1..6 loop
+    selector := ('5a590060-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid;
+    select outcome into issue_outcome from public.solmind_issue_verification_challenge(
+      selector, 'limits-used-completed@synthetic.invalid', 'email', 'login', 'email',
+      'svf1:' || repeat('a', 64), null, null);
+    select outcome into redeem_outcome from public.solmind_redeem_verification_challenge(
+      selector, 'login', 'svf1:' || repeat('a', 64));
+    attempt := n;
+    return next;
+  end loop;
+end;
+$$;
+
+set local role service_role;
+select results_eq($q$select * from pg_temp.used_limits_complete_six()$q$,
+  $q$values (1,'issued'::text,'redeemed'::text), (2,'issued','redeemed'),
+    (3,'issued','redeemed'), (4,'issued','redeemed'), (5,'issued','redeemed'), (6,'issued','redeemed')$q$,
+  'six successive real SQL issuances and successful code redemptions');
+select is((select outcome from public.solmind_issue_verification_challenge(
+  '5a590060-0000-4000-8000-000000000007', 'limits-used-completed@synthetic.invalid',
+  'email', 'login', 'email', 'svf1:' || repeat('b', 64), null, null)),
+  'issued', 'six completed code redemptions, then a seventh code is issued');
+reset role;
+select is((select count(*)::integer from identity.verification_challenge
+  where normalized_contact_value = 'limits-used-completed@synthetic.invalid' and used_at is not null),
+  6, 'the six completed codes remain as used history');
+select is((select count(*)::integer from identity.verification_challenge
+  where normalized_contact_value = 'limits-used-completed@synthetic.invalid' and used_at is null),
+  1, 'the seventh code is the sole unused code');
+
+create function pg_temp.used_limits_history(contact text, minutes_ago integer[], used_indexes integer[])
+returns void language plpgsql as $$
+declare m integer; n integer := 0; created timestamptz; was_used boolean;
+begin
+  foreach m in array minutes_ago loop
+    n := n + 1;
+    created := now() - make_interval(mins => m);
+    was_used := n = any(used_indexes);
+    insert into identity.verification_challenge(
+      normalized_contact_value, contact_method_type, purpose, delivery_channel, code_hash,
+      expires_at, created_at, used_at, invalidated_at, failed_attempt_count)
+    values (contact, 'email', 'login', 'email', 'svf1:' || repeat('0', 64),
+      created + interval '10 minutes', created,
+      case when was_used then created + interval '2 seconds' else null end,
+      case when was_used then null else created + interval '1 second' end,
+      case when not was_used and n % 2 = 0 then 5 else 0 end);
+  end loop;
+end;
+$$;
+
+-- Five unused rows still count, but one used row leaves exactly one available slot.
+select pg_temp.used_limits_history('limits-used-mixed@synthetic.invalid', array[50,40,30,20,10,5], array[6]);
+set local role service_role;
+select is((select outcome from public.solmind_issue_verification_challenge(
+  '5a590060-0000-4000-8000-000000000011', 'limits-used-mixed@synthetic.invalid',
+  'email', 'login', 'email', 'svf1:' || repeat('c', 64), null, null)),
+  'issued', 'five unused plus one used code allows the next issuance');
+reset role;
+
+-- Isolate s.used_at: six older unused rows are within the used recent anchor's hour,
+-- but outside today's rolling hour. A used anchor must not impose a lockout.
+select pg_temp.used_limits_history('limits-used-anchor@synthetic.invalid', array[69,68,67,66,65,64,10], array[7]);
+set local role service_role;
+select is((select outcome from public.solmind_issue_verification_challenge(
+  '5a590060-0000-4000-8000-000000000012', 'limits-used-anchor@synthetic.invalid',
+  'email', 'login', 'email', 'svf1:' || repeat('d', 64), null, null)),
+  'issued', 'a used recent code cannot anchor the 15-minute lockout');
+reset role;
+
+-- Isolate w.used_at: the recent anchor remains unused, but one used older row
+-- cannot inflate its preceding rolling-hour count from five to six.
+select pg_temp.used_limits_history('limits-used-inner@synthetic.invalid', array[65,64,63,62,61,10], array[1]);
+set local role service_role;
+select is((select outcome from public.solmind_issue_verification_challenge(
+  '5a590060-0000-4000-8000-000000000013', 'limits-used-inner@synthetic.invalid',
+  'email', 'login', 'email', 'svf1:' || repeat('e', 64), null, null)),
+  'issued', 'a used older code cannot inflate an unused anchor''s inner lockout count');
+reset role;
+
+-- Superseded/expired/failed-attempt-exhausted unused history continues to consume budget.
+select pg_temp.used_limits_history('limits-used-control@synthetic.invalid', array[50,40,30,20,10,5], array[]::integer[]);
+set local role service_role;
+select is((select outcome from public.solmind_issue_verification_challenge(
+  '5a590060-0000-4000-8000-000000000014', 'limits-used-control@synthetic.invalid',
+  'email', 'login', 'email', 'svf1:' || repeat('f', 64), null, null)),
+  'denied', 'six unused codes still block the seventh');
+reset role;
+select is((select count(*)::integer from identity.verification_challenge
+  where verification_challenge_id = '5a590060-0000-4000-8000-000000000014'),
+  0, 'the unchanged six-unused denial creates no challenge');
+select is((select count(*)::integer from audit.audit_event
+  where target_entity_id = '5a590060-0000-4000-8000-000000000014'),
+  0, 'the unchanged six-unused denial creates no audit');
+
+-- Unused recent sixth anchor still locks out even when only one row is in the current hour.
+select pg_temp.used_limits_history('limits-used-lockout-control@synthetic.invalid', array[65,64,63,62,61,10], array[]::integer[]);
+set local role service_role;
+select is((select outcome from public.solmind_issue_verification_challenge(
+  '5a590060-0000-4000-8000-000000000015', 'limits-used-lockout-control@synthetic.invalid',
+  'email', 'login', 'email', 'svf1:' || repeat('1', 64), null, null)),
+  'denied', 'the unused-code 15-minute lockout remains effective');
+reset role;
+select is((select count(*)::integer from identity.verification_challenge
+  where verification_challenge_id = '5a590060-0000-4000-8000-000000000015'),
+  0, 'the unused lockout denial creates no challenge');
+select is((select count(*)::integer from audit.audit_event
+  where target_entity_id = '5a590060-0000-4000-8000-000000000015'),
+  0, 'the unused lockout denial creates no audit');
+select ok((select pg_catalog.obj_description(
+  'public.solmind_issue_verification_challenge(uuid,text,text,text,text,text,uuid,uuid)'::regprocedure, 'pg_proc')
+  like '%at most six committed issuances per normalized contact in a rolling hour%codes used to sign in do not count%'),
+  'the stored comment retains the original limit phrase and discloses the used-code amendment');
+
+
 -- 14. A transaction older than 10 seconds fails closed before any read (review #109a). Kept last: every call after it
 -- would fail.
 select pg_catalog.pg_sleep(10.1);

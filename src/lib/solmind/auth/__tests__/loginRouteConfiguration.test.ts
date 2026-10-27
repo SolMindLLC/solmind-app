@@ -71,7 +71,7 @@ const ENVIRONMENT: Readonly<Record<string, string | undefined>> = Object.freeze(
   [VERIFICATION_PEPPER_ENV]: KAT_PEPPER_SETTING,
 });
 
-const ISSUANCE_MIGRATION = "20260929010000_verification_issuance_abuse_limits.sql";
+const ISSUANCE_MIGRATION = "20261027000000_verification_issuance_unused_code_limits.sql";
 const ISSUANCE_DEFINITION = "create or replace function public.solmind_issue_verification_challenge(";
 
 const MODULE_NAMES = [

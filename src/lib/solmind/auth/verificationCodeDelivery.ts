@@ -195,7 +195,7 @@ const DELIVER_KEYS = Object.freeze([
 const TRANSPORT_KEYS = Object.freeze(["send"] as const);
 
 // Mirrors the canonical checks in public.solmind_issue_verification_challenge
-// (migration 20260929010000): lowercase canonical email, 3 to 254 characters,
+// (migration 20261027000000): lowercase canonical email, 3 to 254 characters,
 // no consecutive dots; E.164 phone. Neither pattern admits CR, LF, spaces or
 // angle brackets.
 const CANONICAL_EMAIL_PATTERN = /^[a-z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-z0-9.-]+$/;
