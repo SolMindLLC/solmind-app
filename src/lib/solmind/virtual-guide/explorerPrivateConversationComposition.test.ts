@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getExplorerPrivateConfigurationCandidate } from "./explorerPrivateConfiguration";
 import { EXPLORER_SAFETY_REQUEST_VERSION } from "./explorerSafetyReplyContract";
-import { adaptPrivateGovernedExplorerContextBuilder, commandExplorerPrivateConversation, deriveExplorerPrivateTurnIds, parseExplorerPrivatePolicy,
+import { adaptPrivateGovernedExplorerContextBuilder, readExplorerPrivateConversation, commandExplorerPrivateConversation, deriveExplorerPrivateTurnIds, parseExplorerPrivatePolicy,
   type ExplorerPrivateConversationDependencies, type ExplorerPrivateOperationalReadiness, type ExplorerPrivateRpcRow, type ExplorerPrivateReadRow,
   type ExplorerPrivateEnsureParameters, type ExplorerPrivatePrepareParameters, type ExplorerPrivateSettleParameters } from "./explorerPrivateConversationComposition";
 import type { ExplorerConversationState } from "../explorerConversationContract";
@@ -259,4 +259,31 @@ it("a caller canceled during trusted rendering admits no outward terminal body",
   expect(f.settle).toHaveBeenCalledOnce();
   expect(f.settle.mock.calls[0][0]).toMatchObject({ p_status: "completed", p_model_level: 3, p_model_minor_indicated: false,
     p_delivery_interested: false, p_reply_kind: "none", p_reply_body: null, p_reply_message_id: null });
+});
+
+describe("private read operational availability", () => {
+  it("revalidates authority after an awaited readiness check before releasing private history", async () => {
+    const f = fixture(); const authenticate = vi.fn().mockResolvedValueOnce(ACTOR).mockResolvedValue(null);
+    const output = await readExplorerPrivateConversation({ ...f.dependencies, authenticate });
+    expect(f.resolve).toHaveBeenCalledOnce(); expect(authenticate).toHaveBeenCalledTimes(2);
+    expect(output).toEqual({ result: { ok: false, state: null, error: "denied" }, assistance: null });
+    expect(f.ensure).not.toHaveBeenCalled(); expect(f.generate).not.toHaveBeenCalled();
+  });
+  it("advertises only complete injected readiness without ensuring or dispatching", async () => {
+    const f = fixture();
+    const output = await readExplorerPrivateConversation(f.dependencies);
+    expect(output.result).toMatchObject({ ok: true, state: { providerState: "available" } });
+    expect(f.resolve).toHaveBeenCalledOnce();
+    for (const port of [f.ensure, f.observe, f.prepare, f.settle, f.mutate, f.generate]) expect(port).not.toHaveBeenCalled();
+    const held = await readExplorerPrivateConversation({ ...f.dependencies, resolveOperationalReadiness: undefined });
+    expect(held.result).toMatchObject({ ok: true, state: { providerState: "unavailable" } });
+  });
+  it("keeps saved history readable on readiness failure and denies before readiness after auth loss", async () => {
+    const f = fixture(); f.resolve.mockRejectedValue(new Error("private configuration detail"));
+    expect((await readExplorerPrivateConversation(f.dependencies)).result).toMatchObject({ ok: true, state: { providerState: "unavailable" } });
+    f.resolve.mockClear();
+    const output = await readExplorerPrivateConversation({ ...f.dependencies, authenticate: async () => null });
+    expect(output.result).toEqual({ ok: false, state: null, error: "denied" });
+    expect(f.resolve).not.toHaveBeenCalled();
+  });
 });

@@ -39,6 +39,7 @@ const EXPECTED_PROFILES: readonly Profile[] = [
   profile("virtual-guide/explorerConversationContext.ts", ["server-only", "./authorizedVirtualGuideContext",
     "../context/explorerSafeContext", "../onboarding", "node:util", "./effectiveMethodologyContext"], ["./explorerConversationComposition"]),
   profile("explorerConversationContract.ts", []),
+  profile("explorerPrivateConversationResponse.ts", ["./explorerConversationContract"]),
   profile("virtual-guide/explorerConversationComposition.ts", ["server-only", "node:crypto", "../explorerConversationContract", "./virtualGuideConversationContract"]),
   profile("virtual-guide/explorerPrivateConfigurationCandidate.ts", ["server-only"]),
   profile("virtual-guide/explorerPrivateConfiguration.ts", ["server-only", "node:crypto", "node:util", "./explorerPrivateConfigurationCandidate"]),
@@ -46,11 +47,22 @@ const EXPECTED_PROFILES: readonly Profile[] = [
   profile("virtual-guide/explorerSafetyReplyInvocation.ts", ["server-only", "node:util", "./explorerSafetyReplyContract"]),
   profile("virtual-guide/explorerConversationSafety.ts", ["server-only", "./explorerSafetyReplyContract"], ["./explorerPrivateConfiguration"]),
   profile("virtual-guide/openAiLunaExplorerSafetyTransport.ts", ["server-only", "./explorerSafetyReplyContract"], ["./explorerSafetyReplyInvocation"]),
-  profile("virtual-guide/explorerPrivateConversationComposition.ts", ["server-only", "node:crypto", "node:util", "../explorerConversationContract", "./explorerConversationComposition", "./explorerPrivateConfiguration", "./explorerSafetyReplyContract", "./explorerSafetyReplyInvocation", "./explorerConversationSafety"]),
+  profile("virtual-guide/explorerPrivateConversationComposition.ts", ["server-only", "node:crypto", "node:util", "../explorerConversationContract", "./explorerConversationComposition", "./explorerPrivateConfiguration", "./explorerSafetyReplyContract", "./explorerSafetyReplyInvocation", "./explorerConversationSafety"], ["../explorerPrivateConversationResponse"]),
   profile("supabase/explorerPrivateConversationRepository.ts", ["server-only", "node:util"], ["@supabase/supabase-js", "../virtual-guide/explorerPrivateConversationComposition"]),
+  profile("operations/explorerPrivateOperationalSignal.ts", ["server-only", "node:fs/promises", "node:path"], ["../virtual-guide/explorerPrivateConversationComposition"]),
+  profile("virtual-guide/openAiLunaMethodologyScreeningTransport.ts", ["server-only", "node:crypto", "./methodologySafetyScreenContract"], ["./methodologyScreeningComposition"]),
+  profile("operations/explorerPrivateRequestBudgets.ts", ["server-only", "node:util"], ["../virtual-guide/explorerPrivateConversationComposition"]),
+  profile("operations/explorerPrivateReviewedRenderer.ts", ["server-only", "../virtual-guide/explorerSafetyReplyContract"], ["../virtual-guide/explorerPrivateConversationComposition", "../virtual-guide/explorerConversationSafety"]),
+  profile("virtual-guide/explorerPrivateGovernedCapabilities.ts", ["server-only", "node:crypto", "./explorerPrivateConfiguration", "./explorerPrivateConversationComposition", "./explorerConversationContext", "./effectiveMethodologyContext"]),
 ];
 const CONTEXT_FILE = "src/lib/solmind/virtual-guide/explorerConversationContext.ts";
 const TYPE_EDGES = [
+  { file: "src/lib/solmind/operations/explorerPrivateReviewedRenderer.ts", specifier: "../virtual-guide/explorerPrivateConversationComposition" },
+  { file: "src/lib/solmind/operations/explorerPrivateReviewedRenderer.ts", specifier: "../virtual-guide/explorerConversationSafety" },
+  { file: "src/lib/solmind/operations/explorerPrivateRequestBudgets.ts", specifier: "../virtual-guide/explorerPrivateConversationComposition" },
+  { file: "src/lib/solmind/operations/explorerPrivateOperationalSignal.ts", specifier: "../virtual-guide/explorerPrivateConversationComposition" },
+  { file: "src/lib/solmind/virtual-guide/openAiLunaMethodologyScreeningTransport.ts", specifier: "./methodologyScreeningComposition" },
+  { file: "src/lib/solmind/virtual-guide/explorerPrivateConversationComposition.ts", specifier: "../explorerPrivateConversationResponse" },
   { file: "src/lib/solmind/virtual-guide/effectiveMethodologyContext.ts", specifier: "./explorerConversationComposition" },
   { file: CONTEXT_FILE, specifier: "./explorerConversationComposition" },
   { file: "src/lib/solmind/virtual-guide/explorerConversationSafety.ts", specifier: "./explorerPrivateConfiguration" },
@@ -107,7 +119,7 @@ function expectFixedFailure(result: ESLint.LintResult, messageId: keyof typeof M
 const severity = (entry: unknown) => Array.isArray(entry) ? entry[0] : entry;
 
 describe("actual Explorer assembly source-isolation plugin and flat configuration", () => {
-  it("exports exactly the twenty-one reviewed direct-source profiles, deeply frozen", () => {
+  it("exports exactly the twenty-seven reviewed direct-source profiles, deeply frozen", () => {
     expect(EXPLORER_SOURCE_PROFILES).toEqual(EXPECTED_PROFILES);
     expect(Object.isFrozen(EXPLORER_SOURCE_PROFILES)).toBe(true);
     for (const entry of EXPLORER_SOURCE_PROFILES) {

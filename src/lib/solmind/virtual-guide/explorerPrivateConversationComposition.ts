@@ -13,6 +13,7 @@ import {
   type ExplorerSafetyReplyRequest, type ExplorerSafetyClassification,
 } from "./explorerSafetyReplyContract";
 import { invokeExplorerSafetyReply, type ExplorerSafetyReplyTransport } from "./explorerSafetyReplyInvocation";
+import type { ExplorerPrivateAssistance } from "../explorerPrivateConversationResponse";
 import {
   combineExplorerSafety, detectExplorerFallback, selectExplorerSafetyReply, selectExplorerSafetyRequestMode,
   type ExplorerConversationPolicy, type ExplorerFallbackObservation, type ExplorerSafetyReplyPlan,
@@ -58,8 +59,7 @@ export type ExplorerPrivateConversationRepository = Readonly<{
   settle: (parameters: ExplorerPrivateSettleParameters) => Promise<ExplorerPrivateRpcRow>;
   mutate?: (parameters: ExplorerPrivateMutateParameters) => Promise<ExplorerPrivateRpcRow>;
 }>;
-export type ExplorerPrivateConversationResult = Readonly<{ result: ExplorerConversationResult;
-  assistance: null | Readonly<{ kind: "support" | "adult_policy" | "temporarily_unavailable"; body: string; persisted: false }> }>;
+export type ExplorerPrivateConversationResult = Readonly<{ result: ExplorerConversationResult; assistance: ExplorerPrivateAssistance | null }>;
 export type ExplorerPrivateOperationalReadiness = Readonly<{
   configuration: ExplorerPrivateConfigurationCandidate; configurationFingerprint: string; modelPolicyVersion: string;
   resourcePolicyVersion: string; sourceVerificationReceiptSha256: string; resourceVerificationReceiptSha256: string;
@@ -231,7 +231,20 @@ async function freshState(dependencies: ExplorerPrivateConversationDependencies,
 }
 export async function readExplorerPrivateConversation(dependencies: ExplorerPrivateConversationDependencies): Promise<ExplorerPrivateConversationResult> {
   try { const actor = await dependencies.authenticate(); if (!actorValid(actor)) return failed("denied");
-    return Object.freeze({ result: stateResult(await dependencies.repository.read(actor)), assistance: null });
+    const row = await dependencies.repository.read(actor);
+    const state = stateResult(row);
+    if (!state.ok) return Object.freeze({ result: state, assistance: null });
+    if (dependencies.resolveOperationalReadiness === undefined) return Object.freeze({ result: state, assistance: null });
+    // A GET never ensures an anchor or writes evidence. Readiness is a fresh
+    // server capability, not a browser flag or the inert candidate getter.
+    let available = false;
+    try { available = verifiedReadiness(await dependencies.resolveOperationalReadiness(actor, row), dependencies) !== null; }
+    catch { /* Saved history remains readable while operational inputs are held. */ }
+    // Readiness may await external governance/storage. Never release the old
+    // private projection after that wait without fresh identity and authority.
+    const current = await freshState(dependencies, actor);
+    return Object.freeze({ result: current.ok ? Object.freeze({ ...current,
+      state: Object.freeze({ ...current.state, providerState: available ? "available" : "unavailable" }) }) : current, assistance: null });
   } catch { return failed(); }
 }
 export async function commandExplorerPrivateConversation(input: Readonly<{ command: unknown; dependencies: ExplorerPrivateConversationDependencies; signal?: AbortSignal }>): Promise<ExplorerPrivateConversationResult> {

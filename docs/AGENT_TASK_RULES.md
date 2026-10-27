@@ -1,7 +1,7 @@
 # SolMind App Agent Task Rules
 
 Version: 0.2.2
-Last Updated: 2026-10-25
+Last Updated: 2026-10-27
 Repo: solmind-app  
 Purpose: Define safe rules for AI coding agents and AI assistants working on the SolMind MVP0 application.
 
@@ -374,6 +374,8 @@ their separately reviewed owners and gates.
 ### Connected Explorer conversation construction - 2026-10-24
 
 These source boundaries describe a provider-held construction increment.
+This dated section retains the predecessor scope; current held private
+request/browser ownership is specified in the private successor section below.
 Use `solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md` and
 `solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md` for actual proof
 and checked publication status; source guidance alone supplies no assurance.
@@ -1043,7 +1045,7 @@ PUBLICATION_TRANSPORT_RETURN_R10/STATUS_CLOSEOUT.json PASS. No outcome credit.
 The current private construction and its six v3 ports are owned by
 solmind-app/AGENTS.md and solmind-app/README.md. The older v1/v2/AV2 descriptions
 and dated eleven-profile proof above retain their predecessor scope. The current
-source graph has21 exact profiles and six erased type-only edges; do not infer
+source graph has27 exact profiles and twelve erased type-only edges; do not infer
 new imports or activation from the older counts.
 
 Keep explorerPrivateConfigurationCandidate.ts and explorerPrivateConfiguration.ts,
@@ -1062,8 +1064,112 @@ real first-Send container, minimum actual positive private evidence, monotonic
 conversation policy and atomic terminal/formation transitions. Five legacy direct
 service-role writes are retired, including all former v1 session types; preserve
 definitions/history without restoring a bypass. Read-only/owner fixture evidence
-grants no dispatch. The original browser/default factory remains held and supplies
-none of the private provider, builder, reviewed resource/renderer or operational
-signal capabilities. Actual assurance and unfinished gates belong to
+grants no dispatch. Current private request wiring selects the v3 repository;
+default dependencies still omit provider, readiness, builder, reviewed renderer
+and operational signal. Actual assurance and unfinished gates belong to
 solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md and
 solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md.
+
+### Finite private local HTTP configuration and dispatch - 2026-10-27
+
+The actual private state/commands HTTP routes use
+`createExplorerPrivateLocalRequestDependencies` in
+`src/lib/solmind/supabase/explorerConversationRequestDependencies.ts`.
+The separate `createExplorerPrivateConversationRequestDependencies` retains
+explicit capability injection and otherwise supplies auth/v3-repository only.
+Older default/private-factory statements below refer to that explicit factory;
+they do not describe the new local HTTP composition.
+
+`src/lib/solmind/operations/explorerPrivateLocalRunProfile.ts` owns strict pinned
+JSON/receipt loading and the persistent exclusive one-call claim. Absent, invalid
+or expired server-selected data stays held. The browser selects neither profile
+nor actor/target/authority. Receipt hashes and shaped approval fields bind trusted
+operator evidence; they do not independently establish actual target isolation,
+resource/source verification, screening or authenticated Admin/Guide decisions.
+The two profile environment selectors are data locations, never enable flags or
+approval. No OpenAI credential is read by this loader.
+
+`src/lib/solmind/operations/explorerPrivateLocalDispatch.ts` owns request-scoped
+prepared identity, fresh authenticated v3/conversation/policy checks, current
+governed-methodology verification and a final authenticated reread after that
+await. Changed/unknown authority, cancellation or session/run expiry refuses
+forwarding. Consume the durable claim before the guarded transport/key closure;
+never delete/reset it after uncertain results or use a fresh profile to retry.
+Actual provider/credential and isolated-target grants remain separate.
+
+The approved policy record supplies the exact private US English/plain-text
+resource/failure strings. Keep the finite saved-turn/reload/pre-next-Send/stop/
+closeout operator audit distinct from mandatory dispatch authority/exclusion.
+This is not scheduled integrity/Admin paging, an independent preHTTP snapshot
+scanner or an atomic database-to-HTTP lock. Genuine joined proof remains separate;
+dated synthetic/source proof retains its original scope. Actual results belong
+to solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md.
+
+### Held private request/browser ownership
+
+src/lib/solmind/explorerPrivateConversationResponse.ts is the browser-safe strict
+versioned result/assistance envelope owner. Its assistance is transient and
+persisted:false, never saved history. Private composition imports its assistance
+type only; keep private evidence/policy/configuration out of browser projections.
+The new createExplorerPrivateConversationRequestDependencies export in
+src/lib/solmind/supabase/explorerConversationRequestDependencies.ts reuses the
+existing raw-cookie authentication source and six-port private repository. Keep
+the legacy export for its historical proof. No default operational ports,
+provider credential/environment lookup or candidate-driven activation is added.
+
+State/commands route candidates call private read/command and validate the
+envelope; src/components/solmind/ExplorerConversation.tsx validates it again.
+GET can report readiness only through complete injected ports/valid binding and
+never ensures or writes. Show assistance separately, retain the send draft on
+an assistance-bearing confirmed state and preserve authority-loss clearing.
+The retained 70-second browser abort is not a whole-command budget. This is held
+integration construction, not operational activation, passing checks, formal
+assurance, application, banking or genuine-AI proof.
+
+### Explicit signal and dormant screening additions
+
+src/lib/solmind/operations/explorerPrivateOperationalSignal.ts owns the injected
+dedicated local .jsonl path/receipt and version/time/closed-marker append only.
+No destination is adopted; no path/env lookup, directory creation, retry, private
+ID or notification. A one-second controller await/abort request does not prove
+filesystem write cancellation. src/lib/solmind/virtual-guide/openAiLunaMethodologyScreeningTransport.ts
+owns the explicit-policy/subject/request-bound pure builder and dormant injected
+HTTP adapter. Preserve pinned model/medium/store:false, no tools/background/stream/
+retry, 128-KiB limits and the 60-second local fetch/body-parse race. Local timeout
+does not prove remote stop, zero billing or zero retention; provider abuse-monitoring
+retention remains separately disclosed. No key lookup, default policy acceptance,
+real screen, human approval or activation. New-module proof is initially UNRUN;
+earlier bridge results do not cover these bytes. After awaited GET readiness,
+reauthenticate and reread current authority/state before releasing private data.
+
+### Private request await budgets
+
+src/lib/solmind/operations/explorerPrivateRequestBudgets.ts wraps only the new
+private factory: auth and each supplied six-port method 10s, readiness 15s,
+context 30s with caller/owned signal combination. Provider/render/signal retain
+60/2/1s ownership. The legacy factory remains unchanged; default private wiring
+has only wrapped auth/repository and no activated optional ports. Local race
+bounds are implemented, but do not prove remote stop, rollback or drain and do not
+sandbox synchronous trusted code. No automatic retry/repost follows timeout.
+The 70-second browser abort expresses delivery interest/uncertainty, not a server
+whole-command limit. Joined-path proof and actual governance/integrity/activation
+remain required. New fake-timer cases are initially UNRUN; factory tests must
+check exact authority/argument behavior and optional absence, not unwrapped
+object identity. Earlier bridge results do not validate the new wrapper.
+
+### Explicit rendering and governed-capability owners
+
+src/lib/solmind/operations/explorerPrivateReviewedRenderer.ts reconstructs pinned
+trusted segments and adult/age resource order, rejecting mismatched plans rather
+than trusting supplied plan prose. Distinct adult-only/restricted paths remain.
+Injected resource/failure strings and renderer receipts require genuine review;
+shape validation is not suitability or human approval.
+
+src/lib/solmind/virtual-guide/explorerPrivateGovernedCapabilities.ts binds explicit
+copied configuration, pack/Guide scope, receipt hashes, versions and ports. Use
+its real effective-methodology source per readiness call, exact pinned subject
+digest and AV3 governed context builder/adapter; no fake identity or approval.
+Both modules stay direct-import/server-only and dormant until trusted injection.
+They do not configure default adoption, credentials or provider activation.
+Actual Admin/Guide governance, operational policy/resources, integrity and genuine
+joined-path proof remain gates; source construction asserts no passing proof.

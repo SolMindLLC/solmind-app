@@ -150,15 +150,76 @@ they do not identify the actor or authorize a provider call. Private history,
 Compass items and chosen Waypoints have protected persistence owners, while the
 deterministic previews above retain their browser-memory-only behavior.
 
-The default conversation request factory supplies authentication and the retained
-repository, with no provider, context builder or private operational readiness.
-Its deliberate formation method uses the atomic v3 mutation wrapper, which
-requires current known-clear policy; the old write grant stays retired.
-The separate private controller and safety transport require explicitly supplied
-trusted capabilities. Their presence does not activate the browser, approve a
-methodology pack or verify resource contacts. Saved pending work, unknown command
-acknowledgment and transient assistance must not appear as a confirmed saved reply;
-exact replay never authorizes another provider dispatch.
+The private state/command handlers use the private controller and a strict
+`explorer-private-conversation-response.v1` envelope containing `version`, `result`
+and `assistance`. `src/lib/solmind/explorerPrivateConversationResponse.ts` owns
+this browser-safe projection. Temporary assistance stays separate from saved
+history and never claims persistence; a confirmed state carrying assistance
+retains the send draft and suppresses a saved-reply confirmation.
+
+`createExplorerPrivateConversationRequestDependencies` retains explicit capability
+injection and otherwise supplies only authenticated v3 repository access. The
+actual private state/commands HTTP routes use
+`createExplorerPrivateLocalRequestDependencies`: absent/invalid/expired pinned local
+run data stays held; an explicitly approved profile can compose governed
+readiness, reviewed resources/rendering, local signals and dispatch-bound
+single-call transport. Profile data is not approval and supplies no synthetic
+methodology or human decision. Current authority/exclusion and actual target,
+provider and human grants remain required. GET still performs no creation or
+evidence write and reauthenticates/rereads after awaited readiness before returning
+a private saved projection.
+The browser's retained 70-second abort is a response wait, not a whole-command
+deadline or proof of remote settlement. Saved pending work, unknown acknowledgment
+and transient assistance must not appear as a confirmed saved reply. Exact replay
+never authorizes another provider dispatch; these boundaries approve no methodology,
+resource contacts, provider activation or real-user use.
+
+`src/lib/solmind/operations/explorerPrivateRequestBudgets.ts` wraps only the
+private request factory's local awaits: 10 seconds for authentication and each
+of six supplied v3 repository methods, 15 seconds for readiness and 30 seconds
+for context. Context combines caller/owned deadline signals; provider/render/
+signal retain their separate 60/2/1-second owners. The legacy factory stays
+unchanged. The explicit capability factory supplies no operational defaults;
+the local HTTP factory requires valid pinned run data.
+These implemented local waits do not establish a measured joined-command bound,
+remote stop, transaction rollback or drain. Synchronous trusted code is not
+sandboxed, and a timeout supplies no automatic retry or terminal repost.
+The browser abort expresses delivery interest/uncertainty rather than proving
+server completion. Genuine governance, integrity and activation remain required.
+
+The explicit private-local operational signal owner is
+`src/lib/solmind/operations/explorerPrivateOperationalSignal.ts`. It accepts an
+operator-selected dedicated local `.jsonl` path and verification receipt, appending
+only version/time/closed marker. It supplies no default path, directory creation,
+environment lookup, retry, private IDs or notification. No operational destination
+is configured; the controller's one-second wait/abort request does not prove an
+in-flight filesystem write stopped.
+
+`src/lib/solmind/virtual-guide/openAiLunaMethodologyScreeningTransport.ts` supplies
+an explicit-policy pure request builder and dormant injected HTTP adapter. Exact
+subject/policy/request bindings omit account/pack UUIDs from model input. The
+source pins gpt-5.6-luna, medium effort, store:false, structured output, no tools,
+background, streaming or retry, and 128-KiB request/response limits. Its 60-second
+local fetch/body-parse race does not guarantee remote stop, zero billing or zero
+retention; standard provider abuse-monitoring retention remains separate.
+No default credential lookup, policy acceptance, actual screen, Admin/Guide
+approval or provider activation is supplied by these modules.
+
+`src/lib/solmind/operations/explorerPrivateReviewedRenderer.ts` reconstructs
+configured trusted segments and their adult/age-appropriate resource order,
+refusing mismatched plan segments rather than rendering caller-supplied plan
+prose. Resource and failure-assistance strings are explicit inputs; their shape
+and receipt binding do not establish current suitability or genuine human review.
+
+`src/lib/solmind/virtual-guide/explorerPrivateGovernedCapabilities.ts` binds an
+explicit configuration, pack/Guide scope, receipt hashes, versions and supplied
+ports into a configuration fingerprint. Readiness calls the injected methodology
+source each time and matches the pinned subject digest; actual operational use
+requires the genuine governed resolver. Context uses the
+AV3 governed builder and adapter with current revalidation. This dormant facade
+supplies no invented approval, default adoption or provider activation. Real
+Admin/Guide decisions, accepted resources/policy, source/integrity controls and
+genuine joined runtime proof remain distinct prerequisites.
 
 The separate `/explorer/waypoints` route now composes an authenticated,
 read-only inbox and suggestion detail over the server-derived Explorer
@@ -352,7 +413,10 @@ The private successor retires direct service-role execution of
 `public.solmind_mutate_explorer_conversation`. The first retirement covers every
 formerly allowed session type. Definitions and historical evidence remain;
 owner-only access and old receipts do not restore a dispatch/write capability.
-The unchanged default factory does not silently switch to the private repository.
+The explicit capability factory selects the closed v3 repository while leaving all
+operational ports absent by default. The retained predecessor factory does not
+reopen a retired write capability. Current deliberate formation requires the
+same locked known-clear policy; old owner fixtures supply no authority.
 
 Final private preparation inspects the actual allowed onboarding/history/immediate
 sources and excluded source fields under bounded locks. It keeps identity checks
@@ -443,6 +507,7 @@ src/
       dashboardPanels.ts
       explorerExperience.ts
       explorerConversationContract.ts
+      explorerPrivateConversationResponse.ts  versioned result and transient assistance
       explorerConversationFormation.ts
       invitations.ts
       loginOptions.ts
@@ -456,8 +521,15 @@ src/
       topics.ts
       auth/        server-side deny-by-default authorization and the request-auth boundary
       context/     Explorer-facing and AI-role context assembly helpers
+      operations/
+        explorerPrivateLocalRunProfile.ts  pinned finite local data and durable one-call claim
+        explorerPrivateLocalDispatch.ts  current authority and expiry before guarded forwarding
+        explorerPrivateOperationalSignal.ts  explicitly selected local marker-only file sink
+        explorerPrivateRequestBudgets.ts  finite local awaits for private request ports
+        explorerPrivateReviewedRenderer.ts  pinned trusted segments and explicit resource order
       supabase/    server-side Supabase integration (request-auth client, service-role loader, mapping)
         explorerPrivateConversationRepository.ts  six closed injected private RPC ports
+        explorerConversationRequestDependencies.ts  shared request-auth, held private factory
       virtual-guide/
         explorerConversationContext.ts  strict legacy and explicit AV3 context entries
         explorerPrivateConfigurationCandidate.ts  inert server-only literal candidate
@@ -465,8 +537,10 @@ src/
         explorerSafetyReplyContract.ts  same-call classification and optional prose
         explorerSafetyReplyInvocation.ts  one bounded injected invocation
         openAiLunaExplorerSafetyTransport.ts  dormant injected HTTP adapter
+        openAiLunaMethodologyScreeningTransport.ts  policy-bound builder and dormant screen adapter
         explorerConversationSafety.ts  pinned fallback and trusted selection
-        explorerPrivateConversationComposition.ts  unactivated private controller
+        explorerPrivateConversationComposition.ts  provider-held private controller
+        explorerPrivateGovernedCapabilities.ts  explicit receipts/ports and per-call governed resolution
 
 eslint-rules/
   explorer-source-isolation.mjs  exact production-source import profiles
@@ -496,9 +570,11 @@ The Explorer prototype boundary is intentionally narrow:
 Server-only modules under `src/lib/solmind/auth` and `src/lib/solmind/supabase` are kept off the shared client barrels, and each module area has co-located `__tests__` unit tests.
 
 Server-only `src/lib/solmind/virtual-guide/` owners also stay off shared/client
-barrels. The explicit source-isolation graph covers 21 profiles with six erased
+barrels. The explicit source-isolation graph covers 27 profiles with twelve erased
 type-only edges. Preserve its exact runtime/type specifiers and restricted globals;
-the private repository's SDK import remains type-only. This static boundary is
+the private repository's SDK import and private controller's browser-assistance
+import remain type-only. The browser-safe response owner imports only the closed
+browser result contract. This static boundary is
 not a JavaScript sandbox or proof of injected capabilities or source currentness.
 AV3 context entries coexist with strict AV2 entries; the compact input selection
 remains `wi007-v0.1+onboarding-fields-v2`, separate from the private safety output

@@ -2,8 +2,8 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ factory: vi.fn(), command: vi.fn(), origin: vi.fn() }));
-vi.mock("@/lib/solmind/supabase/explorerConversationRequestDependencies", () => ({ createExplorerConversationRequestDependencies: mocks.factory }));
-vi.mock("@/lib/solmind/virtual-guide/explorerConversationComposition", () => ({ commandExplorerConversation: mocks.command }));
+vi.mock("@/lib/solmind/supabase/explorerConversationRequestDependencies", () => ({ createExplorerPrivateLocalRequestDependencies: mocks.factory }));
+vi.mock("@/lib/solmind/virtual-guide/explorerPrivateConversationComposition", () => ({ commandExplorerPrivateConversation: mocks.command }));
 vi.mock("@/lib/solmind/auth/trustedApplicationOrigin", async importOriginal => ({
   ...await importOriginal<typeof import("@/lib/solmind/auth/trustedApplicationOrigin")>(),
   loadTrustedApplicationOrigin: mocks.origin,
@@ -29,11 +29,14 @@ async function invoke(next = request()) {
   expect(response.headers.get("cache-control")).toBe("private, no-store");
   expect(response.headers.get("x-content-type-options")).toBe("nosniff");
   expect(response.headers.has("set-cookie")).toBe(false);
-  return response.json();
+  const output = await response.json();
+  expect(output.version).toBe("explorer-private-conversation-response.v1");
+  expect(output).toHaveProperty("assistance");
+  return output.result;
 }
 beforeEach(() => {
   vi.resetAllMocks(); mocks.origin.mockReturnValue(ORIGIN); mocks.factory.mockReturnValue(dependencies);
-  mocks.command.mockResolvedValue({ ok: false, state: null, error: "provider_unavailable" });
+  mocks.command.mockResolvedValue({ result: { ok: false, state: null, error: "provider_unavailable" }, assistance: null });
   vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("unexpected_network_effect"));
 });
 afterEach(() => { expect(globalThis.fetch).not.toHaveBeenCalled(); vi.restoreAllMocks(); });
@@ -95,7 +98,18 @@ describe("POST Explorer conversation commands boundary", () => {
     if (source === "factory") expect(mocks.command).not.toHaveBeenCalled();
   });
   it.each(["denied", "refresh_required", "unavailable", "provider_unavailable"])("P07 preserves closed failure %s", async error => {
-    const failure = { ok: false, state: null, error }; mocks.command.mockResolvedValue(failure);
+    const failure = { ok: false, state: null, error }; mocks.command.mockResolvedValue({ result: failure, assistance: null });
     expect(await invoke()).toEqual(failure);
   });
+});
+
+// A real private controller wrapper is projected intact, not unwrapped into history.
+it("projects bounded transient assistance separately and rejects leaked engine fields", async () => {
+  const assistance = { kind: "support", body: "Synthetic static support.", persisted: false };
+  const result = { ok: false, state: null, error: "denied" };
+  mocks.command.mockResolvedValue({ result, assistance });
+  const response = await POST(request());
+  expect(await response.json()).toEqual({ version: "explorer-private-conversation-response.v1", result, assistance });
+  mocks.command.mockResolvedValue({ result, assistance, policy_state: { private: "must not leak" } });
+  expect(await invoke()).toEqual(unavailable);
 });

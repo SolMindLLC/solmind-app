@@ -1,5 +1,5 @@
-// Mocked endpoint responses prove mounted UI behavior only; actual runs are recorded separately.
-// They prove no authentication, SQL persistence, provider call or genuine AI reply.
+// Mocked private-response endpoints prove mounted UI behavior only; actual runs are recorded separately.
+// They prove no authentication, SQL persistence, operational readiness, provider call or genuine AI reply.
 import { expect, test, type Page } from "@playwright/test";
 import {
   EXPLORER_CONVERSATION_VERSION,
@@ -22,8 +22,18 @@ const savedState = (body = "A synthetic Explorer question"): ExplorerConversatio
     { id: GUIDE_MESSAGE, role: "virtualGuide", body: "A synthetic transport reply", createdAt: "2026-10-24T06:00:01.000Z" },
   ],
 });
-const success = (state: ExplorerConversationState) => ({ ok: true, state, error: null });
-const failure = (error: "denied" | "refresh_required" | "provider_unavailable" | "unavailable") => ({ ok: false, state: null, error });
+type SyntheticAssistance = Readonly<{
+  kind: "support" | "adult_policy" | "temporarily_unavailable";
+  body: string;
+  persisted: false;
+}>;
+const privateResponse = (result: unknown, assistance: SyntheticAssistance | null = null) => ({
+  version: "explorer-private-conversation-response.v1", result, assistance,
+});
+const success = (state: ExplorerConversationState, assistance: SyntheticAssistance | null = null) =>
+  privateResponse({ ok: true, state, error: null }, assistance);
+const failure = (error: "denied" | "refresh_required" | "provider_unavailable" | "unavailable") =>
+  privateResponse({ ok: false, state: null, error });
 
 async function mockState(page: Page, read: () => unknown) {
   await page.route("**/explorer/conversation/state", route => {
@@ -100,7 +110,7 @@ test("C04 malformed command success cannot render a reply or lose retry identity
   await mockState(page, () => success(emptyState()));
   await page.route("**/explorer/conversation/commands", route => {
     bodies.push(route.request().postData() ?? "");
-    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, state: { messages: [{ role: "virtualGuide", body: "Do not display this malformed reply" }] }, error: null }) });
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(privateResponse({ ok: true, state: { messages: [{ role: "virtualGuide", body: "Do not display this malformed reply" }] }, error: null })) });
   });
   await page.goto("/explorer/conversation");
   await page.getByLabel("Your message", { exact: true }).fill("A bounded request");
@@ -224,4 +234,60 @@ test("C12 saved-message capacity disables sending and keeps formation available"
   await expect(page.getByLabel("Your message", { exact: true })).toBeDisabled();
   await expect(page.getByRole("region", { name: "Session Compass", exact: true }).getByRole("combobox", { name: "Saved conversation source", exact: true })).toBeEnabled();
   expect(writes).toBe(0);
+});
+
+test("C13 transient first-Send assistance preserves the unsaved draft and stays outside saved history", async ({ page }) => {
+  let current = emptyState();
+  let reads = 0;
+  let writes = 0;
+  const assistance: SyntheticAssistance = { kind: "support",
+    body: "Synthetic transient support only. No attempted message or reply was saved.", persisted: false };
+  await mockState(page, () => { reads += 1; return success(current); });
+  await page.route("**/explorer/conversation/commands", route => {
+    writes += 1;
+    // This empty anchor and assistance are endpoint fixtures, not real SQL or safety evidence.
+    current = { ...emptyState(), conversationId: CONVERSATION };
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(success(current, assistance)) });
+  });
+  await page.goto("/explorer/conversation");
+  await page.getByLabel("Your message", { exact: true }).fill("Keep this unaccepted first-Send draft");
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(assistance.body);
+  await expect(page.getByLabel("Your message", { exact: true })).toHaveValue("Keep this unaccepted first-Send draft");
+  await expect(page.getByText("There are no saved messages yet.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("list", { name: "Saved conversation", exact: true })).toHaveCount(0);
+  await expect(page.getByText("Your saved conversation is up to date.", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Reload saved conversation", exact: true }).click();
+  await expect.poll(() => reads).toBe(2);
+  await expect(page.getByText(assistance.body, { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Your message", { exact: true })).toHaveValue("Keep this unaccepted first-Send draft");
+  await expect(page.getByRole("list", { name: "Saved conversation", exact: true })).toHaveCount(0);
+  expect(writes).toBe(1);
+});
+
+test("C14 a denied reload clears stale assistance, saved private history and draft", async ({ page }) => {
+  let reads = 0;
+  let writes = 0;
+  const assistance: SyntheticAssistance = { kind: "adult_policy",
+    body: "Synthetic transient adult-policy assistance from the previous request.", persisted: false };
+  await mockState(page, () => { reads += 1; return reads === 1 ? success(savedState()) : failure("denied"); });
+  await page.route("**/explorer/conversation/commands", route => {
+    writes += 1;
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(success(savedState(), assistance)) });
+  });
+  await page.goto("/explorer/conversation");
+  await expect(page.getByRole("list", { name: "Saved conversation", exact: true })).toContainText("A synthetic Explorer question");
+  await page.getByLabel("Your message", { exact: true }).fill("A private draft to clear after denial");
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(assistance.body);
+  await expect(page.getByLabel("Your message", { exact: true })).toHaveValue("A private draft to clear after denial");
+  await page.getByRole("button", { name: "Reload saved conversation", exact: true }).click();
+  await expect.poll(() => reads).toBe(2);
+  await expect(page.getByRole("link", { name: "Sign in", exact: true })).toHaveAttribute("href", "/login/explorer");
+  await expect(page.getByText(assistance.body, { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("list", { name: "Saved conversation", exact: true })).toHaveCount(0);
+  await expect(page.getByText("A synthetic Explorer question", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("A synthetic transport reply", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Your message", { exact: true })).toHaveCount(0);
+  expect(writes).toBe(1);
 });

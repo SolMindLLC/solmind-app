@@ -6,14 +6,17 @@ import type { SupabaseAuthenticatedUser, DeriveTrustedServerAuthContextInput } f
 import type { SolMindRequestAuthPrincipalSource } from "../../auth/requestAuthPrincipalSource";
 import type { RequestCookieAccessor } from "../../auth/requestCookieAccessor";
 
-const mocks = vi.hoisted(() => ({ principal: vi.fn(), client: vi.fn(), rpc: vi.fn(), query: vi.fn(), source: vi.fn(), repository: vi.fn() }));
+const mocks = vi.hoisted(() => ({ principal: vi.fn(), client: vi.fn(), rpc: vi.fn(), query: vi.fn(), source: vi.fn(), repository: vi.fn(), privateRepository: vi.fn(), profile: vi.fn() }));
 vi.mock("../requestAuthClient", () => ({ createSupabaseRequestAuthPrincipalSource: mocks.principal }));
 vi.mock("../serviceRoleClient", () => ({ createServiceRoleClient: mocks.client }));
 vi.mock("../serviceRoleRpcExecutor", () => ({ createServiceRoleRpcExecutor: mocks.rpc }));
 vi.mock("../supabaseAuthQueryClient", () => ({ createSupabaseAuthQueryClient: mocks.query }));
 vi.mock("../serverAuthSourceAdapter", () => ({ createSupabaseAuthSource: mocks.source }));
 vi.mock("../explorerConversationRepository", () => ({ createExplorerConversationRepository: mocks.repository }));
-import { createExplorerConversationRequestDependencies, readExplorerConversationCookies } from "../explorerConversationRequestDependencies";
+vi.mock("../explorerPrivateConversationRepository", () => ({ createExplorerPrivateConversationRepository: mocks.privateRepository }));
+vi.mock("../../operations/explorerPrivateLocalRunProfile", () => ({ loadExplorerPrivateLocalRun: mocks.profile }));
+import { createExplorerPrivateLocalRequestDependencies, createExplorerPrivateConversationRequestDependencies, createExplorerConversationRequestDependencies, readExplorerConversationCookies } from "../explorerConversationRequestDependencies";
+import { getExplorerPrivateConfigurationCandidate } from "../../virtual-guide/explorerPrivateConfiguration";
 
 const ACCOUNT = "10000000-0000-4000-8000-000000000001";
 const OTHER_ACCOUNT = "10000000-0000-4000-8000-000000000002";
@@ -26,6 +29,7 @@ const serviceClient = Object.freeze({ synthetic: "service-role-client" });
 const authRpc = Object.freeze({ synthetic: "auth-rpc" });
 const authQuery = Object.freeze({ synthetic: "auth-query" });
 const repository = Object.freeze({ read: vi.fn(), prepare: vi.fn(), complete: vi.fn(), mutate: vi.fn() });
+const privateRepository = Object.freeze({ read: vi.fn(), ensure: vi.fn(), observe: vi.fn(), prepare: vi.fn(), settle: vi.fn(), mutate: vi.fn() });
 function records(verified = principal, accountId = ACCOUNT): DeriveTrustedServerAuthContextInput {
   return {
     authenticatedUser: verified,
@@ -39,12 +43,40 @@ function records(verified = principal, accountId = ACCOUNT): DeriveTrustedServer
 }
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.profile.mockReturnValue(null);
   mocks.principal.mockReturnValue(principalPort); mocks.client.mockReturnValue(serviceClient);
   mocks.rpc.mockReturnValue(authRpc); mocks.query.mockReturnValue(authQuery);
-  mocks.source.mockReturnValue(sourcePort); mocks.repository.mockReturnValue(repository);
+  mocks.source.mockReturnValue(sourcePort); mocks.repository.mockReturnValue(repository); mocks.privateRepository.mockReturnValue(privateRepository);
   principalPort.resolveAuthenticatedUser.mockResolvedValue(principal);
   vi.mocked(sourcePort.loadServerAuthContextInput).mockResolvedValue(records());
   vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("unexpected_network_effect"));
+});
+
+describe("explicit private local HTTP composition", () => {
+  it("keeps missing configuration held without looking up a provider credential", async () => {
+    const credential = vi.fn(() => { throw new Error("must_not_read_credential"); });
+    const environment = Object.defineProperty({}, "OPENAI_API_KEY", { get: credential });
+    const dependencies = createExplorerPrivateLocalRequestDependencies("solmind-session=synthetic", environment);
+    expect(await dependencies.authenticate()).toEqual({ accountId: ACCOUNT, applicationSessionId: SESSION });
+    expect(dependencies.provider).toBeUndefined(); expect(credential).not.toHaveBeenCalled();
+  });
+  it("constructs all real composition owners from synthetic trusted data without calling any port or credential", () => {
+    const configuration = getExplorerPrivateConfigurationCandidate()!;
+    const sha = "A".repeat(64);
+    const receipts = Object.fromEntries(["policy", "source", "resources", "renderer", "signal", "provider", "target"].map(key => [key, { file: key + ".json", sha256: sha }]));
+    mocks.profile.mockReturnValue({ directory: process.cwd(), available: () => true, claim: vi.fn(),
+      adultResources: "Synthetic adult resource.", ageAppropriateResources: "Synthetic general resource.",
+      failureAssistance: { support: "Synthetic support.", adultPolicy: "Synthetic boundary.", supportAndAdultPolicy: "Synthetic combined.", temporarilyUnavailable: "Synthetic uncertainty." },
+      profile: { actorAccountId: ACCOUNT, explorerId: OTHER_ACCOUNT, guideId: OTHER_SESSION, packId: SESSION,
+        methodologyVersionId: OTHER_ACCOUNT, methodologyContentSha256: configuration.methodologySubjectSha256,
+        methodologyAuthorizationVersion: "MV1:" + sha, expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        modelPolicyVersion: "synthetic-model", resourcePolicyVersion: "synthetic-resource", receipts } });
+    const credential = vi.fn(() => { throw new Error("must_not_read_credential"); });
+    const dependencies = createExplorerPrivateLocalRequestDependencies(null, Object.defineProperty({}, "OPENAI_API_KEY", { get: credential }));
+    for (const name of ["provider", "buildContext", "renderer", "operationalSignal", "resolveOperationalReadiness"] as const) expect(dependencies[name]).toBeDefined();
+    for (const port of Object.values(privateRepository)) expect(port).not.toHaveBeenCalled();
+    expect(credential).not.toHaveBeenCalled();
+  });
 });
 afterEach(() => { expect(globalThis.fetch).not.toHaveBeenCalled(); vi.restoreAllMocks(); });
 
@@ -130,5 +162,33 @@ describe("Explorer conversation raw-cookie and request dependency boundary", () 
     else vi.mocked(sourcePort.loadServerAuthContextInput).mockRejectedValue(new Error("private_auth_exception"));
     expect(await createExplorerConversationRequestDependencies(null).authenticate()).toBeNull();
     for (const port of Object.values(repository)) expect(port).not.toHaveBeenCalled();
+  });
+});
+
+describe("private v3 authenticated request factory", () => {
+  it("reuses genuine request-auth composition while supplying no operational defaults", async () => {
+    const dependencies = createExplorerPrivateConversationRequestDependencies("synthetic=opaque");
+    expect(Object.keys(dependencies).sort()).toEqual(["authenticate", "repository"]);
+    expect(Object.keys(dependencies.repository).sort()).toEqual(["ensure", "mutate", "observe", "prepare", "read", "settle"]);
+    expect(mocks.privateRepository).toHaveBeenCalledExactlyOnceWith(serviceClient);
+    expect(mocks.repository).not.toHaveBeenCalled();
+    expect(await dependencies.authenticate()).toEqual({ accountId: ACCOUNT, applicationSessionId: SESSION });
+    for (const port of Object.values(privateRepository)) expect(port).not.toHaveBeenCalled();
+    const row = { outcome: "ok", conversation_state: null };
+    privateRepository.read.mockResolvedValue(row);
+    const actor = { accountId: ACCOUNT, applicationSessionId: SESSION };
+    expect(await dependencies.repository.read(actor)).toBe(row);
+    expect(privateRepository.read).toHaveBeenCalledExactlyOnceWith(actor);
+  });
+  it("does not let runtime extra properties replace actor or persistence authority", async () => {
+    const extra = { authenticate: vi.fn(), repository: { synthetic: "foreign" } };
+    const dependencies = createExplorerPrivateConversationRequestDependencies(null, extra as never);
+    expect(Object.keys(dependencies.repository).sort()).toEqual(["ensure", "mutate", "observe", "prepare", "read", "settle"]);
+    expect(await dependencies.authenticate()).toEqual({ accountId: ACCOUNT, applicationSessionId: SESSION });
+    expect(extra.authenticate).not.toHaveBeenCalled();
+  });
+  it("rejects malformed raw cookies before constructing any private client", () => {
+    expect(() => createExplorerPrivateConversationRequestDependencies("bad")).toThrow("explorer_conversation_request_unavailable");
+    for (const mock of Object.values(mocks)) expect(mock).not.toHaveBeenCalled();
   });
 });

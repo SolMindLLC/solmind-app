@@ -2,8 +2,8 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ factory: vi.fn(), read: vi.fn() }));
-vi.mock("@/lib/solmind/supabase/explorerConversationRequestDependencies", () => ({ createExplorerConversationRequestDependencies: mocks.factory }));
-vi.mock("@/lib/solmind/virtual-guide/explorerConversationComposition", () => ({ readExplorerConversation: mocks.read }));
+vi.mock("@/lib/solmind/supabase/explorerConversationRequestDependencies", () => ({ createExplorerPrivateLocalRequestDependencies: mocks.factory }));
+vi.mock("@/lib/solmind/virtual-guide/explorerPrivateConversationComposition", () => ({ readExplorerPrivateConversation: mocks.read }));
 import { GET, dynamic, runtime } from "../route";
 
 const dependencies = Object.freeze({ synthetic: "read-only injected port marker" });
@@ -21,11 +21,14 @@ async function result(next = request()) {
   expect(response.headers.get("cache-control")).toBe("private, no-store");
   expect(response.headers.get("x-content-type-options")).toBe("nosniff");
   expect(response.headers.has("set-cookie")).toBe(false);
-  return response.json();
+  const output = await response.json();
+  expect(output.version).toBe("explorer-private-conversation-response.v1");
+  expect(output).toHaveProperty("assistance");
+  return output.result;
 }
 beforeEach(() => {
   vi.resetAllMocks();
-  mocks.factory.mockReturnValue(dependencies); mocks.read.mockResolvedValue(empty);
+  mocks.factory.mockReturnValue(dependencies); mocks.read.mockResolvedValue({ result: empty, assistance: null });
   vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("unexpected_network_effect"));
 });
 afterEach(() => { expect(globalThis.fetch).not.toHaveBeenCalled(); vi.restoreAllMocks(); });
@@ -43,7 +46,7 @@ describe("GET Explorer conversation state boundary", () => {
     expect(mocks.factory).not.toHaveBeenCalled(); expect(mocks.read).not.toHaveBeenCalled();
   });
   it("R03 absence of cookies is passed as null rather than invented identity", async () => {
-    mocks.read.mockResolvedValue(denied);
+    mocks.read.mockResolvedValue({ result: denied, assistance: null });
     expect(await result()).toEqual(denied);
     expect(mocks.factory).toHaveBeenCalledExactlyOnceWith(null);
   });
@@ -56,7 +59,7 @@ describe("GET Explorer conversation state boundary", () => {
   });
   it.each(["denied", "unavailable", "refresh_required", "provider_unavailable"])("R05 keeps closed engine failure %s uncached", async error => {
     const failure = { ok: false, state: null, error };
-    mocks.read.mockResolvedValue(failure);
+    mocks.read.mockResolvedValue({ result: failure, assistance: null });
     expect(await result()).toEqual(failure);
   });
 });

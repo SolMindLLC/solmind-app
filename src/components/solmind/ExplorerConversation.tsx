@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
   EXPLORER_CONVERSATION_LIMITS,
-  parseExplorerConversationResult,
   type ExplorerConversationCommand,
   type ExplorerConversationError,
-  type ExplorerConversationResult,
   type ExplorerConversationState,
 } from "@/lib/solmind/explorerConversationContract";
+import { parseExplorerPrivateConversationResponse, type ExplorerPrivateConversationResponse,
+  type ExplorerPrivateAssistance } from "@/lib/solmind/explorerPrivateConversationResponse";
 import { SOLMIND_TERMS } from "@/lib/solmind/terms";
 import {
   ExplorerConversationFormation,
@@ -27,14 +27,14 @@ type CommandIntent = ExplorerConversationFormationIntent | Readonly<{ kind: "sen
 type PendingCommand = Readonly<{ command: ExplorerConversationCommand; body: string }>;
 
 /** Decode before rendering; a malformed or non-success HTTP success is uncertain. */
-async function readResult(response: Response): Promise<ExplorerConversationResult | null> {
+async function readResult(response: Response): Promise<ExplorerPrivateConversationResponse | null> {
   if (response.redirected || !/^application\/json(?:\s*;|$)/i.test(response.headers.get("content-type") ?? "")) return null;
   const text = await response.text();
   if (text.length > RESULT_CHARACTER_LIMIT) return null;
-  let result: ExplorerConversationResult | null;
-  try { result = parseExplorerConversationResult(JSON.parse(text) as unknown); }
+  let result: ExplorerPrivateConversationResponse | null;
+  try { result = parseExplorerPrivateConversationResponse(JSON.parse(text) as unknown); }
   catch { return null; }
-  if (result?.ok && !response.ok) return null;
+  if (result?.result.ok && !response.ok) return null;
   return result;
 }
 
@@ -56,6 +56,7 @@ export function ExplorerConversation() {
   const [draft, setDraft] = useState("");
   const [draftError, setDraftError] = useState("");
   const [notice, setNotice] = useState("");
+  const [assistance, setAssistance] = useState<ExplorerPrivateAssistance | null>(null);
   const stateRef = useRef<ExplorerConversationState | null>(null);
   const busyRef = useRef(true);
   const pendingRef = useRef<PendingCommand | null>(null);
@@ -77,6 +78,7 @@ export function ExplorerConversation() {
     activeRef.current?.abort();
     activeRef.current = controller;
     busyRef.current = true;
+    setAssistance(null);
     if (!initial) { setBusy(true); setNotice(""); }
     const timer = setTimeout(() => controller.abort(), RESPONSE_BUDGET_MS);
     try {
@@ -84,7 +86,8 @@ export function ExplorerConversation() {
         method: "GET", credentials: "same-origin", cache: "no-store", redirect: "error",
         headers: { Accept: "application/json" }, signal: controller.signal,
       });
-      const result = await readResult(response);
+      const output = await readResult(response);
+      const result = output?.result;
       if (!mountedRef.current || generation !== generationRef.current) return;
       if (result?.ok) {
         replaceState(result.state);
@@ -129,6 +132,7 @@ export function ExplorerConversation() {
       busyRef.current = true;
       replaceState(null);
       setDraft("");
+      setAssistance(null);
       setBusy(true);
     };
     const restore = (event: PageTransitionEvent) => {
@@ -148,6 +152,7 @@ export function ExplorerConversation() {
     setBusy(true);
     setUncertain(false);
     setNotice("");
+    setAssistance(null);
     const generation = ++generationRef.current;
     const controller = new AbortController();
     activeRef.current = controller;
@@ -158,8 +163,10 @@ export function ExplorerConversation() {
         headers: { Accept: "application/json", "Content-Type": "application/json" },
         body: pending.body, signal: controller.signal,
       });
-      const result = await readResult(response);
+      const output = await readResult(response);
+      const result = output?.result ?? null;
       if (!mountedRef.current || generation !== generationRef.current || pendingRef.current !== pending) return;
+      setAssistance(output?.assistance ?? null);
       if (result === null || (!result.ok && result.error === "unavailable")) {
         setUncertain(true);
         return;
@@ -173,8 +180,8 @@ export function ExplorerConversation() {
         }
         replaceState(result.state);
         setError(null);
-        setNotice("Your saved conversation is up to date.");
-        if (pending.command.kind === "send") setDraft("");
+        setNotice(output?.assistance === null ? "Your saved conversation is up to date." : "");
+        if (pending.command.kind === "send" && output?.assistance === null) setDraft("");
       } else {
         setError(result.error);
         if (result.error === "denied" || result.error === "refresh_required") replaceState(null);
@@ -238,6 +245,12 @@ export function ExplorerConversation() {
         <p className="text-sm text-slate-700">The {SOLMIND_TERMS.virtualGuide} supports reflection. It is not a therapist or crisis service.</p>
       </header>
       <p role="status" aria-live="polite" aria-atomic="true" className="min-h-6">{busy ? (state === null ? "Loading your saved conversation..." : "Checking your change...") : notice}</p>
+      {assistance !== null ? (
+        <div role="alert" className="my-4 space-y-2 rounded-xl border border-amber-500 bg-amber-50 p-4">
+          <p className="whitespace-pre-wrap">{assistance.body}</p>
+          <p>This assistance is temporary and is not a saved conversation reply.</p>
+        </div>
+      ) : null}
       {error !== null && !uncertain ? (
         <div role="alert" className="my-4 rounded-xl border border-amber-500 bg-amber-50 p-4">
           <p>{errorCopy(error)}</p>

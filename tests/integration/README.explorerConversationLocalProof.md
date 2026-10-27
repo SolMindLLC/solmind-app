@@ -1,5 +1,13 @@
 # Real local Auth and SQL composition proof - bounded synthetic local evidence
 
+Historical protocol: the October24 Auth/SQL/synthetic-transport results below
+keep their original scope. They are not a current natural-code-login/genuine-AI
+acceptance protocol for the private-wrapper/local-run successor. Do not run this
+old protocol unchanged against that successor or count its predeclared session
+and injected model as the approved joined demonstration. Any later adaptation
+and isolated run require the current exact scope/authority and Root assurance;
+this notice itself launches or authorizes nothing.
+
 This increment supplies the opt-in integration test `solmind-app/tests/integration/explorerConversationLocalProof.test.ts` and guarded setup `solmind-app/tests/integration/fixtures/explorerConversationLocalProofSeed.sql`. Root executed the bounded proof on October24,2026; the final run passed at01:42:49CDT, test14.03seconds/total14.69seconds. This execution result supplies no genuine AI, automatic shared-database setup, general safety certification or complete-demo claim. Exact source pins, resource closeout and checked publication remain separate receipts.
 
 The proof uses actual local Supabase Auth password sign-in and JWT verification, installed Supabase SSR cookie serialization, the banked `writeLoginSessionCookies` publication rules, the banked request-auth composer and service-role record loaders, the new four closed SQL RPCs, the real S03C/S03A context path and S03B response validator. The **Virtual Guide transport and policy configuration are explicitly synthetic injected test values**. There is no AI credential lookup, real AI API, production fallback or activation. Persisted provider/model labels remain contract metadata; this test cannot establish that the named provider/model actually ran.
