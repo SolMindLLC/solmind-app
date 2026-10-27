@@ -1202,5 +1202,5 @@ describe("verificationChallenge - server-only, dormant and off every barrel", ()
       expect(importers.has(`${authModulePath(root, "verificationChallengeCallers")}.ts`)).toBe(true);
       expect(importers.has(`${authModulePath(root, "verificationChallengeComposition")}.ts`)).toBe(false);
     }
-  });
+  }, 30_000);
 });

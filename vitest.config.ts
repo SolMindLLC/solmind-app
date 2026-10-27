@@ -1,6 +1,6 @@
 // SolMind MVP0 Vitest configuration.
 //
-// The only purpose of this config is to make the server-only boundary testable.
+// This config makes the server-only boundary testable and excludes generated copies.
 // The `server-only` package's default export THROWS at import time so that any
 // accidental client-bundle import fails the Next.js build (that is the intended
 // AUTH-RLS-DEC-023 import-time guard). Next applies the "react-server" export
@@ -13,14 +13,15 @@
 // test runner only. This changes nothing about the production build, where the real
 // server-only package and its import-time guard remain in force.
 //
-// Test discovery is left at the Vitest default (no `include`/`exclude` override), so
-// existing **/*.test.ts files continue to run exactly as before.
+// Test discovery keeps Vitest defaults and adds only .codex-validation/** to
+// its existing exclusions, so product **/*.test.ts files still run as before.
 
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 import { fileURLToPath } from "node:url";
 
 export default defineConfig({
   test: {
+    exclude: [...configDefaults.exclude, ".codex-validation/**"],
     alias: {
       "server-only": fileURLToPath(
         new URL("./test/stubs/server-only.ts", import.meta.url),

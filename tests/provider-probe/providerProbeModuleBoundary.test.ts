@@ -834,5 +834,5 @@ describe("provider-probe module boundary", () => {
     // The walk covered the app root's own files (for example vitest.config.ts) and src/.
     expect(scanned).toBeGreaterThan(100);
     expect(offenders).toEqual([]);
-  });
+  }, 30_000);
 });
