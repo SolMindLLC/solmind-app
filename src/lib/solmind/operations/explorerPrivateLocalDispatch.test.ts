@@ -60,8 +60,9 @@ function fixture() {
     versionNumber: 1, contentMarkdown: content, contentSha256: subject.subjectSha256, methodologyAuthorizationVersion: MV1 };
   const methodologySource = { read: vi.fn(async () => selection) };
   const generate = vi.fn(async () => "synthetic-model-result");
-  const bound = withExplorerPrivateLocalDispatch({ run, authenticate, repository, methodologySource, buildContext, generate });
-  return { actor, args, request, row, selection, caller, profile, claim, authenticate, read, methodologySource, generate, bound };
+  const credentialReady = vi.fn(() => true);
+  const bound = withExplorerPrivateLocalDispatch({ run, authenticate, repository, methodologySource, buildContext, credentialReady, generate });
+  return { actor, args, request, row, selection, caller, profile, claim, authenticate, read, methodologySource, credentialReady, generate, bound };
 }
 async function prepared() { const f = fixture(); await f.bound.buildContext(f.args); return f; }
 describe("finite local dispatch authority", () => {
@@ -69,6 +70,15 @@ describe("finite local dispatch authority", () => {
     const f = await prepared(); expect(await f.bound.provider.generate(f.request, f.caller.signal)).toBe("synthetic-model-result");
     await expect(f.bound.provider.generate(f.request, f.caller.signal)).rejects.toThrow();
     expect(f.read).toHaveBeenCalledTimes(2); expect(f.claim).toHaveBeenCalledTimes(1); expect(f.generate).toHaveBeenCalledTimes(1);
+  });
+  it("refuses a missing or malformed key after the final authenticated read without claiming or generating", async () => {
+    const f = await prepared(); f.credentialReady.mockImplementation(() => {
+      expect(f.read).toHaveBeenCalledTimes(2);
+      return false;
+    });
+    await expect(f.bound.provider.generate(f.request, f.caller.signal)).rejects.toThrow("explorer_private_local_dispatch_unavailable");
+    expect(f.credentialReady).toHaveBeenCalledOnce();
+    expect(f.claim).not.toHaveBeenCalled(); expect(f.generate).not.toHaveBeenCalled();
   });
   it.each(["actor", "authority", "policy", "pending", "message", "methodology", "last-read"])("refuses %s drift with zero transport", async kind => {
     const f = await prepared();

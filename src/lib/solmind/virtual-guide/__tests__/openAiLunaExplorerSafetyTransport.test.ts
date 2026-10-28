@@ -59,7 +59,13 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
     expect(result.status).toBe("unavailable"); expect(result.observation).toBeNull(); expect(fetchImpl).toHaveBeenCalledOnce();
     expect(JSON.stringify(result)).not.toContain("private provider detail");
   });
-  it.each([{ model: "other-model" }, { status: "incomplete" }, { error: { detail: "private" } },
+  it("accepts the dated Luna response model while keeping the requested model fixed", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify(envelope(RAW, { model: "gpt-5.6-luna-2026-10-27" }))));
+    expect(await adapter(fetchImpl as typeof fetch).generate(request(), new AbortController().signal)).toBe(RAW);
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(init.body as string).model).toBe("gpt-5.6-luna");
+  });
+  it.each([{ model: "gpt-5.6-luna-mini" }, { model: "other-model" }, { status: "incomplete" }, { error: { detail: "private" } },
     { output: [{ type: "function_call", name: "unsafe" }] }])("rejects unsupported outer provider evidence: %j", async (overrides) => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify(envelope(RAW, overrides))));
     await expect(adapter(fetchImpl as typeof fetch).generate(request(), new AbortController().signal)).rejects.toThrow();

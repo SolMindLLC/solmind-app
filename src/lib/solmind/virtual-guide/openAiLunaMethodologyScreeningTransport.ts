@@ -103,7 +103,7 @@ async function modelResult(response: Response): Promise<unknown> {
     raw += decoder.decode();
   } finally { reader.releaseLock(); }
   const envelope: unknown = JSON.parse(raw);
-  if (!object(envelope) || envelope.object !== "response" || envelope.model !== MODEL || envelope.status !== "completed" ||
+  if (!object(envelope) || envelope.object !== "response" || typeof envelope.model !== "string" || !/^gpt-5\.6-luna(?:-\d{4}-\d{2}-\d{2})?$/.test(envelope.model) || envelope.status !== "completed" ||
     envelope.error !== null || envelope.incomplete_details !== null || !Array.isArray(envelope.output) ||
     envelope.output.some(part => !object(part) || !["reasoning", "message"].includes(part.type as string))) fail();
   const messages = envelope.output.filter(part => object(part) && part.type === "message");

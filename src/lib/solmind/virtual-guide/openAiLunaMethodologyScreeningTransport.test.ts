@@ -42,6 +42,13 @@ describe("dormant exact Luna methodology screening request/HTTP owner", () => {
     const f = fixture(); const other = createLunaMethodologyScreenRequestBuilder({ behavioralBaselines: policy.behavioralBaselines, version: policy.version, prohibitedPolicy: policy.prohibitedPolicy });
     expect(other.configuration).toEqual(f.builder.configuration);
   });
+  it.each(["gpt-5.6-luna-2026-10-27", "gpt-5.6-luna-mini", "other-model"])("accepts only Luna or its dated model name: %s", async model => {
+    const f = fixture();
+    f.fetchImpl.mockResolvedValue(new Response(JSON.stringify({ ...f.envelope, model }), { headers: { "Content-Type": "application/json" } }));
+    if (model === "gpt-5.6-luna-2026-10-27") expect(await f.transport.execute(f.request, new AbortController().signal)).toEqual(f.value);
+    else await expect(f.transport.execute(f.request, new AbortController().signal)).rejects.toThrow(/^methodology_screen_http_unavailable$/);
+    expect(f.fetchImpl).toHaveBeenCalledOnce(); expect(JSON.parse(f.body).model).toBe("gpt-5.6-luna");
+  });
   it.each(["body", "subject", "policy", "model"] as const)("refuses %s drift before HTTP", async drift => {
     const f = fixture(); const request = { ...f.request };
     if (drift === "body") request.requestBody += " ";

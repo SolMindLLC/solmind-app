@@ -1247,7 +1247,7 @@ approval. No OpenAI credential is read by this loader.
 prepared identity, fresh authenticated v3/conversation/policy checks, current
 governed-methodology verification and a final authenticated reread after that
 await. Changed/unknown authority, cancellation or session/run expiry refuses
-forwarding. Consume the durable claim before the guarded transport/key closure;
+forwarding. Check the key's format, then consume the durable claim, then forward;
 never delete/reset it after uncertain results or use a fresh profile to retry.
 Actual provider/credential and isolated-target grants remain separate.
 

@@ -17,7 +17,7 @@ function fail(): never { throw new Error(FAILURE); }
 export function withExplorerPrivateLocalDispatch(input: Readonly<{
   run: ExplorerPrivateLocalRun; authenticate: Dependencies["authenticate"];
   repository: Dependencies["repository"]; methodologySource: EffectiveMethodologySource;
-  buildContext: Build; generate: NonNullable<Dependencies["provider"]>["generate"];
+  buildContext: Build; credentialReady: () => boolean; generate: NonNullable<Dependencies["provider"]>["generate"];
 }>): Readonly<{ buildContext: Build; provider: NonNullable<Dependencies["provider"]> }> {
   let captured: Readonly<{ args: Parameters<Build>[0]; result: Awaited<ReturnType<Build>> }> | null = null;
   let attempted = false;
@@ -76,7 +76,9 @@ export function withExplorerPrivateLocalDispatch(input: Readonly<{
           JSON.stringify(finalRow.authority_context) !== JSON.stringify(row.authority_context) ||
           JSON.stringify(finalRow.policy_state) !== JSON.stringify(row.policy_state) ||
           JSON.stringify(finalRow.conversation_state) !== JSON.stringify(row.conversation_state)) fail();
-        // Consume before forwarding. Unknown transport outcomes never grant retry.
+        // Check the key's format before consuming the one-shot claim.
+        if (!input.credentialReady()) fail();
+        // Unknown transport outcomes after the claim never grant retry.
         input.run.claim();
         if (!alive()) fail();
         attempted = true;

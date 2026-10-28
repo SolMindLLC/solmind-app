@@ -111,6 +111,11 @@ export function createExplorerPrivateLocalRequestDependencies(
       ageAppropriateResources: run.ageAppropriateResources, failureAssistance: run.failureAssistance });
     const operationalSignal = createExplorerPrivateFileSignal({ filePath: join(run.directory, "explorer-private-signals.jsonl"),
       verificationReceiptSha256: profile.receipts.signal.sha256 });
+    const credentialReady = () => {
+      const key = environment.OPENAI_API_KEY;
+      return typeof key === "string" && key.length >= 1 && key.length <= 4096 &&
+        !/[\s\u0000-\u001f\u007f-\u009f]/u.test(key);
+    };
     const generate: NonNullable<ExplorerPrivateConversationDependencies["provider"]>["generate"] = async (request, signal) => {
       // Called only through the authority preflight and durable one-call claim.
       // This exact credential source needs a later explicit provider grant.
@@ -124,7 +129,7 @@ export function createExplorerPrivateLocalRequestDependencies(
       resourceVerificationReceiptSha256: profile.receipts.resources.sha256, modelPolicyVersion: profile.modelPolicyVersion,
       resourcePolicyVersion: profile.resourcePolicyVersion, renderer, operationalSignal, provider: { generate } });
     const bound = withExplorerPrivateLocalDispatch({ run, authenticate: base.authenticate, repository: base.repository,
-      methodologySource, buildContext: governed.buildContext, generate });
+      methodologySource, buildContext: governed.buildContext, credentialReady, generate });
     return withExplorerPrivateRequestBudgets({ authenticate, repository,
       ...governed, ...bound,
       resolveOperationalReadiness: async (actor, row) => {

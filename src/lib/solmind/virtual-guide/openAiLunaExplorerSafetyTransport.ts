@@ -62,7 +62,7 @@ async function readBody(response: Response): Promise<string> {
 }
 function extractedModelText(envelope: unknown): string {
   if (!object(envelope) || envelope.object !== "response" || envelope.status !== "completed" ||
-    envelope.error !== null || envelope.incomplete_details !== null || envelope.model !== OPENAI_LUNA_EXPLORER_SAFETY_MODEL ||
+    envelope.error !== null || envelope.incomplete_details !== null || typeof envelope.model !== "string" || !/^gpt-5\.6-luna(?:-\d{4}-\d{2}-\d{2})?$/.test(envelope.model) ||
     !Array.isArray(envelope.output) || envelope.output.some((part) => !object(part) || !["reasoning", "message"].includes(part.type as string))) fail("explorer_safety_http_invalid_response");
   const messages = envelope.output.filter((part) => object(part) && part.type === "message");
   if (messages.length !== 1) fail("explorer_safety_http_invalid_response");
