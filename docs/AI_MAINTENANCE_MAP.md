@@ -377,7 +377,6 @@ src/
       ExplorerExperiencePrototype.tsx
       ExplorerResponseComposer.tsx
       ExplorerTopicList.tsx
-      LoginOptionList.tsx
       MiniProfileCard.tsx
       OnboardingProgressCard.tsx
       PageShell.tsx
@@ -395,7 +394,6 @@ src/
       dashboardPanels.ts
       explorerExperience.ts
       invitations.ts
-      loginOptions.ts
       navigation.ts
       onboarding.ts
       pages.ts
@@ -458,7 +456,6 @@ the current exact import allowlists or imply that completed proof is pending.
 | Role model | `src/lib/solmind/roles.ts` | Canonical role strings, labels, and home routes |
 | Route metadata | `src/lib/solmind/pages.ts` | Page titles, descriptions, and hrefs |
 | Navigation | `src/lib/solmind/navigation.ts` | Primary nav items and route labels |
-| Login options | `src/lib/solmind/loginOptions.ts` | Static login option copy and auth summaries; retained, no longer used by `/login` |
 | Sign-in preview | `src/lib/solmind/signInPreview.ts` | Approved sign-in copy and pure transitions for the retained unconnected preview |
 | Sign-in preview UI | `src/components/solmind/SignInPreview.tsx`, `SignInPreviewParts.tsx` | The retained preview boundary and presentation; connected Explorer uses LoginExperience and ExplorerSignIn |
 | Dashboard panels | `src/lib/solmind/dashboardPanels.ts` | Static Admin and Guide panel definitions |

@@ -491,7 +491,6 @@ src/
       ExplorerConversationFormation.tsx
       ExplorerResponseComposer.tsx
       ExplorerTopicList.tsx
-      LoginOptionList.tsx
       MiniProfileCard.tsx
       OnboardingProgressCard.tsx
       PageShell.tsx
@@ -510,7 +509,6 @@ src/
       explorerPrivateConversationResponse.ts  versioned result and transient assistance
       explorerConversationFormation.ts
       invitations.ts
-      loginOptions.ts
       navigation.ts
       onboarding.ts
       pages.ts

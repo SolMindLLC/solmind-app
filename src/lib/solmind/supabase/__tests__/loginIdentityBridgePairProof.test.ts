@@ -180,12 +180,13 @@ describe("bridge trusted pair publication", () => {
 
   it("refuses an augmented over-limit cookie atomically and discards only its own transient session", async () => {
     vi.stubEnv(CREDENTIAL_PAIR_PROOF_KEY_VARIABLE, Buffer.from(KEY).toString("base64"));
-    let answer = providerAnswer();
-    for (let padding = 23_000; padding < 26_000; padding++) {
-      const candidate = providerAnswer(padding);
-      const length = 7 + stringToBase64URL(JSON.stringify(candidate)).length;
-      if (length >= 32_700 && length <= 32_768) { answer = candidate; break; }
-    }
+    // ASCII JSON padding adds exactly one byte per character. Build one
+    // near-limit value directly instead of encoding thousands of large values.
+    const baseBytes = Buffer.byteLength(JSON.stringify(providerAnswer()), "utf8");
+    const answer = providerAnswer(Math.floor((32_730 - 7) * 3 / 4) - baseBytes);
+    const length = 7 + stringToBase64URL(JSON.stringify(answer)).length;
+    expect(length).toBeGreaterThanOrEqual(32_700);
+    expect(length).toBeLessThanOrEqual(32_768);
     const { bridge, calls } = setup(answer);
     const hold = await held(bridge);
     await hold.assertProviderUser(ACCOUNT);

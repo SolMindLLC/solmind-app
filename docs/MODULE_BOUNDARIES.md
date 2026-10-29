@@ -46,7 +46,6 @@ src/
       ExplorerExperiencePrototype.tsx
       ExplorerResponseComposer.tsx
       ExplorerTopicList.tsx
-      LoginOptionList.tsx
       MiniProfileCard.tsx
       OnboardingProgressCard.tsx
       PageShell.tsx
@@ -64,7 +63,6 @@ src/
       dashboardPanels.ts
       explorerExperience.ts
       invitations.ts
-      loginOptions.ts
       navigation.ts
       onboarding.ts
       pages.ts
@@ -189,8 +187,7 @@ A new-code request keeps A4, M1 or M2 on screen with what was typed; only the
 preview switcher moves between the code screens.
 It must not import the `auth/` or `supabase/` modules, persist entries, or
 send or check credentials or codes; drafts remain in page memory. Connected
-Explorer uses separate login step 6 owners. `LoginOptionList.tsx` and
-`loginOptions.ts` are retained but no longer used by `/login`.
+Explorer uses separate login step 6 owners.
 
 ### Suggested Waypoint components
 
@@ -368,7 +365,6 @@ Current examples:
 - `conversation.ts`
 - `dashboardPanels.ts`
 - `explorerExperience.ts`
-- `loginOptions.ts`
 - `navigation.ts`
 - `onboarding.ts`
 - `pages.ts`

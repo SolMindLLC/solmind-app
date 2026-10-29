@@ -642,9 +642,8 @@ without a code; and the screen stays. The tick box and the switch keep their
 state only in page
 memory, and nothing is remembered. The password field is uncontrolled, so
 what is typed in it never reaches the preview's state or markup, and it is
-never logged or put in the URL. `LoginOptionList.tsx` and `loginOptions.ts`
-are retained but no longer used by `/login`. These restrictions apply to the
-preview, not to the separately named connected role owners below.
+never logged or put in the URL. These restrictions apply to the preview, not
+to the separately named connected role owners below.
 
 The connected Explorer boundary uses `src/components/solmind/ExplorerSignIn.tsx`
 and its browser contract/transport/controller for exactly the send and verify
