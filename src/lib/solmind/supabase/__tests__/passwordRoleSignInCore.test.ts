@@ -26,7 +26,7 @@ const CODE = "" + PRIVATE;
 const EXPIRY = 2_000_000_000;
 const BEFORE_FACTORS = ["lookup", "ownership", "password", "redeem", "assert", "confirm"] as const;
 const AFTER_HOLD = ["redeem", "assert", "confirm", "session", "prepare", "release", "response", "header", "cookie"] as const;
-type Stage = "lookup" | "ownership" | "password" | "redeem" | "assert" | "confirm" | "session" |
+type Stage = "lookup" | "ownership" | "password" | "password_failure" | "redeem" | "assert" | "confirm" | "session" |
   "prepare" | "release" | "discard" | "response" | "header" | "cookie" | "wait" | "spare" | "issue";
 const yes = (value: boolean, label: string) => expect(value, label).toBe(true);
 const same = (actual: unknown, expected: unknown, label: string) => yes(isDeepStrictEqual(actual, expected), label);
@@ -48,7 +48,7 @@ function fixture() {
   const hooks: Partial<Record<Stage, (...args: unknown[]) => unknown>> = {};
   const answers: Partial<Record<Stage, unknown>> = {
     lookup: { outcome: "found", userAccountId: IDS.account, userContactMethodId: IDS.contact, normalizedEmail: EMAIL, providerUserId: IDS.provider },
-    ownership: { outcome: "owned" }, redeem: { outcome: "redeemed" }, assert: { outcome: "asserted" },
+    ownership: { outcome: "owned" }, password_failure: { outcome: "recorded" }, redeem: { outcome: "redeemed" }, assert: { outcome: "asserted" },
     confirm: { outcome: "confirmed" }, session: { outcome: "created", sessionId: IDS.session, maxAgeSeconds: 120 },
     release: { outcome: "released", heldCookies: [{ name: "solmind-auth", value: PRIVATE }] },
     discard: { outcome: "discarded", cleanup: "cleaned" },
@@ -81,6 +81,7 @@ function fixture() {
   const verifyDependencies = {
     accountLookup: sendDependencies.accountLookup,
     ownership: { check: (...values: unknown[]) => call("ownership", ...values) },
+    passwordFailureRecorder: { recordWrongPassword: (...values: unknown[]) => call("password_failure", ...values) },
     bridge: { signInWithPassword: (...values: unknown[]) => call("password", ...values) },
     redeemer: { redeem: (...values: unknown[]) => call("redeem", ...values) },
     challengeConfirmation: { confirm: (...values: unknown[]) => call("confirm", ...values) },
@@ -309,6 +310,41 @@ describe("current logout hold and remaining lifetime", () => {
       f.rawPorts.epochSeconds = () => { if (stage === "epoch") throw hostileError(); return EXPIRY - 1000; };
       refusal(f, await verifyGuideSignIn(f.request, f.ports), "denied");
       yes(f.count("discard") === 1 && f.count("release") === 0, "clock failure is no successful completion");
+    }
+  });
+});
+
+for (const c of verifyCases) describe("confirmed password failure recording: " + c.name, () => {
+  it("records exactly once against the owned selector without redeeming or creating a session", async () => {
+    const f = fixture(); f.answers.password = { outcome: "credentials_refused" };
+    refusal(f, await c.run(f.request, f.ports), "not_matched");
+    same(f.events, ["now", "configuration_verify", "lookup", "ownership", "password", "password_failure", "wait"], "failure record follows the confirmed password refusal");
+    same(f.args.get("password_failure"), [[{ userAccountId: IDS.account, challengeId: IDS.challenge, roleContext: c.role }]], "server-derived identity only; no password or code");
+    yes(f.count("password_failure") === 1 && f.count("redeem") === 0 && f.count("session") === 0 && f.count("cookie") === 0, "one record attempt and no authentication effect");
+  });
+  it("does not count provider failures, invalid requests, wrong ownership or successful login", async () => {
+    for (const outcome of ["failed", "invalid_request"]) {
+      const f = fixture(); f.answers.password = { outcome };
+      refusal(f, await c.run(f.request, f.ports), "not_matched");
+      yes(f.count("password_failure") === 0, "unknown provider outcomes are not wrong passwords");
+    }
+    const widened = fixture(); widened.answers.password = { outcome: "credentials_refused", extra: "synthetic" };
+    refusal(widened, await c.run(widened.request, widened.ports), "not_matched");
+    yes(widened.count("password_failure") === 0, "widened refusal shape never records a password failure");
+    const wrongOwner = fixture(); wrongOwner.answers.ownership = { outcome: "not_owned" };
+    refusal(wrongOwner, await c.run(wrongOwner.request, wrongOwner.ports), "not_matched");
+    yes(wrongOwner.count("password") === 0 && wrongOwner.count("password_failure") === 0, "wrong owner reaches neither operation");
+    const success = fixture();
+    yes((await c.run(success.request, success.ports)).outcome === "signed_in", "existing success remains successful");
+    yes(success.count("password_failure") === 0, "successful password never increments a failure");
+  });
+  it("retains the same refusal with no retry when recording fails or is unconfirmed", async () => {
+    for (const outcome of ["failed", "not_recorded", "throw"]) {
+      const f = fixture(); f.answers.password = { outcome: "credentials_refused" };
+      f.answers.password_failure = { outcome };
+      if (outcome === "throw") f.fail.add("password_failure");
+      refusal(f, await c.run(f.request, f.ports), "not_matched");
+      yes(f.count("password_failure") === 1 && f.count("redeem") === 0 && f.count("session") === 0, "unknown write is not retried or treated as login success");
     }
   });
 });

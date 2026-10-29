@@ -79,6 +79,7 @@ export const LOGIN_ACCOUNT_LOOKUP_FUNCTION = "solmind_resolve_login_account" as 
 export const REDEEMED_LOGIN_CHALLENGE_CONFIRMATION_FUNCTION =
   "solmind_confirm_redeemed_login_challenge" as const;
 export const LOGIN_CHALLENGE_OWNERSHIP_FUNCTION = "solmind_check_login_challenge_owner" as const;
+export const LOGIN_PASSWORD_FAILURE_FUNCTION = "solmind_record_login_password_failure" as const;
 
 export const LOGIN_IDENTIFIER_TYPES = Object.freeze(["email", "username"] as const);
 
@@ -599,4 +600,51 @@ export function createLoginChallengeOwnershipCheck(
     }
   }
   return Object.freeze({ check: (request: LoginChallengeOwnershipRequest) => check(request) });
+}
+
+// Card 9 item 15: a confirmed wrong password may record one eligible challenge
+// failure. This is a write, unlike the lookups above: a lost/late answer does
+// not prove rollback and never authorizes an automatic retry. No password/code
+// value reaches this capability. SQL owns exact ownership, eligibility, the
+// existing shared five-failure budget and the atomic content-free audit.
+export type LoginPasswordFailureRequest = Readonly<{
+  userAccountId: string; challengeId: string;
+  roleContext: typeof SOLMIND_ROLES.GUIDE | typeof SOLMIND_ROLES.ADMIN;
+}>;
+export type LoginPasswordFailureResult = Readonly<{ outcome: "recorded" | "not_recorded" | "failed" }>;
+export type LoginPasswordFailureRecorder = Readonly<{
+  recordWrongPassword(request: LoginPasswordFailureRequest): Promise<LoginPasswordFailureResult>;
+}>;
+const PASSWORD_FAILURE_KEYS = Object.freeze(["userAccountId", "challengeId", "roleContext"]);
+const PASSWORD_RECORDED: LoginPasswordFailureResult = Object.freeze({ outcome: "recorded" });
+const PASSWORD_NOT_RECORDED: LoginPasswordFailureResult = Object.freeze({ outcome: "not_recorded" });
+const PASSWORD_RECORD_FAILED: LoginPasswordFailureResult = Object.freeze({ outcome: "failed" });
+
+export function createLoginPasswordFailureRecorder(
+  dependencies: LoginAccountLookupDependencies,
+): LoginPasswordFailureRecorder {
+  const settings = readDependencies(dependencies);
+  async function recordWrongPassword(request: unknown): Promise<LoginPasswordFailureResult> {
+    try {
+      const fields = readExactDataProperties(request, PASSWORD_FAILURE_KEYS);
+      const userAccountId = fields?.get("userAccountId");
+      const challengeId = fields?.get("challengeId");
+      const role = fields?.get("roleContext");
+      if (!isCanonicalUuid(userAccountId) || userAccountId.length !== 36 ||
+          !isCanonicalUuid(challengeId) || challengeId.length !== 36 ||
+          (role !== SOLMIND_ROLES.GUIDE && role !== SOLMIND_ROLES.ADMIN)) return PASSWORD_RECORD_FAILED;
+      const call = startRpc(settings.client, LOGIN_PASSWORD_FAILURE_FUNCTION, {
+        p_user_account_id: userAccountId, p_verification_challenge_id: challengeId,
+        p_role_context: role,
+      }, settings.rpcTimeout);
+      const answer = await call.answer;
+      if (answer === null || (answer.error !== null && answer.error !== undefined) ||
+          !Array.isArray(answer.data) || answer.data.length !== 1) return PASSWORD_RECORD_FAILED;
+      const row = readExactDataProperties(answer.data[0], ["recorded"]);
+      const recorded = row?.get("recorded");
+      if (!isBeforeDeadline(call.deadline)) return PASSWORD_RECORD_FAILED;
+      return recorded === true ? PASSWORD_RECORDED : recorded === false ? PASSWORD_NOT_RECORDED : PASSWORD_RECORD_FAILED;
+    } catch { return PASSWORD_RECORD_FAILED; }
+  }
+  return Object.freeze({ recordWrongPassword: (request: LoginPasswordFailureRequest) => recordWrongPassword(request) });
 }

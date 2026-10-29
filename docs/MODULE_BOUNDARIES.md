@@ -2459,12 +2459,12 @@ only eligible account lookup permits issuance. Send receives no password and
 writes no cookie. Verify orders eligible lookup, non-consuming exact ownership,
 password private hold, redemption, provider-user/redeemed-account confirmation,
 session creation, accepted-session preparation and release. Wrong account never
-reaches password; wrong password never redeems. Pre-factor refusals share the
+reaches password; confirmed wrong password shares the existing five-failure code budget with atomic content-free audit and never redeems. Pre-factor refusals share the
 accepted message/body/status/headers and attempted floor. Earlier guard/config
 and handled post-factor completion failures remain generic denial. Await bounded
 discard; preserve existing cookies, publish no new auth/binding cookie on refusal,
 and discard partial success. Timeout/cleanup proves no remote rollback or
-absence of a committed session/supersession.
+absence of a committed session/supersession. Stale/terminal owned selectors still reach password; recorder eligibility remains strict and writeless; revisit before Sharing.
 
 The ownership migration
 supabase/migrations/20261016000000_login_challenge_ownership_lookup.sql is a

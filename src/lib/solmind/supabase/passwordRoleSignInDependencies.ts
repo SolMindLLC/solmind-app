@@ -7,7 +7,7 @@ import { loadLoginVerificationConfiguration } from "../auth/loginRouteConfigurat
 import { createVerificationChallengeServices } from "../auth/verificationChallengeComposition";
 import { createServiceRoleClient } from "./serviceRoleClient";
 import { createLoginAccountLookup, createLoginChallengeOwnershipCheck,
-  createRedeemedLoginChallengeConfirmation } from "./loginAccountLookupCallers";
+  createLoginPasswordFailureRecorder, createRedeemedLoginChallengeConfirmation } from "./loginAccountLookupCallers";
 import { createLoginIdentityBridge } from "./loginIdentityBridge";
 import { createUserSessionCreator } from "./userSessionCreationCaller";
 import { createLogoutProviderCleanupDependencies } from "./logoutDependencies";
@@ -119,6 +119,7 @@ function makeVerify(origin: string, config: PasswordRoleSignInDependencyConfigur
     const rpcClient = createServiceRoleClient();
     const accountLookup = createLoginAccountLookup({ rpcClient, rpcTimeoutMilliseconds: config.accountLookupTimeoutMilliseconds });
     const ownership = createLoginChallengeOwnershipCheck({ rpcClient, rpcTimeoutMilliseconds: config.challengeOwnershipTimeoutMilliseconds });
+    const passwordFailureRecorder = createLoginPasswordFailureRecorder({ rpcClient, rpcTimeoutMilliseconds: config.challengeOwnershipTimeoutMilliseconds });
     const challengeConfirmation = createRedeemedLoginChallengeConfirmation({ rpcClient, rpcTimeoutMilliseconds: config.challengeConfirmationTimeoutMilliseconds });
     const supabaseUrl = process.env[REQUEST_AUTH_URL_ENV];
     const anonKey = process.env[REQUEST_AUTH_ANON_KEY_ENV];
@@ -141,7 +142,7 @@ function makeVerify(origin: string, config: PasswordRoleSignInDependencyConfigur
     const bridge = Object.freeze({ signInWithPassword: (request: Parameters<typeof realBridge.signInWithPassword>[0]) =>
       realBridge.signInWithPassword(request) });
     const sessionCreator = createUserSessionCreator({ rpcClient, rpcTimeoutMilliseconds: config.sessionCreationTimeoutMilliseconds });
-    return Object.freeze({ accountLookup, ownership, bridge, redeemer: services.redeemer, challengeConfirmation, sessionCreator });
+    return Object.freeze({ accountLookup, ownership, passwordFailureRecorder, bridge, redeemer: services.redeemer, challengeConfirmation, sessionCreator });
   } catch { return fail(); }
 }
 

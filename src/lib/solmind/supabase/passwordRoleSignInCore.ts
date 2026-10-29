@@ -10,7 +10,7 @@ import { toVerificationChallengeIssuanceAcknowledgment, VERIFICATION_CHALLENGE_I
 import { VERIFICATION_CODE_DELIVERY_OUTCOMES } from "../auth/verificationCodeDelivery";
 import { SOLMIND_ROLES } from "../roles";
 import type { LoginAccountLookup, LoginAccountLookupResult, LoginChallengeOwnershipCheck,
-  RedeemedLoginChallengeConfirmation } from "./loginAccountLookupCallers";
+  LoginPasswordFailureRecorder, RedeemedLoginChallengeConfirmation } from "./loginAccountLookupCallers";
 import type { LoginIdentityBridge } from "./loginIdentityBridge";
 import type { UserSessionCreator } from "./userSessionCreationCaller";
 import { writeLoginSessionCookies, type LoginSessionCookieWrite, type SessionCookieResponse } from "./loginCookieWriter";
@@ -36,6 +36,7 @@ export type PasswordRoleSendDependencies = Readonly<{
 export type PasswordRoleVerifyDependencies = Readonly<{
   accountLookup: LoginAccountLookup;
   ownership: LoginChallengeOwnershipCheck;
+  passwordFailureRecorder: LoginPasswordFailureRecorder;
   bridge: Pick<LoginIdentityBridge, "signInWithPassword">;
   redeemer: VerificationChallengeRedeemer;
   challengeConfirmation: RedeemedLoginChallengeConfirmation;
@@ -186,14 +187,15 @@ async function send(role: Role, request: PasswordRoleCodeRequest, ports: Passwor
   return ack;
 }
 
-type VerifyCalls = Readonly<{ lookup: Call; ownership: Call; password: Call; redeem: Call; confirm: Call; session: Call }>;
+type VerifyCalls = Readonly<{ lookup: Call; ownership: Call; password: Call; passwordFailure: Call; redeem: Call; confirm: Call; session: Call }>;
 function verificationCalls(value: unknown): VerifyCalls | null {
-  const d = record(value, ["accountLookup", "ownership", "bridge", "redeemer", "challengeConfirmation", "sessionCreator"]);
+  const d = record(value, ["accountLookup", "ownership", "passwordFailureRecorder", "bridge", "redeemer", "challengeConfirmation", "sessionCreator"]);
   if (d === null) return null;
   const lookup = method(d.get("accountLookup"), "resolve"); const ownership = method(d.get("ownership"), "check");
   const password = method(d.get("bridge"), "signInWithPassword"); const redeem = method(d.get("redeemer"), "redeem");
+  const passwordFailure = method(d.get("passwordFailureRecorder"), "recordWrongPassword");
   const confirm = method(d.get("challengeConfirmation"), "confirm"); const session = method(d.get("sessionCreator"), "create");
-  return lookup && ownership && password && redeem && confirm && session ? Object.freeze({ lookup, ownership, password, redeem, confirm, session }) : null;
+  return lookup && ownership && password && passwordFailure && redeem && confirm && session ? Object.freeze({ lookup, ownership, password, passwordFailure, redeem, confirm, session }) : null;
 }
 type Hold = Readonly<{ expiresAt: number; assert: Call; prepare: Call; release: Call }>;
 function held(answer: unknown, candidate: unknown): Hold | null {
@@ -233,6 +235,13 @@ async function verify<Response extends SessionCookieResponse>(role: Role, reques
       if (account === null) return NOT_MATCHED;
       if (!resultIs(await deps.ownership(Object.freeze({ userAccountId: account.userAccountId, challengeId: body.challengeId })), "owned")) return NOT_MATCHED;
       const password = await deps.password(Object.freeze({ email: account.normalizedEmail, password: body.password }));
+      if (resultIs(password, "credentials_refused")) {
+        // Count only the bridge's confirmed invalid-credentials result. Never
+        // redeem a code, retry an uncertain write, or publish a session here.
+        await deps.passwordFailure(Object.freeze({ userAccountId: account.userAccountId,
+          challengeId: body.challengeId, roleContext: role }));
+        return NOT_MATCHED;
+      }
       const candidate = own(password, "hold");
       // Take the recoverable cleanup capability before validating any other hold field.
       cleanup = callable(candidate, own(candidate, "discard"));

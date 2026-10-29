@@ -679,10 +679,10 @@ and browser storage must contain no credentials, selectors or tokens.
 Server order is fixed-role eligible lookup, non-consuming exact challenge/
 account/contact ownership, password private hold, redemption, provider-user/
 redeemed-account confirmation, session creation, accepted-session preparation
-and release. Wrong password leaves redemption uncalled; another account's
+and release. Confirmed wrong password records one owned-code failure/audit without redemption; another account's
 selector must not reach password. Refusals preserve existing cookies and publish
 no new auth/binding cookie. Await bounded discard after held failure; timeout
-does not prove remote rollback.
+does not prove remote rollback. Stale/terminal owned selectors can still reach password, but the recorder is writeless; revisit before Sharing.
 
 src/lib/solmind/auth/guideHomeAccess.ts owns fixed-Guide access. Preserve
 raw-cookie ambiguity and current principal/session/role/binding checks; only

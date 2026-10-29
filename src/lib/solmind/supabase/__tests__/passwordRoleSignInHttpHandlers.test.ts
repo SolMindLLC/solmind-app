@@ -81,6 +81,7 @@ function fixture() {
   const send = { accountLookup: { resolve: (...args: unknown[]) => call("lookup", ...args) },
     issuer: { issue: (...args: unknown[]) => call(issued++ === 0 ? "spare" : "issue", ...args) } };
   const verify = { accountLookup: send.accountLookup, ownership: { check: (...args: unknown[]) => call("ownership", ...args) },
+    passwordFailureRecorder: { recordWrongPassword: async () => ({ outcome: "recorded" as const }) },
     bridge: { signInWithPassword: (...args: unknown[]) => call("password", ...args) },
     redeemer: { redeem: (...args: unknown[]) => call("redeem", ...args) },
     challengeConfirmation: { confirm: (...args: unknown[]) => call("confirm", ...args) },

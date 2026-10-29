@@ -72,7 +72,7 @@ function cookies(pair = candidate()) {
     refresh_token: pair.refreshToken, solmind_pair_proof: pair.proof, expires_at: EPOCH + 3600, user: null }) }];
 }
 function json(value: unknown, status = 200) {
-  return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
+  return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json", "X-Supabase-Api-Version": "2024-01-01" } });
 }
 function request(role: "guide" | "admin", verify: boolean) {
   return new NextRequest(ORIGIN + "/login/" + role + (verify ? "/verify" : "/send"), { method: "POST",
@@ -82,7 +82,7 @@ function request(role: "guide" | "admin", verify: boolean) {
 }
 function edge() {
   const events: string[] = []; const calls: { name: string; body: unknown; authorization: string | null }[] = [];
-  let owned = true; let password = true; let revokeFails = false; let failRpc = false; let redeemed = true;
+  let owned = true; let password = true; let confirmedRefusal = false; let revokeFails = false; let failRpc = false; let redeemed = true;
   let holdUser: (() => Promise<Response>) | undefined;
   const send = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = new URL(input instanceof Request ? input.url : String(input));
@@ -95,6 +95,7 @@ function edge() {
       if (name === "solmind_resolve_login_account") { events.push("lookup"); return json([{ user_account_id: ID.account,
         user_contact_method_id: ID.contact, normalized_contact_value: EMAIL, provider_user_id: ID.provider }]); }
       if (name === "solmind_check_login_challenge_owner") { events.push("ownership"); return json([{ owned }]); }
+      if (name === "solmind_record_login_password_failure") { events.push("password_failure"); return json([{ recorded: true }]); }
       if (name === "solmind_redeem_verification_challenge") { events.push("redeem"); return json([{ outcome: redeemed ? "redeemed" : "denied" }]); }
       if (name === "solmind_confirm_redeemed_login_challenge") { events.push("confirm"); return json([{ confirmed: true }]); }
       if (name === "solmind_create_user_session") { events.push("session"); return json([{ outcome: "created",
@@ -103,7 +104,9 @@ function edge() {
     }
     if (name === "/auth/v1/token?grant_type=password") {
       events.push("password"); same(body, { email: EMAIL, password: PASSWORD, gotrue_meta_security: {} }, "SDK sends only fresh password credentials");
-      if (!password) return json({ error: "invalid_grant", error_description: PRIVATE }, 400);
+      if (!password) return confirmedRefusal
+        ? json({ code: "invalid_credentials", message: PRIVATE }, 400)
+        : json({ error: "invalid_grant", error_description: PRIVATE }, 400);
       return json({ access_token: token(ID.provider, ID.session), refresh_token: PRIVATE, token_type: "bearer", expires_in: 3600,
         expires_at: EPOCH + 3600, user: { id: ID.provider, aud: "authenticated", role: "authenticated", email: EMAIL,
           app_metadata: { provider: "email" }, user_metadata: {} } });
@@ -117,6 +120,7 @@ function edge() {
   });
   vi.stubGlobal("fetch", send);
   return { events, calls, send, wrongOwner: () => { owned = false; }, wrongPassword: () => { password = false; },
+    confirmedWrongPassword: () => { password = false; confirmedRefusal = true; },
     wrongCode: () => { redeemed = false; }, failRevoke: () => { revokeFails = true; }, failRpc: () => { failRpc = true; }, holdUser: (fn: () => Promise<Response>) => { holdUser = fn; } };
 }
 
@@ -185,11 +189,14 @@ describe("exact request-scoped factory", () => {
     const lookup = vi.spyOn(lookups, "createLoginAccountLookup"); const owner = vi.spyOn(lookups, "createLoginChallengeOwnershipCheck");
     const confirm = vi.spyOn(lookups, "createRedeemedLoginChallengeConfirmation"); const bridge = vi.spyOn(identity, "createLoginIdentityBridge");
     const creator = vi.spyOn(session, "createUserSessionCreator");
+    const recorder = vi.spyOn(lookups, "createLoginPasswordFailureRecorder");
     const ports = factory.createPasswordRoleSignInHttpPorts(CONFIG, () => []).createVerifyPorts(ORIGIN, null);
     const dependencies = ports.createVerifyDependencies(ORIGIN);
     same([lookup.mock.calls[0][0].rpcTimeoutMilliseconds, owner.mock.calls[0][0].rpcTimeoutMilliseconds,
       confirm.mock.calls[0][0].rpcTimeoutMilliseconds, bridge.mock.calls[0][0].providerTimeoutMilliseconds,
       creator.mock.calls[0][0].rpcTimeoutMilliseconds], [101, 102, 103, 104, 105], "distinct approved input mapping");
+    same(recorder.mock.calls[0][0].rpcTimeoutMilliseconds, 102, "recorder reuses exact ownership timeout");
+    yes(recorder.mock.calls[0][0].rpcClient === owner.mock.calls[0][0].rpcClient, "recorder reuses the ownership RPC client");
     yes(state.clients === 2 && state.transport === 1, "two clients, no privileged link client");
     same(Object.keys(dependencies.bridge), ["signInWithPassword"], "exact core bridge shape");
     same(await bridge.mock.calls[0][1].linkAdmin.generateLink({ type: "magiclink", email: EMAIL }), null, "inert mandatory link seam");
@@ -241,6 +248,19 @@ describe("actual HTTP/core/factory/bridge with fake external IO", () => {
     same(await response.json(), { outcome: "not_matched" }, "common refusal");
     same(f.events, reason === "owner" ? ["lookup", "ownership"] : ["lookup", "ownership", "password"], "factor order cannot be bypassed");
     yes(response.cookies.getAll().length === 0, "refusal preserves old browser state");
+  });
+  for (const role of ["guide", "admin"] as const) it(role + " confirmed invalid credentials reach one bounded failure recorder only", async () => {
+    const f = edge(); f.confirmedWrongPassword();
+    const ports = factory.createPasswordRoleSignInHttpPorts(CONFIG, () => cookies());
+    const response = role === "guide"
+      ? await handlers.handleGuideSignInVerify(request(role, true), ports)
+      : await handlers.handleAdminSignInVerify(request(role, true), ports);
+    same(await response.json(), { outcome: "not_matched" }, "existing outward refusal remains unchanged");
+    same(f.events, ["lookup", "ownership", "password", "password_failure"], "real factory/core/SDK/caller order");
+    const records = f.calls.filter(x => x.name === "solmind_record_login_password_failure");
+    yes(records.length === 1, "one fixed RPC and no automatic retry");
+    same(records[0].body, { p_user_account_id: ID.account, p_verification_challenge_id: ID.challenge, p_role_context: role }, "record payload contains no typed credentials");
+    yes(response.cookies.getAll().length === 0 && !f.events.includes("redeem") && !f.events.includes("session"), "refusal has no code redemption or session effect");
   });
   for (const kind of ["same", "different"] as const) it(kind + " prior session is never revoked", async () => {
     const f = edge(); const old = kind === "same" ? candidate(ID.provider, ID.session) : candidate(ID.other, ID.old);

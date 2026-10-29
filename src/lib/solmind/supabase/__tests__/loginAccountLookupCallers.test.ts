@@ -24,10 +24,12 @@ import {
   LOGIN_ACCOUNT_LOOKUP_FUNCTION,
   LOGIN_ACCOUNT_LOOKUP_LIMITS,
   LOGIN_CHALLENGE_OWNERSHIP_FUNCTION,
+  LOGIN_PASSWORD_FAILURE_FUNCTION,
   LoginAccountLookupError,
   REDEEMED_LOGIN_CHALLENGE_CONFIRMATION_FUNCTION,
   createLoginAccountLookup,
   createLoginChallengeOwnershipCheck,
+  createLoginPasswordFailureRecorder,
   createRedeemedLoginChallengeConfirmation,
   type LoginAccountLookupRpcClient,
 } from "../loginAccountLookupCallers";
@@ -614,6 +616,7 @@ describe("loginAccountLookupCallers - module boundary (server-only, off the thre
     expect(literals.filter((literal) => literal.startsWith("solmind_")).sort()).toEqual([
       "solmind_check_login_challenge_owner",
       "solmind_confirm_redeemed_login_challenge",
+      "solmind_record_login_password_failure",
       "solmind_resolve_login_account",
     ]);
     expect(text).not.toMatch(
@@ -627,12 +630,14 @@ describe("loginAccountLookupCallers - module boundary (server-only, off the thre
         "LOGIN_ACCOUNT_LOOKUP_FUNCTION",
         "LOGIN_ACCOUNT_LOOKUP_LIMITS",
         "LOGIN_CHALLENGE_OWNERSHIP_FUNCTION",
+        "LOGIN_PASSWORD_FAILURE_FUNCTION",
         "LOGIN_IDENTIFIER_TYPES",
         "LoginAccountLookupError",
         "REDEEMED_LOGIN_CHALLENGE_CONFIRMATION_FUNCTION",
         "REDEEMED_LOGIN_CHALLENGE_PURPOSES",
         "createLoginAccountLookup",
         "createLoginChallengeOwnershipCheck",
+        "createLoginPasswordFailureRecorder",
         "createRedeemedLoginChallengeConfirmation",
       ].sort(),
     );
@@ -803,5 +808,87 @@ describe("loginAccountLookupCallers - exact non-consuming login ownership", () =
     respond = () => { throw new Error(SENTINEL); };
     const before = seen.length; failed(await checker.check(request()));
     expect(seen.length === before + 1, "network error not replayed").toBe(true);
+  });
+});
+
+
+describe("loginAccountLookupCallers - confirmed password-failure recorder", () => {
+  it.each(["guide", "admin"] as const)("records one server-bound %s failure through the fixed RPC", async roleContext => {
+    const { client, calls } = fakeRpc(() => ({ data: [{ recorded: true }], error: null }));
+    const recorder = createLoginPasswordFailureRecorder({ rpcClient: client, rpcTimeoutMilliseconds: TIMEOUT });
+    const value = await recorder.recordWrongPassword({ userAccountId: ACCOUNT_ID, challengeId: CHALLENGE_ID, roleContext });
+    expect(isDeepStrictEqual(value, { outcome: "recorded" }), "fixed recorded answer").toBe(true);
+    expect(Object.isFrozen(value)).toBe(true);
+    expect(calls.length === 1, "one write attempt without automatic retry").toBe(true);
+    expect(calls[0].functionName).toBe(LOGIN_PASSWORD_FAILURE_FUNCTION);
+    expect(LOGIN_PASSWORD_FAILURE_FUNCTION).toBe("solmind_record_login_password_failure");
+    expect(isDeepStrictEqual(calls[0].args, { p_user_account_id: ACCOUNT_ID,
+      p_verification_challenge_id: CHALLENGE_ID, p_role_context: roleContext }), "no typed credential or code reaches the RPC").toBe(true);
+  });
+  it("maps an ineligible row or unknown persistence without inventing a recorded attempt", async () => {
+    for (const [answer, outcome] of [
+      [{ data: [{ recorded: false }], error: null }, "not_recorded"],
+      [{ data: [{ recorded: true, extra: SENTINEL }], error: null }, "failed"],
+      [{ data: [], error: null }, "failed"],
+      [{ data: null, error: { message: SENTINEL } }, "failed"],
+    ] as const) {
+      const { client, calls } = fakeRpc(() => answer);
+      const recorder = createLoginPasswordFailureRecorder({ rpcClient: client, rpcTimeoutMilliseconds: TIMEOUT });
+      const result = await recorder.recordWrongPassword({ userAccountId: ACCOUNT_ID, challengeId: CHALLENGE_ID, roleContext: "guide" });
+      expect(isDeepStrictEqual(result, { outcome }), "closed non-recorded result").toBe(true);
+      expect(calls.length === 1, "uncertain write is never retried").toBe(true);
+    }
+  });
+  it("rejects malformed, cross-role and credential-bearing requests before RPC", async () => {
+    const { client, calls } = fakeRpc(() => ({ data: [{ recorded: true }], error: null }));
+    const recorder = createLoginPasswordFailureRecorder({ rpcClient: client, rpcTimeoutMilliseconds: TIMEOUT });
+    const base = { userAccountId: ACCOUNT_ID, challengeId: CHALLENGE_ID, roleContext: "guide" };
+    let getterReads = 0;
+    for (const request of [{ ...base, roleContext: "explorer" }, { ...base, roleContext: "guide\n" },
+      { ...base, challengeId: CHALLENGE_ID + "\n" }, { ...base, password: SENTINEL },
+      Object.defineProperty({ ...base }, "challengeId", { enumerable: true, get() { getterReads++; return CHALLENGE_ID; } })]) {
+      expect(isDeepStrictEqual(await recorder.recordWrongPassword(request as never), { outcome: "failed" }), "fixed local failure").toBe(true);
+    }
+    expect(calls.length === 0 && getterReads === 0, "invalid requests have no effects or getter access").toBe(true);
+  });
+});
+
+describe("password-failure recorder deadline", () => {
+  const request = { userAccountId: ACCOUNT_ID, challengeId: CHALLENGE_ID, roleContext: "guide" as const };
+  it("aborts one hanging attempt at the inclusive deadline and consumes late rejection", async () => {
+    vi.useFakeTimers();
+    try {
+      let reject!: (reason: unknown) => void; let signal: AbortSignal | undefined; let calls = 0;
+      const rpcClient = { rpc() { calls++; return { abortSignal(s: AbortSignal) {
+        signal = s; return new Promise((_, r) => { reject = r; });
+      } }; } };
+      const recorder = createLoginPasswordFailureRecorder({ rpcClient, rpcTimeoutMilliseconds: 10 });
+      let settled = false;
+      const pending = recorder.recordWrongPassword(request).then(value => { settled = true; return value; });
+      await vi.advanceTimersByTimeAsync(9);
+      expect(!settled && signal?.aborted === false).toBe(true);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await pending).toEqual({ outcome: "failed" });
+      expect(signal?.aborted === true && calls === 1).toBe(true);
+      reject(new Error(SENTINEL)); await vi.advanceTimersByTimeAsync(1);
+      expect(calls).toBe(1);
+    } finally { vi.useRealTimers(); }
+  });
+  it("refuses a late positive persistence answer without retry or a recorded claim", async () => {
+    vi.useFakeTimers();
+    try {
+      const clock = vi.spyOn(performance, "now").mockReturnValue(100);
+      let deliver!: (value: unknown) => void; let calls = 0;
+      const rpcClient = { rpc() { calls++; return { abortSignal() { return new Promise(r => { deliver = r; }); } }; } };
+      const pending = createLoginPasswordFailureRecorder({ rpcClient, rpcTimeoutMilliseconds: 10 }).recordWrongPassword(request);
+      clock.mockReturnValue(110); deliver({ data: [{ recorded: true }], error: null });
+      expect(await pending).toEqual({ outcome: "failed" }); expect(calls).toBe(1);
+      clock.mockReturnValue(100);
+      const row = new Proxy({ recorded: true }, { ownKeys(target) { clock.mockReturnValue(110); return Reflect.ownKeys(target); } });
+      const f = fakeRpc(() => ({ data: [row], error: null }));
+      expect(await createLoginPasswordFailureRecorder({ rpcClient: f.client, rpcTimeoutMilliseconds: 10 }).recordWrongPassword(request)).toEqual({ outcome: "failed" });
+      expect(f.calls.length).toBe(1);
+
+    } finally { vi.useRealTimers(); }
   });
 });
