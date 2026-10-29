@@ -209,7 +209,7 @@ never appear as a confirmed saved reply. Exact replay never redispatches.
 `src/lib/solmind/explorerConversationFormation.ts` keep empty Discovery valid,
 take an exact owned saved message and Explorer label, confirm Priority
 separately from attention, and require explicit destination/meaning/arrival
-confirmation for a private chosen Waypoint. Show chosen as In progress.
+confirmation for a private chosen Waypoint. Show unreleased chosen as In progress; explicit owned Release keeps its definition/source/history and20stored-row count, with actual release time and no Reached/End/AI/sharing claim.
 Reached needs a later explicit evidence review and confirmation. No sharing,
 automatic interpretation, clinical score or browser storage is introduced.
 Compass keeps24stored originals/eight visible current category heads; reviewed wording/combine retains source links/captured old meaning and both selectors, with one-way grouping/no slot release; Route/Reached/End/owned review preserve facts without reactivation.

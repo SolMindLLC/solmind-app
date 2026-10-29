@@ -40,9 +40,9 @@ function fixture(row: unknown) {
   return { repository, rpc, abortSignal };
 }
 describe("Closed private Explorer RPC repository (synthetic client)", () => {
-  it("exposes ten closed ports including category formation, End and ended review, without generic access", () => {
+  it("exposes eleven closed ports including category formation, End and ended review, without generic access", () => {
     const f = fixture(null);
-    expect(Object.keys(f.repository).sort()).toEqual(["arrange", "category", "end", "ensure", "mutate", "observe", "prepare", "read", "review", "settle"]);
+    expect(Object.keys(f.repository).sort()).toEqual(["arrange", "category", "end", "ensure", "mutate", "observe", "prepare", "read", "release", "review", "settle"]);
     expect(Object.isFrozen(f.repository)).toBe(true);
   });
   it("read derives exact actor fields and paired operation selectors", async () => {
@@ -283,5 +283,26 @@ describe("closed category SDK capability", () => {
     expect(f.rpc).toHaveBeenCalledOnce(); const g = fixture(null);
     g.abortSignal.mockRejectedValue(new Error("Synthetic response loss"));
     await expect(g.repository.category!(input())).rejects.toThrowError("explorer_private_repository_unavailable"); expect(g.rpc).toHaveBeenCalledOnce();
+  });
+});
+
+
+describe("closed Waypoint release SDK capability", () => {
+  const input = () => ({ ...ACTOR, p_conversation_id: UUID, p_operation_id: UUID, p_expected_revision: 1,
+    p_command_fingerprint: SHA, p_waypoint_id: UUID });
+  it("uses only the exact seven-argument release RPC with bounded abort", async () => {
+    const f = fixture({ outcome: "ok", conversation_state: null });
+    expect(await f.repository.release!(input())).toEqual({ outcome: "ok", conversation_state: null });
+    expect(f.rpc).toHaveBeenCalledExactlyOnceWith("solmind_release_explorer_waypoint_v1", input());
+    expect(Object.keys(f.rpc.mock.calls[0][1] as object)).toHaveLength(7);expect(f.abortSignal).toHaveBeenCalledOnce();
+  });
+  it("refuses extra/malformed arguments and expanded result, never replaying unknown acknowledgement", async () => {
+    for (const request of [{ ...input(), p_extra: true }, { ...input(), p_waypoint_id: undefined }]) {
+      const f = fixture(null);await expect(f.repository.release!(request as unknown as Parameters<NonNullable<typeof f.repository.release>>[0])).rejects.toThrowError("explorer_private_repository_unavailable");expect(f.rpc).not.toHaveBeenCalled();
+    }
+    const f = fixture({ outcome: "ok", conversation_state: null, policy_state: null });
+    await expect(f.repository.release!(input())).rejects.toThrow();expect(f.rpc).toHaveBeenCalledOnce();
+    const g = fixture(null);g.abortSignal.mockRejectedValue(new Error("Synthetic loss"));
+    await expect(g.repository.release!(input())).rejects.toThrow();expect(g.rpc).toHaveBeenCalledOnce();
   });
 });

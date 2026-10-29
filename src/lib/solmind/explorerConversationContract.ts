@@ -53,6 +53,7 @@ export type ExplorerConversationWaypoint = Readonly<{
   status: "chosen" | "reached";
   reachedEvidence?: string | null;
   reachedAt?: string | null;
+  release?: Readonly<{ operationId: string; releasedAt: string }>;
 }>;
 export type ExplorerConversationRouteEvent = Readonly<{
   operationId: string;
@@ -105,6 +106,7 @@ export type ExplorerConversationCommand = CommandBase & (
   | Readonly<{ kind: "confirm_waypoint"; sourceMessageId: string; destination: string;
       meaning: string; arrivalSignal: string }>
   | Readonly<{ kind: "confirm_reached"; waypointId: string; evidence: string }>
+  | Readonly<{ kind: "release_waypoint"; waypointId: string }>
 );
 export type ExplorerConversationError =
   | "unavailable" | "denied" | "refresh_required" | "provider_unavailable";
@@ -263,6 +265,10 @@ export function parseExplorerConversationCommand(value: unknown): ExplorerConver
           !text(value.meaning, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) ||
           !text(value.arrivalSignal, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true)) return null;
       break;
+    case "release_waypoint":
+      if (!keys(value, [...base, "waypointId"]) || !isExplorerConversationId(value.operationId) ||
+          !isExplorerConversationId(value.waypointId)) return null;
+      break;
     case "confirm_reached":
       if (!keys(value, [...base, "waypointId", "evidence"]) || !id(value.waypointId) || !text(value.evidence, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true)) return null;
       break;
@@ -332,17 +338,27 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
   for (const item of state.waypoints) {
     if (!object(item)) return null;
     const hasReached = Object.hasOwn(item, "reachedEvidence") || Object.hasOwn(item, "reachedAt");
-    if (!keys(item, ["id", "sourceMessageId", "destination", "meaning", "arrivalSignal", "status", ...(hasReached ? ["reachedEvidence", "reachedAt"] : [])]) ||
+    const hasRelease = Object.hasOwn(item, "release");
+    if (!keys(item, ["id", "sourceMessageId", "destination", "meaning", "arrivalSignal", "status", ...(hasReached ? ["reachedEvidence", "reachedAt"] : []), ...(hasRelease ? ["release"] : [])]) ||
         !id(item.id) || waypointIds.has(item.id) || !id(item.sourceMessageId) || !messageIds.has(item.sourceMessageId) ||
         !text(item.destination, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) || !text(item.meaning, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) ||
         !text(item.arrivalSignal, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) || !["chosen", "reached"].includes(item.status as string)) return null;
     if (hasReached && (item.status === "chosen"
       ? item.reachedEvidence !== null || item.reachedAt !== null
       : !text(item.reachedEvidence, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) || !instant(item.reachedAt))) return null;
+    let release: ExplorerConversationWaypoint["release"];
+    if (hasRelease) {
+      const captured = item.release;
+      if (item.status !== "chosen" || !object(captured) ||
+          Reflect.ownKeys(captured).length !== 2 || !keys(captured, ["operationId", "releasedAt"]) ||
+          !isExplorerConversationId(captured.operationId) || !isExplorerConversationInstant(captured.releasedAt)) return null;
+      release = Object.freeze({ operationId: captured.operationId, releasedAt: captured.releasedAt });
+    }
     waypointIds.add(item.id);
     waypoints.push(Object.freeze({ id: item.id, sourceMessageId: item.sourceMessageId, destination: item.destination,
       meaning: item.meaning, arrivalSignal: item.arrivalSignal, status: item.status as ExplorerConversationWaypoint["status"],
-      ...(hasReached ? { reachedEvidence: item.reachedEvidence as string | null, reachedAt: item.reachedAt as string | null } : {}) }));
+      ...(hasReached ? { reachedEvidence: item.reachedEvidence as string | null, reachedAt: item.reachedAt as string | null } : {}),
+      ...(release === undefined ? {} : { release }) }));
   }
   const route: ExplorerConversationRouteEvent[] = [];
   const routeIds = new Set<string>();

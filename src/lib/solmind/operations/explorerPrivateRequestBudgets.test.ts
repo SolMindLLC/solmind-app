@@ -282,3 +282,16 @@ it("propagates the optional category input identity and closes its exact ten-sec
     for (const port of Object.values(f.repository)) expect(port).not.toHaveBeenCalled(); expect(vi.getTimerCount()).toBe(0);
   } finally { vi.useRealTimers(); }
 });
+
+
+it("bounds the optional release port at ten seconds without reposting", async () => {
+  vi.useFakeTimers();try {
+    const f=fixture();const input={ ...ACTOR_PARAMETERS,p_conversation_id:ID,p_operation_id:ID,p_expected_revision:1,p_command_fingerprint:SHA,p_waypoint_id:ID };
+    const release=vi.fn<NonNullable<ExplorerPrivateConversationRepository["release"]>>(async()=>ROW);
+    const wrapped=withExplorerPrivateRequestBudgets({ ...f.dependencies,repository:{ ...f.repository,release } });
+    expect(await wrapped.repository.release!(input)).toBe(ROW);expect(release).toHaveBeenCalledExactlyOnceWith(input);
+    release.mockImplementation(()=>new Promise(()=>undefined));const pending=wrapped.repository.release!(input);
+    const rejected=expect(pending).rejects.toThrowError(FAILURE);await vi.advanceTimersByTimeAsync(10_000);await rejected;
+    expect(release).toHaveBeenCalledTimes(2);expect(vi.getTimerCount()).toBe(0);
+  } finally {vi.useRealTimers();}
+});

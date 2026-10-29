@@ -29,6 +29,9 @@ const PORTS = Object.freeze({
   category: Object.freeze({ name: "solmind_confirm_explorer_compass_category_v1", parameters: [...ACTOR,
     "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint", "p_target_item_id", "p_member_item_ids", "p_label"],
     columns: ["outcome", "conversation_state"] }),
+  release: Object.freeze({ name: "solmind_release_explorer_waypoint_v1", parameters: [...ACTOR,
+    "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint", "p_waypoint_id"],
+    columns: ["outcome", "conversation_state"] }),
   end: Object.freeze({ name: "solmind_end_explorer_conversation_v1", parameters: [...ACTOR,
     "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint"], columns: ["outcome", "conversation_state"] }),
   review: Object.freeze({ name: "solmind_read_ended_explorer_conversations_v1", parameters: [...ACTOR, "p_conversation_id"],
@@ -41,6 +44,7 @@ const OUTCOMES: Readonly<Record<keyof typeof PORTS, readonly string[]>> = Object
   settle: ["ok", "withheld", "exact_replay"], mutate: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   arrange: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   category: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
+  release: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   end: ["ok", "exact_replay", "already_ended", "stale_revision", "unavailable"], review: ["ok"],
 });
 function object(value: unknown): value is Record<string, unknown> {
@@ -100,7 +104,7 @@ function parameters(input: object, expected: readonly string[]): Readonly<Record
   return Object.freeze(copied);
 }
 
-// The returned object exposes ten exact ports, including deliberate
+// The returned object exposes eleven exact ports, including deliberate
 // formation, ending and owned ended review. There is no generic select/RPC/credential capability.
 export function createExplorerPrivateConversationRepository(client: SupabaseClient): ExplorerPrivateConversationRepository {
   async function call(port: keyof typeof PORTS, input: object): Promise<ExplorerPrivateRpcRow> {
@@ -130,6 +134,6 @@ export function createExplorerPrivateConversationRepository(client: SupabaseClie
     },
     ensure: (input) => call("ensure", input), observe: (input) => call("observe", input), prepare: (input) => call("prepare", input),
     settle: (input) => call("settle", input), mutate: (input) => call("mutate", input),
-    arrange: (input) => call("arrange", input), category: (input) => call("category", input), end: (input) => call("end", input), review: (input) => call("review", input),
+    arrange: (input) => call("arrange", input), category: (input) => call("category", input), release: (input) => call("release", input), end: (input) => call("end", input), review: (input) => call("review", input),
   });
 }

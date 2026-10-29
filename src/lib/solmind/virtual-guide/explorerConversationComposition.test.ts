@@ -454,3 +454,18 @@ describe("private category confirmation identity", () => {
     expect(f.mutate).not.toHaveBeenCalled(); expect(f.buildContext).not.toHaveBeenCalled();
   });
 });
+
+
+describe("private Waypoint release identity", () => {
+  const command = { kind: "release_waypoint" as const, operationId: ID.operation, expectedRevision: 4, waypointId: ID.conversation };
+  it("binds operation, revision and exact selected Waypoint without changing older identities", () => {
+    const hash = explorerConversationCommandFingerprint(command);
+    expect(hash).toMatch(/^[A-F0-9]{64}$/);
+    for (const changed of [{ ...command, waypointId: ID.otherAccount }, { ...command, expectedRevision: 5 },
+      { ...command, operationId: ID.otherAccount }]) expect(explorerConversationCommandFingerprint(changed)).not.toBe(hash);
+  });
+  it("denies release in the legacy generic writer before authentication or IO", async () => {
+    const f = fixture(); expect(await commandExplorerConversation({ command, dependencies: f.dependencies })).toEqual(denied);
+    expect(f.mutate).not.toHaveBeenCalled(); expect(f.buildContext).not.toHaveBeenCalled();
+  });
+});

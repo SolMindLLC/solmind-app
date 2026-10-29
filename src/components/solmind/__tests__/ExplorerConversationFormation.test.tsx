@@ -330,4 +330,41 @@ describe("Category presentation (static proof only)", () => {
     expect(html).not.toContain("Review wording or combine: Stored original 1<");
     expect(onCommand).not.toHaveBeenCalled();
   });
+  it("keeps a released chosen definition and exact source in history without offering Reached or release again", () => {
+    const onCommand = vi.fn();
+    const current = state({ conversationId: "conversation-a", messages: [{ id: "message-a", role: "explorer", body: "Exact private source <not markup>", createdAt: "2026-10-29T10:00:00Z" }], waypoints: [{
+      id: "waypoint-a", sourceMessageId: "message-a", destination: "A retained destination", meaning: "A retained meaning", arrivalSignal: "A retained signal", status: "chosen",
+      release: { operationId: "release-operation", releasedAt: "2026-10-29T15:00:00Z" },
+    }] });
+    for (const readOnly of [false, true]) {
+      const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: current, busy: false, readOnly, onCommand }));
+      expect(html).toContain("Released — kept in your private history");
+      expect(html).toContain("A retained destination");
+      expect(html).toContain("A retained meaning");
+      expect(html).toContain("A retained signal");
+      expect(html).toContain("Exact private source &lt;not markup&gt;");
+      expect(html).toContain('dateTime="2026-10-29T15:00:00Z"');
+      expect(html).not.toContain("In progress — chosen by you");
+      expect(html).not.toContain("Review Reached:");
+      expect(html).not.toContain("Review release:");
+      expect(html).not.toContain("Reached — confirmed by you");
+    }
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+
+  it("offers a deliberate release review only for a current chosen Waypoint in an active editable conversation", () => {
+    const waypoint = { id: "waypoint-a", sourceMessageId: "message-a", destination: "A meaningful destination", meaning: "Why it matters", arrivalSignal: "An observable signal", status: "chosen" as const };
+    const onCommand = vi.fn();
+    const active = state({ conversationId: "conversation-a", sessionStatus: "active", waypoints: [waypoint] });
+    const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: active, busy: false, onCommand }));
+    expect(html).toContain("Review release: A meaningful destination");
+    expect(html).not.toContain("Review before releasing this Waypoint");
+    expect(html).not.toContain("Release this Waypoint</button>");
+    for (const current of [state({ ...active, sessionStatus: "ended" }), state({ ...active, waypoints: [{ ...waypoint, status: "reached" }] })]) {
+      expect(renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: current, busy: false, onCommand }))).not.toContain("Review release:");
+    }
+    expect(renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: active, busy: false, readOnly: true, onCommand }))).not.toContain("Review release:");
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+
 });

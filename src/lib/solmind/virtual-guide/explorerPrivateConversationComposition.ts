@@ -56,6 +56,9 @@ export type ExplorerPrivateArrangeParameters = ActorParameters & Readonly<{
 export type ExplorerPrivateCategoryParameters = ActorParameters & Readonly<{
   p_conversation_id: string; p_operation_id: string; p_expected_revision: number; p_command_fingerprint: string;
   p_target_item_id: string; p_member_item_ids: readonly string[]; p_label: string }>;
+export type ExplorerPrivateReleaseParameters = ActorParameters & Readonly<{
+  p_conversation_id: string; p_operation_id: string; p_expected_revision: number; p_command_fingerprint: string;
+  p_waypoint_id: string }>;
 export type ExplorerPrivateEndParameters = ActorParameters & Readonly<{
   p_conversation_id: string; p_operation_id: string; p_expected_revision: number; p_command_fingerprint: string }>;
 export type ExplorerPrivateReviewParameters = ActorParameters & Readonly<{ p_conversation_id: string | null }>;
@@ -72,6 +75,7 @@ export type ExplorerPrivateConversationRepository = Readonly<{
   mutate?: (parameters: ExplorerPrivateMutateParameters) => Promise<ExplorerPrivateRpcRow>;
   arrange?: (parameters: ExplorerPrivateArrangeParameters) => Promise<ExplorerPrivateRpcRow>;
   category?: (parameters: ExplorerPrivateCategoryParameters) => Promise<ExplorerPrivateRpcRow>;
+  release?: (parameters: ExplorerPrivateReleaseParameters) => Promise<ExplorerPrivateRpcRow>;
   end?: (parameters: ExplorerPrivateEndParameters) => Promise<ExplorerPrivateRpcRow>;
   review?: (parameters: ExplorerPrivateReviewParameters) => Promise<ExplorerPrivateRpcRow>;
 }>;
@@ -324,6 +328,20 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
     // Historical exact command replay precedes new configuration/source/model work.
     if (readRow.outcome === "exact_replay") return Object.freeze({ result: read, assistance: null });
     if (read.state.pendingTurn || input.signal?.aborted) return failed("refresh_required");
+    if (command.kind === "release_waypoint") {
+      // Owned closure introduces no reflection: SQL retains all current private
+      // authority, pending/revision checks and safety state, like deliberate End.
+      if (!read.state.conversationId || !dependencies.repository.release) return failed("denied");
+      const row = await dependencies.repository.release({ ...base(actor), p_conversation_id: read.state.conversationId,
+        p_operation_id: command.operationId, p_expected_revision: command.expectedRevision,
+        p_command_fingerprint: fingerprint, p_waypoint_id: command.waypointId });
+      const released = stateResult(row);
+      if (!released.ok) return Object.freeze({ result: released, assistance: null });
+      const waypoint = released.state.waypoints.find(item => item.id === command.waypointId);
+      if (released.state.conversationId !== read.state.conversationId || released.state.sessionStatus !== "active" ||
+          waypoint?.release?.operationId !== command.operationId) return failed();
+      return Object.freeze({ result: released, assistance: null });
+    }
     let policy = parseExplorerPrivatePolicy(readRow.policy_state);
     if (command.kind !== "send") {
       if (!read.state.conversationId || policy.status !== "known" || policy.restrictedLevel !== null || policy.adultReflectionStopped) return failed("denied");

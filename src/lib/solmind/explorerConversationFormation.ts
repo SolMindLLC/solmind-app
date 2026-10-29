@@ -244,6 +244,7 @@ export function buildReachedFormationIntent(
   const waypoint = state.waypoints.find(item => item.id === waypointId);
   if (!waypoint) return refuse("Choose a saved private Waypoint to review.");
   if (waypoint.status !== "chosen") return refuse("This Waypoint is already Reached.");
+  if (waypoint.release !== undefined) return refuse("This Waypoint was released and is retained as private history.");
   if (!validText(evidence, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true)) {
     return refuse("Describe the supporting evidence in 1 to 1,000 characters.");
   }
@@ -251,4 +252,28 @@ export function buildReachedFormationIntent(
     return refuse("Review the arrival signal and supporting evidence before confirming Reached.");
   }
   return accept({ kind: "confirm_reached", waypointId, evidence: evidence.trim() });
+}
+
+// Release closes only the reviewed active choice. It does not delete its source,
+// rewrite its definition, claim Reached, or create a replacement lifecycle.
+export function buildWaypointReleaseFormationIntent(
+  state: ExplorerConversationState,
+  waypointId: string,
+  reviewedRevision: number,
+  confirmed: boolean,
+): FormationIntentResult {
+  if (!state.conversationId || state.sessionStatus !== "active" || state.pendingTurn) {
+    return refuse("Reload the active saved conversation before releasing a Waypoint.");
+  }
+  if (!Number.isSafeInteger(reviewedRevision) || reviewedRevision < 0 || state.revision !== reviewedRevision) {
+    return refuse("The saved conversation changed. Review this Waypoint again before releasing it.");
+  }
+  const waypoint = state.waypoints.find(item => item.id === waypointId);
+  if (!waypoint || waypoint.status !== "chosen" || waypoint.release !== undefined) {
+    return refuse("Choose a current in-progress Waypoint to review for release.");
+  }
+  if (confirmed !== true) {
+    return refuse("Review the destination, meaning, arrival signal and saved source, then confirm release.");
+  }
+  return accept({ kind: "release_waypoint", waypointId: waypoint.id });
 }

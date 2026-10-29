@@ -550,3 +550,44 @@ describe("private category capability", () => {
     }
   });
 });
+
+
+describe("owned private Waypoint release capability", () => {
+  const command = { kind: "release_waypoint" as const, operationId: ID.operation, expectedRevision: 0, waypointId: ID.actor };
+  const released = () => ({ ...state(ID.conversation), revision: 1, sessionStatus: "active" as const, ending: null,
+    messages: [{ id: ID.intake, role: "explorer" as const, body: "Saved synthetic conversation source", createdAt: "2026-10-29T14:00:00Z" }],
+    waypoints: [{ id: ID.actor, sourceMessageId: ID.intake, destination: "A synthetic destination", meaning: "It matters",
+      arrivalSignal: "An observable signal", status: "chosen" as const,
+      release: { operationId: ID.operation, releasedAt: "2026-10-29T15:00:00.000Z" } }] });
+  it("forwards seven authenticated arguments as owned closure without readiness/provider or generic writes", async () => {
+    const f = fixture(); f.setCurrent({ ...state(ID.conversation), sessionStatus: "active", ending: null }); f.setPolicy({ known: false });
+    const release = vi.fn(async () => ({ outcome: "ok", conversation_state: released() }));
+    const result = await commandExplorerPrivateConversation({ command, dependencies: { ...f.dependencies,
+      repository: { ...f.dependencies.repository, release } } });
+    expect(result.result.ok).toBe(true);
+    expect(release).toHaveBeenCalledExactlyOnceWith({ p_actor_user_account_id: ID.actor, p_user_session_id: ID.app,
+      p_conversation_id: ID.conversation, p_operation_id: ID.operation, p_expected_revision: 0,
+      p_command_fingerprint: explorerConversationCommandFingerprint(command), p_waypoint_id: ID.actor });
+    for (const port of [f.ensure,f.observe,f.prepare,f.settle,f.mutate,f.arrange,f.end,f.review,f.resolve,f.generate]) expect(port).not.toHaveBeenCalled();
+  });
+  it("resolves exact replay before dispatch, policy or provider work", async () => {
+    const f = fixture(); f.read.mockResolvedValue({ outcome: "exact_replay", conversation_state: released() }); const release = vi.fn();
+    expect((await commandExplorerPrivateConversation({ command, dependencies: { ...f.dependencies,
+      repository: { ...f.dependencies.repository, release } } })).result.ok).toBe(true);
+    expect(release).not.toHaveBeenCalled(); expect(f.generate).not.toHaveBeenCalled();
+  });
+  it("refuses missing capability/pending and never fabricates a saved release from an incomplete result", async () => {
+    for (const reason of ["absent","pending","missing_capture","wrong_waypoint","wrong_conversation"] as const) {
+      const f = fixture(); f.setCurrent({ ...state(ID.conversation), pendingTurn: reason === "pending" });
+      const s = released();
+      const wrong = reason === "missing_capture" ? { ...s, waypoints: [] } : reason === "wrong_waypoint" ?
+        { ...s, waypoints: [{ ...s.waypoints[0], id: ID.conversation }] } : reason === "wrong_conversation" ?
+        { ...s, conversationId: ID.actor } : s;
+      const release = vi.fn(async () => ({ outcome: "ok", conversation_state: wrong }));
+      const result = await commandExplorerPrivateConversation({ command, dependencies: { ...f.dependencies,
+        repository: { ...f.dependencies.repository, ...(reason === "absent" ? {} : { release }) } } });
+      expect(result.result.ok).toBe(false); expect(f.generate).not.toHaveBeenCalled(); expect(f.mutate).not.toHaveBeenCalled();
+      if (reason === "absent" || reason === "pending") expect(release).not.toHaveBeenCalled();
+    }
+  });
+});

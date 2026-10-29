@@ -9,7 +9,7 @@
 
 Version: 0.2.3
 Repo: solmind-app  
-Last Updated: 2026-10-27
+Last Updated: 2026-10-29
 Purpose: Define where code should live as the SolMind MVP0 application grows.
 
 ## Core Principle
@@ -3060,7 +3060,7 @@ does not permit a server value import into a browser module.
 
 src/lib/solmind/supabase/explorerConversationRequestDependencies.ts shares the
 existing raw-cookie authentication source between retained predecessor and new
-private factories; malformed unrelated pairs alone are skipped. The closed ten-port private repository adds exact9arg category RPC with propagated10s await budget, separate End/review and active-only reflective writers; abort is not remote rollback.
+private factories; malformed unrelated pairs alone are skipped. The closed eleven-port private repository adds exact7arg public.solmind_release_explorer_waypoint_v1 alongside exact9arg category/End/review capabilities, with propagated10s await budget, immutable definition/source/release facts and active-only reflective writers; owned Release preserves safety/stop state and abort is not remote rollback.
 Its default has only auth/repository; readiness/provider/context/renderer/signal
 require explicit trusted server injection. No new provider credential/environment
 lookup, fake operational default or candidate-driven activation is introduced.

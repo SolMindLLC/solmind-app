@@ -1,7 +1,7 @@
 # SolMind App AI Maintenance Map
 
 Version: 0.3.3
-Last Updated: 2026-10-27
+Last Updated: 2026-10-29
 Repo: solmind-app  
 Purpose: Help AI coding assistants safely understand, maintain, and extend the SolMind MVP0 application.
 
@@ -571,7 +571,7 @@ request/browser owners are specified in the private successor section below.
 | `src/components/solmind/ExplorerConversationFormation.tsx`; `src/lib/solmind/explorerConversationFormation.ts` | Empty Discovery, exact saved sources, explicit Priority/separate attention, reviewed 24-point/eight-anchor arrangement/emphasis, captured Route, chosen Waypoint and saved Reached evidence/time. |
 | `src/lib/solmind/supabase/explorerConversationRequestDependencies.ts`; `src/lib/solmind/supabase/explorerConversationRepository.ts` | Shared src/lib/solmind/auth/readRawRequestCookies.ts preserves raw occurrences/limits and tolerates malformed unrelated pairs; fixed Explorer authority and predecessor RPCs remain. |
 | `src/lib/solmind/virtual-guide/explorerConversationComposition.ts`; `src/lib/solmind/virtual-guide/explorerConversationContext.ts` | Server-derived turn identities and exact replay preflight; real S03A/S03C context assembly with final revalidation and exact-byte fingerprint/evidence binding. |
-| `supabase/migrations/20261024000000_explorer_conversation_composition.sql`; `supabase/migrations/20261029000000_explorer_formation_route_readback.sql`; `supabase/migrations/20261029003000_explorer_compass_arrangement.sql`; `supabase/migrations/20261029020000_explorer_conversation_end_review.sql`; `supabase/migrations/20261029030000_explorer_compass_categories.sql` | Private immutable Route/arrangement/category/ending facts; exact9arg category writer/ten-port repository retains24source originals and current-head-only layout/selection with explicit one-way wording/combine review. Atomic End/audit/owned ended review remain; no provider I/O. |
+| `supabase/migrations/20261024000000_explorer_conversation_composition.sql`; `supabase/migrations/20261029000000_explorer_formation_route_readback.sql`; `supabase/migrations/20261029003000_explorer_compass_arrangement.sql`; `supabase/migrations/20261029020000_explorer_conversation_end_review.sql`; `supabase/migrations/20261029030000_explorer_compass_categories.sql`; `supabase/migrations/20261029100000_explorer_waypoint_release.sql` | Private immutable Route/arrangement/category/ending/release facts; exact9arg category and7arg Release writers/eleven-port repository retain source/definition/history with no stored-slot release. Explicit Release review, atomic audit and ended readback add no provider I/O, revision/revisit or sharing. |
 | `tests/browser/explorerConversation.pw.ts` and co-located feature tests | Authored browser/fake and focused contract cases. Their existence is not passing execution, real database/provider proof or source assurance. |
 
 Context requires injected trusted versioned configuration. Its submitted intake
