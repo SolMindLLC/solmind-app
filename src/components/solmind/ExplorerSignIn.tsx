@@ -22,6 +22,7 @@ export type ExplorerSignInStatus = Readonly<{
 export type ExplorerSignInProps = Readonly<{
   fetcher: ExplorerSignInBrowserFetch;
   responseBudgetMilliseconds: number;
+  createFlowId?: () => string;
   renderStatus: (status: ExplorerSignInStatus) => ReactNode;
   onNavigate: (destination: Destination) => void;
   onDepart: () => void;
@@ -103,6 +104,7 @@ export function createExplorerSignInViewBinding(options: Omit<ExplorerSignInProp
       if (controller === null && !retired) {
         controller = createExplorerSignInFlowController({
           fetcher: options.fetcher, responseBudgetMilliseconds: options.responseBudgetMilliseconds,
+          createFlowId: options.createFlowId ?? (() => crypto.randomUUID()),
         });
         navigated = false;
         codeDraft = "";
@@ -156,9 +158,10 @@ export function ExplorerSignIn(props: ExplorerSignInProps) {
   const binding = useMemo(() => createExplorerSignInViewBinding({
     fetcher: props.fetcher,
     responseBudgetMilliseconds: props.responseBudgetMilliseconds,
+    createFlowId: props.createFlowId,
     onNavigate: noop,
     onDepart: noop,
-  }), [props.fetcher, props.responseBudgetMilliseconds]);
+  }), [props.fetcher, props.responseBudgetMilliseconds, props.createFlowId]);
   // Install the required current callbacks in commit, before subscription can
   // activate a controller. Callback identity changes do not discard an attempt.
   useLayoutEffect(() => {

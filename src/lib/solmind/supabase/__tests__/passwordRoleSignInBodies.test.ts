@@ -14,6 +14,10 @@ const cases = [
   { name: "send", parse: parsePasswordRoleSignInSendBody, keys: ["identifier"], make: () => ({ identifier: SENTINEL }) },
   { name: "verify", parse: parsePasswordRoleSignInVerifyBody, keys: ["identifier", "password", "challengeId", "code"],
     make: () => ({ identifier: SENTINEL, password: SENTINEL, challengeId: SENTINEL, code: SENTINEL }) },
+  { name: "flow send", parse: parsePasswordRoleSignInSendBody, keys: ["identifier", "flowId"],
+    make: () => ({ identifier: SENTINEL, flowId: SENTINEL }) },
+  { name: "flow verify", parse: parsePasswordRoleSignInVerifyBody, keys: ["identifier", "password", "flowId", "code"],
+    make: () => ({ identifier: SENTINEL, password: SENTINEL, flowId: SENTINEL, code: SENTINEL }) },
 ] as const;
 
 beforeEach(() => {
@@ -57,7 +61,8 @@ for (const c of cases) describe("passwordRoleSignInBodies: " + c.name, () => {
       expect(c.parse({ ...c.make(), [key]: value }) === null, "non-string field refused").toBe(true);
     }
     const missing: Record<string, unknown> = { ...c.make() }; delete missing[key];
-    expect(c.parse(missing) === null, "missing field refused").toBe(true);
+    if (c.name === "flow send" && key === "flowId") expect(c.parse(missing)).toEqual({ identifier: SENTINEL });
+    else expect(c.parse(missing) === null, "missing required field refused").toBe(true);
   });
 
   it("rejects nonrecords, arrays, class instances and inherited/custom shapes", () => {
@@ -128,6 +133,17 @@ for (const c of cases) describe("passwordRoleSignInBodies: " + c.name, () => {
 it("send refuses password and verify refuses the incomplete send shape", () => {
   expect(parsePasswordRoleSignInSendBody({ identifier: SENTINEL, password: SENTINEL }) === null, "send accepts no password").toBe(true);
   expect(parsePasswordRoleSignInVerifyBody({ identifier: SENTINEL }) === null, "verify needs all four fields").toBe(true);
+});
+
+it("flow and direct challenge shapes are distinct and mixed selectors are refused whole", () => {
+  const flowSend = { identifier: SENTINEL, flowId: SENTINEL };
+  const flowVerify = { ...flowSend, password: SENTINEL, code: SENTINEL };
+  expect(parsePasswordRoleSignInSendBody({ ...flowSend, challengeId: SENTINEL }) === null, "mixed send refused").toBe(true);
+  expect(parsePasswordRoleSignInVerifyBody({ ...flowVerify, challengeId: SENTINEL }) === null, "mixed verify refused").toBe(true);
+  expect(parsePasswordRoleSignInVerifyBody({ identifier: SENTINEL, password: SENTINEL, code: SENTINEL }) === null, "missing both selectors refused").toBe(true);
+  expect(parsePasswordRoleSignInVerifyBody({ ...flowVerify, role: "admin" }) === null, "flow adds no role authority").toBe(true);
+  const parsed = parsePasswordRoleSignInVerifyBody(flowVerify);
+  expect(parsed !== null && "flowId" in parsed && !("challengeId" in parsed), "flow stays explicit without fallback").toBe(true);
 });
 
 it("server-only module exposes only two parsers and imports no effect or product-policy dependency", () => {

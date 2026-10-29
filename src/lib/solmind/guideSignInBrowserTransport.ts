@@ -4,6 +4,12 @@
 import {
   GUIDE_BROWSER_SIGN_IN_PATHS,
   buildPasswordRoleSignInSendRequest,
+  buildPasswordRoleSignInFlowSendRequest,
+  buildPasswordRoleSignInFlowVerifyRequest,
+  parseGuideSignInFlowSendReply,
+  type GuideBrowserFlowSendReply,
+  type PasswordRoleBrowserFlowSendBody,
+  type PasswordRoleBrowserFlowVerifyBody,
   buildPasswordRoleSignInVerifyRequest,
   parseGuideSignInSendReply,
   parseGuideSignInVerifyReply,
@@ -31,11 +37,13 @@ export type GuideSignInBrowserFetch = (path: string, init: RequestInit) => Promi
 export type GuideSignInBrowserTransport = Readonly<{
   send(input: unknown, signal: AbortSignal): Promise<GuideSignInBrowserTransportResult<GuideBrowserSendReply>>;
   verify(input: unknown, signal: AbortSignal): Promise<GuideSignInBrowserTransportResult<GuideBrowserVerifyReply>>;
+  sendFlow(input: unknown, signal: AbortSignal): Promise<GuideSignInBrowserTransportResult<GuideBrowserFlowSendReply>>;
+  verifyFlow(input: unknown, signal: AbortSignal): Promise<GuideSignInBrowserTransportResult<GuideBrowserVerifyReply>>;
 }>;
 
 type RequestSnapshot = Readonly<{
   path: typeof GUIDE_BROWSER_SIGN_IN_PATHS[keyof typeof GUIDE_BROWSER_SIGN_IN_PATHS];
-  body: PasswordRoleBrowserSendBody | PasswordRoleBrowserVerifyBody;
+  body: PasswordRoleBrowserSendBody | PasswordRoleBrowserVerifyBody | PasswordRoleBrowserFlowSendBody | PasswordRoleBrowserFlowVerifyBody;
 }>;
 type Boundary<T> = Readonly<{ ok: true; value: T }> | Readonly<{ ok: false }>;
 const BOUNDARY_FAILED = Object.freeze({ ok: false } as const);
@@ -209,6 +217,14 @@ export function createGuideSignInBrowserTransport(options: Readonly<{
     if (typeof fetcher !== "function" || !Number.isSafeInteger(budget) ||
         budget <= 0 || budget > MAX_TIMER_MILLISECONDS) return null;
     return Object.freeze({
+      async sendFlow(input: unknown, signal: AbortSignal) {
+        const request = buildPasswordRoleSignInFlowSendRequest(input);
+        return request.ok ? submit({ path: GUIDE_BROWSER_SIGN_IN_PATHS.send, body: request.body }, parseGuideSignInFlowSendReply, signal, fetcher, budget) : FAILED;
+      },
+      async verifyFlow(input: unknown, signal: AbortSignal) {
+        const request = buildPasswordRoleSignInFlowVerifyRequest(input);
+        return request.ok ? submit({ path: GUIDE_BROWSER_SIGN_IN_PATHS.verify, body: request.body }, parseGuideSignInVerifyReply, signal, fetcher, budget) : FAILED;
+      },
       async send(input: unknown, signal: AbortSignal) {
         const request = buildPasswordRoleSignInSendRequest(input);
         return request.ok ? submit({ path: GUIDE_BROWSER_SIGN_IN_PATHS.send, body: request.body }, parseGuideSignInSendReply, signal, fetcher, budget) : FAILED;

@@ -1490,6 +1490,7 @@ describe("explorerSignInComposition - configuration first, and the loopback rule
         "accountLookup",
         "bridge",
         "challengeConfirmation",
+        "flowResolver",
         "redeemer",
         "sessionCreator",
       ]);
@@ -2003,5 +2004,78 @@ describe("the Explorer sign-in routes' new files - module boundary", () => {
         "EXPLORER_SIGN_IN_RESPONSE_FLOOR_MILLISECONDS",
       ].sort(),
     );
+  });
+});
+
+
+// Item17 server composition variants only: public flow stays independent of
+// actual issuance, and one resolved private candidate enters the factor chain.
+describe("Explorer login-flow server branch", () => {
+  const flowId = "6f170000-0000-4000-8000-000000000001";
+  it("echoes the same flow for every lookup/issuance status without exposing private candidate IDs", async () => {
+    for (const script of [ {}, { lookup: () => ({ outcome: "not_found" }) },
+      { lookup: throwing }, { issue: () => ({ outcome: "denied", challengeId: CHALLENGE_ID }) }, { issue: throwing }]) {
+      const h = sendHarness(script);
+      const { result, waits } = await settleThroughWait(h.time, () => h.send(TYPED_EMAIL, { flowId }), true);
+      expect(result).toEqual({ acknowledgment: "verification_code_requested", flowId });
+      expect(Object.isFrozen(result)).toBe(true); expect(waits).toEqual([ANSWER_AT]);
+      expect(h.issueRequests[0]).toBe(EXPLORER_SIGN_IN_SPARE_SELECTOR_REQUEST);
+      if (h.issueRequests.length === 2) expect(h.issueRequests[1]).toEqual({ purpose: "login", contactMethodType: "email",
+        normalizedContact: STORED_EMAIL, userAccountId: ACCOUNT_ID, userContactMethodId: CONTACT_ID,
+        loginFlow: { flowId, roleContext: "explorer" } });
+    }
+  });
+  function runFlow(h: ReturnType<typeof verifyHarness>, resolver: unknown, extra: Record<string, unknown> = {}) {
+    const ports: ExplorerSignInPorts = { ...h.ports, createVerifyDependencies(origin, candidate) {
+      return { ...h.ports.createVerifyDependencies(origin, candidate), ...(resolver === undefined ? {} : { flowResolver: resolver }) } as ExplorerSignInVerifyDependencies;
+    } };
+    return verifyExplorerSignInCode({ trustedOrigin: LOOPBACK_ORIGIN, identifier: TYPED_EMAIL, flowId, code: CODE,
+      requestCookies: [], createSuccessResponse: () => fakeResponse(h.events).response, ...extra } as Parameters<typeof verifyExplorerSignInCode>[0], ports);
+  }
+  it("looks up/resolves once before redemption, then uses the actual ID through confirmation/session without another account lookup", async () => {
+    const h = verifyHarness(); const resolutions: unknown[] = [];
+    const result = await runFlow(h, { resolve: async (request: unknown) => { h.events.push("flow"); resolutions.push(request);
+      return { outcome: "found", challengeId: CHALLENGE_ID }; } });
+    expect(result.outcome).toBe("signed_in");
+    expect(h.events.filter(x => ["lookup", "flow", "redeem", "confirm", "exchange", "create"].includes(x))).toEqual([
+      "lookup", "flow", "redeem", "confirm", "exchange", "create"]);
+    expect(resolutions).toEqual([{ flowId, userAccountId: ACCOUNT_ID, userContactMethodId: CONTACT_ID, roleContext: "explorer" }]);
+    expect(h.calls.lookup).toHaveLength(1);
+    expect(h.calls.redeem).toEqual([{ purpose: "login", challengeId: CHALLENGE_ID, code: CODE }]);
+    expect(h.calls.confirm).toEqual([{ userAccountId: ACCOUNT_ID, challengeId: CHALLENGE_ID, expectedPurpose: "login" }]);
+    expect(h.calls.create).toEqual([{ userAccountId: ACCOUNT_ID, activeRoleContext: "explorer", challengeId: CHALLENGE_ID,
+      providerAccessTokenExpiresAt: TOKEN_EXPIRES_AT }]);
+  });
+  it("refuses absent/foreign/expired/failed mappings before redemption or provider and never tries another candidate", async () => {
+    for (const resolver of [undefined, { resolve: async () => ({ outcome: "not_found" }) },
+      { resolve: async () => ({ outcome: "failed" }) }, { resolve: async () => { throw new Error(SENTINEL); } }]) {
+      const h = verifyHarness(); let calls = 0;
+      const port = resolver === undefined ? undefined : { resolve: async () => { calls++; return resolver.resolve(); } };
+      const { result, waits } = await settleThroughWait(h.time, () => runFlow(h, port), true);
+      expect(result.outcome === "denied" || result.outcome === "code_not_accepted").toBe(true);
+      expect(h.calls.redeem).toHaveLength(0); expect(h.calls.exchange).toHaveLength(0); expect(h.calls.create).toHaveLength(0);
+      expect(calls).toBeLessThanOrEqual(1); expect(waits).toEqual([ANSWER_AT]);
+    }
+  });
+  it("refuses malformed/nil/mixed flow selectors before dependency construction", async () => {
+    for (const bad of [flowId + "\n", "00000000-0000-0000-0000-000000000000"]) {
+      const send = sendHarness(); expect(await send.send(TYPED_EMAIL, { flowId: bad })).toEqual({ outcome: "denied" });
+      expect(send.issueRequests).toHaveLength(0); expect(send.lookupRequests).toHaveLength(0);
+      const h = verifyHarness(); expect(await runFlow(h, undefined, { flowId: bad })).toEqual({ outcome: "denied" });
+      expect(h.origins).toHaveLength(0);
+    }
+    const h = verifyHarness(); expect(await runFlow(h, undefined, { challengeId: CHALLENGE_ID })).toEqual({ outcome: "denied" });
+    expect(h.origins).toHaveLength(0);
+  });
+  it("real verify factory wires one bounded flow resolver over its existing service client without constructing another client", async () => {
+    stubEnvironment(); const edge = stubFetch(() => new Response(JSON.stringify([{ outcome: "found", verification_challenge_id: CHALLENGE_ID }]),
+      { headers: { "content-type": "application/json" } }));
+    const dependencies = EXPLORER_SIGN_IN_PORTS.createVerifyDependencies(LOOPBACK_ORIGIN);
+    expect(dependencies.flowResolver).toBeDefined();
+    expect(await dependencies.flowResolver!.resolve({ flowId, userAccountId: ACCOUNT_ID, userContactMethodId: CONTACT_ID, roleContext: "explorer" })).toEqual({ outcome: "found", challengeId: CHALLENGE_ID });
+    expect(edge.requests).toHaveLength(1); expect(edge.requests[0].url).toContain("/rest/v1/rpc/solmind_resolve_login_flow_challenge");
+    expect(edge.requests[0].body).toEqual({ p_login_flow_id: flowId, p_user_account_id: ACCOUNT_ID,
+      p_user_contact_method_id: CONTACT_ID, p_role_context: "explorer" });
+    expect(built.serviceRoleClients).toBe(2); expect(built.linkClients).toBe(1);
   });
 });

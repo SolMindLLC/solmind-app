@@ -10,7 +10,7 @@ import { toVerificationChallengeIssuanceAcknowledgment, VERIFICATION_CHALLENGE_I
 import { VERIFICATION_CODE_DELIVERY_OUTCOMES } from "../auth/verificationCodeDelivery";
 import { SOLMIND_ROLES } from "../roles";
 import type { LoginAccountLookup, LoginAccountLookupResult, LoginChallengeOwnershipCheck,
-  LoginPasswordFailureRecorder, RedeemedLoginChallengeConfirmation } from "./loginAccountLookupCallers";
+  LoginFlowChallengeResolver, LoginPasswordFailureRecorder, RedeemedLoginChallengeConfirmation } from "./loginAccountLookupCallers";
 import type { LoginIdentityBridge } from "./loginIdentityBridge";
 import type { UserSessionCreator } from "./userSessionCreationCaller";
 import { writeLoginSessionCookies, type LoginSessionCookieWrite, type SessionCookieResponse } from "./loginCookieWriter";
@@ -29,6 +29,10 @@ import { parsePasswordRoleSignInSendBody, parsePasswordRoleSignInVerifyBody } fr
 // Executable ports are trusted seams: never-settling calls or discard prevent
 // completion. The final factory must supply the actual bounded implementations.
 
+// Explicit flow variants keep a validated public selector separate from the
+// one private challenge. Resolution replaces only the legacy ownership read;
+// password, actual-ID failure recording/redemption, provider assertion,
+// redeemed confirmation, held cleanup and session acceptance keep their order.
 export type PasswordRoleSendDependencies = Readonly<{
   issuer: VerificationChallengeIssuer;
   accountLookup: LoginAccountLookup;
@@ -41,6 +45,7 @@ export type PasswordRoleVerifyDependencies = Readonly<{
   redeemer: VerificationChallengeRedeemer;
   challengeConfirmation: RedeemedLoginChallengeConfirmation;
   sessionCreator: UserSessionCreator;
+  flowResolver?: LoginFlowChallengeResolver;
 }>;
 export type PasswordRoleSignInPorts = Readonly<{
   now(): number;
@@ -60,7 +65,7 @@ export type PasswordRoleVerification<Response extends SessionCookieResponse> = R
 }>;
 type Denied = Readonly<{ outcome: "denied" }>;
 type NotMatched = Readonly<{ outcome: "not_matched" }>;
-export type PasswordRoleSendResult = VerificationChallengeIssuanceAcknowledgment | Denied |
+export type PasswordRoleSendResult = VerificationChallengeIssuanceAcknowledgment | Readonly<{ acknowledgment: "verification_code_requested"; flowId: string }> | Denied |
   Readonly<{ outcome: "invalid_email" | "invalid_identifier" }>;
 export type PasswordRoleVerifyResult<Response extends SessionCookieResponse> = Denied | NotMatched |
   Readonly<{ outcome: "signed_in"; response: Response }>;
@@ -159,13 +164,17 @@ function origin(value: unknown): value is string {
 
 async function send(role: Role, request: PasswordRoleCodeRequest, ports: PasswordRoleSignInPorts): Promise<PasswordRoleSendResult> {
   let c: Clock; let lookup: Call; let issue: Call; let id: NonNullable<ReturnType<typeof identifier>>;
-  let ack: VerificationChallengeIssuanceAcknowledgment;
+  let ack: VerificationChallengeIssuanceAcknowledgment | Readonly<{ acknowledgment: "verification_code_requested"; flowId: string }>;
+  let flowId: string | null;
   try {
     if (!isRole(role)) return DENIED;
     const timing = clock(ports); const r = record(request, ["trustedOrigin", "body"]);
     if (timing === null || r === null || !origin(r.get("trustedOrigin"))) return DENIED;
     const body = parsePasswordRoleSignInSendBody(r.get("body"));
     if (body === null) return DENIED;
+    const selectedFlow = "flowId" in body ? body.flowId : null;
+    if (selectedFlow !== null && (!uuid(selectedFlow) || selectedFlow === "00000000-0000-0000-0000-000000000000")) return DENIED;
+    flowId = selectedFlow;
     const normalized = identifier(role, body.identifier);
     if (normalized === null) return role === SOLMIND_ROLES.GUIDE ? INVALID_EMAIL : INVALID_IDENTIFIER;
     const d = record(timing.send(r.get("trustedOrigin")), ["issuer", "accountLookup"]);
@@ -173,29 +182,34 @@ async function send(role: Role, request: PasswordRoleCodeRequest, ports: Passwor
     if (issuing === null || resolving === null) return DENIED;
     const spare = acknowledgment(await issuing(SPARE));
     if (spare === null) return DENIED;
-    c = timing; lookup = resolving; issue = issuing; id = normalized; ack = spare;
+    c = timing; lookup = resolving; issue = issuing; id = normalized;
+    ack = flowId === null ? spare : Object.freeze({ acknowledgment: "verification_code_requested", flowId });
   } catch { return DENIED; }
   try {
     const account = found(await lookup(Object.freeze({ ...id, requestedRoleContext: role })));
     if (account !== null) {
       const next = acknowledgment(await issue(Object.freeze({ purpose: PURPOSE, contactMethodType: "email",
-        normalizedContact: account.normalizedEmail, userAccountId: account.userAccountId, userContactMethodId: account.userContactMethodId })));
-      if (next !== null) ack = next;
+        normalizedContact: account.normalizedEmail, userAccountId: account.userAccountId, userContactMethodId: account.userContactMethodId,
+        ...(flowId === null ? {} : { loginFlow: Object.freeze({ flowId, roleContext: role }) }) })));
+      if (flowId === null && next !== null) ack = next;
     }
   } catch { /* The acknowledgment was fully prepared before lookup. */ }
   await wait(c);
   return ack;
 }
 
-type VerifyCalls = Readonly<{ lookup: Call; ownership: Call; password: Call; passwordFailure: Call; redeem: Call; confirm: Call; session: Call }>;
+type VerifyCalls = Readonly<{ lookup: Call; flowResolve: Call | null; ownership: Call; password: Call; passwordFailure: Call; redeem: Call; confirm: Call; session: Call }>;
 function verificationCalls(value: unknown): VerifyCalls | null {
-  const d = record(value, ["accountLookup", "ownership", "passwordFailureRecorder", "bridge", "redeemer", "challengeConfirmation", "sessionCreator"]);
+  const names = ["accountLookup", "ownership", "passwordFailureRecorder", "bridge", "redeemer", "challengeConfirmation", "sessionCreator"];
+  const d = record(value, names) ?? record(value, [...names, "flowResolver"]);
   if (d === null) return null;
+  const flowResolve = d.has("flowResolver") ? method(d.get("flowResolver"), "resolve") : null;
+  if (d.has("flowResolver") && flowResolve === null) return null;
   const lookup = method(d.get("accountLookup"), "resolve"); const ownership = method(d.get("ownership"), "check");
   const password = method(d.get("bridge"), "signInWithPassword"); const redeem = method(d.get("redeemer"), "redeem");
   const passwordFailure = method(d.get("passwordFailureRecorder"), "recordWrongPassword");
   const confirm = method(d.get("challengeConfirmation"), "confirm"); const session = method(d.get("sessionCreator"), "create");
-  return lookup && ownership && password && passwordFailure && redeem && confirm && session ? Object.freeze({ lookup, ownership, password, passwordFailure, redeem, confirm, session }) : null;
+  return lookup && ownership && password && passwordFailure && redeem && confirm && session ? Object.freeze({ lookup, flowResolve, ownership, password, passwordFailure, redeem, confirm, session }) : null;
 }
 type Hold = Readonly<{ expiresAt: number; assert: Call; prepare: Call; release: Call }>;
 function held(answer: unknown, candidate: unknown): Hold | null {
@@ -218,6 +232,7 @@ async function verify<Response extends SessionCookieResponse>(role: Role, reques
     if (timing === null || r === null || !origin(r.get("trustedOrigin"))) return DENIED;
     const parsed = parsePasswordRoleSignInVerifyBody(r.get("body"));
     if (parsed === null) return DENIED;
+    if ("flowId" in parsed && (!uuid(parsed.flowId) || parsed.flowId === "00000000-0000-0000-0000-000000000000")) return DENIED;
     const normalized = identifier(role, parsed.identifier);
     const names = readSessionCookieEntries(r.get("requestCookies"), false);
     const response = callable(request, r.get("createSuccessResponse"));
@@ -233,13 +248,24 @@ async function verify<Response extends SessionCookieResponse>(role: Role, reques
     try {
       const account = found(await deps.lookup(Object.freeze({ ...id, requestedRoleContext: role })));
       if (account === null) return NOT_MATCHED;
-      if (!resultIs(await deps.ownership(Object.freeze({ userAccountId: account.userAccountId, challengeId: body.challengeId })), "owned")) return NOT_MATCHED;
+      let challengeId: string;
+      if ("flowId" in body) {
+        if (deps.flowResolve === null) return NOT_MATCHED;
+        const answer = await deps.flowResolve(Object.freeze({ flowId: body.flowId, userAccountId: account.userAccountId,
+          userContactMethodId: account.userContactMethodId, roleContext: role }));
+        const resolved = record(answer, ["outcome", "challengeId"]);
+        if (resolved?.get("outcome") !== "found" || !uuid(resolved.get("challengeId"))) return NOT_MATCHED;
+        challengeId = resolved.get("challengeId") as string;
+      } else {
+        challengeId = body.challengeId;
+        if (!resultIs(await deps.ownership(Object.freeze({ userAccountId: account.userAccountId, challengeId })), "owned")) return NOT_MATCHED;
+      }
       const password = await deps.password(Object.freeze({ email: account.normalizedEmail, password: body.password }));
       if (resultIs(password, "credentials_refused")) {
         // Count only the bridge's confirmed invalid-credentials result. Never
         // redeem a code, retry an uncertain write, or publish a session here.
         await deps.passwordFailure(Object.freeze({ userAccountId: account.userAccountId,
-          challengeId: body.challengeId, roleContext: role }));
+          challengeId, roleContext: role }));
         return NOT_MATCHED;
       }
       const candidate = own(password, "hold");
@@ -247,12 +273,12 @@ async function verify<Response extends SessionCookieResponse>(role: Role, reques
       cleanup = callable(candidate, own(candidate, "discard"));
       const hold = held(password, candidate);
       if (hold === null || cleanup === null) return NOT_MATCHED;
-      if (!resultIs(await deps.redeem(Object.freeze({ purpose: PURPOSE, challengeId: body.challengeId, code: body.code })), "redeemed")) return NOT_MATCHED;
+      if (!resultIs(await deps.redeem(Object.freeze({ purpose: PURPOSE, challengeId, code: body.code })), "redeemed")) return NOT_MATCHED;
       if (!resultIs(await hold.assert(account.providerUserId), "asserted")) return NOT_MATCHED;
-      if (!resultIs(await deps.confirm(Object.freeze({ userAccountId: account.userAccountId, challengeId: body.challengeId, expectedPurpose: PURPOSE })), "confirmed")) return NOT_MATCHED;
+      if (!resultIs(await deps.confirm(Object.freeze({ userAccountId: account.userAccountId, challengeId, expectedPurpose: PURPOSE })), "confirmed")) return NOT_MATCHED;
       factors = true;
       const result = record(await deps.session(Object.freeze({ userAccountId: account.userAccountId, activeRoleContext: role,
-        challengeId: body.challengeId, providerAccessTokenExpiresAt: hold.expiresAt })), ["outcome", "sessionId", "maxAgeSeconds"]);
+        challengeId, providerAccessTokenExpiresAt: hold.expiresAt })), ["outcome", "sessionId", "maxAgeSeconds"]);
       const outcome = result?.get("outcome");
       if (result === null || (outcome !== "created" && outcome !== "existing") || !uuid(result.get("sessionId")) || !isSessionCookieMaxAge(result.get("maxAgeSeconds"))) return DENIED;
       // The current logout predecessor prepares optional prior-session cleanup

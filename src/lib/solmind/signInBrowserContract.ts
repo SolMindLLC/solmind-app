@@ -22,6 +22,15 @@ export type ExplorerBrowserVerifyBody = Readonly<{
   challengeId: string;
   code: string;
 }>;
+// Explicit protocol branch for the stable in-memory login-flow selector.
+// A flowId is never a direct challengeId and supplies no authentication factor.
+export type ExplorerBrowserFlowSendBody = Readonly<{ identifier: string; flowId: string }>;
+export type ExplorerBrowserFlowVerifyBody = Readonly<{
+  identifier: string; flowId: string; code: string;
+}>;
+export type ExplorerBrowserFlowSendReply =
+  | Readonly<{ acknowledgment: "verification_code_requested"; flowId: string }>
+  | Readonly<{ outcome: "invalid_email" | "denied" }>;
 export type ExplorerBrowserSendReply =
   | Readonly<{ acknowledgment: "verification_code_requested"; challengeId: string }>
   | Readonly<{ outcome: "invalid_email" | "denied" }>;
@@ -37,6 +46,16 @@ export type ExplorerBrowserVerifyRequest = Readonly<{
   ok: true;
   path: typeof EXPLORER_BROWSER_SIGN_IN_PATHS.verify;
   body: ExplorerBrowserVerifyBody;
+}>;
+export type ExplorerBrowserFlowSendRequest = Readonly<{
+  ok: true;
+  path: typeof EXPLORER_BROWSER_SIGN_IN_PATHS.send;
+  body: ExplorerBrowserFlowSendBody;
+}>;
+export type ExplorerBrowserFlowVerifyRequest = Readonly<{
+  ok: true;
+  path: typeof EXPLORER_BROWSER_SIGN_IN_PATHS.verify;
+  body: ExplorerBrowserFlowVerifyBody;
 }>;
 export type ExplorerBrowserParsedReply<T> = Readonly<{ ok: true; value: T }> | Failed;
 
@@ -96,6 +115,25 @@ export function buildExplorerSignInVerifyRequest(value: unknown): ExplorerBrowse
   });
 }
 
+export function buildExplorerSignInFlowSendRequest(value: unknown): ExplorerBrowserFlowSendRequest | Failed {
+  const fields = readFields(value, 2);
+  const identifier = fields?.get("identifier");
+  const flowId = fields?.get("flowId");
+  if (fields?.size !== 2 || identifier === undefined || flowId === undefined) return SIGN_IN_BROWSER_CONTRACT_FAILED;
+  return Object.freeze({ ok: true, path: EXPLORER_BROWSER_SIGN_IN_PATHS.send,
+    body: Object.freeze({ identifier, flowId }) });
+}
+
+export function buildExplorerSignInFlowVerifyRequest(value: unknown): ExplorerBrowserFlowVerifyRequest | Failed {
+  const fields = readFields(value, 3);
+  const identifier = fields?.get("identifier");
+  const flowId = fields?.get("flowId");
+  const code = fields?.get("code");
+  if (fields?.size !== 3 || identifier === undefined || flowId === undefined || code === undefined) return SIGN_IN_BROWSER_CONTRACT_FAILED;
+  return Object.freeze({ ok: true, path: EXPLORER_BROWSER_SIGN_IN_PATHS.verify,
+    body: Object.freeze({ identifier, flowId, code }) });
+}
+
 // The canonical selector grammar is lowercase 8-4-4-4-12 hexadecimal.
 // It is not restricted to UUID v4: the server's neutral failure acknowledgment
 // may contain the nil UUID. Exact length also rejects trailing line terminators.
@@ -121,6 +159,28 @@ export function parseExplorerSignInSendReply(
       ok: true,
       value: Object.freeze({ acknowledgment: "verification_code_requested", challengeId }),
     });
+  }
+  return SIGN_IN_BROWSER_CONTRACT_FAILED;
+}
+
+// Flow replies and legacy challenge replies have separate closed parsers.
+// No response may silently change the selector protocol of its request.
+export function parseExplorerSignInFlowSendReply(
+  status: unknown,
+  value: unknown,
+): ExplorerBrowserParsedReply<ExplorerBrowserFlowSendReply> {
+  if (status !== 200) return SIGN_IN_BROWSER_CONTRACT_FAILED;
+  const fields = readFields(value, 2);
+  if (fields === null) return SIGN_IN_BROWSER_CONTRACT_FAILED;
+  const outcome = fields.get("outcome");
+  if (fields.size === 1 && (outcome === "invalid_email" || outcome === "denied")) {
+    return Object.freeze({ ok: true, value: Object.freeze({ outcome }) });
+  }
+  const flowId = fields.get("flowId");
+  // Reuse only the canonical UUID grammar, never challenge interpretation.
+  if (fields.size === 2 && fields.get("acknowledgment") === "verification_code_requested" && isChallengeSelector(flowId)) {
+    return Object.freeze({ ok: true,
+      value: Object.freeze({ acknowledgment: "verification_code_requested", flowId }) });
   }
   return SIGN_IN_BROWSER_CONTRACT_FAILED;
 }

@@ -45,22 +45,27 @@ type Operation = Readonly<{
 export function createAdminSignInFlowController(options: Readonly<{
   fetcher: AdminSignInBrowserFetch;
   responseBudgetMilliseconds: number;
+  createFlowId: () => string;
 }>): AdminSignInFlowController | null {
   const preparedTransport = createAdminSignInBrowserTransport(options);
   if (preparedTransport === null) return null;
   const transport = preparedTransport;
+  let candidatePort: unknown;
+  try { candidatePort = options.createFlowId; } catch { return null; }
+  if (typeof candidatePort !== "function") return null;
+  const createFlowId = candidatePort as () => string;
 
   let generation: object = {};
   let active: Operation | null = null;
   let stage: AdminSignInFlowStage = "identifier";
   let identifier = "";
-  let selector: string | null = null;
+  let flowId: string | null = null;
   let outcome: AdminSignInFlowOutcome | null = null;
 
   function read(): AdminSignInFlowProjection {
     return Object.freeze({
       stage, identifier, pending: active?.action ?? null, outcome,
-      hasSelector: selector !== null,
+      hasSelector: stage === "code" && flowId !== null,
       destination: stage === "complete" ? ADMIN_BROWSER_SIGN_IN_HOME : null,
     });
   }
@@ -74,7 +79,7 @@ export function createAdminSignInFlowController(options: Readonly<{
     // Invalidate and publish the new local state before synchronous abort hooks.
     generation = {};
     active = null;
-    selector = null;
+    flowId = null;
     outcome = null;
     identifier = nextIdentifier;
     stage = nextStage;
@@ -84,12 +89,9 @@ export function createAdminSignInFlowController(options: Readonly<{
   async function start(action: AdminSignInFlowAction, rawPassword?: string, rawCode?: string): Promise<AdminSignInFlowCompletion> {
     if (active !== null || stage === "disposed" || stage === "complete") return "ignored";
     if (action === "send" ? stage !== "identifier" : stage !== "code") return "ignored";
-    if (action === "verify" && (selector === null || rawPassword === undefined || rawCode === undefined)) return "ignored";
+    if (action === "verify" && (flowId === null || rawPassword === undefined || rawCode === undefined)) return "ignored";
 
     const requestIdentifier = identifier;
-    const requestSelector = selector;
-    // A new send may supersede the old challenge even if its answer is lost.
-    if (action === "resend") selector = null;
     let operation: Operation;
     try {
       operation = { generation, action, controller: new AbortController() };
@@ -101,20 +103,33 @@ export function createAdminSignInFlowController(options: Readonly<{
     outcome = null;
 
     try {
+      if (action !== "verify" && flowId === null) {
+        const generated = createFlowId();
+        if (typeof generated !== "string" || generated.length !== 36 ||
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(generated) ||
+            generated === "00000000-0000-0000-0000-000000000000") throw null;
+        if (!current(operation)) return "ignored";
+        flowId = generated;
+      }
+      const requestFlowId = flowId;
+      // One public flow survives every resend; no actual challenge ID is stored.
       const result = action === "verify"
-        ? await transport.verify({ identifier: requestIdentifier, password: rawPassword, challengeId: requestSelector, code: rawCode }, operation.controller.signal)
-        : await transport.send({ identifier: requestIdentifier }, operation.controller.signal);
+        ? await transport.verifyFlow({ identifier: requestIdentifier, password: rawPassword, flowId: requestFlowId, code: rawCode }, operation.controller.signal)
+        : await transport.sendFlow({ identifier: requestIdentifier, flowId: requestFlowId }, operation.controller.signal);
       if (!current(operation)) return "ignored";
       if (!result.ok) {
         outcome = result.error;
       } else if ("acknowledgment" in result.value) {
-        selector = result.value.challengeId;
-        stage = "code";
-        outcome = result.value.acknowledgment;
+        if (result.value.flowId !== requestFlowId) {
+          outcome = "sign_in_browser_transport_failed";
+        } else {
+          stage = "code";
+          outcome = result.value.acknowledgment;
+        }
       } else {
         outcome = result.value.outcome;
         if (result.value.outcome === "signed_in") {
-          selector = null;
+          flowId = null;
           identifier = "";
           stage = "complete";
         }

@@ -226,6 +226,81 @@ describe("explorerSignInRouteContract - the body parsers (contract 25 Section 15
   });
 });
 
+describe("explorerSignInRouteContract - explicit login-flow body variants", () => {
+  const flow = "17170000-0000-4000-8000-000000009001";
+
+  it("copies exact flow Send and Verify shapes without normalizing identifiers or interpreting selectors", () => {
+    const identifier = "  Raw.Mixed@Example.Invalid  ";
+    const send = { identifier, flowId: flow };
+    const verify = { identifier, flowId: flow, code: " 246810 " };
+    const sendCopy = parseExplorerSignInSendBody(send);
+    const verifyCopy = parseExplorerSignInVerifyBody(verify);
+    expect(sendCopy).toEqual(send);
+    expect(verifyCopy).toEqual(verify);
+    expect(Object.isFrozen(sendCopy)).toBe(true);
+    expect(Object.isFrozen(verifyCopy)).toBe(true);
+    expect(sendCopy).not.toBe(send);
+    expect(verifyCopy).not.toBe(verify);
+    expect(verifyCopy !== null && "flowId" in verifyCopy && !("challengeId" in verifyCopy)).toBe(true);
+    // Like the legacy parser, this owner validates shape only. The selected
+    // composition checks canonical/non-nil flow format before any dependency IO.
+    expect(parseExplorerSignInSendBody({ identifier: "", flowId: "not-a-uuid" }))
+      .toEqual({ identifier: "", flowId: "not-a-uuid" });
+  });
+
+  it("requires every flow field as a primitive own enumerable string", () => {
+    const variants = [
+      { make: () => ({ identifier: EMAIL, flowId: flow }), parse: parseExplorerSignInSendBody },
+      { make: () => ({ identifier: EMAIL, flowId: flow, code: CODE }), parse: parseExplorerSignInVerifyBody },
+    ];
+    for (const variant of variants) {
+      for (const field of Object.keys(variant.make())) {
+        const missing: Record<string, unknown> = { ...variant.make() }; delete missing[field];
+        if (field === "flowId" && !("code" in missing)) expect(variant.parse(missing)).toEqual({ identifier: EMAIL });
+        else expect(variant.parse(missing)).toBeNull();
+        for (const value of [undefined, null, 1, [], {}, new String("fixture")]) {
+          expect(variant.parse({ ...variant.make(), [field]: value })).toBeNull();
+        }
+        let reads = 0;
+        const accessor = Object.defineProperty(variant.make(), field, { enumerable: true, get() { reads++; return "fixture"; } });
+        expect(variant.parse(accessor)).toBeNull();
+        expect(reads).toBe(0);
+        const hidden = Object.defineProperty(variant.make(), field, { enumerable: false, value: "fixture" });
+        expect(variant.parse(hidden)).toBeNull();
+      }
+    }
+  });
+
+  it("refuses mixed selectors and every extra authority field rather than falling back", () => {
+    const send = { identifier: EMAIL, flowId: flow };
+    const verify = { ...send, code: CODE };
+    expect(parseExplorerSignInSendBody({ ...send, challengeId: CHALLENGE_ID })).toBeNull();
+    expect(parseExplorerSignInVerifyBody({ ...verify, challengeId: CHALLENGE_ID })).toBeNull();
+    expect(parseExplorerSignInVerifyBody({ identifier: EMAIL, code: CODE })).toBeNull();
+    for (const [key, value] of WIDENING_KEYS) {
+      expect(parseExplorerSignInSendBody({ ...send, [key]: value })).toBeNull();
+      expect(parseExplorerSignInVerifyBody({ ...verify, [key]: value })).toBeNull();
+    }
+    expect(parseExplorerSignInSendBody({ ...send, [Symbol("flow")]: flow })).toBeNull();
+    expect(parseExplorerSignInVerifyBody(Object.create(verify))).toBeNull();
+  });
+
+  it("reads selected flow descriptors once without invoking an ordinary property getter", () => {
+    const target = { identifier: EMAIL, flowId: flow, code: CODE };
+    const descriptors = new Map<string | symbol, number>(); let gets = 0;
+    const proxy = new Proxy(target, {
+      get() { gets++; throw new Error("flow-parser-get-forbidden"); },
+      getOwnPropertyDescriptor(value, key) {
+        descriptors.set(key, (descriptors.get(key) ?? 0) + 1);
+        return Reflect.getOwnPropertyDescriptor(value, key);
+      },
+    });
+    expect(parseExplorerSignInVerifyBody(proxy)).toEqual(target);
+    expect(gets).toBe(0);
+    expect([...descriptors.values()]).toEqual([1, 1, 1]);
+  });
+});
+
 describe("explorerSignInRouteContract - the closed results, the destination and the headers", () => {
   it("ERC-006 the outward results are frozen constants from a closed set: the three failures carry nothing but their outcome, and the success carries its outcome and the fixed destination", () => {
     expect(EXPLORER_SIGN_IN_DENIED).toEqual({ outcome: "denied" });

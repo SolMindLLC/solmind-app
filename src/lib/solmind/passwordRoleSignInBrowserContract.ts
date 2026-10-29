@@ -24,6 +24,17 @@ export type PasswordRoleBrowserVerifyBody = Readonly<{
 export type PasswordRoleBrowserAcknowledgment = Readonly<{
   acknowledgment: "verification_code_requested"; challengeId: string;
 }>;
+export type PasswordRoleBrowserFlowSendBody = Readonly<{ identifier: string; flowId: string }>;
+export type PasswordRoleBrowserFlowVerifyBody = Readonly<{
+  identifier: string; password: string; flowId: string; code: string;
+}>;
+export type PasswordRoleBrowserFlowAcknowledgment = Readonly<{
+  acknowledgment: "verification_code_requested"; flowId: string;
+}>;
+export type GuideBrowserFlowSendReply = PasswordRoleBrowserFlowAcknowledgment |
+  Readonly<{ outcome: "invalid_email" | "denied" }>;
+export type AdminBrowserFlowSendReply = PasswordRoleBrowserFlowAcknowledgment |
+  Readonly<{ outcome: "invalid_identifier" | "denied" }>;
 export type GuideBrowserSendReply = PasswordRoleBrowserAcknowledgment |
   Readonly<{ outcome: "invalid_email" | "denied" }>;
 export type AdminBrowserSendReply = PasswordRoleBrowserAcknowledgment |
@@ -75,6 +86,24 @@ export function buildPasswordRoleSignInVerifyRequest(value: unknown): PasswordRo
       challengeId === undefined || code === undefined) return PASSWORD_ROLE_BROWSER_CONTRACT_FAILED;
   return Object.freeze({ ok: true, body: Object.freeze({ identifier, password, challengeId, code }) });
 }
+// Preserve the legacy exact branches above; these never reinterpret a flowId
+// as a challengeId or accept both selectors. Raw string semantics stay server-owned.
+export function buildPasswordRoleSignInFlowSendRequest(value: unknown): PasswordRoleBrowserRequest<PasswordRoleBrowserFlowSendBody> {
+  const fields = fieldsOf(value, 2);
+  const identifier = fields?.get("identifier");
+  const flowId = fields?.get("flowId");
+  if (fields?.size !== 2 || identifier === undefined || flowId === undefined) return PASSWORD_ROLE_BROWSER_CONTRACT_FAILED;
+  return Object.freeze({ ok: true, body: Object.freeze({ identifier, flowId }) });
+}
+export function buildPasswordRoleSignInFlowVerifyRequest(value: unknown): PasswordRoleBrowserRequest<PasswordRoleBrowserFlowVerifyBody> {
+  const fields = fieldsOf(value, 4);
+  const identifier = fields?.get("identifier");
+  const password = fields?.get("password");
+  const flowId = fields?.get("flowId");
+  const code = fields?.get("code");
+  if (fields?.size !== 4 || identifier === undefined || password === undefined || flowId === undefined || code === undefined) return PASSWORD_ROLE_BROWSER_CONTRACT_FAILED;
+  return Object.freeze({ ok: true, body: Object.freeze({ identifier, password, flowId, code }) });
+}
 function isSelector(value: string | undefined): value is string {
   // Exact lowercase UUID grammar, including nil and non-v4 versions.
   return typeof value === "string" && value.length === 36 &&
@@ -109,11 +138,32 @@ function parseVerify<T extends typeof GUIDE_BROWSER_SIGN_IN_HOME | typeof ADMIN_
   }
   return PASSWORD_ROLE_BROWSER_CONTRACT_FAILED;
 }
+function parseFlowSend<T extends "invalid_email" | "invalid_identifier">(
+  value: unknown, invalid: T,
+): PasswordRoleBrowserParsedReply<PasswordRoleBrowserFlowAcknowledgment | Readonly<{ outcome: T | "denied" }>> {
+  const fields = fieldsOf(value, 2);
+  if (fields === null) return PASSWORD_ROLE_BROWSER_CONTRACT_FAILED;
+  const outcome = fields.get("outcome");
+  if (fields.size === 1 && (outcome === invalid || outcome === "denied")) {
+    return Object.freeze({ ok: true, value: Object.freeze({ outcome: outcome === invalid ? invalid : "denied" }) });
+  }
+  const flowId = fields.get("flowId");
+  if (fields.size === 2 && fields.get("acknowledgment") === "verification_code_requested" && isSelector(flowId)) {
+    return Object.freeze({ ok: true, value: Object.freeze({ acknowledgment: "verification_code_requested", flowId }) });
+  }
+  return PASSWORD_ROLE_BROWSER_CONTRACT_FAILED;
+}
 export function parseGuideSignInSendReply(value: unknown): PasswordRoleBrowserParsedReply<GuideBrowserSendReply> {
   return parseSend(value, "invalid_email");
 }
 export function parseAdminSignInSendReply(value: unknown): PasswordRoleBrowserParsedReply<AdminBrowserSendReply> {
   return parseSend(value, "invalid_identifier");
+}
+export function parseGuideSignInFlowSendReply(value: unknown): PasswordRoleBrowserParsedReply<GuideBrowserFlowSendReply> {
+  return parseFlowSend(value, "invalid_email");
+}
+export function parseAdminSignInFlowSendReply(value: unknown): PasswordRoleBrowserParsedReply<AdminBrowserFlowSendReply> {
+  return parseFlowSend(value, "invalid_identifier");
 }
 export function parseGuideSignInVerifyReply(value: unknown): PasswordRoleBrowserParsedReply<GuideBrowserVerifyReply> {
   return parseVerify(value, GUIDE_BROWSER_SIGN_IN_HOME);

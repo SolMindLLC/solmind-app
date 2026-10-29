@@ -72,6 +72,7 @@ export {
   type VerificationChallengeIssuanceAcknowledgment,
   type VerificationChallengeIssuanceOutcome,
   type VerificationChallengeIssuanceRequest,
+  type VerificationChallengeLoginFlow,
   type VerificationChallengeIssuanceResult,
   type VerificationChallengeIssuer,
   type VerificationChallengeIssuerDependencies,

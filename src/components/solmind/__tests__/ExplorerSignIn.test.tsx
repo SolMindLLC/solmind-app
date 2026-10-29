@@ -21,16 +21,18 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } });
-const acknowledgment = (challengeId = FIRST) => ({ acknowledgment: "verification_code_requested", challengeId });
+const acknowledgment = (flowId = FIRST) => ({ acknowledgment: "verification_code_requested", flowId });
 const success = () => ({ outcome: "signed_in", destination: "/explorer/home" });
 async function flush() { for (let index = 0; index < 30; index += 1) await Promise.resolve(); }
 
 function setup(budget = BUDGET, subscribe = true) {
+  let generated = 0;
   const calls: Array<{ path: string; init: RequestInit; reply: ReturnType<typeof deferred<Response>> }> = [];
   const navigations: string[] = [];
   let departures = 0;
   let publications = 0;
   const binding = createExplorerSignInViewBinding({
+    createFlowId: () => generated++ === 0 ? FIRST : SECOND,
     responseBudgetMilliseconds: budget,
     fetcher(path, init) {
       const reply = deferred<Response>();
@@ -95,11 +97,11 @@ describe("dormant Explorer view event binding with real controller and fake tran
   it("U03 keeps raw identifier/code in exact requests and publishes pending before settlement", async () => {
     const f = setup(); f.binding.setIdentifier(RAW);
     const sent = f.binding.send(); same(f.binding.read().flow.pending, "send");
-    same(JSON.parse(f.calls[0].init.body as string), { identifier: RAW });
+    same(JSON.parse(f.calls[0].init.body as string), { identifier: RAW, flowId: FIRST });
     f.calls[0].reply.resolve(json(acknowledgment())); await sent;
     f.binding.setCode(CODE); const verified = f.binding.verify();
     same(f.binding.read().flow.pending, "verify");
-    same(JSON.parse(f.calls[1].init.body as string), { identifier: RAW, challengeId: FIRST, code: CODE });
+    same(JSON.parse(f.calls[1].init.body as string), { identifier: RAW, flowId: FIRST, code: CODE });
     f.calls[1].reply.resolve(json({ outcome: "code_not_accepted" })); await verified;
     same(f.binding.read().flow.outcome, "code_not_accepted");
     same(f.binding.read().codeDraft, CODE);
@@ -111,13 +113,17 @@ describe("dormant Explorer view event binding with real controller and fake tran
     f.last.reply.resolve(json(action === "verify" ? { outcome: "denied" } : acknowledgment()));
     await f.pending;
   });
-  it("U05 nil UUID remains an opaque selector; it does not select a different visible outcome", async () => {
-    const f = setup(); await enterCode(f, NIL); f.binding.setCode(CODE);
-    same(f.binding.read().flow.hasSelector, true);
-    same(f.binding.read().flow.outcome, "verification_code_requested");
-    const p = f.binding.verify(); same(f.calls.length, 2);
-    same(JSON.parse(f.calls[1].init.body as string).challengeId, NIL);
-    f.calls[1].reply.resolve(json({ outcome: "code_not_accepted" })); await p;
+  it("U05 mismatched nil flow echo cannot change the owned flow or enable a verify", async () => {
+    const f = setup(); f.binding.setIdentifier(RAW); const firstSend = f.binding.send();
+    f.calls[0].reply.resolve(json(acknowledgment(NIL))); await firstSend;
+    same(f.binding.read().flow.hasSelector, false);
+    same(f.binding.read().flow.outcome, "sign_in_browser_transport_failed");
+    const retry = f.binding.send();
+    same(JSON.parse(f.calls[1].init.body as string).flowId, FIRST);
+    f.calls[1].reply.resolve(json(acknowledgment())); await retry;
+    f.binding.setCode(CODE); const p = f.binding.verify(); same(f.calls.length, 3);
+    same(JSON.parse(f.calls[2].init.body as string).flowId, FIRST);
+    f.calls[2].reply.resolve(json({ outcome: "code_not_accepted" })); await p;
   });
   it.each(["invalid_email", "denied"] as const)("U06 send outcome remains a semantic tag %s", async outcome => {
     const f = setup(); f.binding.setIdentifier(RAW); const p = f.binding.send();
@@ -146,15 +152,15 @@ describe("dormant Explorer view event binding with real controller and fake tran
     same(f.binding.read().flow.identifier, " replacement "); same(f.binding.read().flow.pending, null);
     same(f.navigations.length, 0);
   });
-  it("U10 resend clears draft and old selector before dispatch; failure does not restore it", async () => {
+  it("U10 resend clears the draft but retains the owned flow after a lost acknowledgment", async () => {
     const f = setup(); await enterCode(f); f.binding.setCode(CODE);
-    const p = f.binding.resend(); same(f.binding.read().codeDraft, ""); same(f.binding.read().flow.hasSelector, false);
+    const p = f.binding.resend(); same(f.binding.read().codeDraft, ""); same(f.binding.read().flow.hasSelector, true);
+    same(JSON.parse(f.calls[1].init.body as string).flowId, FIRST);
     f.calls[1].reply.reject(new Error(CODE)); await p;
-    await f.binding.verify(); same(f.calls.length, 2);
-    const next = f.binding.resend(); f.calls[2].reply.resolve(json(acknowledgment(SECOND))); await next;
+    same(f.binding.read().flow.hasSelector, true);
     f.binding.setCode(CODE); const verify = f.binding.verify();
-    same(JSON.parse(f.calls[3].init.body as string).challengeId, SECOND);
-    f.calls[3].reply.resolve(json({ outcome: "code_not_accepted" })); await verify;
+    same(JSON.parse(f.calls[2].init.body as string).flowId, FIRST);
+    f.calls[2].reply.resolve(json({ outcome: "code_not_accepted" })); await verify;
   });
   it("U11 last unsubscribe clears state and ignores late success; setup replay gets a fresh controller", async () => {
     const f = await start("verify"); f.close(); const publications = f.publications();

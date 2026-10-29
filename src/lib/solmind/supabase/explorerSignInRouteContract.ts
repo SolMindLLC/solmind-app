@@ -58,13 +58,21 @@ export const EXPLORER_SIGN_IN_ROUTE_PATHS: Readonly<{ send: string; verify: stri
 // Still open: the page itself, which does not exist yet (S6-10 builds it).
 export const EXPLORER_SIGN_IN_HOME_PATH = "/explorer/home" as const;
 
-export type ExplorerSignInSendBody = Readonly<{ identifier: string }>;
+export type ExplorerSignInLegacySendBody = Readonly<{ identifier: string }>;
+export type ExplorerSignInFlowSendBody = Readonly<{ identifier: string; flowId: string }>;
+export type ExplorerSignInSendBody = ExplorerSignInLegacySendBody | ExplorerSignInFlowSendBody;
 
-export type ExplorerSignInVerifyBody = Readonly<{
+export type ExplorerSignInLegacyVerifyBody = Readonly<{
   identifier: string;
   challengeId: string;
   code: string;
 }>;
+export type ExplorerSignInFlowVerifyBody = Readonly<{
+  identifier: string;
+  flowId: string;
+  code: string;
+}>;
+export type ExplorerSignInVerifyBody = ExplorerSignInLegacyVerifyBody | ExplorerSignInFlowVerifyBody;
 
 // The one acknowledgment of the send route, in the shape login step 5's
 // callers define it. The composition hands the banked helper's result over
@@ -72,6 +80,10 @@ export type ExplorerSignInVerifyBody = Readonly<{
 export type ExplorerSignInSendAcknowledgment = Readonly<{
   acknowledgment: "verification_code_requested";
   challengeId: string;
+}>;
+export type ExplorerSignInFlowSendAcknowledgment = Readonly<{
+  acknowledgment: "verification_code_requested";
+  flowId: string;
 }>;
 
 export type ExplorerSignInInvalidEmail = Readonly<{ outcome: "invalid_email" }>;
@@ -84,6 +96,7 @@ export type ExplorerSignInSignedIn = Readonly<{
 
 export type ExplorerSignInSendResult =
   | ExplorerSignInSendAcknowledgment
+  | ExplorerSignInFlowSendAcknowledgment
   | ExplorerSignInInvalidEmail
   | ExplorerSignInDenied;
 
@@ -154,6 +167,8 @@ export const EXPLORER_SIGN_IN_RESPONSE_HEADERS: Readonly<Record<string, string>>
 
 const SEND_BODY_KEYS: ReadonlyArray<string> = Object.freeze(["identifier"]);
 const VERIFY_BODY_KEYS: ReadonlyArray<string> = Object.freeze(["identifier", "challengeId", "code"]);
+const FLOW_SEND_BODY_KEYS: ReadonlyArray<string> = Object.freeze(["identifier", "flowId"]);
+const FLOW_VERIFY_BODY_KEYS: ReadonlyArray<string> = Object.freeze(["identifier", "flowId", "code"]);
 
 // Reads exactly the listed keys of a plain object through own data property
 // descriptors only, so no getter, setter or Proxy `get` trap runs, and
@@ -162,6 +177,7 @@ const VERIFY_BODY_KEYS: ReadonlyArray<string> = Object.freeze(["identifier", "ch
 function readExactStringProperties(
   value: unknown,
   keys: ReadonlyArray<string>,
+  alternateKeys?: ReadonlyArray<string>,
 ): ReadonlyMap<string, string> | null {
   try {
     if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -172,22 +188,15 @@ function readExactStringProperties(
       return null;
     }
     const ownKeys = Reflect.ownKeys(value);
-    if (
-      ownKeys.length !== keys.length ||
-      !ownKeys.every(
-        (key) =>
-          typeof key === "string" &&
-          keys.includes(key) &&
-          Object.prototype.propertyIsEnumerable.call(value, key),
-      )
-    ) {
-      return null;
-    }
+    const selected = [keys, ...(alternateKeys ? [alternateKeys] : [])].find(candidate =>
+      ownKeys.length === candidate.length && ownKeys.every(key => typeof key === "string" && candidate.includes(key)));
+    if (selected === undefined) return null;
     const fields = new Map<string, string>();
-    for (const key of keys) {
+    for (const key of selected) {
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (
         descriptor === undefined ||
+        descriptor.enumerable !== true ||
         !Object.prototype.hasOwnProperty.call(descriptor, "value") ||
         typeof descriptor.value !== "string"
       ) {
@@ -201,26 +210,30 @@ function readExactStringProperties(
   }
 }
 
-// The send route's body: exactly `{ identifier }`, a string. Whether the
-// string is an email address is the shared normalizer's question, not this
-// parser's.
+// Exact legacy or explicit flow shape. Raw strings remain unchanged; email
+// normalization and canonical/non-nil flow validation belong to the composition.
 export function parseExplorerSignInSendBody(value: unknown): ExplorerSignInSendBody | null {
-  const fields = readExactStringProperties(value, SEND_BODY_KEYS);
+  const fields = readExactStringProperties(value, SEND_BODY_KEYS, FLOW_SEND_BODY_KEYS);
   if (fields === null) {
     return null;
   }
-  return Object.freeze({ identifier: fields.get("identifier") as string });
+  return fields.has("flowId")
+    ? Object.freeze({ identifier: fields.get("identifier") as string, flowId: fields.get("flowId") as string })
+    : Object.freeze({ identifier: fields.get("identifier") as string });
 }
 
-// The verify route's body: exactly `{ identifier, challengeId, code }`, all
-// strings. The selector's and the code's own forms are checked by login step
-// 5's redeeming caller, which refuses a malformed one without a database
-// call.
+// Exact direct-challenge or explicit flow shape, never both. A flow never falls
+// back to direct interpretation; the selected server path owns its validation.
 export function parseExplorerSignInVerifyBody(value: unknown): ExplorerSignInVerifyBody | null {
-  const fields = readExactStringProperties(value, VERIFY_BODY_KEYS);
+  const fields = readExactStringProperties(value, VERIFY_BODY_KEYS, FLOW_VERIFY_BODY_KEYS);
   if (fields === null) {
     return null;
   }
+  if (fields.has("flowId")) return Object.freeze({
+    identifier: fields.get("identifier") as string,
+    flowId: fields.get("flowId") as string,
+    code: fields.get("code") as string,
+  });
   return Object.freeze({
     identifier: fields.get("identifier") as string,
     challengeId: fields.get("challengeId") as string,

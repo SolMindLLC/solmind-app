@@ -29,12 +29,14 @@ function deferred<T>() {
 function json(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } });
 }
-const acknowledgment = (challengeId = FIRST) => ({ acknowledgment: "verification_code_requested", challengeId });
+const acknowledgment = (flowId = FIRST) => ({ acknowledgment: "verification_code_requested", flowId });
 const success = () => ({ outcome: "signed_in", destination: "/explorer/home" });
 
 function setup(budget = BUDGET) {
+  let generated = 0;
   const calls: Array<{ path: string; init: RequestInit; reply: ReturnType<typeof deferred<Response>> }> = [];
   const flow = createExplorerSignInFlowController({
+    createFlowId: () => generated++ === 0 ? FIRST : SECOND,
     responseBudgetMilliseconds: budget,
     fetcher: (path, init) => {
       const reply = deferred<Response>();
@@ -87,7 +89,8 @@ afterEach(async () => {
 
 describe("Explorer flow configuration and projection", () => {
   it.each([0, -1, 0.5, NaN, Infinity, 2_147_483_648, undefined, null])("F01 rejects invalid explicit budget %#", budget => {
-    const value = createExplorerSignInFlowController({ fetcher: async () => json({}), responseBudgetMilliseconds: budget as number });
+    const value = createExplorerSignInFlowController({
+    createFlowId: () => FIRST, fetcher: async () => json({}), responseBudgetMilliseconds: budget as number });
     same(value, null);
   });
   it("F02 fails closed on missing or hostile configuration without inspecting thrown values", () => {
@@ -144,7 +147,7 @@ describe("Explorer send, resend and verify", () => {
     same(await flow.verify(RAW_CODE), "ignored");
     same(calls.length, 1);
     same(calls[0].path, "/login/explorer/send");
-    same(JSON.parse(calls[0].init.body as string), { identifier: RAW });
+    same(JSON.parse(calls[0].init.body as string), { identifier: RAW, flowId: FIRST });
     calls[0].reply.resolve(json(acknowledgment()));
     same(await pending, "settled");
     same(flow.read().stage, "code");
@@ -155,7 +158,7 @@ describe("Explorer send, resend and verify", () => {
     const fixture = setup();
     fixture.flow.setIdentifier("");
     const pending = fixture.flow.send();
-    same(JSON.parse(fixture.calls[0].init.body as string), { identifier: "" });
+    same(JSON.parse(fixture.calls[0].init.body as string), { identifier: "", flowId: FIRST });
     fixture.calls[0].reply.resolve(json({ outcome: "invalid_email" }));
     same(await pending, "settled");
   });
@@ -169,37 +172,41 @@ describe("Explorer send, resend and verify", () => {
     await vi.advanceTimersByTimeAsync(BUDGET * 2);
     same(calls.length, 1);
   });
-  it("F09 carries the nil selector privately and preserves raw verify input", async () => {
+  it("F09 refuses a nil or unrelated echoed flow without replacing the owned ID", async () => {
     const fixture = setup();
     await enterCode(fixture, NIL);
-    check(fixture.flow.read().hasSelector);
+    same(fixture.flow.read().stage, "email");
+    same(fixture.flow.read().outcome, "sign_in_browser_transport_failed");
+    const retry = fixture.flow.send();
+    same(JSON.parse(fixture.calls.at(-1)!.init.body as string), { identifier: RAW, flowId: FIRST });
+    fixture.calls.at(-1)!.reply.resolve(json(acknowledgment())); await retry;
     const pending = fixture.flow.verify(RAW_CODE);
     const call = fixture.calls.at(-1)!;
     same(call.path, "/login/explorer/verify");
-    same(JSON.parse(call.init.body as string), { identifier: RAW, challengeId: NIL, code: RAW_CODE });
+    same(JSON.parse(call.init.body as string), { identifier: RAW, flowId: FIRST, code: RAW_CODE });
     cleanProjection(fixture.flow);
     call.reply.resolve(json({ outcome: "code_not_accepted" }));
     same(await pending, "settled");
     cleanProjection(fixture.flow);
   });
-  it("F10 clears the old selector before resend and installs only the replacement acknowledgment", async () => {
+  it("F10 retains the same owned flow across resend and never replaces it with a private challenge", async () => {
     const fixture = setup();
     await enterCode(fixture);
     const pending = fixture.flow.resend();
     same(fixture.flow.read().pending, "resend");
-    check(!fixture.flow.read().hasSelector);
+    check(fixture.flow.read().hasSelector);
     same(await fixture.flow.verify(RAW_CODE), "ignored");
     same(await fixture.flow.send(), "ignored");
     same(await fixture.flow.resend(), "ignored");
-    fixture.calls.at(-1)!.reply.resolve(json(acknowledgment(SECOND)));
+    fixture.calls.at(-1)!.reply.resolve(json(acknowledgment()));
     same(await pending, "settled");
     const verify = fixture.flow.verify(RAW_CODE);
-    same(JSON.parse(fixture.calls.at(-1)!.init.body as string), { identifier: RAW, challengeId: SECOND, code: RAW_CODE });
+    same(JSON.parse(fixture.calls.at(-1)!.init.body as string), { identifier: RAW, flowId: FIRST, code: RAW_CODE });
     fixture.calls.at(-1)!.reply.resolve(json({ outcome: "denied" }));
     same(await verify, "settled");
     cleanProjection(fixture.flow);
   });
-  it.each(["denied", "invalid_email", "network", "malformed", "timeout"])("F11 failed resend does not restore the previous selector: %s", async failure => {
+  it.each(["denied", "invalid_email", "network", "malformed", "timeout"])("F11 uncertain resend retains the same flow for the next explicit verification: %s", async failure => {
     const fixture = setup();
     await enterCode(fixture);
     const pending = fixture.flow.resend();
@@ -210,11 +217,11 @@ describe("Explorer send, resend and verify", () => {
     else call.reply.resolve(json({ outcome: failure }));
     same(await pending, "settled");
     same(fixture.flow.read().stage, "code");
-    check(!fixture.flow.read().hasSelector);
-    same(await fixture.flow.verify(RAW_CODE), "ignored");
+    check(fixture.flow.read().hasSelector);
     same(fixture.calls.length, 2);
-    const retry = fixture.flow.resend();
-    fixture.calls.at(-1)!.reply.resolve(json(acknowledgment(SECOND)));
+    const retry = fixture.flow.verify(RAW_CODE);
+    same(JSON.parse(fixture.calls.at(-1)!.init.body as string), { identifier: RAW, flowId: FIRST, code: RAW_CODE });
+    fixture.calls.at(-1)!.reply.resolve(json({ outcome: "code_not_accepted" }));
     same(await retry, "settled");
     check(fixture.flow.read().hasSelector);
   });
@@ -229,7 +236,7 @@ describe("Explorer send, resend and verify", () => {
     same(fixture.flow.read().outcome, outcome);
     check(fixture.flow.read().hasSelector && fixture.flow.read().stage === "code");
     const retry = fixture.flow.verify("corrected raw value");
-    same(JSON.parse(fixture.calls.at(-1)!.init.body as string), { identifier: RAW, challengeId: FIRST, code: "corrected raw value" });
+    same(JSON.parse(fixture.calls.at(-1)!.init.body as string), { identifier: RAW, flowId: FIRST, code: "corrected raw value" });
     fixture.calls.at(-1)!.reply.resolve(json({ outcome }));
     same(await retry, "settled");
     cleanProjection(fixture.flow);
@@ -254,7 +261,7 @@ describe("Explorer send, resend and verify", () => {
     const fixture = setup();
     await enterCode(fixture);
     let touched = false;
-    const override = { get code() { touched = true; return RAW_CODE; }, identifier: "other", challengeId: SECOND };
+    const override = { get code() { touched = true; return RAW_CODE; }, identifier: "other", flowId: SECOND };
     same(await fixture.flow.verify(override), "ignored");
     check(!touched && fixture.calls.length === 1);
   });
@@ -402,6 +409,7 @@ describe("Explorer invalidation and uncertain cancellation", () => {
     let observed = false;
     let duplicate: Promise<unknown> | null = null;
     flow = createExplorerSignInFlowController({
+    createFlowId: () => FIRST,
       responseBudgetMilliseconds: BUDGET,
       fetcher: () => {
         calls += 1;
@@ -417,5 +425,33 @@ describe("Explorer invalidation and uncertain cancellation", () => {
     same(await duplicate, "ignored");
     reply.resolve(json(acknowledgment()));
     same(await pending, "settled");
+  });
+
+  it("F26 keeps the first flow ID after a lost first acknowledgment and generates anew only for a new identifier", async () => {
+    const fixture = setup();
+    const first = fixture.flow.send();
+    same(JSON.parse(fixture.calls[0].init.body as string).flowId, FIRST);
+    fixture.calls[0].reply.reject(new Error("synthetic lost acknowledgment")); await first;
+    same(fixture.flow.read().stage, "email");
+    const retry = fixture.flow.send();
+    same(JSON.parse(fixture.calls[1].init.body as string).flowId, FIRST);
+    fixture.calls[1].reply.resolve(json(acknowledgment())); await retry;
+    fixture.flow.useDifferentEmail(); fixture.flow.setIdentifier("replacement");
+    const next = fixture.flow.send();
+    same(JSON.parse(fixture.calls[2].init.body as string).flowId, SECOND);
+    fixture.calls[2].reply.resolve(json(acknowledgment(SECOND))); await next;
+    cleanProjection(fixture.flow);
+  });
+
+  it("F27 refuses an unavailable or malformed UUID port without a fetch or exposed underlying value", async () => {
+    for (const createFlowId of [() => NIL, () => "", () => "ABCDEF01-2345-6789-abcd-ef0123456789", () => { throw new Error(RAW_CODE); }]) {
+      let called = false;
+      const flow = createExplorerSignInFlowController({ responseBudgetMilliseconds: BUDGET, createFlowId,
+        fetcher: async () => { called = true; return json(acknowledgment()); } });
+      if (flow === null) throw new Error("Flow fixture construction failed");
+      flows.push(flow); flow.setIdentifier(RAW);
+      same(await flow.send(), "settled");
+      check(!called && flow.read().outcome === "sign_in_browser_transport_failed" && !flow.read().hasSelector && flow.read().pending === null);
+    }
   });
 });

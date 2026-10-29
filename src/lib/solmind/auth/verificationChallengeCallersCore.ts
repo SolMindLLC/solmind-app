@@ -159,6 +159,9 @@ import {
 
 export const VERIFICATION_CHALLENGE_ISSUANCE_FUNCTION =
   "solmind_issue_verification_challenge" as const;
+// Login-flow routing is explicit and never substitutes the public flow ID
+// for the private challenge UUID used by HMAC and delivery.
+const LOGIN_FLOW_ISSUANCE_FUNCTION = "solmind_issue_login_flow_verification_challenge" as const;
 export const VERIFICATION_CHALLENGE_REDEMPTION_FUNCTION =
   "solmind_redeem_verification_challenge" as const;
 
@@ -269,12 +272,18 @@ export type VerificationCallSlots = Readonly<{
   tryAcquire(): (() => void) | null;
 }>;
 
+export type VerificationChallengeLoginFlow = Readonly<{
+  flowId: string;
+  roleContext: "explorer" | "guide" | "admin";
+}>;
+
 export type VerificationChallengeIssuanceRequest = Readonly<{
   purpose: VerificationCodeDeliveryPurpose;
   contactMethodType: VerificationChallengeContactMethodType;
   normalizedContact: string;
   userAccountId: string | null;
   userContactMethodId: string | null;
+  loginFlow?: VerificationChallengeLoginFlow;
 }>;
 
 export type VerificationChallengeIssuanceResult =
@@ -342,6 +351,9 @@ const ISSUANCE_REQUEST_KEYS = Object.freeze([
   "userAccountId",
   "userContactMethodId",
 ] as const);
+const FLOW_ISSUANCE_REQUEST_KEYS = Object.freeze([...ISSUANCE_REQUEST_KEYS, "loginFlow"]);
+const LOGIN_FLOW_KEYS = Object.freeze(["flowId", "roleContext"]);
+const LOGIN_FLOW_ROLES = Object.freeze(["explorer", "guide", "admin"] as const);
 const REDEMPTION_REQUEST_KEYS = Object.freeze(["purpose", "challengeId", "code"] as const);
 const ISSUER_DEPENDENCY_KEYS = Object.freeze([
   "rpcClient",
@@ -624,10 +636,12 @@ type ParsedIssuanceRequest = Readonly<{
   normalizedContact: string;
   userAccountId: string | null;
   userContactMethodId: string | null;
+  loginFlow: VerificationChallengeLoginFlow | null;
 }>;
 
 function parseIssuanceRequest(value: unknown): ParsedIssuanceRequest | null {
-  const fields = readExactDataProperties(value, ISSUANCE_REQUEST_KEYS);
+  const fields = readExactDataProperties(value, ISSUANCE_REQUEST_KEYS)
+    ?? readExactDataProperties(value, FLOW_ISSUANCE_REQUEST_KEYS);
   if (fields === null) {
     return null;
   }
@@ -656,6 +670,18 @@ function parseIssuanceRequest(value: unknown): ParsedIssuanceRequest | null {
   } else if (!isBindingId(userAccountId) || !isBindingId(userContactMethodId)) {
     return null;
   }
+  let loginFlow: VerificationChallengeLoginFlow | null = null;
+  if (fields.has("loginFlow")) {
+    const flow = readExactDataProperties(fields.get("loginFlow"), LOGIN_FLOW_KEYS);
+    const flowId = flow?.get("flowId");
+    const roleContext = flow?.get("roleContext");
+    if (purpose !== "login" || contactMethodType !== "email" ||
+        !isBindingId(userAccountId) || userAccountId.length !== 36 ||
+        !isBindingId(userContactMethodId) || userContactMethodId.length !== 36 ||
+        !isBindingId(flowId) || flowId.length !== 36 || flowId === NIL_CHALLENGE_ID ||
+        !isOneOf(LOGIN_FLOW_ROLES, roleContext)) return null;
+    loginFlow = Object.freeze({ flowId, roleContext });
+  }
   return Object.freeze({
     purpose,
     contactMethodType,
@@ -663,6 +689,7 @@ function parseIssuanceRequest(value: unknown): ParsedIssuanceRequest | null {
     normalizedContact: normalizedContact as string,
     userAccountId: userAccountId as string | null,
     userContactMethodId: userContactMethodId as string | null,
+    loginFlow,
   });
 }
 
@@ -794,7 +821,7 @@ export function createVerificationChallengeIssuerWithSlots(
       );
       const call = startRpc(
         client,
-        VERIFICATION_CHALLENGE_ISSUANCE_FUNCTION,
+        parsed.loginFlow === null ? VERIFICATION_CHALLENGE_ISSUANCE_FUNCTION : LOGIN_FLOW_ISSUANCE_FUNCTION,
         {
           p_verification_challenge_id: challengeId,
           p_normalized_contact_value: parsed.normalizedContact,
@@ -804,6 +831,10 @@ export function createVerificationChallengeIssuerWithSlots(
           p_verifier: verifier,
           p_user_account_id: parsed.userAccountId,
           p_user_contact_method_id: parsed.userContactMethodId,
+          ...(parsed.loginFlow === null ? {} : {
+            p_login_flow_id: parsed.loginFlow.flowId,
+            p_login_flow_role_context: parsed.loginFlow.roleContext,
+          }),
         },
         rpcTimeout,
       );

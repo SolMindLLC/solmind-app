@@ -1892,7 +1892,7 @@ retry it after a network error or a 503 or 520 answer. Node's own `fetch` and
 the first three points need a local database run, which needs Paul's
 AUTH-RLS-DEF-011 approval.
 
-`verificationChallengeCallers.ts` is the public module. It owns two slot
+`verificationChallengeCallers.ts` is the public module. Optional bound email/login flow uses a10arg atomic mapping wrapper; fixed-role4arg resolution supplies one actual code UUID, preserving legacy8arg calls and six-unused limits. NewUI keeps the private flow ID across resends. It owns two slot
 pools: four issuance slots shared by every issuer and four redemption slots
 shared by every redeemer built through it, by any root. Its factories take
 no pool, refuse a dependency object that carries one, and pass their own

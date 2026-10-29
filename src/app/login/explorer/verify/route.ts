@@ -89,7 +89,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     const result = await verifyExplorerSignInCode({
       trustedOrigin,
       identifier: body.identifier,
-      challengeId: body.challengeId,
+      ...("flowId" in body ? { flowId: body.flowId } : { challengeId: body.challengeId }),
       code: body.code,
       requestCookies,
       priorCleanupCandidate,

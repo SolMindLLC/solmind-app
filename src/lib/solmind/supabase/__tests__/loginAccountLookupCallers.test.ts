@@ -25,11 +25,13 @@ import {
   LOGIN_ACCOUNT_LOOKUP_LIMITS,
   LOGIN_CHALLENGE_OWNERSHIP_FUNCTION,
   LOGIN_PASSWORD_FAILURE_FUNCTION,
+  LOGIN_FLOW_CHALLENGE_RESOLUTION_FUNCTION,
   LoginAccountLookupError,
   REDEEMED_LOGIN_CHALLENGE_CONFIRMATION_FUNCTION,
   createLoginAccountLookup,
   createLoginChallengeOwnershipCheck,
   createLoginPasswordFailureRecorder,
+  createLoginFlowChallengeResolver,
   createRedeemedLoginChallengeConfirmation,
   type LoginAccountLookupRpcClient,
 } from "../loginAccountLookupCallers";
@@ -618,6 +620,7 @@ describe("loginAccountLookupCallers - module boundary (server-only, off the thre
       "solmind_confirm_redeemed_login_challenge",
       "solmind_record_login_password_failure",
       "solmind_resolve_login_account",
+      "solmind_resolve_login_flow_challenge",
     ]);
     expect(text).not.toMatch(
       /process\.|console\.|\bfetch\s*\(|localStorage|sessionStorage|document\.cookie|cookies\s*\(|["']use server["']|Math\.random|randomUUID|import\.meta|next\/|NEXT_PUBLIC_|@supabase|\.from\s*\(|\.select\s*\(/,
@@ -631,6 +634,7 @@ describe("loginAccountLookupCallers - module boundary (server-only, off the thre
         "LOGIN_ACCOUNT_LOOKUP_LIMITS",
         "LOGIN_CHALLENGE_OWNERSHIP_FUNCTION",
         "LOGIN_PASSWORD_FAILURE_FUNCTION",
+        "LOGIN_FLOW_CHALLENGE_RESOLUTION_FUNCTION",
         "LOGIN_IDENTIFIER_TYPES",
         "LoginAccountLookupError",
         "REDEEMED_LOGIN_CHALLENGE_CONFIRMATION_FUNCTION",
@@ -638,6 +642,7 @@ describe("loginAccountLookupCallers - module boundary (server-only, off the thre
         "createLoginAccountLookup",
         "createLoginChallengeOwnershipCheck",
         "createLoginPasswordFailureRecorder",
+        "createLoginFlowChallengeResolver",
         "createRedeemedLoginChallengeConfirmation",
       ].sort(),
     );
@@ -889,6 +894,92 @@ describe("password-failure recorder deadline", () => {
       expect(await createLoginPasswordFailureRecorder({ rpcClient: f.client, rpcTimeoutMilliseconds: 10 }).recordWrongPassword(request)).toEqual({ outcome: "failed" });
       expect(f.calls.length).toBe(1);
 
+    } finally { vi.useRealTimers(); }
+  });
+});
+
+
+describe("login-flow current-challenge resolver", () => {
+  const flowId = "6f170000-0000-4000-8000-000000000001";
+  const request = { flowId, userAccountId: ACCOUNT_ID, userContactMethodId: CONTACT_ID, roleContext: "explorer" as const };
+  it.each(["explorer", "guide", "admin"] as const)("resolves one server-bound %s flow to its private actual challenge", async roleContext => {
+    const f = fakeRpc(() => ({ data: [{ outcome: "found", verification_challenge_id: CHALLENGE_ID }], error: null }));
+    const resolver = createLoginFlowChallengeResolver({ rpcClient: f.client, rpcTimeoutMilliseconds: TIMEOUT });
+    const result = await resolver.resolve({ ...request, roleContext });
+    expect(result).toEqual({ outcome: "found", challengeId: CHALLENGE_ID }); expect(Object.isFrozen(result)).toBe(true);
+    expect(Object.keys(resolver)).toEqual(["resolve"]); expect(f.calls).toHaveLength(1);
+    expect(f.calls[0].functionName).toBe(LOGIN_FLOW_CHALLENGE_RESOLUTION_FUNCTION);
+    expect(LOGIN_FLOW_CHALLENGE_RESOLUTION_FUNCTION).toBe("solmind_resolve_login_flow_challenge");
+    expect(f.calls[0].args).toEqual({ p_login_flow_id: flowId, p_user_account_id: ACCOUNT_ID,
+      p_user_contact_method_id: CONTACT_ID, p_role_context: roleContext });
+    expect(f.calls[0].signal.aborted).toBe(false);
+  });
+  it("accepts only coherent exact found/not_found rows and never leaks malformed answers", async () => {
+    const cases: Array<{ data: unknown; outcome: string; error?: unknown }> = [
+      { data: [{ outcome: "not_found", verification_challenge_id: null }], outcome: "not_found" },
+      { data: [{ outcome: "found", verification_challenge_id: null }], outcome: "failed" },
+      { data: [{ outcome: "not_found", verification_challenge_id: CHALLENGE_ID }], outcome: "failed" },
+      { data: [{ outcome: "found", verification_challenge_id: CHALLENGE_ID + "\n" }], outcome: "failed" },
+      { data: [{ outcome: "found", verification_challenge_id: CHALLENGE_ID.toUpperCase() }], outcome: "failed" },
+      { data: [{ outcome: "found", verification_challenge_id: CHALLENGE_ID, extra: SENTINEL }], outcome: "failed" },
+      { data: [{ outcome: "unknown", verification_challenge_id: null }], outcome: "failed" },
+      { data: [], outcome: "failed" }, { data: null, outcome: "failed" },
+      { data: [{ outcome: "found", verification_challenge_id: CHALLENGE_ID }], error: { message: SENTINEL }, outcome: "failed" },
+    ];
+    for (const { data, outcome, error } of cases) {
+      const f = fakeRpc(() => ({ data, error: error ?? null }));
+      const result = await createLoginFlowChallengeResolver({ rpcClient: f.client, rpcTimeoutMilliseconds: TIMEOUT }).resolve(request);
+      expect(result).toEqual({ outcome }); expect(Object.isFrozen(result)).toBe(true); expect(f.calls).toHaveLength(1);
+      for (const value of [flowId, ACCOUNT_ID, CONTACT_ID, CHALLENGE_ID, SENTINEL]) expect(textOf(result)).not.toContain(value);
+    }
+  });
+  it("refuses request accessors, credential fields, malformed IDs/roles and nil flow before RPC", async () => {
+    const f = fakeRpc(() => ({ data: [{ outcome: "found", verification_challenge_id: CHALLENGE_ID }], error: null }));
+    const resolver = createLoginFlowChallengeResolver({ rpcClient: f.client, rpcTimeoutMilliseconds: TIMEOUT }); let reads = 0;
+    for (const input of [null, { ...request, password: SENTINEL }, { ...request, code: "123456" },
+      { ...request, flowId: "00000000-0000-0000-0000-000000000000" }, { ...request, flowId: flowId + "\n" },
+      { ...request, userAccountId: ACCOUNT_ID + "\n" }, { ...request, userContactMethodId: CONTACT_ID + "\n" },
+      { ...request, roleContext: "Guide" }, { ...request, roleContext: "explorer\n" },
+      Object.defineProperty({ ...request }, "flowId", { enumerable: true, get() { reads++; return flowId; } })]) {
+      expect(await resolver.resolve(input as never)).toEqual({ outcome: "failed" });
+    }
+    expect(f.calls).toHaveLength(0); expect(reads).toBe(0);
+  });
+  it("does not invoke row or array-slot accessors and refuses expanded/sparse row arrays", async () => {
+    let reads = 0;
+    const row = Object.defineProperty({ outcome: "found" }, "verification_challenge_id", { enumerable: true, get() { reads++; return CHALLENGE_ID; } });
+    const accessor: unknown[] = [];
+    Object.defineProperty(accessor, "0", { enumerable: true, get() { reads++; return row; } });
+    const expanded = Object.assign([{ outcome: "found", verification_challenge_id: CHALLENGE_ID }], { extra: SENTINEL });
+    for (const data of [[row], accessor, Array(1), expanded]) {
+      const f = fakeRpc(() => ({ data, error: null }));
+      expect(await createLoginFlowChallengeResolver({ rpcClient: f.client, rpcTimeoutMilliseconds: TIMEOUT }).resolve(request)).toEqual({ outcome: "failed" });
+      expect(f.calls).toHaveLength(1);
+    }
+    expect(reads).toBe(0);
+  });
+  it("bounds one hanging attempt at the inclusive deadline without retry and consumes its late rejection", async () => {
+    vi.useFakeTimers();
+    try {
+      let reject!: (value: unknown) => void; let signal: AbortSignal | undefined; let calls = 0;
+      const rpcClient = { rpc() { calls++; return { abortSignal(s: AbortSignal) { signal = s; return new Promise((_, no) => { reject = no; }); } }; } };
+      const pending = createLoginFlowChallengeResolver({ rpcClient, rpcTimeoutMilliseconds: 10 }).resolve(request);
+      await vi.advanceTimersByTimeAsync(9); expect(signal?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1); expect(await pending).toEqual({ outcome: "failed" });
+      expect(signal?.aborted === true && calls === 1).toBe(true);
+      reject(new Error(SENTINEL)); await vi.advanceTimersByTimeAsync(1); expect(calls).toBe(1);
+    } finally { vi.useRealTimers(); }
+  });
+  it("rechecks the clock after parsing a positive result", async () => {
+    vi.useFakeTimers();
+    try {
+      const clock = vi.spyOn(performance, "now").mockReturnValue(100);
+      const row = new Proxy({ outcome: "found", verification_challenge_id: CHALLENGE_ID }, {
+        ownKeys(target) { clock.mockReturnValue(110); return Reflect.ownKeys(target); },
+      });
+      const f = fakeRpc(() => ({ data: [row], error: null }));
+      expect(await createLoginFlowChallengeResolver({ rpcClient: f.client, rpcTimeoutMilliseconds: 10 }).resolve(request)).toEqual({ outcome: "failed" });
+      expect(f.calls).toHaveLength(1);
     } finally { vi.useRealTimers(); }
   });
 });

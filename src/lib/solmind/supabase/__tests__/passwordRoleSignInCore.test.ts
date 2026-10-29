@@ -577,3 +577,68 @@ describe("boundary and lifetime regressions", () => {
     visit(tree); yes(serverOnly && !forbidden, "static dormant import boundary (not authentication proof)");
   });
 });
+
+
+for (const c of sendCases) describe("fixed flow send: " + c.name, () => {
+  const flowId = "6f170000-0000-4000-8000-000000000001";
+  it("always echoes validated flow independently of lookup, issuance and delivery outcome", async () => {
+    for (const mode of ["issued", "denied", "throw", "unknown"] as const) {
+      const f = fixture();
+      if (mode === "denied") f.answers.issue = { outcome: "denied", challengeId: IDS.actual };
+      if (mode === "throw") f.fail.add("issue");
+      if (mode === "unknown") f.answers.lookup = { outcome: "not_found" };
+      const send = f.send();
+      const result = await c.run({ ...send, body: { ...send.body, flowId } }, f.ports);
+      same(result, { acknowledgment: "verification_code_requested", flowId }, "public flow only, no actual challenge selector");
+      yes(f.count("spare") === 1 && f.count("wait") === 1, "same decoy preparation and floor");
+      if (mode !== "unknown") same(f.args.get("issue"), [[{ purpose: "login", contactMethodType: "email", normalizedContact: EMAIL,
+        userAccountId: IDS.account, userContactMethodId: IDS.contact, loginFlow: { flowId, roleContext: c.role } }]], "private bound flow issuance payload");
+    }
+  });
+});
+for (const c of verifyCases) describe("fixed flow verify: " + c.name, () => {
+  const flowId = "6f170000-0000-4000-8000-000000000001";
+  function flowRequest(f: Fixture, extra: Record<string, unknown> = {}) {
+    return { ...f.request, body: { identifier: f.request.body.identifier, password: PASSWORD, code: CODE, flowId, ...extra } };
+  }
+  function resolver(f: Fixture, result: unknown = { outcome: "found", challengeId: IDS.actual }) {
+    const requests: unknown[] = [];
+    Object.assign(f.verifyDependencies, { flowResolver: { resolve: async (request: unknown) => {
+      f.events.push("flow"); requests.push(request); return result;
+    } } });
+    return requests;
+  }
+  it("resolves once in place of legacy ownership and propagates actual ID through all factors/session", async () => {
+    const f = fixture(); const resolutions = resolver(f);
+    const result = await c.run(flowRequest(f), f.ports);
+    yes(result.outcome === "signed_in", "all fixed factors accepted");
+    same(f.events.filter(x => ["lookup", "flow", "ownership", "password", "redeem", "assert", "confirm", "session"].includes(x)),
+      ["lookup", "flow", "password", "redeem", "assert", "confirm", "session"], "one resolver replaces ownership read, ordinary factors stay ordered");
+    same(resolutions, [{ flowId, userAccountId: IDS.account, userContactMethodId: IDS.contact, roleContext: c.role }], "only server lookup IDs and fixed role resolve");
+    same(f.args.get("redeem"), [[{ purpose: "login", challengeId: IDS.actual, code: CODE }]], "actual challenge goes to redemption");
+    same(f.args.get("confirm"), [[{ userAccountId: IDS.account, challengeId: IDS.actual, expectedPurpose: "login" }]], "same actual redeemed account confirmation");
+    same(f.args.get("session"), [[{ userAccountId: IDS.account, activeRoleContext: c.role, challengeId: IDS.actual,
+      providerAccessTokenExpiresAt: EXPIRY }]], "same actual challenge creates session");
+  });
+  it("records wrong password once against resolved actual code, never alias or a second candidate", async () => {
+    const f = fixture(); const resolutions = resolver(f); f.answers.password = { outcome: "credentials_refused" };
+    refusal(f, await c.run(flowRequest(f), f.ports), "not_matched");
+    same(f.args.get("password_failure"), [[{ userAccountId: IDS.account, challengeId: IDS.actual, roleContext: c.role }]], "password failure uses actual code row");
+    yes(resolutions.length === 1 && f.count("redeem") === 0 && f.count("session") === 0 && f.count("ownership") === 0, "no retry or legacy ownership fallback");
+  });
+  it("missing/foreign/expired/failed mappings stay neutral with no password/provider or code-attempt write", async () => {
+    for (const value of [undefined, { outcome: "not_found" }, { outcome: "failed" }, { outcome: "found", challengeId: IDS.actual + "\n" }]) {
+      const f = fixture(); if (value !== undefined) resolver(f, value);
+      refusal(f, await c.run(flowRequest(f), f.ports), "not_matched");
+      yes(f.count("password") === 0 && f.count("redeem") === 0 && f.count("password_failure") === 0 && f.count("session") === 0,
+        "no factor/provider attempt without one resolved candidate");
+    }
+  });
+  it("validates flow semantics before dependency construction and refuses mixed protocols", async () => {
+    for (const extra of [{ flowId: flowId + "\n" }, { flowId: "00000000-0000-0000-0000-000000000000" }, { challengeId: IDS.challenge }]) {
+      const f = fixture(); resolver(f);
+      same(await c.run(flowRequest(f, extra), f.ports), { outcome: "denied" }, "fixed early shape/flow denial");
+      yes(!f.events.includes("configuration_verify") && f.count("lookup") === 0 && f.count("password") === 0, "invalid protocol never builds or uses dependencies");
+    }
+  });
+});

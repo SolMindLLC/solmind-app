@@ -4,6 +4,12 @@
 import {
   ADMIN_BROWSER_SIGN_IN_PATHS,
   buildPasswordRoleSignInSendRequest,
+  buildPasswordRoleSignInFlowSendRequest,
+  buildPasswordRoleSignInFlowVerifyRequest,
+  parseAdminSignInFlowSendReply,
+  type AdminBrowserFlowSendReply,
+  type PasswordRoleBrowserFlowSendBody,
+  type PasswordRoleBrowserFlowVerifyBody,
   buildPasswordRoleSignInVerifyRequest,
   parseAdminSignInSendReply,
   parseAdminSignInVerifyReply,
@@ -31,11 +37,13 @@ export type AdminSignInBrowserFetch = (path: string, init: RequestInit) => Promi
 export type AdminSignInBrowserTransport = Readonly<{
   send(input: unknown, signal: AbortSignal): Promise<AdminSignInBrowserTransportResult<AdminBrowserSendReply>>;
   verify(input: unknown, signal: AbortSignal): Promise<AdminSignInBrowserTransportResult<AdminBrowserVerifyReply>>;
+  sendFlow(input: unknown, signal: AbortSignal): Promise<AdminSignInBrowserTransportResult<AdminBrowserFlowSendReply>>;
+  verifyFlow(input: unknown, signal: AbortSignal): Promise<AdminSignInBrowserTransportResult<AdminBrowserVerifyReply>>;
 }>;
 
 type RequestSnapshot = Readonly<{
   path: typeof ADMIN_BROWSER_SIGN_IN_PATHS[keyof typeof ADMIN_BROWSER_SIGN_IN_PATHS];
-  body: PasswordRoleBrowserSendBody | PasswordRoleBrowserVerifyBody;
+  body: PasswordRoleBrowserSendBody | PasswordRoleBrowserVerifyBody | PasswordRoleBrowserFlowSendBody | PasswordRoleBrowserFlowVerifyBody;
 }>;
 type Boundary<T> = Readonly<{ ok: true; value: T }> | Readonly<{ ok: false }>;
 const BOUNDARY_FAILED = Object.freeze({ ok: false } as const);
@@ -209,6 +217,14 @@ export function createAdminSignInBrowserTransport(options: Readonly<{
     if (typeof fetcher !== "function" || !Number.isSafeInteger(budget) ||
         budget <= 0 || budget > MAX_TIMER_MILLISECONDS) return null;
     return Object.freeze({
+      async sendFlow(input: unknown, signal: AbortSignal) {
+        const request = buildPasswordRoleSignInFlowSendRequest(input);
+        return request.ok ? submit({ path: ADMIN_BROWSER_SIGN_IN_PATHS.send, body: request.body }, parseAdminSignInFlowSendReply, signal, fetcher, budget) : FAILED;
+      },
+      async verifyFlow(input: unknown, signal: AbortSignal) {
+        const request = buildPasswordRoleSignInFlowVerifyRequest(input);
+        return request.ok ? submit({ path: ADMIN_BROWSER_SIGN_IN_PATHS.verify, body: request.body }, parseAdminSignInVerifyReply, signal, fetcher, budget) : FAILED;
+      },
       async send(input: unknown, signal: AbortSignal) {
         const request = buildPasswordRoleSignInSendRequest(input);
         return request.ok ? submit({ path: ADMIN_BROWSER_SIGN_IN_PATHS.send, body: request.body }, parseAdminSignInSendReply, signal, fetcher, budget) : FAILED;

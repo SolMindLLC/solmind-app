@@ -3,10 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildExplorerSignInSendRequest,
   buildExplorerSignInVerifyRequest,
+  buildExplorerSignInFlowSendRequest,
+  buildExplorerSignInFlowVerifyRequest,
   EXPLORER_BROWSER_SIGN_IN_HOME,
   EXPLORER_BROWSER_SIGN_IN_PATHS,
   parseExplorerSignInSendReply,
   parseExplorerSignInVerifyReply,
+  parseExplorerSignInFlowSendReply,
   SIGN_IN_BROWSER_CONTRACT_FAILED,
 } from "../signInBrowserContract";
 
@@ -17,11 +20,17 @@ const send = () => ({ identifier: " Explorer@Synthetic.INVALID " });
 const verify = () => ({ identifier: " Explorer@Synthetic.INVALID ", challengeId: SELECTOR, code: "012345" });
 const acknowledgment = () => ({ acknowledgment: "verification_code_requested", challengeId: SELECTOR });
 const signedIn = () => ({ outcome: "signed_in", destination: "/explorer/home" });
+const flowSend = () => ({ identifier: " Explorer@Synthetic.INVALID ", flowId: SELECTOR });
+const flowVerify = () => ({ ...flowSend(), code: "012345" });
+const flowAcknowledgment = () => ({ acknowledgment: "verification_code_requested", flowId: SELECTOR });
 const OPERATIONS = [
   { name: "send-request", run: buildExplorerSignInSendRequest, valid: send },
   { name: "verify-request", run: buildExplorerSignInVerifyRequest, valid: verify },
   { name: "send-reply", run: (value: unknown) => parseExplorerSignInSendReply(200, value), valid: acknowledgment },
   { name: "verify-reply", run: (value: unknown) => parseExplorerSignInVerifyReply(200, value), valid: signedIn },
+  { name: "flow-send-request", run: buildExplorerSignInFlowSendRequest, valid: flowSend },
+  { name: "flow-verify-request", run: buildExplorerSignInFlowVerifyRequest, valid: flowVerify },
+  { name: "flow-send-reply", run: (value: unknown) => parseExplorerSignInFlowSendReply(200, value), valid: flowAcknowledgment },
 ];
 
 beforeEach(() => {
@@ -193,6 +202,7 @@ describe("Explorer browser contract", () => {
     const body = new Proxy({}, { getPrototypeOf() { inspected = true; throw new Error("body-observed"); } });
     for (const status of [0, 199, 201, 204, 302, 400, 401, 403, 405, 429, 500, NaN, Infinity, "200", new Number(200), null, undefined, {}]) {
       expect(parseExplorerSignInSendReply(status, body) === SIGN_IN_BROWSER_CONTRACT_FAILED).toBe(true);
+      expect(parseExplorerSignInFlowSendReply(status, body) === SIGN_IN_BROWSER_CONTRACT_FAILED).toBe(true);
       expect(parseExplorerSignInVerifyReply(status, body) === SIGN_IN_BROWSER_CONTRACT_FAILED).toBe(true);
     }
     expect(inspected).toBe(false);
@@ -210,5 +220,55 @@ describe("Explorer browser contract", () => {
     expect(Object.keys(result.value).sort().join(",") === "acknowledgment,challengeId").toBe(true);
     const success = parseExplorerSignInVerifyReply(200, signedIn());
     expect(success.ok && Object.isFrozen(success) && Object.isFrozen(success.value)).toBe(true);
+  });
+
+  it("SBC-030 builds exact copied flow requests without altering raw strings or the fixed paths", () => {
+    for (const raw of ["", "\t Raw identifier \n", "server-invalid", "\ud800"]) {
+      const input = { identifier: raw, flowId: raw, code: raw };
+      const checked = buildExplorerSignInFlowVerifyRequest(input);
+      const sent = buildExplorerSignInFlowSendRequest({ identifier: raw, flowId: raw });
+      expect(checked.ok && sent.ok).toBe(true);
+      if (!checked.ok || !sent.ok) throw new Error("missing-synthetic-flow-result");
+      expect(checked.path === EXPLORER_BROWSER_SIGN_IN_PATHS.verify && sent.path === EXPLORER_BROWSER_SIGN_IN_PATHS.send).toBe(true);
+      expect(Object.keys(checked.body).join(",") === "identifier,flowId,code" && Object.keys(sent.body).join(",") === "identifier,flowId").toBe(true);
+      expect(Object.values(checked.body).every(value => value === raw) && Object.values(sent.body).every(value => value === raw)).toBe(true);
+      input.flowId = "mutated";
+      expect(checked.body.flowId === raw && Object.isFrozen(checked) && Object.isFrozen(checked.body) && Object.isFrozen(sent.body)).toBe(true);
+    }
+  });
+
+  it("SBC-031 keeps flow and direct challenge protocols separate for requests and replies", () => {
+    const failed = SIGN_IN_BROWSER_CONTRACT_FAILED;
+    expect(buildExplorerSignInSendRequest(flowSend()) === failed).toBe(true);
+    expect(buildExplorerSignInVerifyRequest(flowVerify()) === failed).toBe(true);
+    expect(buildExplorerSignInFlowSendRequest(send()) === failed).toBe(true);
+    expect(buildExplorerSignInFlowVerifyRequest(verify()) === failed).toBe(true);
+    for (const value of [{ ...flowSend(), challengeId: SELECTOR }, { ...flowVerify(), challengeId: SELECTOR }]) {
+      expect(buildExplorerSignInFlowSendRequest(value) === failed).toBe(true);
+      expect(buildExplorerSignInFlowVerifyRequest(value) === failed).toBe(true);
+    }
+    expect(parseExplorerSignInSendReply(200, flowAcknowledgment()) === failed).toBe(true);
+    expect(parseExplorerSignInFlowSendReply(200, acknowledgment()) === failed).toBe(true);
+    expect(parseExplorerSignInFlowSendReply(200, { ...flowAcknowledgment(), challengeId: SELECTOR }) === failed).toBe(true);
+    expect(parseExplorerSignInFlowSendReply(200, signedIn()) === failed).toBe(true);
+  });
+
+  it("SBC-032 accepts only exact canonical flow acknowledgments and neutral send errors", () => {
+    for (const flowId of [SELECTOR, NIL]) {
+      const input = { acknowledgment: "verification_code_requested", flowId };
+      const result = parseExplorerSignInFlowSendReply(200, input);
+      expect(result.ok && "flowId" in result.value && result.value.flowId === flowId).toBe(true);
+      if (!result.ok || !("flowId" in result.value)) throw new Error("missing-synthetic-flow-result");
+      input.flowId = "changed";
+      expect(result.value.flowId === flowId && Object.isFrozen(result) && Object.isFrozen(result.value)).toBe(true);
+      expect(Object.keys(result.value).sort().join(",") === "acknowledgment,flowId").toBe(true);
+    }
+    for (const outcome of ["invalid_email", "denied"]) expect(parseExplorerSignInFlowSendReply(200, { outcome }).ok).toBe(true);
+    for (const flowId of ["", SELECTOR.toUpperCase(), `${SELECTOR}\n`, ` ${SELECTOR}`, null, 1]) {
+      expect(parseExplorerSignInFlowSendReply(200, { ...flowAcknowledgment(), flowId }) === SIGN_IN_BROWSER_CONTRACT_FAILED).toBe(true);
+    }
+    for (const value of [{ outcome: "not_matched" }, { outcome: "invalid_email", flowId: SELECTOR }, { ...flowAcknowledgment(), delivery: "accepted" }]) {
+      expect(parseExplorerSignInFlowSendReply(200, value) === SIGN_IN_BROWSER_CONTRACT_FAILED).toBe(true);
+    }
   });
 });

@@ -7,9 +7,11 @@ const selector = "12345678-1234-5234-8234-123456789abc";
 const nil = "00000000-0000-0000-0000-000000000000";
 const privateCanary = "fixture-private-browser-contract-7163";
 const sends = [browser.parseGuideSignInSendReply, browser.parseAdminSignInSendReply];
+const flowSends = [browser.parseGuideSignInFlowSendReply, browser.parseAdminSignInFlowSendReply];
 const verifies = [browser.parseGuideSignInVerifyReply, browser.parseAdminSignInVerifyReply];
-const parsers = [...sends, ...verifies];
-const builders = [browser.buildPasswordRoleSignInSendRequest, browser.buildPasswordRoleSignInVerifyRequest];
+const parsers = [...sends, ...flowSends, ...verifies];
+const builders = [browser.buildPasswordRoleSignInSendRequest, browser.buildPasswordRoleSignInVerifyRequest,
+  browser.buildPasswordRoleSignInFlowSendRequest, browser.buildPasswordRoleSignInFlowVerifyRequest];
 const validVerify = () => ({ identifier: privateCanary, password: privateCanary, challengeId: selector, code: privateCanary });
 let logs: ReturnType<typeof vi.spyOn>[] = [];
 beforeEach(() => {
@@ -27,6 +29,7 @@ afterEach(() => {
 function rejected(actual: unknown): void { expect(actual === fail).toBe(true); }
 function frozen(value: unknown): void { expect(Object.isFrozen(value)).toBe(true); }
 function ack(id = selector) { return { acknowledgment: "verification_code_requested", challengeId: id }; }
+function flowAck(id = selector) { return { acknowledgment: "verification_code_requested", flowId: id }; }
 
 describe("fixed role contract", () => {
   it("matches actual server paths, destinations and fixed success objects", () => {
@@ -169,5 +172,85 @@ describe("hostile input and value-free failures", () => {
     }
     expect(touched).toBe(0);
     expect(JSON.stringify(fail) === '{"ok":false,"error":"password_role_browser_contract_failed"}').toBe(true);
+  });
+});
+
+describe("explicit stable-flow browser protocol", () => {
+  it("copies raw flow request strings into distinct exact frozen bodies", () => {
+    for (const raw of ["", "\t Mixed_CASE \n", "\ud800", privateCanary]) {
+      const input = { identifier: raw, password: raw, flowId: raw, code: raw };
+      const verified = browser.buildPasswordRoleSignInFlowVerifyRequest(input);
+      const sent = browser.buildPasswordRoleSignInFlowSendRequest({ identifier: raw, flowId: raw });
+      expect(verified.ok && sent.ok).toBe(true);
+      if (!verified.ok || !sent.ok) continue;
+      expect(Object.keys(verified.body)).toEqual(["identifier", "password", "flowId", "code"]);
+      expect(Object.keys(sent.body)).toEqual(["identifier", "flowId"]);
+      expect(Object.values(verified.body).every(value => value === raw) && Object.values(sent.body).every(value => value === raw)).toBe(true);
+      input.password = "changed"; input.flowId = "changed";
+      expect(verified.body.password === raw && verified.body.flowId === raw).toBe(true);
+      frozen(verified); frozen(verified.body); frozen(sent); frozen(sent.body);
+    }
+  });
+
+  it("never accepts a legacy challenge selector in a flow branch or a flow selector in a legacy branch", () => {
+    const flowSend = { identifier: privateCanary, flowId: selector };
+    const flowVerify = { ...flowSend, password: privateCanary, code: privateCanary };
+    rejected(browser.buildPasswordRoleSignInSendRequest(flowSend));
+    rejected(browser.buildPasswordRoleSignInVerifyRequest(flowVerify));
+    rejected(browser.buildPasswordRoleSignInFlowSendRequest({ identifier: privateCanary }));
+    rejected(browser.buildPasswordRoleSignInFlowVerifyRequest(validVerify()));
+    for (const build of [browser.buildPasswordRoleSignInFlowSendRequest, browser.buildPasswordRoleSignInFlowVerifyRequest]) {
+      rejected(build({ ...flowVerify, challengeId: selector }));
+    }
+    for (const parse of sends) rejected(parse(flowAck()));
+    for (const parse of flowSends) {
+      rejected(parse(ack()));
+      rejected(parse({ ...flowAck(), challengeId: selector }));
+      rejected(parse({ ...flowAck(), delivery: "accepted" }));
+      rejected(parse(server.PASSWORD_ROLE_SIGN_IN_NOT_MATCHED));
+    }
+  });
+
+  it("accepts only canonical closed flow acknowledgments and preserves role-specific invalid outcomes", () => {
+    for (const parse of flowSends) for (const flowId of [selector, nil]) {
+      const input = flowAck(flowId); const result = parse(input);
+      expect(result.ok && "flowId" in result.value && result.value.flowId === flowId).toBe(true);
+      if (!result.ok || !("flowId" in result.value)) continue;
+      input.flowId = "changed";
+      expect(result.value.flowId === flowId).toBe(true); frozen(result); frozen(result.value);
+      expect(Object.keys(result.value)).toEqual(["acknowledgment", "flowId"]);
+    }
+    expect(browser.parseGuideSignInFlowSendReply(server.GUIDE_SIGN_IN_INVALID_EMAIL).ok).toBe(true);
+    expect(browser.parseAdminSignInFlowSendReply(server.ADMIN_SIGN_IN_INVALID_IDENTIFIER).ok).toBe(true);
+    rejected(browser.parseGuideSignInFlowSendReply(server.ADMIN_SIGN_IN_INVALID_IDENTIFIER));
+    rejected(browser.parseAdminSignInFlowSendReply(server.GUIDE_SIGN_IN_INVALID_EMAIL));
+    for (const parse of flowSends) {
+      expect(parse(server.PASSWORD_ROLE_SIGN_IN_DENIED).ok).toBe(true);
+      for (const flowId of [selector.toUpperCase(), `${selector}\n`, ` ${selector}`, "", 5, null]) rejected(parse({ ...flowAck(), flowId }));
+      rejected(parse({ acknowledgment: "verification_code_requested" }));
+      rejected(parse({ flowId: selector }));
+    }
+  });
+
+  it("refuses missing, wrong-type, hidden and accessor flow fields without evaluating them", () => {
+    let reads = 0;
+    const operations = [
+      { run: browser.buildPasswordRoleSignInFlowSendRequest, valid: () => ({ identifier: privateCanary, flowId: selector }) },
+      { run: browser.buildPasswordRoleSignInFlowVerifyRequest, valid: () => ({ identifier: privateCanary, password: privateCanary, flowId: selector, code: privateCanary }) },
+      ...flowSends.map(run => ({ run, valid: flowAck })),
+    ];
+    for (const operation of operations) {
+      expect(operation.run(Object.assign(Object.create(null), operation.valid())).ok).toBe(true);
+      for (const key of Object.keys(operation.valid())) {
+        const missing: Record<string, unknown> = { ...operation.valid() }; delete missing[key];
+        rejected(operation.run(missing));
+        for (const wrong of [undefined, null, 1, false, {}, []]) rejected(operation.run({ ...operation.valid(), [key]: wrong }));
+        const accessor = Object.defineProperty(operation.valid(), key, { enumerable: true, get() { reads++; throw privateCanary; } });
+        rejected(operation.run(accessor));
+        rejected(operation.run(Object.defineProperty(operation.valid(), key, { enumerable: false })));
+      }
+      rejected(operation.run({ ...operation.valid(), [Symbol("fixture")]: privateCanary }));
+    }
+    expect(reads).toBe(0);
   });
 });

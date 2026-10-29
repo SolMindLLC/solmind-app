@@ -94,6 +94,7 @@ function edge() {
       if (failRpc) throw new Error(PRIVATE);
       if (name === "solmind_resolve_login_account") { events.push("lookup"); return json([{ user_account_id: ID.account,
         user_contact_method_id: ID.contact, normalized_contact_value: EMAIL, provider_user_id: ID.provider }]); }
+      if (name === "solmind_resolve_login_flow_challenge") { events.push("flow_resolve"); return json([{ outcome: "found", verification_challenge_id: ID.challenge }]); }
       if (name === "solmind_check_login_challenge_owner") { events.push("ownership"); return json([{ owned }]); }
       if (name === "solmind_record_login_password_failure") { events.push("password_failure"); return json([{ recorded: true }]); }
       if (name === "solmind_redeem_verification_challenge") { events.push("redeem"); return json([{ outcome: redeemed ? "redeemed" : "denied" }]); }
@@ -190,6 +191,7 @@ describe("exact request-scoped factory", () => {
     const confirm = vi.spyOn(lookups, "createRedeemedLoginChallengeConfirmation"); const bridge = vi.spyOn(identity, "createLoginIdentityBridge");
     const creator = vi.spyOn(session, "createUserSessionCreator");
     const recorder = vi.spyOn(lookups, "createLoginPasswordFailureRecorder");
+    const flowResolver = vi.spyOn(lookups, "createLoginFlowChallengeResolver");
     const ports = factory.createPasswordRoleSignInHttpPorts(CONFIG, () => []).createVerifyPorts(ORIGIN, null);
     const dependencies = ports.createVerifyDependencies(ORIGIN);
     same([lookup.mock.calls[0][0].rpcTimeoutMilliseconds, owner.mock.calls[0][0].rpcTimeoutMilliseconds,
@@ -197,6 +199,9 @@ describe("exact request-scoped factory", () => {
       creator.mock.calls[0][0].rpcTimeoutMilliseconds], [101, 102, 103, 104, 105], "distinct approved input mapping");
     same(recorder.mock.calls[0][0].rpcTimeoutMilliseconds, 102, "recorder reuses exact ownership timeout");
     yes(recorder.mock.calls[0][0].rpcClient === owner.mock.calls[0][0].rpcClient, "recorder reuses the ownership RPC client");
+    same(flowResolver.mock.calls[0][0].rpcTimeoutMilliseconds, 102, "flow resolver reuses the exact ownership timeout");
+    yes(flowResolver.mock.calls.length === 1 && flowResolver.mock.calls[0][0].rpcClient === owner.mock.calls[0][0].rpcClient &&
+      dependencies.flowResolver !== undefined, "one bounded optional flow capability over the same service client");
     yes(state.clients === 2 && state.transport === 1, "two clients, no privileged link client");
     same(Object.keys(dependencies.bridge), ["signInWithPassword"], "exact core bridge shape");
     same(await bridge.mock.calls[0][1].linkAdmin.generateLink({ type: "magiclink", email: EMAIL }), null, "inert mandatory link seam");
@@ -364,4 +369,22 @@ describe("module and credential-pair configuration", () => {
     yes(typeof parsed.solmind_pair_proof === "string" && parsed.solmind_pair_proof !== PRIVATE, "fresh proof minted by current bridge");
     yes(f.events.includes("prior_revoke") && !f.calls.some(x => x.name.includes("refresh_token")), "old invalid proof does not grant renewal authority");
   });
+});
+
+it.each(["guide", "admin"] as const)("composes the real %s HTTP flow variant through one resolver and actual-ID factors", async role => {
+  const f = edge(); const flowId = "17170000-0000-4000-8000-000000009101";
+  const base = request(role, true);
+  const body = await base.json() as Record<string, unknown>; delete body.challengeId; body.flowId = flowId;
+  const flowRequest = new NextRequest(base.url, { method: "POST", headers: base.headers, body: JSON.stringify(body) });
+  const ports = factory.createPasswordRoleSignInHttpPorts(CONFIG, () => []);
+  const response = await (role === "guide" ? handlers.handleGuideSignInVerify : handlers.handleAdminSignInVerify)(flowRequest, ports);
+  same(await response.json(), { outcome: "signed_in", destination: role === "guide" ? "/guide/home" : "/admin/home" }, "composed flow accepts only fixed role home");
+  same(f.events, ["lookup", "flow_resolve", "password", "redeem", "confirm", "session"], "flow replaces ownership and keeps factor order");
+  const resolved = f.calls.filter(call => call.name === "solmind_resolve_login_flow_challenge");
+  yes(resolved.length === 1, "one exact resolver call");
+  same(resolved[0].body, { p_login_flow_id: flowId, p_user_account_id: ID.account,
+    p_user_contact_method_id: ID.contact, p_role_context: role }, "lookup-derived fixed resolver authority");
+  yes(!f.calls.some(call => call.name === "solmind_check_login_challenge_owner"), "no duplicate legacy ownership read");
+  yes(f.calls.filter(call => ["solmind_redeem_verification_challenge", "solmind_confirm_redeemed_login_challenge", "solmind_create_user_session"].includes(call.name))
+    .every(call => (call.body as Record<string, unknown>).p_verification_challenge_id === ID.challenge || (call.body as Record<string, unknown>).p_challenge_id === ID.challenge), "actual challenge reaches each factor/session port");
 });

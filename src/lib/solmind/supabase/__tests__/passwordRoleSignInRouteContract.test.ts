@@ -62,8 +62,10 @@ describe("Guide/Admin dormant route contract", () => {
   it("types preserve the shared acknowledgment and distinct complete role result unions", () => {
     expectTypeOf<PasswordRoleSignInSendAcknowledgment>().toEqualTypeOf<VerificationChallengeIssuanceAcknowledgment>();
     expectTypeOf<GuideSignInSendResult>().toEqualTypeOf<Readonly<{ acknowledgment: "verification_code_requested"; challengeId: string }> |
+      Readonly<{ acknowledgment: "verification_code_requested"; flowId: string }> |
       Readonly<{ outcome: "invalid_email" }> | Readonly<{ outcome: "denied" }>>();
     expectTypeOf<AdminSignInSendResult>().toEqualTypeOf<Readonly<{ acknowledgment: "verification_code_requested"; challengeId: string }> |
+      Readonly<{ acknowledgment: "verification_code_requested"; flowId: string }> |
       Readonly<{ outcome: "invalid_identifier" }> | Readonly<{ outcome: "denied" }>>();
     expectTypeOf<GuideSignInVerifyBodyResult>().toEqualTypeOf<Readonly<{ outcome: "not_matched" }> | Readonly<{ outcome: "denied" }> |
       Readonly<{ outcome: "signed_in"; destination: "/guide/home" }>>();

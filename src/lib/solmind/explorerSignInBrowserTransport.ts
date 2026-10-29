@@ -3,6 +3,12 @@
 // The caller must invalidate its own UI generation before aborting an old request.
 import {
   buildExplorerSignInSendRequest,
+  buildExplorerSignInFlowSendRequest,
+  buildExplorerSignInFlowVerifyRequest,
+  parseExplorerSignInFlowSendReply,
+  type ExplorerBrowserFlowSendReply,
+  type ExplorerBrowserFlowSendRequest,
+  type ExplorerBrowserFlowVerifyRequest,
   buildExplorerSignInVerifyRequest,
   parseExplorerSignInSendReply,
   parseExplorerSignInVerifyReply,
@@ -30,9 +36,11 @@ export type ExplorerSignInBrowserFetch = (path: string, init: RequestInit) => Pr
 export type ExplorerSignInBrowserTransport = Readonly<{
   send(input: unknown, signal: AbortSignal): Promise<ExplorerSignInBrowserTransportResult<ExplorerBrowserSendReply>>;
   verify(input: unknown, signal: AbortSignal): Promise<ExplorerSignInBrowserTransportResult<ExplorerBrowserVerifyReply>>;
+  sendFlow(input: unknown, signal: AbortSignal): Promise<ExplorerSignInBrowserTransportResult<ExplorerBrowserFlowSendReply>>;
+  verifyFlow(input: unknown, signal: AbortSignal): Promise<ExplorerSignInBrowserTransportResult<ExplorerBrowserVerifyReply>>;
 }>;
 
-type RequestSnapshot = ExplorerBrowserSendRequest | ExplorerBrowserVerifyRequest;
+type RequestSnapshot = ExplorerBrowserSendRequest | ExplorerBrowserVerifyRequest | ExplorerBrowserFlowSendRequest | ExplorerBrowserFlowVerifyRequest;
 type Boundary<T> = Readonly<{ ok: true; value: T }> | Readonly<{ ok: false }>;
 const BOUNDARY_FAILED = Object.freeze({ ok: false } as const);
 
@@ -205,6 +213,14 @@ export function createExplorerSignInBrowserTransport(options: Readonly<{
     if (typeof fetcher !== "function" || !Number.isSafeInteger(budget) ||
         budget <= 0 || budget > MAX_TIMER_MILLISECONDS) return null;
     return Object.freeze({
+      async sendFlow(input: unknown, signal: AbortSignal) {
+        const request = buildExplorerSignInFlowSendRequest(input);
+        return request.ok ? submit(request, parseExplorerSignInFlowSendReply, signal, fetcher, budget) : FAILED;
+      },
+      async verifyFlow(input: unknown, signal: AbortSignal) {
+        const request = buildExplorerSignInFlowVerifyRequest(input);
+        return request.ok ? submit(request, parseExplorerSignInVerifyReply, signal, fetcher, budget) : FAILED;
+      },
       async send(input: unknown, signal: AbortSignal) {
         const request = buildExplorerSignInSendRequest(input);
         return request.ok ? submit(request, parseExplorerSignInSendReply, signal, fetcher, budget) : FAILED;

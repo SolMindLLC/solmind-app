@@ -21,6 +21,7 @@ import {
   type ExplorerSignInCodeNotAccepted,
   type ExplorerSignInDenied,
   type ExplorerSignInSendAcknowledgment,
+  type ExplorerSignInFlowSendAcknowledgment,
   type ExplorerSignInSendResult,
 } from "./explorerSignInRouteContract";
 import {
@@ -49,6 +50,14 @@ import {
 // lookup returns a row only for an account with an active assignment for the
 // requested role. The account id, the contact id, the email and the provider
 // user id that later steps use are the lookup's own row, never the request's.
+//
+// The detailed selector orders below describe the retained legacy path.
+// Explicit login-flow Send still prepares the spare, but its public answer
+// always echoes the validated requested flowId after lookup; a private issuer
+// selector never replaces it. Flow Verify first looks up the eligible account
+// and resolves one current actual challenge, then reuses that account through
+// ordinary redemption/confirmation/bridge/session acceptance. It never retries
+// a candidate or repeats the account lookup after redemption.
 //
 // Send a code (`requestExplorerSignInCode`), in order:
 //   1. reads the clock and fixes the answer time: now plus the response
@@ -205,12 +214,12 @@ function isCanonicalUuid(value: unknown): value is string {
 export type ExplorerSignInCodeRequest = Readonly<{
   trustedOrigin: string;
   identifier: string;
+  flowId?: string;
 }>;
 
 export type ExplorerSignInVerification<SuccessResponse extends SessionCookieResponse> = Readonly<{
   trustedOrigin: string;
   identifier: string;
-  challengeId: string;
   code: string;
   // The request's cookies as names only: every value is an empty string.
   requestCookies: LoginSessionCookieWrite["requestCookies"];
@@ -220,7 +229,10 @@ export type ExplorerSignInVerification<SuccessResponse extends SessionCookieResp
   // Makes the success response. Called at most once, and only after the
   // session exists and the held cookies were released.
   createSuccessResponse: () => SuccessResponse;
-}>;
+}> & (Readonly<{ challengeId: string; flowId?: never }> | Readonly<{ flowId: string; challengeId?: never }>);
+
+type ResolvedExplorerVerification<Response extends SessionCookieResponse> =
+  Omit<ExplorerSignInVerification<Response>, "flowId" | "challengeId"> & Readonly<{ challengeId: string }>;
 
 export type ExplorerSignInVerifyResult<SuccessResponse extends SessionCookieResponse> =
   | Readonly<{ outcome: "signed_in"; response: SuccessResponse }>
@@ -262,6 +274,18 @@ function acknowledgmentOf(result: unknown): ExplorerSignInSendAcknowledgment | n
   return isCanonicalUuid(acknowledgment.challengeId) ? acknowledgment : null;
 }
 
+// A flow is an explicit selector variant. Read its descriptor rather than
+// invoking a caller-supplied field accessor. Legacy requests have no flow key.
+function readFlowId(value: object): string | null | undefined {
+  try {
+    const field = Object.getOwnPropertyDescriptor(value, "flowId");
+    if (field === undefined) return null;
+    if (!field.enumerable || !("value" in field) || !isCanonicalUuid(field.value) || field.value.length !== 36 ||
+        field.value === "00000000-0000-0000-0000-000000000000") return undefined;
+    return field.value;
+  } catch { return undefined; }
+}
+
 // Waits until the answer time. A waiter that fails is dropped: the answer is
 // then returned at once.
 async function waitForAnswerTime(ports: ExplorerSignInPorts, answerAt: number): Promise<void> {
@@ -280,9 +304,13 @@ export async function requestExplorerSignInCode(
   let answerAt: number;
   let dependencies: ExplorerSignInSendDependencies;
   let email: string;
-  let acknowledgment: ExplorerSignInSendAcknowledgment;
+  let acknowledgment: ExplorerSignInSendAcknowledgment | ExplorerSignInFlowSendAcknowledgment;
+  let flowId: string | null;
   try {
     answerAt = ports.now() + EXPLORER_SIGN_IN_RESPONSE_FLOOR_MILLISECONDS;
+    const selectedFlow = readFlowId(request);
+    if (selectedFlow === undefined) return EXPLORER_SIGN_IN_DENIED;
+    flowId = selectedFlow;
     const normalized = normalizeLoginEmail(request.identifier);
     if (normalized === null) {
       return EXPLORER_SIGN_IN_INVALID_EMAIL;
@@ -296,7 +324,7 @@ export async function requestExplorerSignInCode(
     if (spare === null) {
       return EXPLORER_SIGN_IN_DENIED;
     }
-    acknowledgment = spare;
+    acknowledgment = flowId === null ? spare : Object.freeze({ acknowledgment: "verification_code_requested", flowId });
   } catch {
     return EXPLORER_SIGN_IN_DENIED;
   }
@@ -323,10 +351,11 @@ export async function requestExplorerSignInCode(
             normalizedContact: account.normalizedEmail,
             userAccountId: account.userAccountId,
             userContactMethodId: account.userContactMethodId,
+            ...(flowId === null ? {} : { loginFlow: Object.freeze({ flowId, roleContext: SIGN_IN_ROLE }) }),
           }),
         ),
       );
-      if (issued !== null) {
+      if (flowId === null && issued !== null) {
         acknowledgment = issued;
       }
     }
@@ -340,7 +369,7 @@ export async function requestExplorerSignInCode(
 // Steps 7 to 10 of the verify order, under the one guard a hold needs: every
 // exit that is not `signed_in` awaits `discard` before it answers.
 async function completeSignInWithHold<SuccessResponse extends SessionCookieResponse>(
-  verification: ExplorerSignInVerification<SuccessResponse>,
+  verification: ResolvedExplorerVerification<SuccessResponse>,
   dependencies: ExplorerSignInVerifyDependencies,
   account: FoundAccount,
   hold: ExplorerSignInIdentityHold,
@@ -407,10 +436,11 @@ async function completeSignInWithHold<SuccessResponse extends SessionCookieRespo
 
 // Steps 3 to 10 of the verify order. Never throws.
 async function redeemAndSignIn<SuccessResponse extends SessionCookieResponse>(
-  verification: ExplorerSignInVerification<SuccessResponse>,
+  verification: ResolvedExplorerVerification<SuccessResponse>,
   dependencies: ExplorerSignInVerifyDependencies,
   email: string,
   ports: ExplorerSignInPorts,
+  resolvedAccount?: FoundAccount,
 ): Promise<ExplorerSignInVerifyResult<SuccessResponse>> {
   try {
     const redemption = await dependencies.redeemer.redeem(
@@ -426,7 +456,7 @@ async function redeemAndSignIn<SuccessResponse extends SessionCookieResponse>(
     if (redemption.outcome !== "redeemed") {
       return EXPLORER_SIGN_IN_DENIED;
     }
-    const account = readFoundAccount(
+    const account = resolvedAccount ?? readFoundAccount(
       await dependencies.accountLookup.resolve(
         Object.freeze({
           normalizedIdentifier: email,
@@ -463,6 +493,28 @@ async function redeemAndSignIn<SuccessResponse extends SessionCookieResponse>(
   }
 }
 
+// Flow verification looks up one server-derived account/contact, resolves
+// exactly one private actual challenge, then uses the ordinary factor chain.
+// It never treats the public flow as a challenge or tries a second candidate.
+async function resolveFlowAndSignIn<Response extends SessionCookieResponse>(
+  verification: ExplorerSignInVerification<Response>, dependencies: ExplorerSignInVerifyDependencies,
+  email: string, flowId: string, ports: ExplorerSignInPorts,
+): Promise<ExplorerSignInVerifyResult<Response>> {
+  try {
+    const account = readFoundAccount(await dependencies.accountLookup.resolve(Object.freeze({
+      normalizedIdentifier: email, identifierType: SIGN_IN_IDENTIFIER_TYPE, requestedRoleContext: SIGN_IN_ROLE,
+    })));
+    if (account === null) return EXPLORER_SIGN_IN_CODE_NOT_ACCEPTED;
+    if (dependencies.flowResolver === undefined) return EXPLORER_SIGN_IN_DENIED;
+    const resolved = await dependencies.flowResolver.resolve(Object.freeze({ flowId, userAccountId: account.userAccountId,
+      userContactMethodId: account.userContactMethodId, roleContext: SIGN_IN_ROLE }));
+    if (resolved.outcome === "not_found") return EXPLORER_SIGN_IN_CODE_NOT_ACCEPTED;
+    if (resolved.outcome !== "found" || !isCanonicalUuid(resolved.challengeId) || resolved.challengeId.length !== 36) return EXPLORER_SIGN_IN_DENIED;
+    const actual = Object.freeze({ ...verification, challengeId: resolved.challengeId });
+    return await redeemAndSignIn(actual, dependencies, email, ports, account);
+  } catch { return EXPLORER_SIGN_IN_DENIED; }
+}
+
 // Verify the code and sign in. See the module comment for the order. Never
 // throws.
 export async function verifyExplorerSignInCode<SuccessResponse extends SessionCookieResponse>(
@@ -472,8 +524,12 @@ export async function verifyExplorerSignInCode<SuccessResponse extends SessionCo
   let answerAt: number;
   let dependencies: ExplorerSignInVerifyDependencies;
   let email: string;
+  let flowId: string | null;
   try {
     answerAt = ports.now() + EXPLORER_SIGN_IN_RESPONSE_FLOOR_MILLISECONDS;
+    const selectedFlow = readFlowId(verification);
+    if (selectedFlow === undefined || (selectedFlow !== null && Object.hasOwn(verification, "challengeId"))) return EXPLORER_SIGN_IN_DENIED;
+    flowId = selectedFlow;
     const normalized = normalizeLoginEmail(verification.identifier);
     if (normalized === null) {
       return EXPLORER_SIGN_IN_DENIED;
@@ -486,7 +542,9 @@ export async function verifyExplorerSignInCode<SuccessResponse extends SessionCo
 
   // From the redemption call on: every exit except `signed_in` asks the
   // waiter for the answer time (waiter failure can return early).
-  const result = await redeemAndSignIn(verification, dependencies, email, ports);
+  const result = flowId === null
+    ? await redeemAndSignIn(verification as ResolvedExplorerVerification<SuccessResponse>, dependencies, email, ports)
+    : await resolveFlowAndSignIn(verification, dependencies, email, flowId, ports);
   if (result.outcome === "signed_in") {
     return result;
   }

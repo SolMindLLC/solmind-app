@@ -648,3 +648,75 @@ export function createLoginPasswordFailureRecorder(
   }
   return Object.freeze({ recordWrongPassword: (request: LoginPasswordFailureRequest) => recordWrongPassword(request) });
 }
+
+
+// Item 17 server-only lookup of one flow-bound current challenge. The public
+// selector is not a challenge UUID/factor; never return the actual ID to the
+// browser or fall back to another candidate. No route/factory wiring here.
+export const LOGIN_FLOW_CHALLENGE_RESOLUTION_FUNCTION = "solmind_resolve_login_flow_challenge" as const;
+export type LoginFlowChallengeResolutionRequest = Readonly<{
+  flowId: string;
+  userAccountId: string;
+  userContactMethodId: string;
+  roleContext: SolMindRole;
+}>;
+export type LoginFlowChallengeResolutionResult =
+  | Readonly<{ outcome: "found"; challengeId: string }>
+  | Readonly<{ outcome: "not_found" | "failed" }>;
+export type LoginFlowChallengeResolver = Readonly<{
+  resolve(request: LoginFlowChallengeResolutionRequest): Promise<LoginFlowChallengeResolutionResult>;
+}>;
+const FLOW_RESOLUTION_KEYS = Object.freeze(["flowId", "userAccountId", "userContactMethodId", "roleContext"]);
+const FLOW_RESOLUTION_ROW_KEYS = Object.freeze(["outcome", "verification_challenge_id"]);
+const FLOW_NOT_FOUND: LoginFlowChallengeResolutionResult = Object.freeze({ outcome: "not_found" });
+const FLOW_RESOLUTION_FAILED: LoginFlowChallengeResolutionResult = Object.freeze({ outcome: "failed" });
+const NIL_FLOW_ID = "00000000-0000-0000-0000-000000000000";
+
+function mapFlowResolutionAnswer(answer: RpcAnswer | null): LoginFlowChallengeResolutionResult {
+  if (answer === null || (answer.error !== null && answer.error !== undefined)) return FLOW_RESOLUTION_FAILED;
+  const rows = answer.data;
+  if (!Array.isArray(rows) || Object.getPrototypeOf(rows) !== Array.prototype || rows.length !== 1) return FLOW_RESOLUTION_FAILED;
+  const keys = Reflect.ownKeys(rows);
+  const slot = Object.getOwnPropertyDescriptor(rows, "0");
+  if (keys.length !== 2 || !keys.includes("0") || !keys.includes("length") ||
+      slot === undefined || !Object.prototype.hasOwnProperty.call(slot, "value") || !slot.enumerable) return FLOW_RESOLUTION_FAILED;
+  const row = readExactDataProperties(slot.value, FLOW_RESOLUTION_ROW_KEYS);
+  const outcome = row?.get("outcome");
+  const challengeId = row?.get("verification_challenge_id");
+  if (outcome === "not_found" && challengeId === null) return FLOW_NOT_FOUND;
+  if (outcome === "found" && isCanonicalUuid(challengeId) && challengeId.length === 36) {
+    return Object.freeze({ outcome: "found", challengeId });
+  }
+  return FLOW_RESOLUTION_FAILED;
+}
+
+// One call, one candidate, no automatic retry. The existing caller deadline
+// bounds local waiting and requests abort; it proves neither remote stop nor
+// rollback. Parsing cannot turn a late answer into a usable challenge.
+export function createLoginFlowChallengeResolver(
+  dependencies: LoginAccountLookupDependencies,
+): LoginFlowChallengeResolver {
+  const settings = readDependencies(dependencies);
+  async function resolve(request: unknown): Promise<LoginFlowChallengeResolutionResult> {
+    try {
+      const fields = readExactDataProperties(request, FLOW_RESOLUTION_KEYS);
+      const flowId = fields?.get("flowId");
+      const userAccountId = fields?.get("userAccountId");
+      const userContactMethodId = fields?.get("userContactMethodId");
+      const roleContext = fields?.get("roleContext");
+      if (!isCanonicalUuid(flowId) || flowId.length !== 36 || flowId === NIL_FLOW_ID ||
+          !isCanonicalUuid(userAccountId) || userAccountId.length !== 36 ||
+          !isCanonicalUuid(userContactMethodId) || userContactMethodId.length !== 36 ||
+          typeof roleContext !== "string" || !ROLE_CONTEXTS.includes(roleContext)) return FLOW_RESOLUTION_FAILED;
+      const call = startRpc(settings.client, LOGIN_FLOW_CHALLENGE_RESOLUTION_FUNCTION, {
+        p_login_flow_id: flowId,
+        p_user_account_id: userAccountId,
+        p_user_contact_method_id: userContactMethodId,
+        p_role_context: roleContext,
+      }, settings.rpcTimeout);
+      const mapped = mapFlowResolutionAnswer(await call.answer);
+      return isBeforeDeadline(call.deadline) ? mapped : FLOW_RESOLUTION_FAILED;
+    } catch { return FLOW_RESOLUTION_FAILED; }
+  }
+  return Object.freeze({ resolve: (request: LoginFlowChallengeResolutionRequest) => resolve(request) });
+}

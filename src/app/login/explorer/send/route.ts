@@ -63,6 +63,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       await requestExplorerSignInCode({
         trustedOrigin,
         identifier: body.identifier,
+        ...("flowId" in body ? { flowId: body.flowId } : {}),
       }),
     );
   } catch {

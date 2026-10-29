@@ -672,7 +672,7 @@ See `docs/MODULE_BOUNDARIES.md` for ownership and source/runtime evidence limits
 
 Keep fixed Guide page/POST entrypoints thin; browser transport/controller belong
 in src/lib/solmind and mounted UI in src/components/solmind/GuideSignIn.tsx.
-Guide uses email only, unchanged typed password and a SolMind code. Send contains
+New forms keep one private flow ID across denied/uncertain resends; the actual HMAC code UUID stays server-only. Guide uses email only, unchanged typed password and a SolMind code. Send contains
 no password. Private drafts are cleared on cancellation/disposal; logs, URLs
 and browser storage must contain no credentials, selectors or tokens.
 

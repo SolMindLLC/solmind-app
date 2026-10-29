@@ -26,6 +26,9 @@ export const ADMIN_SIGN_IN_HOME_PATH = "/admin/home" as const;
 // The opaque selector proves neither account existence nor issuance/delivery.
 // Reuse the existing owner without importing a runtime issuer or its slot pools.
 export type PasswordRoleSignInSendAcknowledgment = VerificationChallengeIssuanceAcknowledgment;
+export type PasswordRoleSignInFlowSendAcknowledgment = Readonly<{
+  acknowledgment: "verification_code_requested"; flowId: string;
+}>;
 export type PasswordRoleSignInDenied = Readonly<{ outcome: "denied" }>;
 export type PasswordRoleSignInNotMatched = Readonly<{ outcome: "not_matched" }>;
 export type GuideSignInInvalidEmail = Readonly<{ outcome: "invalid_email" }>;
@@ -33,8 +36,8 @@ export type AdminSignInInvalidIdentifier = Readonly<{ outcome: "invalid_identifi
 export type GuideSignInSignedIn = Readonly<{ outcome: "signed_in"; destination: typeof GUIDE_SIGN_IN_HOME_PATH }>;
 export type AdminSignInSignedIn = Readonly<{ outcome: "signed_in"; destination: typeof ADMIN_SIGN_IN_HOME_PATH }>;
 
-export type GuideSignInSendResult = PasswordRoleSignInSendAcknowledgment | GuideSignInInvalidEmail | PasswordRoleSignInDenied;
-export type AdminSignInSendResult = PasswordRoleSignInSendAcknowledgment | AdminSignInInvalidIdentifier | PasswordRoleSignInDenied;
+export type GuideSignInSendResult = PasswordRoleSignInSendAcknowledgment | PasswordRoleSignInFlowSendAcknowledgment | GuideSignInInvalidEmail | PasswordRoleSignInDenied;
+export type AdminSignInSendResult = PasswordRoleSignInSendAcknowledgment | PasswordRoleSignInFlowSendAcknowledgment | AdminSignInInvalidIdentifier | PasswordRoleSignInDenied;
 export type GuideSignInVerifyBodyResult = GuideSignInSignedIn | PasswordRoleSignInNotMatched | PasswordRoleSignInDenied;
 export type AdminSignInVerifyBodyResult = AdminSignInSignedIn | PasswordRoleSignInNotMatched | PasswordRoleSignInDenied;
 

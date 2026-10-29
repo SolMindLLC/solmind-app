@@ -965,3 +965,77 @@ describe("verificationChallengeCallers - issuing a challenge", () => {
     expect(delivery.send).not.toHaveBeenCalled();
   });
 });
+
+
+// Item17 low-level flow branch only. These tests do not wire public routes,
+// replace browser acknowledgments or perform real mail/SQL/provider work.
+describe("login-flow issuance variant", () => {
+  const flowId = "6f170000-0000-4000-8000-000000000001";
+  it.each(["explorer", "guide", "admin"] as const)("uses one exact bound email/login wrapper for %s without changing HMAC/delivery identity", async roleContext => {
+    const rpc = fakeRpc(); const delivery = fakeTransport(); const slots = fakeSlots();
+    const issuer = buildIssuer({ rpcClient: rpc.client, deliveryTransport: delivery.transport, issuanceSlots: slots.slots });
+    const result = await issuer.issue(emailRequest({ loginFlow: { flowId, roleContext } }));
+    await settle();
+    expect(result.outcome).toBe("issued"); expect(rpc.calls).toHaveLength(1);
+    const call = rpc.calls[0];
+    expect(call.functionName).toBe("solmind_issue_login_flow_verification_challenge");
+    expect(Object.keys(call.args).sort()).toEqual(["p_contact_method_type", "p_delivery_channel", "p_login_flow_id",
+      "p_login_flow_role_context", "p_normalized_contact_value", "p_purpose", "p_user_account_id",
+      "p_user_contact_method_id", "p_verification_challenge_id", "p_verifier"].sort());
+    expect(call.args).toMatchObject({ p_login_flow_id: flowId, p_login_flow_role_context: roleContext,
+      p_normalized_contact_value: EMAIL, p_purpose: "login", p_contact_method_type: "email", p_delivery_channel: "email",
+      p_user_account_id: ACCOUNT_ID, p_user_contact_method_id: CONTACT_ID });
+    const actualId = call.args.p_verification_challenge_id as string;
+    expect(actualId).toMatch(UUID_V4); expect(actualId).not.toBe(flowId);
+    expect(delivery.requests).toHaveLength(1);
+    expect(delivery.requests[0].challengeId).toBe(actualId);
+    expect(call.args.p_verifier).toBe(computeVerificationCodeVerifier(PEPPER, actualId, "login", delivery.requests[0].code));
+    expect(result.challengeId).toBe(actualId);
+    expect(slots.tryAcquire).toHaveBeenCalledTimes(1); expect(slots.release).toHaveBeenCalledTimes(1);
+  });
+  it("captures the nested flow values before awaiting and preserves the legacy eight-argument path", async () => {
+    const rpc = fakeRpc(); const flow = { flowId, roleContext: "guide" };
+    const issuer = buildIssuer({ rpcClient: rpc.client });
+    const pending = issuer.issue(emailRequest({ loginFlow: flow }));
+    flow.flowId = "6f170000-0000-4000-8000-000000000002"; flow.roleContext = "admin";
+    await pending;
+    expect(rpc.calls[0].args.p_login_flow_id).toBe(flowId);
+    expect(rpc.calls[0].args.p_login_flow_role_context).toBe("guide");
+    await issuer.issue(emailRequest());
+    expect(rpc.calls[1].functionName).toBe("solmind_issue_verification_challenge");
+    expect(Object.keys(rpc.calls[1].args)).toHaveLength(8);
+    expect("p_login_flow_id" in rpc.calls[1].args || "p_login_flow_role_context" in rpc.calls[1].args).toBe(false);
+  });
+  it("rejects malformed, unbound, non-login and phone flow variants before HMAC or RPC", async () => {
+    const rpc = fakeRpc(); const delivery = fakeTransport();
+    const issuer = buildIssuer({ rpcClient: rpc.client, deliveryTransport: delivery.transport });
+    let reads = 0;
+    const getter = Object.defineProperty({ roleContext: "guide" }, "flowId", { enumerable: true, get() { reads++; return flowId; } });
+    for (const request of [
+      emailRequest({ loginFlow: undefined }), emailRequest({ loginFlow: null }),
+      emailRequest({ loginFlow: { flowId } }), emailRequest({ loginFlow: { flowId, roleContext: "Guide" } }),
+      emailRequest({ loginFlow: { flowId: flowId + "\n", roleContext: "guide" } }),
+      emailRequest({ loginFlow: { flowId: flowId.toUpperCase(), roleContext: "guide" } }),
+      emailRequest({ loginFlow: { flowId: "00000000-0000-0000-0000-000000000000", roleContext: "guide" } }),
+      emailRequest({ loginFlow: { flowId, roleContext: "guide", password: "synthetic-only" } }),
+      emailRequest({ loginFlow: getter }),
+      emailRequest({ loginFlow: { flowId, roleContext: "guide" }, purpose: "contact_verify" }),
+      emailRequest({ loginFlow: { flowId, roleContext: "guide" }, userAccountId: null, userContactMethodId: null }),
+      emailRequest({ loginFlow: { flowId, roleContext: "guide" }, userContactMethodId: CONTACT_ID + "\n" }),
+      emailRequest({ loginFlow: { flowId, roleContext: "guide" }, contactMethodType: "phone", normalizedContact: PHONE }),
+    ]) expect((await issuer.issue(request)).outcome).toBe("invalid_request");
+    expect(rpc.calls).toHaveLength(0); expect(delivery.requests).toHaveLength(0);
+    expect(createHmacSpy).not.toHaveBeenCalled(); expect(reads).toBe(0);
+  });
+  it("drops a denied or failed flow issuance without delivery, fallback or retry", async () => {
+    for (const respond of [() => rpcResponse([{ outcome: "denied" }]),
+      () => rpcResponse(null, { code: "P0001", message: "solmind_login_flow_invalid_request" })]) {
+      const rpc = fakeRpc(respond); const delivery = fakeTransport();
+      const result = await buildIssuer({ rpcClient: rpc.client, deliveryTransport: delivery.transport }).issue(
+        emailRequest({ loginFlow: { flowId, roleContext: "explorer" } }));
+      expect(result.outcome === "denied" || result.outcome === "failed").toBe(true);
+      expect(rpc.calls).toHaveLength(1); expect(rpc.calls[0].functionName).toBe("solmind_issue_login_flow_verification_challenge");
+      expect(delivery.requests).toHaveLength(0);
+    }
+  });
+});

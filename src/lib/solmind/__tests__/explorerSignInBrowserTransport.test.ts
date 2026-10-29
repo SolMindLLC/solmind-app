@@ -39,6 +39,35 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+describe("explicit flow transport branch", () => {
+  const flowId = "12345678-1234-4234-8234-123456789abc";
+  it("uses exact flow bodies on the same fixed paths while legacy send remains explicit", async () => {
+    const calls: Array<{ path: string; body: string }> = [];
+    const transport = factory(async (path, init) => {
+      calls.push({ path, body: init.body as string });
+      const body = JSON.parse(init.body as string) as Record<string, unknown>;
+      return json("code" in body ? HOME : "flowId" in body
+        ? { acknowledgment: "verification_code_requested", flowId } : ACK);
+    });
+    expect((await transport.sendFlow({ ...SEND, flowId }, closed().signal)).ok).toBe(true);
+    expect((await transport.verifyFlow({ ...SEND, flowId, code: VERIFY.code }, closed().signal)).ok).toBe(true);
+    expect((await transport.send(SEND, closed().signal)).ok).toBe(true);
+    expect(isDeepStrictEqual(calls.map(call => call.path), ["/login/explorer/send", "/login/explorer/verify", "/login/explorer/send"])).toBe(true);
+    expect(isDeepStrictEqual(JSON.parse(calls[0].body), { identifier: SEND.identifier, flowId })).toBe(true);
+    expect(isDeepStrictEqual(JSON.parse(calls[1].body), { identifier: SEND.identifier, flowId, code: VERIFY.code })).toBe(true);
+    expect(isDeepStrictEqual(JSON.parse(calls[2].body), SEND)).toBe(true);
+  });
+  it("refuses a direct-challenge acknowledgment or mixed request instead of falling back", async () => {
+    let calls = 0;
+    const transport = factory(async () => { calls++; return json(ACK); });
+    failed(await transport.sendFlow({ ...SEND, flowId }, closed().signal));
+    expect(calls === 1).toBe(true);
+    failed(await transport.sendFlow({ ...SEND, flowId, challengeId: NIL }, closed().signal));
+    failed(await transport.verifyFlow(VERIFY, closed().signal));
+    expect(calls === 1).toBe(true);
+  });
+});
+
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   for (const name of CONSOLE_METHODS) vi.spyOn(console, name).mockImplementation(() => undefined);

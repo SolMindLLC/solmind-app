@@ -12,7 +12,7 @@ function setup() {
   const calls: Array<{ init: RequestInit; resolve: (reply: Response) => void }> = [];
   const navigations: string[] = [];
   let departed = 0;
-  const binding = createGuideSignInViewBinding({ responseBudgetMilliseconds: 5000,
+  const binding = createGuideSignInViewBinding({ responseBudgetMilliseconds: 5000, createFlowId: () => SELECTOR,
     fetcher(_path, init) { return new Promise<Response>(resolve => { calls.push({ init, resolve }); }); },
     onNavigate: destination => { navigations.push(destination); }, onDepart: () => { departed += 1; },
   });
@@ -21,7 +21,7 @@ function setup() {
 }
 async function enterCode(f: ReturnType<typeof setup>) {
   f.binding.setIdentifier("guide@example.invalid"); const pending = f.binding.send();
-  f.calls[0].resolve(json({ acknowledgment: "verification_code_requested", challengeId: SELECTOR })); await pending;
+  f.calls[0].resolve(json({ acknowledgment: "verification_code_requested", flowId: SELECTOR })); await pending;
   f.binding.setCode("004209");
 }
 beforeEach(() => { vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] }); });
@@ -43,8 +43,8 @@ describe("Guide view binding and static markup; no mounted browser claim", () =>
   });
   it("resend clears the code and reset clears the email without publishing the selector", async () => {
     const f = setup(); await enterCode(f); const pending = f.binding.resend();
-    check(f.binding.read().codeDraft === "" && !f.binding.read().flow.hasSelector && !JSON.stringify(f.binding.read()).includes(SELECTOR));
-    f.binding.reset(); f.calls[1].resolve(json({ acknowledgment: "verification_code_requested", challengeId: SELECTOR })); await pending;
+    check(f.binding.read().codeDraft === "" && f.binding.read().flow.hasSelector && f.binding.read().flow.pending === "resend" && !JSON.stringify(f.binding.read()).includes(SELECTOR));
+    f.binding.reset(); f.calls[1].resolve(json({ acknowledgment: "verification_code_requested", flowId: SELECTOR })); await pending;
     check(f.binding.read().flow.stage === "email" && f.binding.read().flow.identifier === "");
   });
   it("page departure suspension is permanent and suppresses late results", async () => {

@@ -10,8 +10,10 @@ import {
 } from "../auth/verificationChallengeComposition";
 import {
   createLoginAccountLookup,
+  createLoginFlowChallengeResolver,
   createRedeemedLoginChallengeConfirmation,
   type LoginAccountLookup,
+  type LoginFlowChallengeResolver,
   type RedeemedLoginChallengeConfirmation,
 } from "./loginAccountLookupCallers";
 import {
@@ -179,8 +181,12 @@ export type ExplorerSignInVerifyDependencies = Readonly<{
   challengeConfirmation: RedeemedLoginChallengeConfirmation;
   bridge: LoginIdentityBridge;
   sessionCreator: UserSessionCreator;
+  flowResolver?: LoginFlowChallengeResolver;
 }>;
 
+// The optional flow resolver preserves existing legacy fixture composition;
+// the real verify factory always wires it once over its existing lookup client
+// and account-lookup deadline. It opens nothing and adds no credential source.
 // What the composition is given. The two factories throw the one fixed error
 // above; nothing else here throws.
 export type ExplorerSignInPorts = Readonly<{
@@ -284,6 +290,9 @@ function createExplorerSignInVerifyDependencies(
       rpcClient,
       rpcTimeoutMilliseconds: EXPLORER_SIGN_IN_DEADLINES.accountLookupTimeoutMilliseconds,
     });
+    const flowResolver = createLoginFlowChallengeResolver({
+      rpcClient, rpcTimeoutMilliseconds: EXPLORER_SIGN_IN_DEADLINES.accountLookupTimeoutMilliseconds,
+    });
     const challengeConfirmation = createRedeemedLoginChallengeConfirmation({
       rpcClient,
       rpcTimeoutMilliseconds: EXPLORER_SIGN_IN_DEADLINES.challengeConfirmationTimeoutMilliseconds,
@@ -338,6 +347,7 @@ function createExplorerSignInVerifyDependencies(
       challengeConfirmation,
       bridge,
       sessionCreator,
+      flowResolver,
     });
   } catch {
     // Dropped unread: an environment, client or dependency error must not

@@ -7,7 +7,7 @@ import { loadLoginVerificationConfiguration } from "../auth/loginRouteConfigurat
 import { createVerificationChallengeServices } from "../auth/verificationChallengeComposition";
 import { createServiceRoleClient } from "./serviceRoleClient";
 import { createLoginAccountLookup, createLoginChallengeOwnershipCheck,
-  createLoginPasswordFailureRecorder, createRedeemedLoginChallengeConfirmation } from "./loginAccountLookupCallers";
+  createLoginPasswordFailureRecorder, createLoginFlowChallengeResolver, createRedeemedLoginChallengeConfirmation } from "./loginAccountLookupCallers";
 import { createLoginIdentityBridge } from "./loginIdentityBridge";
 import { createUserSessionCreator } from "./userSessionCreationCaller";
 import { createLogoutProviderCleanupDependencies } from "./logoutDependencies";
@@ -118,6 +118,7 @@ function makeVerify(origin: string, config: PasswordRoleSignInDependencyConfigur
     const services = createVerificationChallengeServices(loadLoginVerificationConfiguration());
     const rpcClient = createServiceRoleClient();
     const accountLookup = createLoginAccountLookup({ rpcClient, rpcTimeoutMilliseconds: config.accountLookupTimeoutMilliseconds });
+    const flowResolver = createLoginFlowChallengeResolver({ rpcClient, rpcTimeoutMilliseconds: config.challengeOwnershipTimeoutMilliseconds });
     const ownership = createLoginChallengeOwnershipCheck({ rpcClient, rpcTimeoutMilliseconds: config.challengeOwnershipTimeoutMilliseconds });
     const passwordFailureRecorder = createLoginPasswordFailureRecorder({ rpcClient, rpcTimeoutMilliseconds: config.challengeOwnershipTimeoutMilliseconds });
     const challengeConfirmation = createRedeemedLoginChallengeConfirmation({ rpcClient, rpcTimeoutMilliseconds: config.challengeConfirmationTimeoutMilliseconds });
@@ -142,7 +143,7 @@ function makeVerify(origin: string, config: PasswordRoleSignInDependencyConfigur
     const bridge = Object.freeze({ signInWithPassword: (request: Parameters<typeof realBridge.signInWithPassword>[0]) =>
       realBridge.signInWithPassword(request) });
     const sessionCreator = createUserSessionCreator({ rpcClient, rpcTimeoutMilliseconds: config.sessionCreationTimeoutMilliseconds });
-    return Object.freeze({ accountLookup, ownership, passwordFailureRecorder, bridge, redeemer: services.redeemer, challengeConfirmation, sessionCreator });
+    return Object.freeze({ accountLookup, ownership, passwordFailureRecorder, bridge, redeemer: services.redeemer, challengeConfirmation, sessionCreator, flowResolver });
   } catch { return fail(); }
 }
 

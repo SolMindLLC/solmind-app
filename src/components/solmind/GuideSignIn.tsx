@@ -13,6 +13,7 @@ type Destination = typeof GUIDE_BROWSER_SIGN_IN_HOME;
 export type GuideSignInProps = Readonly<{
   fetcher: GuideSignInBrowserFetch;
   responseBudgetMilliseconds: number;
+  createFlowId?: () => string;
   onNavigate: (destination: Destination) => void;
   onDepart: () => void;
 }>;
@@ -93,6 +94,7 @@ export function createGuideSignInViewBinding(options: GuideSignInProps) {
       if (controller === null && !retired) {
         controller = createGuideSignInFlowController({
           fetcher: options.fetcher, responseBudgetMilliseconds: options.responseBudgetMilliseconds,
+          createFlowId: options.createFlowId ?? (() => crypto.randomUUID()),
         });
         navigated = false;
         codeDraft = "";
@@ -155,8 +157,9 @@ export function GuideSignIn(props: GuideSignInProps) {
   const [passwordShown, setPasswordShown] = useState(false);
   const binding = useMemo(() => createGuideSignInViewBinding({
     fetcher: props.fetcher, responseBudgetMilliseconds: props.responseBudgetMilliseconds,
+    createFlowId: props.createFlowId,
     onNavigate: noop, onDepart: noop,
-  }), [props.fetcher, props.responseBudgetMilliseconds]);
+  }), [props.fetcher, props.responseBudgetMilliseconds, props.createFlowId]);
   useLayoutEffect(() => {
     const clear = () => { if (password.current !== null) password.current.value = ""; };
     binding.setCallbacks({
