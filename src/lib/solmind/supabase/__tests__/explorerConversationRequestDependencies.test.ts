@@ -90,18 +90,33 @@ describe("Explorer conversation raw-cookie and request dependency boundary", () 
     expect(readExplorerConversationCookies("")).toEqual([]);
   });
   it.each([
-    { label: "missing equals", raw: "missing-equals" },
-    { label: "invalid name", raw: "bad name=value" },
-    { label: "space in value", raw: "cookie=has space" },
-    { label: "empty segment", raw: "cookie=value;" },
-    { label: "tab in value", raw: "cookie=tab\tvalue" },
-    { label: "quoted value", raw: "cookie=\"quoted\"" },
+    { label: "missing owned equals", raw: "solmind-auth" },
+    { label: "invalid owned name", raw: "solmind-auth =value" },
+    { label: "space in owned value", raw: "solmind-session=has space" },
+    { label: "tab in owned value", raw: "solmind-auth=tab\tvalue" },
+    { label: "quoted hosted chunk", raw: '__Host-solmind-auth.0="quoted"' },
+    { label: "malformed verifier", raw: "solmind-auth-code-verifier=has space" },
     { label: "oversized header", raw: "x=" + "a".repeat(16_384) },
     { label: "too many segments", raw: Array.from({ length: 129 }, () => "x=a").join(";") },
-  ])("D02 rejects malformed or oversized cookie framing before any dependency ($label)", ({ raw }) => {
+    { label: "global CR", raw: "unrelated=bad\rvalue" },
+    { label: "global LF", raw: "unrelated=bad\nvalue" },
+    { label: "global NUL", raw: "unrelated=bad\u0000value" },
+  ])("D02 rejects malformed owned or unsafe cookie framing before any dependency ($label)", ({ raw }) => {
     expect(readExplorerConversationCookies(raw)).toBeNull();
     expect(() => createExplorerConversationRequestDependencies(raw)).toThrow("explorer_conversation_request_unavailable");
     for (const mock of Object.values(mocks)) expect(mock).not.toHaveBeenCalled();
+  });
+  it.each([
+    { raw: "missing-equals", expected: [] }, { raw: "bad name=value", expected: [] },
+    { raw: "cookie=has space", expected: [] }, { raw: "cookie=value;", expected: [{ name: "cookie", value: "value" }] },
+    { raw: "cookie=tab\tvalue", expected: [] }, { raw: 'cookie="quoted"', expected: [] },
+  ])("D02A skips only malformed unrelated pairs ($raw)", ({ raw, expected }) => {
+    expect(readExplorerConversationCookies(raw)).toEqual(expected);
+    createExplorerConversationRequestDependencies(raw);
+    const cookies = (mocks.principal.mock.calls[0][0] as { cookies: RequestCookieAccessor }).cookies;
+    expect(cookies.getAll()).toEqual(expected);
+    expect(principalPort.resolveAuthenticatedUser).not.toHaveBeenCalled();
+    for (const port of Object.values(repository)) expect(port).not.toHaveBeenCalled();
   });
   it("D03 supplies fresh cookie copies and a write-free accessor", () => {
     createExplorerConversationRequestDependencies("solmind-auth=synthetic%3D; solmind-auth=duplicate");
@@ -188,7 +203,17 @@ describe("private v3 authenticated request factory", () => {
     expect(extra.authenticate).not.toHaveBeenCalled();
   });
   it("rejects malformed raw cookies before constructing any private client", () => {
-    expect(() => createExplorerPrivateConversationRequestDependencies("bad")).toThrow("explorer_conversation_request_unavailable");
+    expect(() => createExplorerPrivateConversationRequestDependencies("solmind-auth")).toThrow("explorer_conversation_request_unavailable");
     for (const mock of Object.values(mocks)) expect(mock).not.toHaveBeenCalled();
   });
+});
+
+
+it("the compatibility reader forwards exact owned duplicates through unrelated malformed input", () => {
+  createExplorerPrivateConversationRequestDependencies("noise; solmind-auth=opaque%2F==; bad=has space; solmind-session=first; solmind-session=second;");
+  const cookies = (mocks.principal.mock.calls[0][0] as { cookies: RequestCookieAccessor }).cookies;
+  expect(cookies.getAll()).toEqual([{ name: "solmind-auth", value: "opaque%2F==" },
+    { name: "solmind-session", value: "first" }, { name: "solmind-session", value: "second" }]);
+  expect(principalPort.resolveAuthenticatedUser).not.toHaveBeenCalled();
+  for (const port of Object.values(privateRepository)) expect(port).not.toHaveBeenCalled();
 });

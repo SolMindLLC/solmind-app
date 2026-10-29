@@ -1,6 +1,7 @@
 import "server-only";
 import { composeRequestAuthContext } from "../auth/composeRequestAuthContext";
-import { noopCookieSetAll, type RequestCookie } from "../auth/requestCookieAccessor";
+import { noopCookieSetAll } from "../auth/requestCookieAccessor";
+import { readRawRequestCookies } from "../auth/readRawRequestCookies";
 import { createSupabaseRequestAuthPrincipalSource } from "./requestAuthClient";
 import { createServiceRoleClient } from "./serviceRoleClient";
 import { createServiceRoleRpcExecutor } from "./serviceRoleRpcExecutor";
@@ -22,25 +23,9 @@ import { createEffectiveMethodologySource } from "./effectiveMethodologySource";
 import { join } from "node:path";
 import { readOpenAiModelName } from "../virtual-guide/openAiModelConfiguration";
 
-// Preserve duplicate wire names and exact values. Framework cookie maps cannot
-// establish the raw-cookie ambiguity check owned by the banked login boundary.
-export function readExplorerConversationCookies(raw: string | null): readonly RequestCookie[] | null {
-  if (raw === null || raw === "") return [];
-  if (raw.length > 16_384) return null;
-  const parts = raw.split(";");
-  if (parts.length > 128) return null;
-  const result: RequestCookie[] = [];
-  for (const segment of parts) {
-    const pair = segment.replace(/^[\t ]+/, "");
-    const equals = pair.indexOf("=");
-    if (equals < 1) return null;
-    const name = pair.slice(0, equals), value = pair.slice(equals + 1);
-    if (!/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(name) ||
-        !/^[\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]*$/.test(value)) return null;
-    result.push({ name, value });
-  }
-  return result;
-}
+// Compatibility name for the shared raw framing boundary. Owned occurrences
+// and exact values still reach the unchanged request-auth validation.
+export const readExplorerConversationCookies = readRawRequestCookies;
 
 function createRequestAuthentication(rawCookieHeader: string | null) {
   const snapshot = readExplorerConversationCookies(rawCookieHeader);

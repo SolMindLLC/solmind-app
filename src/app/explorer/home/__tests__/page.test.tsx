@@ -56,7 +56,7 @@ describe("actual protected page raw-header composition", () => {
     const cookies: RequestCookieAccessor = seams.access.mock.calls[0][0].cookies;
     expect(cookies.getAll().length).toBe(2);
   });
-  it.each(["solmind-auth =bad", "solmind-auth=bad value", "solmind-auth=bad,merged", "solmind-auth", ";", "a=" + "x".repeat(16_384), Array.from({ length: 129 }, () => "a=b").join(";")])("P06 malformed framing denies before auth without revealing values", async raw => {
+  it.each(["solmind-auth =bad", "solmind-auth=bad value", "solmind-auth=bad,merged", "solmind-auth", "a=" + "x".repeat(16_384), Array.from({ length: 129 }, () => "a=b").join(";")])("P06 malformed framing denies before auth without revealing values", async raw => {
     seams.header = raw;
     const result = await ExplorerHomePage();
     expect(seams.access.mock.calls.length === 0 && result.type === ExplorerSessionOutcome).toBe(true);
@@ -76,4 +76,24 @@ describe("actual protected page raw-header composition", () => {
     expect((await ExplorerHomePage()).type).toBe(ExplorerSessionOutcome);
     expect(vi.mocked(console.error).mock.calls.length).toBe(0);
   });
+});
+
+
+it("P09 malformed unrelated fragments still reach ordinary access denial with an empty snapshot", async () => {
+  seams.header = "; broken; bad name=value; theme=has space;";
+  const result = await ExplorerHomePage();
+  expect(seams.access).toHaveBeenCalledOnce();
+  const cookies: RequestCookieAccessor = seams.access.mock.calls[0][0].cookies;
+  expect(cookies.getAll()).toEqual([]);
+  expect(result.type).toBe(ExplorerSessionOutcome);
+});
+
+it("P10 skips unrelated malformed fragments without hiding duplicate owned cookies or altering their values", async () => {
+  seams.header = "unrelated; solmind-auth=opaque%2Fvalue==; bad=has space;\tsolmind-session=first; bad name=value; solmind-session=second;";
+  const result = await ExplorerHomePage();
+  expect(seams.access).toHaveBeenCalledOnce();
+  const cookies: RequestCookieAccessor = seams.access.mock.calls[0][0].cookies;
+  expect(cookies.getAll()).toEqual([{ name: "solmind-auth", value: "opaque%2Fvalue==" },
+    { name: "solmind-session", value: "first" }, { name: "solmind-session", value: "second" }]);
+  expect(result.type).toBe(ExplorerSessionOutcome);
 });

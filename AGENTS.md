@@ -194,7 +194,7 @@ props. Its private GET `/explorer/conversation/state` and same-origin JSON POST
 `/explorer/conversation/commands` perform fresh server authorization; the shell
 or a home link supplies no feature authority. Keep handlers thin and no-store.
 `src/lib/solmind/supabase/explorerConversationRequestDependencies.ts` preserves
-raw duplicate cookies and reuses the fixed Explorer request-auth boundary;
+raw duplicate cookies through src/lib/solmind/auth/readRawRequestCookies.ts, tolerating only malformed unrelated pairs, and reuses fixed Explorer request-auth authority;
 `src/lib/solmind/supabase/explorerConversationRepository.ts` exposes only the
 four closed feature RPC capabilities.
 
@@ -402,7 +402,7 @@ server-side. The private controller imports only the erased assistance type.
 `src/lib/solmind/supabase/explorerConversationRequestDependencies.ts` retains
 `createExplorerConversationRequestDependencies` for scoped predecessor proof.
 Its new `createExplorerPrivateConversationRequestDependencies` reuses the same
-raw-cookie authentication source and selects the six-port private repository.
+shared bounded raw-cookie reader and selects the seven-port private repository.
 Default dependencies contain authentication and that repository only. Provider,
 readiness resolver, governed context builder, reviewed renderer and operational
 signal require explicit server injection; no new provider credential/environment

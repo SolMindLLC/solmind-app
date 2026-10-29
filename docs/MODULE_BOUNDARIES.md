@@ -589,7 +589,7 @@ successor section below owns the current held request/browser boundary.
 renders no protected account/message/session props. The private data boundary
 is freshly authorized GET `/explorer/conversation/state` and guarded same-origin
 JSON POST `/explorer/conversation/commands`. Keep both handlers thin, no-store,
-without query-selected authority. Authentication preserves duplicate raw cookie
+without query-selected authority. src/lib/solmind/auth/readRawRequestCookies.ts preserves duplicate raw cookie
 names/values and reuses fixed Explorer authorization through
 `src/lib/solmind/supabase/explorerConversationRequestDependencies.ts`.
 Feature authority is separately rechecked in closed database operations.
@@ -3060,7 +3060,7 @@ does not permit a server value import into a browser module.
 
 src/lib/solmind/supabase/explorerConversationRequestDependencies.ts shares the
 existing raw-cookie authentication source between retained predecessor and new
-private factories. The private factory selects the closed six-port repository.
+private factories; malformed unrelated pairs alone are skipped. The private factory selects the closed seven-port repository.
 Its default has only auth/repository; readiness/provider/context/renderer/signal
 require explicit trusted server injection. No new provider credential/environment
 lookup, fake operational default or candidate-driven activation is introduced.

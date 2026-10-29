@@ -986,6 +986,8 @@ describe("sessionCookiePolicy and loginCookieWriter - module boundary (dormant, 
     expect(references.sort()).toEqual([
       "app/login/explorer/verify/route.ts: import @/lib/solmind/auth/sessionCookiePolicy",
       "app/login/explorer/verify/route.ts: mentions sessionCookiePolicy",
+      "lib/solmind/auth/readRawRequestCookies.ts: import ./sessionCookiePolicy",
+      "lib/solmind/auth/readRawRequestCookies.ts: mentions sessionCookiePolicy",
       "lib/solmind/supabase/explorerSignInComposition.ts: import ./loginCookieWriter",
       "lib/solmind/supabase/explorerSignInComposition.ts: mentions loginCookieWriter",
       "lib/solmind/supabase/explorerSignInDependencies.ts: import ../auth/sessionCookiePolicy",
