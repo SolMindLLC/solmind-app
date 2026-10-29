@@ -668,7 +668,7 @@ requires new supporting evidence and explicit confirmation. No sharing, model
 interpretation, clinical score, automatic lifecycle change, Guide-private
 projection or broader Guide work is added. Existing prototypes, S03A-S03E
 foundations and all login/session/logout owners retain their boundaries.
-Explicit24-point/eight-anchor Compass review preserves Priority/attention and captured Route/Reached facts; deliberate End atomically saves factual directions/audit, returns home, and exposes separate owned read-only history without reactivation.
+Explicit24stored/eightvisible current-head Compass review adds confirmed wording/combination with retained transitive source links and immutable old captures; selectors/layout never transfer silently. One-way combination frees no slot; Route/Reached/End/owned read-only review preserve facts without reactivation.
 
 ## Explorer Sharing Boundary
 
@@ -3060,7 +3060,7 @@ does not permit a server value import into a browser module.
 
 src/lib/solmind/supabase/explorerConversationRequestDependencies.ts shares the
 existing raw-cookie authentication source between retained predecessor and new
-private factories; malformed unrelated pairs alone are skipped. The closed nine-port private repository includes separate owned End/review and preserves active-only reflective writers.
+private factories; malformed unrelated pairs alone are skipped. The closed ten-port private repository adds exact9arg category RPC with propagated10s await budget, separate End/review and active-only reflective writers; abort is not remote rollback.
 Its default has only auth/repository; readiness/provider/context/renderer/signal
 require explicit trusted server injection. No new provider credential/environment
 lookup, fake operational default or candidate-driven activation is introduced.

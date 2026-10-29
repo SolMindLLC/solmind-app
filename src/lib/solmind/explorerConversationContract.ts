@@ -28,6 +28,21 @@ export type ExplorerConversationCompassItem = Readonly<{
   label: string;
   anchor?: ExplorerCompassAnchor | null;
   emphasis?: 1 | 2 | 3 | null;
+  mergedIntoItemId?: string | null;
+}>;
+export type ExplorerCompassCategorySource = Readonly<{
+  compassItemId: string;
+  sourceMessageId: string;
+  label: string;
+  mergedIntoItemId: string | null;
+  anchor: ExplorerCompassAnchor | null;
+  emphasis: 1 | 2 | 3 | null;
+}>;
+export type ExplorerCompassCategoryChange = Readonly<{
+  targetItemId: string;
+  memberItemIds: readonly string[];
+  beforeItems: readonly ExplorerCompassCategorySource[];
+  label: string;
 }>;
 export type ExplorerConversationWaypoint = Readonly<{
   id: string;
@@ -50,6 +65,10 @@ export type ExplorerConversationRouteEvent = Readonly<{
   operationId: string; revision: number; kind: "arrangement_confirmed";
   previousPriorityId: string | null; priorityId: string | null;
   items: readonly (ExplorerCompassArrangementItem & Readonly<{ label: string }>)[];
+  recordedAt: string;
+}> | Readonly<{
+  operationId: string; revision: number; kind: "category_confirmed";
+  change: ExplorerCompassCategoryChange;
   recordedAt: string;
 }>;
 export type ExplorerConversationEnding = Readonly<{
@@ -82,6 +101,7 @@ export type ExplorerConversationCommand = CommandBase & (
   | Readonly<{ kind: "confirm_priority"; itemId: string }>
   | Readonly<{ kind: "set_attention"; itemId: string }>
   | Readonly<{ kind: "confirm_compass_arrangement"; priorityId: string | null; items: readonly ExplorerCompassArrangementItem[] }>
+  | Readonly<{ kind: "confirm_compass_category"; targetItemId: string; memberItemIds: readonly string[]; label: string }>
   | Readonly<{ kind: "confirm_waypoint"; sourceMessageId: string; destination: string;
       meaning: string; arrivalSignal: string }>
   | Readonly<{ kind: "confirm_reached"; waypointId: string; evidence: string }>
@@ -144,6 +164,60 @@ function arrangementValid(items: readonly ExplorerCompassArrangementItem[], prio
     new Set(visible.map(item => item.anchor)).size === visible.length &&
     (priorityId === null || items.some(item => item.compassItemId === priorityId && item.anchor === "apex"));
 }
+
+// The bounded retained-point graph is conversation-local. Retired originals may
+// keep old layout, but every link must terminate at one retained current head.
+function mergeGraphValid(items: readonly Readonly<{ id: string; mergedIntoItemId?: string | null }>[]): boolean {
+  const byId = new Map(items.map(item => [item.id, item]));
+  for (const item of items) {
+    const visited = new Set<string>();
+    let current: typeof item | undefined = item;
+    while (current) {
+      if (visited.has(current.id)) return false;
+      visited.add(current.id);
+      if (current.mergedIntoItemId == null) break;
+      current = byId.get(current.mergedIntoItemId);
+      if (!current) return false;
+    }
+  }
+  return true;
+}
+
+function parseCategoryChange(value: unknown, retained: readonly ExplorerConversationCompassItem[]): ExplorerCompassCategoryChange | null {
+  if (!object(value) || !keys(value, ["targetItemId", "memberItemIds", "beforeItems", "label"]) ||
+      !isExplorerConversationId(value.targetItemId) || !text(value.label, EXPLORER_CONVERSATION_LIMITS.labelCharacters) ||
+      !Array.isArray(value.memberItemIds) || value.memberItemIds.length < 1 ||
+      value.memberItemIds.length > EXPLORER_CONVERSATION_LIMITS.compassItems ||
+      !value.memberItemIds.every(isExplorerConversationId) ||
+      new Set(value.memberItemIds).size !== value.memberItemIds.length || !value.memberItemIds.includes(value.targetItemId) ||
+      value.memberItemIds.some((item, index, all) => index > 0 && all[index - 1] >= item) ||
+      !Array.isArray(value.beforeItems) || value.beforeItems.length < value.memberItemIds.length ||
+      value.beforeItems.length > EXPLORER_CONVERSATION_LIMITS.compassItems) return null;
+  const memberItemIds = value.memberItemIds as string[];
+  const retainedById = new Map(retained.map(item => [item.id, item]));
+  const beforeItems: ExplorerCompassCategorySource[] = [];
+  for (const item of value.beforeItems) {
+    if (!object(item) || !keys(item, ["compassItemId", "sourceMessageId", "label", "mergedIntoItemId", "anchor", "emphasis"]) ||
+        !isExplorerConversationId(item.compassItemId) || !isExplorerConversationId(item.sourceMessageId) ||
+        retainedById.get(item.compassItemId)?.sourceMessageId !== item.sourceMessageId ||
+        !text(item.label, EXPLORER_CONVERSATION_LIMITS.labelCharacters) ||
+        !(item.mergedIntoItemId === null || isExplorerConversationId(item.mergedIntoItemId)) ||
+        (!(item.anchor === null && item.emphasis === null) && (!anchor(item.anchor) || !emphasis(item.emphasis))) ||
+        (beforeItems.length > 0 && beforeItems[beforeItems.length - 1].compassItemId >= item.compassItemId)) return null;
+    beforeItems.push(Object.freeze({ compassItemId: item.compassItemId, sourceMessageId: item.sourceMessageId,
+      label: item.label, mergedIntoItemId: item.mergedIntoItemId as string | null,
+      anchor: item.anchor as ExplorerCompassAnchor | null, emphasis: item.emphasis as 1 | 2 | 3 | null }));
+  }
+  const graph = beforeItems.map(item => ({ id: item.compassItemId, mergedIntoItemId: item.mergedIntoItemId }));
+  if (!mergeGraphValid(graph)) return null;
+  const heads = beforeItems.filter(item => item.mergedIntoItemId === null);
+  if (heads.length !== memberItemIds.length ||
+      heads.some(item => !memberItemIds.includes(item.compassItemId))) return null;
+  const visibleHeads = heads.filter(item => item.anchor !== null);
+  if (new Set(visibleHeads.map(item => item.anchor)).size !== visibleHeads.length) return null;
+  return Object.freeze({ targetItemId: value.targetItemId, memberItemIds: Object.freeze([...memberItemIds]),
+    beforeItems: Object.freeze(beforeItems), label: value.label });
+}
 export function parseExplorerConversationCommand(value: unknown): ExplorerConversationCommand | null {
   if (!object(value) || !id(value.operationId) || !revision(value.expectedRevision)) return null;
   const base = ["kind", "operationId", "expectedRevision"];
@@ -173,6 +247,15 @@ export function parseExplorerConversationCommand(value: unknown): ExplorerConver
       if (!arrangementValid(items, value.priorityId as string | null)) return null;
       return Object.freeze({ kind: value.kind, operationId: value.operationId, expectedRevision: value.expectedRevision,
         priorityId: value.priorityId as string | null, items: Object.freeze(items) });
+    }
+    case "confirm_compass_category": {
+      if (!keys(value, [...base, "targetItemId", "memberItemIds", "label"]) || !isExplorerConversationId(value.targetItemId) ||
+          !Array.isArray(value.memberItemIds) || value.memberItemIds.length < 1 ||
+          value.memberItemIds.length > EXPLORER_CONVERSATION_LIMITS.compassItems ||
+          !value.memberItemIds.every(isExplorerConversationId) || new Set(value.memberItemIds).size !== value.memberItemIds.length ||
+          !value.memberItemIds.includes(value.targetItemId) || !text(value.label, EXPLORER_CONVERSATION_LIMITS.labelCharacters)) return null;
+      return Object.freeze({ kind: value.kind, operationId: value.operationId, expectedRevision: value.expectedRevision,
+        targetItemId: value.targetItemId, memberItemIds: Object.freeze([...value.memberItemIds]), label: value.label });
     }
     case "confirm_waypoint":
       if (!keys(value, [...base, "sourceMessageId", "destination", "meaning", "arrivalSignal"]) || !id(value.sourceMessageId) ||
@@ -221,23 +304,29 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
   for (const item of state.compassItems) {
     if (!object(item)) return null;
     const hasLayout = Object.hasOwn(item, "anchor") || Object.hasOwn(item, "emphasis");
-    if (!keys(item, ["id", "sourceMessageId", "label", ...(hasLayout ? ["anchor", "emphasis"] : [])]) || !id(item.id) || compassIds.has(item.id) ||
+    const hasMerge = Object.hasOwn(item, "mergedIntoItemId");
+    if (!keys(item, ["id", "sourceMessageId", "label", ...(hasLayout ? ["anchor", "emphasis"] : []), ...(hasMerge ? ["mergedIntoItemId"] : [])]) || !id(item.id) || compassIds.has(item.id) ||
         !id(item.sourceMessageId) || !messageIds.has(item.sourceMessageId) || !text(item.label, EXPLORER_CONVERSATION_LIMITS.labelCharacters)) return null;
+    if (hasMerge && !(item.mergedIntoItemId === null || isExplorerConversationId(item.mergedIntoItemId))) return null;
     if (hasLayout && !(item.anchor === null && item.emphasis === null) &&
         (!anchor(item.anchor) || !emphasis(item.emphasis))) return null;
-    if (hasLayout && item.anchor !== null) {
+    if (hasLayout && item.anchor !== null && item.mergedIntoItemId == null) {
       if (anchors.has(item.anchor as ExplorerCompassAnchor)) return null;
       anchors.add(item.anchor as ExplorerCompassAnchor);
     }
     compassIds.add(item.id);
     compassItems.push(Object.freeze({ id: item.id, sourceMessageId: item.sourceMessageId, label: item.label,
-      ...(hasLayout ? { anchor: item.anchor as ExplorerCompassAnchor | null, emphasis: item.emphasis as 1 | 2 | 3 | null } : {}) }));
+      ...(hasLayout ? { anchor: item.anchor as ExplorerCompassAnchor | null, emphasis: item.emphasis as 1 | 2 | 3 | null } : {}),
+      ...(hasMerge ? { mergedIntoItemId: item.mergedIntoItemId as string | null } : {}) }));
   }
-  if (!(state.priorityId === null || (id(state.priorityId) && compassIds.has(state.priorityId))) ||
-      !(state.attentionId === null || (id(state.attentionId) && compassIds.has(state.attentionId)))) return null;
-  if (compassItems.some(item => item.emphasis != null) &&
-      ((state.priorityId !== null && !compassItems.some(item => item.id === state.priorityId && item.anchor === "apex")) ||
-       (state.attentionId !== null && !compassItems.some(item => item.id === state.attentionId && item.anchor != null)))) return null;
+  if (!mergeGraphValid(compassItems)) return null;
+  const currentCompass = compassItems.filter(item => item.mergedIntoItemId == null);
+  const currentCompassIds = new Set(currentCompass.map(item => item.id));
+  if (!(state.priorityId === null || (id(state.priorityId) && currentCompassIds.has(state.priorityId))) ||
+      !(state.attentionId === null || (id(state.attentionId) && currentCompassIds.has(state.attentionId)))) return null;
+  if (currentCompass.some(item => item.emphasis != null) &&
+      ((state.priorityId !== null && !currentCompass.some(item => item.id === state.priorityId && item.anchor === "apex")) ||
+       (state.attentionId !== null && !currentCompass.some(item => item.id === state.attentionId && item.anchor != null)))) return null;
   const waypoints: ExplorerConversationWaypoint[] = [];
   const waypointIds = new Set<string>();
   for (const item of state.waypoints) {
@@ -263,7 +352,13 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
     for (const event of state.route) {
       if (!object(event) || !id(event.operationId) || routeIds.has(event.operationId) || !revision(event.revision) ||
           event.revision <= previousRevision || event.revision > state.revision || !instant(event.recordedAt)) return null;
-      if (event.kind === "arrangement_confirmed") {
+      if (event.kind === "category_confirmed") {
+        if (!keys(event, ["operationId", "revision", "kind", "change", "recordedAt"])) return null;
+        const change = parseCategoryChange(event.change, compassItems);
+        if (!change) return null;
+        route.push(Object.freeze({ operationId: event.operationId, revision: event.revision, kind: event.kind,
+          change, recordedAt: event.recordedAt }));
+      } else if (event.kind === "arrangement_confirmed") {
         if (!keys(event, ["operationId", "revision", "kind", "previousPriorityId", "priorityId", "items", "recordedAt"]) ||
             !(event.previousPriorityId === null || (id(event.previousPriorityId) && compassIds.has(event.previousPriorityId))) ||
             !(event.priorityId === null || (id(event.priorityId) && compassIds.has(event.priorityId))) ||

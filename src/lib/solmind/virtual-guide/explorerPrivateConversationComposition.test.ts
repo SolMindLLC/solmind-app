@@ -513,3 +513,40 @@ describe("Owned End and ended-review capabilities (synthetic ports)", () => {
     expect(f.end).not.toHaveBeenCalled(); noReflection(f);
   });
 });
+
+
+describe("private category capability", () => {
+  const command = { kind: "confirm_compass_category" as const, operationId: ID.operation, expectedRevision: 0,
+    targetItemId: ID.actor, memberItemIds: [ID.actor], label: "A broader focus" };
+  it("forwards only the nine derived arguments, without operational readiness or provider work", async () => {
+    const f = fixture(); f.setCurrent(state(ID.conversation));
+    const category = vi.fn(async () => ({ outcome: "ok", conversation_state: state(ID.conversation) }));
+    const dependencies = { ...f.dependencies, repository: { ...f.dependencies.repository, category } };
+    expect((await commandExplorerPrivateConversation({ command, dependencies })).result.ok).toBe(true);
+    expect(category).toHaveBeenCalledExactlyOnceWith({ p_actor_user_account_id: ID.actor, p_user_session_id: ID.app,
+      p_conversation_id: ID.conversation, p_operation_id: ID.operation, p_expected_revision: 0,
+      p_command_fingerprint: explorerConversationCommandFingerprint(command), p_target_item_id: ID.actor,
+      p_member_item_ids: [ID.actor], p_label: "A broader focus" });
+    for (const port of [f.ensure, f.observe, f.prepare, f.settle, f.mutate, f.arrange, f.end, f.review, f.resolve, f.generate]) expect(port).not.toHaveBeenCalled();
+  });
+  it("keeps exact replay before new category dispatch and policy checks", async () => {
+    const f = fixture(); f.read.mockResolvedValue({ outcome: "exact_replay", conversation_state: state(ID.conversation) });
+    const category = vi.fn();
+    expect((await commandExplorerPrivateConversation({ command, dependencies: { ...f.dependencies,
+      repository: { ...f.dependencies.repository, category } } })).result.ok).toBe(true);
+    expect(category).not.toHaveBeenCalled(); expect(f.resolve).not.toHaveBeenCalled(); expect(f.generate).not.toHaveBeenCalled();
+  });
+  it("refuses absent capability, policy stop and pending state without mutation or provider work", async () => {
+    for (const blocked of ["absent", "restricted", "unknown", "adult", "pending"] as const) {
+      const f = fixture(); f.setCurrent({ ...state(ID.conversation), pendingTurn: blocked === "pending" });
+      if (blocked === "restricted") f.setPolicy({ ...POLICY, restrictedLevel: 3 });
+      if (blocked === "unknown") f.setPolicy({ known: false });
+      if (blocked === "adult") f.setPolicy({ ...POLICY, adultReflectionStopped: true });
+      const category = vi.fn();
+      const result = await commandExplorerPrivateConversation({ command, dependencies: { ...f.dependencies,
+        repository: { ...f.dependencies.repository, ...(blocked === "absent" ? {} : { category }) } } });
+      expect(result.result.ok).toBe(false); expect(category).not.toHaveBeenCalled();
+      expect(f.mutate).not.toHaveBeenCalled(); expect(f.generate).not.toHaveBeenCalled();
+    }
+  });
+});

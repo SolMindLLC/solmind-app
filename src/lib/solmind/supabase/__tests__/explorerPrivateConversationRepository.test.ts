@@ -40,9 +40,9 @@ function fixture(row: unknown) {
   return { repository, rpc, abortSignal };
 }
 describe("Closed private Explorer RPC repository (synthetic client)", () => {
-  it("exposes nine closed ports including deliberate formation, End and ended review, without generic access", () => {
+  it("exposes ten closed ports including category formation, End and ended review, without generic access", () => {
     const f = fixture(null);
-    expect(Object.keys(f.repository).sort()).toEqual(["arrange", "end", "ensure", "mutate", "observe", "prepare", "read", "review", "settle"]);
+    expect(Object.keys(f.repository).sort()).toEqual(["arrange", "category", "end", "ensure", "mutate", "observe", "prepare", "read", "review", "settle"]);
     expect(Object.isFrozen(f.repository)).toBe(true);
   });
   it("read derives exact actor fields and paired operation selectors", async () => {
@@ -251,5 +251,37 @@ describe("Closed End and ended-review SDK capabilities", () => {
     const v = fixture(null); v.abortSignal.mockRejectedValue(new Error("Synthetic private acknowledgement loss"));
     await expect(v.repository.review!(review())).rejects.toThrowError("explorer_private_repository_unavailable");
     expect(e.rpc).toHaveBeenCalledOnce(); expect(v.rpc).toHaveBeenCalledOnce();
+  });
+});
+
+
+describe("closed category SDK capability", () => {
+  const input = () => ({ ...ACTOR, p_conversation_id: UUID, p_operation_id: UUID, p_expected_revision: 1,
+    p_command_fingerprint: SHA, p_target_item_id: UUID, p_member_item_ids: [UUID], p_label: "A broader category" });
+  it("uses the exact nine-argument RPC and copies bounded member IDs", async () => {
+    const f = fixture({ outcome: "ok", conversation_state: null }); const original = input();
+    expect(await f.repository.category!(original)).toEqual({ outcome: "ok", conversation_state: null });
+    expect(f.rpc).toHaveBeenCalledExactlyOnceWith("solmind_confirm_explorer_compass_category_v1", original);
+    const sent = f.rpc.mock.calls[0][1] as typeof original;
+    expect(Object.keys(sent)).toHaveLength(9); expect(sent.p_member_item_ids).not.toBe(original.p_member_item_ids);
+    expect(Object.isFrozen(sent.p_member_item_ids)).toBe(true); expect(f.abortSignal).toHaveBeenCalledOnce();
+  });
+  it("refuses malformed member framing and extra authority before IO", async () => {
+    const trap = vi.fn(); const sparse = new Array<string>(1);
+    for (const ids of [[], [UUID, UUID], Array.from({ length: 25 }, () => UUID), ["bad"], sparse, new Proxy([UUID], { get: trap })]) {
+      const f = fixture(null);
+      await expect(f.repository.category!({ ...input(), p_member_item_ids: ids })).rejects.toThrowError("explorer_private_repository_unavailable");
+      expect(f.rpc).not.toHaveBeenCalled();
+    }
+    expect(trap).not.toHaveBeenCalled();
+    const f = fixture(null); const expanded = { ...input(), p_extra: UUID };
+    await expect(f.repository.category!(expanded)).rejects.toThrowError("explorer_private_repository_unavailable"); expect(f.rpc).not.toHaveBeenCalled();
+  });
+  it("rejects expanded results and never reposts unknown acknowledgement", async () => {
+    const f = fixture({ outcome: "ok", conversation_state: null, policy_state: null });
+    await expect(f.repository.category!(input())).rejects.toThrowError("explorer_private_repository_unavailable");
+    expect(f.rpc).toHaveBeenCalledOnce(); const g = fixture(null);
+    g.abortSignal.mockRejectedValue(new Error("Synthetic response loss"));
+    await expect(g.repository.category!(input())).rejects.toThrowError("explorer_private_repository_unavailable"); expect(g.rpc).toHaveBeenCalledOnce();
   });
 });

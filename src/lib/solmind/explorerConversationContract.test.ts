@@ -27,6 +27,7 @@ const validCommands = [
   { ...base, kind: "confirm_compass_arrangement", priorityId: pointId,
     items: [{ compassItemId: pointId, anchor: "apex", emphasis: 2 }] },
   { ...base, kind: "end_conversation", conversationId: uuid(1) },
+  { ...base, kind: "confirm_compass_category", targetItemId: pointId, memberItemIds: [pointId], label: "Broader mornings" },
 ];
 function without(value: Record<string, unknown>, key: string): Record<string, unknown> {
   return Object.fromEntries(Object.entries(value).filter(([name]) => name !== key));
@@ -167,7 +168,7 @@ describe("Explorer conversation closed result parser", () => {
     expect(Object.isFrozen(parsed.state.route?.[0])).toBe(true);
     original.route[0].label = "Changed after parsing";
     const first = parsed.state.route?.[0];
-    if (first?.kind === "arrangement_confirmed") throw new Error("expected_original_route_event");
+    if (first?.kind === "arrangement_confirmed" || first?.kind === "category_confirmed") throw new Error("expected_original_route_event");
     expect(first?.label).toBe("The label saved at that time");
     expect(parseExplorerConversationResult(success({ ...emptyState(), route: [] }))).not.toBeNull();
   });
@@ -627,7 +628,7 @@ describe("Owned End Session contract", () => {
     original.route[0].label = "Later label";
     expect(parsed?.ending?.directionsTaken).toContain("Calmer mornings");
     const route = parsed?.route?.[0];
-    expect(route?.kind !== "arrangement_confirmed" && route?.label).toBe("The actual historical label");
+    expect(route?.kind !== "arrangement_confirmed" && route?.kind !== "category_confirmed" && route?.label).toBe("The actual historical label");
   });
 
   it("rejects missing, extra or contradictory saved ending fields rather than filling history", () => {
@@ -667,5 +668,95 @@ describe("Owned End Session contract", () => {
     expect(isExplorerConversationInstant("2026-10-29T10:00:00.123456+00:00")).toBe(true);
     expect(isExplorerConversationInstant("2026-10-29T10:00:00Z\n")).toBe(false);
     expect(isExplorerConversationInstant("2026-02-30T10:00:00Z")).toBe(false);
+  });
+});
+
+describe("retained Compass category provenance", () => {
+  function combinedState() {
+    const beforeItems = [
+      { compassItemId: pointId, sourceMessageId: sourceId, label: "Earlier mornings", mergedIntoItemId: null, anchor: "apex", emphasis: 2 },
+      { compassItemId: uuid(7), sourceMessageId: uuid(3), label: "Family connection", mergedIntoItemId: null, anchor: "upper_left", emphasis: 3 },
+      { compassItemId: uuid(8), sourceMessageId: sourceId, label: "Breakfast together", mergedIntoItemId: uuid(7), anchor: "upper_left", emphasis: 1 },
+    ];
+    return { ...populatedState(), compassItems: [
+      { id: pointId, sourceMessageId: sourceId, label: "Unhurried family mornings", mergedIntoItemId: null, anchor: "apex", emphasis: 2 },
+      { id: uuid(7), sourceMessageId: uuid(3), label: "Family connection", mergedIntoItemId: pointId, anchor: "upper_left", emphasis: 3 },
+      { id: uuid(8), sourceMessageId: sourceId, label: "Breakfast together", mergedIntoItemId: uuid(7), anchor: "upper_left", emphasis: 1 },
+    ], route: [
+      { operationId: uuid(20), revision: 1, kind: "priority_confirmed", compassItemId: uuid(7), label: "Original family label", recordedAt: "2026-10-29T10:00:00Z" },
+      { operationId: uuid(21), revision: 2, kind: "arrangement_confirmed", previousPriorityId: uuid(7), priorityId: pointId, items: [
+        { compassItemId: uuid(7), label: "Original arranged wording", anchor: "upper_left", emphasis: 3 },
+        { compassItemId: pointId, label: "Original mornings", anchor: "apex", emphasis: 2 },
+      ], recordedAt: "2026-10-29T10:01:00Z" },
+      { operationId: uuid(22), revision: 3, kind: "category_confirmed", change: {
+        targetItemId: pointId, memberItemIds: [pointId, uuid(7)], beforeItems, label: "Unhurried family mornings",
+      }, recordedAt: "2026-10-29T10:02:00Z" },
+    ] };
+  }
+
+  it("copies and freezes category membership, without changing old command shapes", () => {
+    const members = [uuid(7), pointId];
+    const parsed = parseExplorerConversationCommand({ ...base, kind: "confirm_compass_category", targetItemId: pointId,
+      memberItemIds: members, label: "A broader category" });
+    expect(parsed).toEqual({ ...base, kind: "confirm_compass_category", targetItemId: pointId, memberItemIds: members, label: "A broader category" });
+    if (parsed?.kind !== "confirm_compass_category") throw new Error("expected_category");
+    expect(Object.isFrozen(parsed.memberItemIds)).toBe(true);
+    members[0] = uuid(99);
+    expect(parsed.memberItemIds).toEqual([uuid(7), pointId]);
+    for (const memberItemIds of [[], [pointId, pointId], [uuid(7)], [pointId, "foreign"], [pointId, `${uuid(7)}\n`], Array.from({ length: 25 }, (_, i) => uuid(i + 1))]) {
+      expect(parseExplorerConversationCommand({ ...base, kind: "confirm_compass_category", targetItemId: pointId, memberItemIds, label: "Category" })).toBeNull();
+    }
+  });
+
+  it("keeps all original rows and historical labels despite later combined-away selections", () => {
+    const original = combinedState();
+    const parsed = parseExplorerConversationState(original);
+    expect(parsed).toEqual(original);
+    expect(parsed?.compassItems).toHaveLength(3);
+    const change = parsed?.route?.[2];
+    if (change?.kind !== "category_confirmed") throw new Error("expected_category_route");
+    expect(change.change.beforeItems[0].label).toBe("Earlier mornings");
+    expect(Object.isFrozen(change.change)).toBe(true);
+    expect(Object.isFrozen(change.change.memberItemIds)).toBe(true);
+    expect(Object.isFrozen(change.change.beforeItems)).toBe(true);
+    expect(Object.isFrozen(change.change.beforeItems[0])).toBe(true);
+    original.route[2].change!.beforeItems[0].label = "Changed caller copy";
+    expect(change.change.beforeItems[0].label).toBe("Earlier mornings");
+    expect(parsed?.priorityId).toBe(pointId);
+    expect(parsed?.attentionId).toBe(pointId);
+  });
+
+  it("allows old absent markers, but refuses dangling, cyclic, self and selected retired rows", () => {
+    expect(parseExplorerConversationState(populatedState())).toEqual(populatedState());
+    const original = combinedState();
+    for (const mergedIntoItemId of [uuid(99), uuid(7), `${pointId}\n`, undefined, ""]) {
+      const compassItems = original.compassItems.map((item, index) => index === 1 ? { ...item, mergedIntoItemId } : item);
+      expect(parseExplorerConversationState({ ...original, compassItems })).toBeNull();
+    }
+    expect(parseExplorerConversationState({ ...original, compassItems: original.compassItems.map((item, index) =>
+      index === 0 ? { ...item, mergedIntoItemId: uuid(8) } : item) })).toBeNull();
+    expect(parseExplorerConversationState({ ...original, priorityId: uuid(7) })).toBeNull();
+    expect(parseExplorerConversationState({ ...original, attentionId: uuid(8) })).toBeNull();
+    const duplicateHeads = original.compassItems.map((item, index) => index === 1 ? { ...item, mergedIntoItemId: null, anchor: "apex" } : item);
+    expect(parseExplorerConversationState({ ...original, compassItems: duplicateHeads })).toBeNull();
+  });
+
+  it("refuses unbound, incomplete or altered closed captures without rewriting history", () => {
+    const original = combinedState();
+    const event = original.route[2];
+    const change = event.change!;
+    const withChange = (replacement: unknown) => ({ ...original, route: [original.route[0], original.route[1], { ...event, change: replacement }] });
+    for (const field of Object.keys(change)) expect(parseExplorerConversationState(withChange(without(change, field)))).toBeNull();
+    for (const replacement of [
+      { ...change, memberItemIds: [uuid(7), pointId] },
+      { ...change, targetItemId: uuid(8) },
+      { ...change, memberItemIds: [pointId] },
+      { ...change, extra: true },
+      { ...change, beforeItems: change.beforeItems.slice(1) },
+      { ...change, beforeItems: [...change.beforeItems].reverse() },
+      { ...change, beforeItems: change.beforeItems.map((item, i) => i === 1 ? { ...item, sourceMessageId: sourceId } : item) },
+      { ...change, beforeItems: change.beforeItems.map((item, i) => i === 2 ? { ...item, mergedIntoItemId: uuid(99) } : item) },
+      { ...change, beforeItems: change.beforeItems.map((item, i) => i === 2 ? { ...item, mergedIntoItemId: null } : item) },
+    ]) expect(parseExplorerConversationState(withChange(replacement))).toBeNull();
   });
 });

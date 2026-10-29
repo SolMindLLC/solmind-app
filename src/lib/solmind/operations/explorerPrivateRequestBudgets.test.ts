@@ -266,3 +266,19 @@ it.each(["end", "review"] as const)("propagates optional %s with exact input ide
   for (const [name, port] of Object.entries(f.repository)) if (name !== method) expect(port).not.toHaveBeenCalled();
   expect(f.authenticate).not.toHaveBeenCalled(); expect(vi.getTimerCount()).toBe(0);
 });
+
+
+it("propagates the optional category input identity and closes its exact ten-second boundary once", async () => {
+  vi.useFakeTimers();
+  try {
+    const f = fixture(); const input = { ...ACTOR_PARAMETERS, p_conversation_id: ID, p_operation_id: ID,
+      p_expected_revision: 1, p_command_fingerprint: SHA, p_target_item_id: ID, p_member_item_ids: [ID], p_label: "Category" };
+    const category = vi.fn<NonNullable<ExplorerPrivateConversationRepository["category"]>>(async () => ROW);
+    const wrapped = withExplorerPrivateRequestBudgets({ ...f.dependencies, repository: { ...f.repository, category } });
+    expect(await wrapped.repository.category!(input)).toBe(ROW); expect(category).toHaveBeenCalledExactlyOnceWith(input);
+    expect(category.mock.calls[0][0]).toBe(input); category.mockImplementation(() => new Promise(() => undefined));
+    const pending = wrapped.repository.category!(input); const rejected = expect(pending).rejects.toThrowError(FAILURE);
+    await vi.advanceTimersByTimeAsync(10_000); await rejected; expect(category).toHaveBeenCalledTimes(2);
+    for (const port of Object.values(f.repository)) expect(port).not.toHaveBeenCalled(); expect(vi.getTimerCount()).toBe(0);
+  } finally { vi.useRealTimers(); }
+});

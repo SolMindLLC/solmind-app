@@ -212,7 +212,7 @@ separately from attention, and require explicit destination/meaning/arrival
 confirmation for a private chosen Waypoint. Show chosen as In progress.
 Reached needs a later explicit evidence review and confirmation. No sharing,
 automatic interpretation, clinical score or browser storage is introduced.
-Compass reviews up to24 saved points/eight visible anchors and emphasis with fixed Priority; Route/Reached preserve actual facts, deliberate End saves final directions and returns home, and owned ended review is read-only without reactivation.
+Compass keeps24stored originals/eight visible current category heads; reviewed wording/combine retains source links/captured old meaning and both selectors, with one-way grouping/no slot release; Route/Reached/End/owned review preserve facts without reactivation.
 
 The server-only owners
 `src/lib/solmind/virtual-guide/explorerConversationComposition.ts` and
@@ -402,7 +402,7 @@ server-side. The private controller imports only the erased assistance type.
 `src/lib/solmind/supabase/explorerConversationRequestDependencies.ts` retains
 `createExplorerConversationRequestDependencies` for scoped predecessor proof.
 Its new `createExplorerPrivateConversationRequestDependencies` reuses the same
-shared bounded raw-cookie reader and selects the nine-port private repository, including separate owned End/review capabilities.
+shared bounded raw-cookie reader and selects the ten-port private repository, including exact9arg category confirmation and separate owned End/review capabilities.
 Default dependencies contain authentication and that repository only. Provider,
 readiness resolver, governed context builder, reviewed renderer and operational
 signal require explicit server injection; no new provider credential/environment

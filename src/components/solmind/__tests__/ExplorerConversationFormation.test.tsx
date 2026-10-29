@@ -243,3 +243,91 @@ it("read-only formation preserves saved Compass, Route, sources and Waypoint evi
   expect(html).not.toContain("Add a point you choose");
   expect(onCommand).not.toHaveBeenCalled();
 });
+
+describe("Category presentation (static proof only)", () => {
+  const messages = [
+    { id: "message-a", role: "explorer" as const, body: "An exact first source <script>plain text</script>", createdAt: "2026-10-29T07:00:00Z" },
+    { id: "message-b", role: "virtualGuide" as const, body: "An exact second saved source.", createdAt: "2026-10-29T07:00:01Z" },
+    { id: "message-c", role: "explorer" as const, body: "An exact earlier contributing source.", createdAt: "2026-10-29T07:00:02Z" },
+  ];
+  const points = [
+    { id: "point-a", sourceMessageId: "message-a", label: "Current combined category", anchor: "apex" as const, emphasis: 3 as const, mergedIntoItemId: null },
+    { id: "point-b", sourceMessageId: "message-b", label: "Retained second point", anchor: "apex" as const, emphasis: 2 as const, mergedIntoItemId: "point-a" },
+    { id: "point-c", sourceMessageId: "message-c", label: "Retained earlier point", anchor: null, emphasis: 1 as const, mergedIntoItemId: "point-b" },
+    { id: "point-d", sourceMessageId: "message-a", label: "Separate current attention", anchor: "side_left" as const, emphasis: 1 as const, mergedIntoItemId: null },
+  ];
+
+  it("uses only current heads for placement and actions while exposing transitive retained source points", () => {
+    const onCommand = vi.fn();
+    const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: state({
+      conversationId: "conversation-a", messages, compassItems: points, priorityId: "point-a", attentionId: "point-d",
+    }), busy: false, onCommand }));
+    expect(html).toContain("Current attention: Separate current attention");
+    expect(html).toContain("Combined source points (3)");
+    for (const source of ["Retained second point", "Retained earlier point", "An exact second saved source.", "An exact earlier contributing source."]) expect(html).toContain(source);
+    expect(html).toContain("An exact first source &lt;script&gt;plain text&lt;/script&gt;");
+    expect(html).not.toContain("<script>");
+    expect(html).toContain("Other paths (0)");
+    expect(html).toContain("Review wording or combine: Current combined category");
+    for (const label of ["Retained second point", "Retained earlier point"]) {
+      expect(html).not.toContain(`Review wording or combine: ${label}`);
+      expect(html).not.toContain(`Attend to: ${label}`);
+      expect(html).not.toContain(`>${label}</h4>`);
+    }
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+
+  it("renders category Route wording, prior sources and layout from the saved capture", () => {
+    const onCommand = vi.fn();
+    const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: state({
+      conversationId: "conversation-a", revision: 4, messages, compassItems: points,
+      route: [{ operationId: "category-operation", revision: 3, kind: "category_confirmed", recordedAt: "2026-10-29T07:03:00Z", change: {
+        targetItemId: "point-a", memberItemIds: ["point-a", "point-b"], label: "Earlier combined <wording>", beforeItems: [
+          { compassItemId: "point-a", sourceMessageId: "message-a", label: "Original first wording", mergedIntoItemId: null, anchor: "apex", emphasis: 3 },
+          { compassItemId: "point-b", sourceMessageId: "message-b", label: "Original second wording", mergedIntoItemId: null, anchor: "lower_right", emphasis: 2 },
+          { compassItemId: "point-c", sourceMessageId: "message-c", label: "Earlier retained wording", mergedIntoItemId: "point-b", anchor: null, emphasis: null },
+        ],
+      } }],
+    }), busy: false, onCommand }));
+    const route = html.slice(html.indexOf("Categories combined"), html.indexOf("Add a point you choose"));
+    expect(route).toContain("Confirmed wording: Earlier combined &lt;wording&gt;");
+    expect(route).toContain("Original first wording — selected point before this change; Top position; Strong.");
+    expect(route).toContain("Original second wording — selected point before this change; Excursion — lower right; Regular.");
+    expect(route).toContain("Earlier retained wording — retained contributing point; Other paths; relative emphasis not recorded.");
+    expect(route).toContain("An exact earlier contributing source.");
+    expect(route).not.toContain("Current combined category");
+    expect(route).not.toContain("Retained second point");
+    expect(route).not.toContain("<wording>");
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+
+  it("keeps saved combined provenance visible in an ended read-only review without edit controls", () => {
+    const onCommand = vi.fn();
+    const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: state({
+      conversationId: "conversation-a", messages, compassItems: points, priorityId: "point-a",
+      sessionStatus: "ended", ending: null,
+    }), busy: false, readOnly: true, onCommand }));
+    for (const text of ["Current combined category", "Combined source points (3)", "Retained earlier point", "An exact earlier contributing source."]) expect(html).toContain(text);
+    for (const tag of ["<form", "<button", "<input", "<select", "<textarea"]) expect(html).not.toContain(tag);
+    expect(html).not.toContain("Review category wording and sources");
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+
+  it("counts all retained originals toward the existing24-point storage bound", () => {
+    const compassItems = Array.from({ length: 24 }, (_, index) => ({
+      id: `retained-${index}`, sourceMessageId: "message-a", label: `Stored original ${index}`,
+      anchor: null, emphasis: null, mergedIntoItemId: index === 0 ? null : "retained-0",
+    }));
+    const onCommand = vi.fn();
+    const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: state({
+      conversationId: "conversation-a", messages, compassItems,
+    }), busy: false, onCommand }));
+    expect(html).toContain("Other paths (1)");
+    expect(html).toContain("Combined source points (24)");
+    expect(html).toContain("This private demo stores at most 24 points.");
+    expect(html).toContain("All saved points remain available; another cannot be added here.");
+    expect(html).toContain('<fieldset disabled=""');
+    expect(html).not.toContain("Review wording or combine: Stored original 1<");
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+});

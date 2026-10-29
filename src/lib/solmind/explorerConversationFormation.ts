@@ -3,6 +3,7 @@ import {
   EXPLORER_COMPASS_ANCHORS,
   type ExplorerCompassArrangementItem,
   type ExplorerConversationCommand,
+  type ExplorerConversationCompassItem,
   type ExplorerConversationMessage,
   type ExplorerConversationState,
 } from "./explorerConversationContract";
@@ -22,6 +23,12 @@ export type FormationIntentResult =
 export type CompassFormationDraft = Readonly<{
   sourceMessageId: string;
   label: string;
+}>;
+export type CompassCategoryFormationDraft = Readonly<{
+  targetItemId: string;
+  memberItemIds: readonly string[];
+  label: string;
+  confirmed: boolean;
 }>;
 export type WaypointFormationDraft = Readonly<{
   sourceMessageId: string;
@@ -65,6 +72,62 @@ export function findFormationSource(
   return state.messages.find(message => message.id === sourceMessageId) ?? null;
 }
 
+export function currentCompassHeads(state: ExplorerConversationState): readonly ExplorerConversationCompassItem[] {
+  return Object.freeze(state.compassItems.filter(item => item.mergedIntoItemId == null));
+}
+
+// Original point/source identities remain reviewable after repeated combination.
+// The parser proves the bounded acyclic graph; the visited set also keeps direct
+// injected callers from looping while preparing a presentation-only draft.
+export function compassCategorySources(
+  state: ExplorerConversationState,
+  targetItemId: string,
+): readonly ExplorerConversationCompassItem[] {
+  const byId = new Map(state.compassItems.map(item => [item.id, item]));
+  const target = byId.get(targetItemId);
+  if (!target || target.mergedIntoItemId != null) return Object.freeze([]);
+  return Object.freeze(state.compassItems.filter(item => {
+    const visited = new Set<string>();
+    let current: ExplorerConversationCompassItem | undefined = item;
+    while (current && !visited.has(current.id)) {
+      if (current.id === targetItemId) return true;
+      visited.add(current.id);
+      current = current.mergedIntoItemId == null ? undefined : byId.get(current.mergedIntoItemId);
+    }
+    return false;
+  }).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+export function buildCompassCategoryFormationIntent(
+  state: ExplorerConversationState,
+  draft: CompassCategoryFormationDraft,
+): FormationIntentResult {
+  if (!state.conversationId || state.pendingTurn || state.sessionStatus === "ended") {
+    return refuse("Reload the active saved conversation before changing its Compass categories.");
+  }
+  const heads = currentCompassHeads(state);
+  const target = heads.find(item => item.id === draft.targetItemId);
+  if (!target || draft.memberItemIds.length < 1 || draft.memberItemIds.length > EXPLORER_CONVERSATION_LIMITS.compassItems ||
+      new Set(draft.memberItemIds).size !== draft.memberItemIds.length || !draft.memberItemIds.includes(target.id) ||
+      draft.memberItemIds.some(memberId => !heads.some(item => item.id === memberId))) {
+    return refuse("Choose current Compass categories, including the category that will remain.");
+  }
+  if (!validText(draft.label, EXPLORER_CONVERSATION_LIMITS.labelCharacters, false)) {
+    return refuse("Enter the reviewed category wording in 1 to 160 characters on one line.");
+  }
+  if ([state.priorityId, state.attentionId].some(selected => selected !== null && selected !== target.id && draft.memberItemIds.includes(selected))) {
+    return refuse("Move Priority or current attention explicitly before combining away its selected category.");
+  }
+  if (draft.memberItemIds.length === 1 && draft.label.trim() === target.label) {
+    return refuse("Change the category wording or choose another category to combine.");
+  }
+  if (draft.confirmed !== true) {
+    return refuse("Review the original sources, wording, placement, emphasis, Priority and current attention, then confirm this category change.");
+  }
+  return accept({ kind: "confirm_compass_category", targetItemId: target.id,
+    memberItemIds: Object.freeze([...draft.memberItemIds].sort()), label: draft.label.trim() });
+}
+
 export function buildCompassFormationIntent(
   state: ExplorerConversationState,
   draft: CompassFormationDraft,
@@ -86,13 +149,14 @@ export function buildPriorityFormationIntent(
   itemId: string,
   confirmed: boolean,
 ): FormationIntentResult {
-  if (!state.compassItems.some(item => item.id === itemId)) {
+  const heads = currentCompassHeads(state);
+  if (!heads.some(item => item.id === itemId)) {
     return refuse("Choose a saved Compass point before confirming Priority.");
   }
   if (confirmed !== true) return refuse("Confirm this Priority only when it reflects your choice.");
   if (state.priorityId === itemId) return refuse("This point is already your confirmed Priority.");
-  if (state.compassItems.some(item => item.emphasis != null) &&
-      !state.compassItems.some(item => item.id === itemId && item.anchor === "apex")) {
+  if (heads.some(item => item.emphasis != null) &&
+      !heads.some(item => item.id === itemId && item.anchor === "apex")) {
     return refuse("Review and confirm the arrangement to place your new Priority at the top.");
   }
   return accept({ kind: "confirm_priority", itemId });
@@ -102,12 +166,13 @@ export function buildAttentionFormationIntent(
   state: ExplorerConversationState,
   itemId: string,
 ): FormationIntentResult {
-  if (!state.compassItems.some(item => item.id === itemId)) {
+  const heads = currentCompassHeads(state);
+  if (!heads.some(item => item.id === itemId)) {
     return refuse("Choose a saved Compass point for current attention.");
   }
   if (state.attentionId === itemId) return refuse("Current attention is already on this point.");
-  if (state.compassItems.some(item => item.emphasis != null) &&
-      !state.compassItems.some(item => item.id === itemId && item.anchor != null)) {
+  if (heads.some(item => item.emphasis != null) &&
+      !heads.some(item => item.id === itemId && item.anchor != null)) {
     return refuse("Place this point on your Compass before moving current attention to it.");
   }
   return accept({ kind: "set_attention", itemId });
@@ -120,11 +185,12 @@ export function buildCompassArrangementFormationIntent(
   confirmed: boolean,
 ): FormationIntentResult {
   if (!state.conversationId || state.pendingTurn) return refuse("Reload the saved conversation before arranging its Compass.");
+  const heads = currentCompassHeads(state);
   if (!confirmed) return refuse("Review the placement, emphasis and Priority, then confirm your arrangement.");
   if (state.priorityId !== null && priorityId === null) return refuse("Keep or explicitly choose a Priority; this action does not clear it.");
-  if (items.length !== state.compassItems.length || items.length > EXPLORER_CONVERSATION_LIMITS.compassItems ||
+  if (items.length !== heads.length || items.length > EXPLORER_CONVERSATION_LIMITS.compassItems ||
       new Set(items.map(item => item.compassItemId)).size !== items.length ||
-      items.some(item => !state.compassItems.some(point => point.id === item.compassItemId) ||
+      items.some(item => !heads.some(point => point.id === item.compassItemId) ||
         !(item.anchor === null || EXPLORER_COMPASS_ANCHORS.includes(item.anchor)) ||
         ![1, 2, 3].includes(item.emphasis))) return refuse("Include every saved point once with valid placement and emphasis.");
   const visible = items.filter(item => item.anchor !== null);

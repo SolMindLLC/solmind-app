@@ -434,3 +434,23 @@ describe("private-only ending identity", () => {
     expect(f.read).not.toHaveBeenCalled(); expect(f.mutate).not.toHaveBeenCalled();
   });
 });
+
+
+describe("private category confirmation identity", () => {
+  it("binds result wording and target with semantic membership ordering without changing input", () => {
+    const command = { kind: "confirm_compass_category" as const, operationId: ID.operation, expectedRevision: 4,
+      targetItemId: ID.conversation, memberItemIds: [ID.conversation, ID.otherAccount], label: "Time and direction" };
+    const hash = explorerConversationCommandFingerprint(command);
+    expect(explorerConversationCommandFingerprint({ ...command, memberItemIds: [...command.memberItemIds].reverse() })).toBe(hash);
+    expect(explorerConversationCommandFingerprint({ ...command, label: "A different meaning" })).not.toBe(hash);
+    expect(explorerConversationCommandFingerprint({ ...command, targetItemId: ID.otherAccount })).not.toBe(hash);
+    expect(explorerConversationCommandFingerprint({ ...command, memberItemIds: [ID.conversation] })).not.toBe(hash);
+    expect(command.memberItemIds).toEqual([ID.conversation, ID.otherAccount]);
+  });
+  it("never forwards a category confirmation through the legacy generic writer", async () => {
+    const f = fixture();
+    expect(await commandExplorerConversation({ command: { kind: "confirm_compass_category", operationId: ID.operation,
+      expectedRevision: 4, targetItemId: ID.conversation, memberItemIds: [ID.conversation], label: "New wording" }, dependencies: f.dependencies })).toEqual(denied);
+    expect(f.mutate).not.toHaveBeenCalled(); expect(f.buildContext).not.toHaveBeenCalled();
+  });
+});

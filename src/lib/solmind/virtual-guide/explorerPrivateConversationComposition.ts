@@ -53,6 +53,9 @@ export type ExplorerPrivateMutateParameters = ActorParameters & Readonly<{
 export type ExplorerPrivateArrangeParameters = ActorParameters & Readonly<{
   p_conversation_id: string; p_operation_id: string; p_expected_revision: number; p_command_fingerprint: string;
   p_priority_id: string | null; p_items: readonly ExplorerCompassArrangementItem[] }>;
+export type ExplorerPrivateCategoryParameters = ActorParameters & Readonly<{
+  p_conversation_id: string; p_operation_id: string; p_expected_revision: number; p_command_fingerprint: string;
+  p_target_item_id: string; p_member_item_ids: readonly string[]; p_label: string }>;
 export type ExplorerPrivateEndParameters = ActorParameters & Readonly<{
   p_conversation_id: string; p_operation_id: string; p_expected_revision: number; p_command_fingerprint: string }>;
 export type ExplorerPrivateReviewParameters = ActorParameters & Readonly<{ p_conversation_id: string | null }>;
@@ -68,6 +71,7 @@ export type ExplorerPrivateConversationRepository = Readonly<{
   settle: (parameters: ExplorerPrivateSettleParameters) => Promise<ExplorerPrivateRpcRow>;
   mutate?: (parameters: ExplorerPrivateMutateParameters) => Promise<ExplorerPrivateRpcRow>;
   arrange?: (parameters: ExplorerPrivateArrangeParameters) => Promise<ExplorerPrivateRpcRow>;
+  category?: (parameters: ExplorerPrivateCategoryParameters) => Promise<ExplorerPrivateRpcRow>;
   end?: (parameters: ExplorerPrivateEndParameters) => Promise<ExplorerPrivateRpcRow>;
   review?: (parameters: ExplorerPrivateReviewParameters) => Promise<ExplorerPrivateRpcRow>;
 }>;
@@ -328,6 +332,14 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
         const row = await dependencies.repository.arrange({ ...base(actor), p_conversation_id: read.state.conversationId,
           p_operation_id: command.operationId, p_expected_revision: command.expectedRevision,
           p_command_fingerprint: fingerprint, p_priority_id: command.priorityId, p_items: command.items });
+        return Object.freeze({ result: stateResult(row), assistance: null });
+      }
+      if (command.kind === "confirm_compass_category") {
+        if (!dependencies.repository.category) return failed("denied");
+        const row = await dependencies.repository.category({ ...base(actor), p_conversation_id: read.state.conversationId,
+          p_operation_id: command.operationId, p_expected_revision: command.expectedRevision,
+          p_command_fingerprint: fingerprint, p_target_item_id: command.targetItemId,
+          p_member_item_ids: command.memberItemIds, p_label: command.label });
         return Object.freeze({ result: stateResult(row), assistance: null });
       }
       if (!dependencies.repository.mutate) return failed("denied");

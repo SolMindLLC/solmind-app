@@ -26,6 +26,9 @@ const PORTS = Object.freeze({
   arrange: Object.freeze({ name: "solmind_confirm_explorer_compass_arrangement_v1", parameters: [...ACTOR,
     "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint", "p_priority_id", "p_items"],
     columns: ["outcome", "conversation_state"] }),
+  category: Object.freeze({ name: "solmind_confirm_explorer_compass_category_v1", parameters: [...ACTOR,
+    "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint", "p_target_item_id", "p_member_item_ids", "p_label"],
+    columns: ["outcome", "conversation_state"] }),
   end: Object.freeze({ name: "solmind_end_explorer_conversation_v1", parameters: [...ACTOR,
     "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint"], columns: ["outcome", "conversation_state"] }),
   review: Object.freeze({ name: "solmind_read_ended_explorer_conversations_v1", parameters: [...ACTOR, "p_conversation_id"],
@@ -37,6 +40,7 @@ const OUTCOMES: Readonly<Record<keyof typeof PORTS, readonly string[]>> = Object
   observe: ["ok", "exact_replay", "stale_revision"], prepare: ["ok", "exact_replay", "stale_revision", "stale_policy", "blocked", "unavailable"],
   settle: ["ok", "withheld", "exact_replay"], mutate: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   arrange: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
+  category: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   end: ["ok", "exact_replay", "already_ended", "stale_revision", "unavailable"], review: ["ok"],
 });
 function object(value: unknown): value is Record<string, unknown> {
@@ -50,7 +54,7 @@ function parameters(input: object, expected: readonly string[]): Readonly<Record
     const property = Object.getOwnPropertyDescriptor(input, key);
     if (!property?.enumerable || !("value" in property)) throw new Error(FAILURE);
     const value: unknown = property.value;
-    if (key === "p_items" && !Array.isArray(value)) throw new Error(FAILURE);
+    if ((key === "p_items" || key === "p_member_item_ids") && !Array.isArray(value)) throw new Error(FAILURE);
     if (Array.isArray(value)) {
       if (key === "p_items") {
         if (types.isProxy(value) || Object.getPrototypeOf(value) !== Array.prototype ||
@@ -74,8 +78,9 @@ function parameters(input: object, expected: readonly string[]): Readonly<Record
         copied[key] = Object.freeze(items);
         continue;
       }
-      if (key !== "p_context_source_ids" || types.isProxy(value) || Object.getPrototypeOf(value) !== Array.prototype ||
-        value.length < 1 || value.length > 256 || Reflect.ownKeys(value).length !== value.length + 1) throw new Error(FAILURE);
+      if ((key !== "p_context_source_ids" && key !== "p_member_item_ids") || types.isProxy(value) || Object.getPrototypeOf(value) !== Array.prototype ||
+        value.length < 1 || value.length > (key === "p_member_item_ids" ? EXPLORER_CONVERSATION_LIMITS.compassItems : 256) ||
+        Reflect.ownKeys(value).length !== value.length + 1) throw new Error(FAILURE);
       const identifiers: string[] = [];
       for (let index = 0; index < value.length; index += 1) {
         const entry = Object.getOwnPropertyDescriptor(value, String(index));
@@ -83,6 +88,7 @@ function parameters(input: object, expected: readonly string[]): Readonly<Record
           !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(entry.value)) throw new Error(FAILURE);
         identifiers.push(entry.value);
       }
+      if (key === "p_member_item_ids" && new Set(identifiers).size !== identifiers.length) throw new Error(FAILURE);
       copied[key] = Object.freeze(identifiers);
     } else {
       if (value !== null && typeof value !== "string" && typeof value !== "boolean" &&
@@ -94,7 +100,7 @@ function parameters(input: object, expected: readonly string[]): Readonly<Record
   return Object.freeze(copied);
 }
 
-// The returned object exposes nine exact ports, including deliberate
+// The returned object exposes ten exact ports, including deliberate
 // formation, ending and owned ended review. There is no generic select/RPC/credential capability.
 export function createExplorerPrivateConversationRepository(client: SupabaseClient): ExplorerPrivateConversationRepository {
   async function call(port: keyof typeof PORTS, input: object): Promise<ExplorerPrivateRpcRow> {
@@ -124,6 +130,6 @@ export function createExplorerPrivateConversationRepository(client: SupabaseClie
     },
     ensure: (input) => call("ensure", input), observe: (input) => call("observe", input), prepare: (input) => call("prepare", input),
     settle: (input) => call("settle", input), mutate: (input) => call("mutate", input),
-    arrange: (input) => call("arrange", input), end: (input) => call("end", input), review: (input) => call("review", input),
+    arrange: (input) => call("arrange", input), category: (input) => call("category", input), end: (input) => call("end", input), review: (input) => call("review", input),
   });
 }

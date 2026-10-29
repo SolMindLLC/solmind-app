@@ -9,10 +9,13 @@ import {
   buildAttentionFormationIntent,
   buildCompassFormationIntent,
   buildCompassArrangementFormationIntent,
+  buildCompassCategoryFormationIntent,
   buildPriorityFormationIntent,
   buildReachedFormationIntent,
   buildWaypointFormationIntent,
   findFormationSource,
+  currentCompassHeads,
+  compassCategorySources,
 } from "../explorerConversationFormation";
 
 const source = { id: "saved-message-a", role: "explorer" as const, body: "I want calmer mornings.", createdAt: "2026-10-24T05:00:00.000Z" };
@@ -224,5 +227,100 @@ describe("Explorer-reviewed Compass arrangement intents", () => {
       .toEqual({ kind: "add_compass", sourceMessageId: source.id, label: "The ninth retained point" });
     expect(buildCompassFormationIntent(state({ compassItems: points }),
       { sourceMessageId: source.id, label: "A twenty-fifth point" }).ok).toBe(false);
+  });
+});
+
+describe("Explorer-reviewed category wording and combination", () => {
+  const retained = [
+    { ...items[0], anchor: "apex" as const, emphasis: 2 as const, mergedIntoItemId: null },
+    { ...items[1], anchor: "upper_left" as const, emphasis: 3 as const, mergedIntoItemId: null },
+    { id: "point-c", sourceMessageId: source.id, label: "Original supporting detail", anchor: "upper_left" as const,
+      emphasis: 1 as const, mergedIntoItemId: items[1].id },
+    { id: "point-d", sourceMessageId: source.id, label: "Older supporting detail", anchor: null, emphasis: 2 as const, mergedIntoItemId: "point-c" },
+  ];
+  const categoryDraft = { targetItemId: items[0].id, memberItemIds: [items[1].id, items[0].id], label: "  Morning connection  ", confirmed: true };
+
+  it("shows only current heads and retains every transitive original source point", () => {
+    const current = state({ compassItems: retained });
+    expect(currentCompassHeads(current).map(item => item.id)).toEqual([items[0].id, items[1].id]);
+    expect(compassCategorySources(current, items[1].id).map(item => item.id)).toEqual([items[1].id, "point-c", "point-d"]);
+    expect(compassCategorySources(current, items[0].id)).toEqual([retained[0]]);
+    expect(compassCategorySources(current, "point-c")).toEqual([]);
+    expect(Object.isFrozen(currentCompassHeads(current))).toBe(true);
+    expect(Object.isFrozen(compassCategorySources(current, items[1].id))).toBe(true);
+    expect(current.compassItems).toHaveLength(4);
+  });
+
+  it("requires reviewed meaning and emits a copied canonical member set without authority/history fields", () => {
+    const current = state({ compassItems: retained, priorityId: items[0].id, attentionId: items[0].id });
+    expect(buildCompassCategoryFormationIntent(current, { ...categoryDraft, confirmed: false }).ok).toBe(false);
+    const draft = { ...categoryDraft, memberItemIds: [...categoryDraft.memberItemIds] };
+    const result = buildCompassCategoryFormationIntent(current, draft);
+    expect(result).toEqual({ ok: true, error: null, command: { kind: "confirm_compass_category", targetItemId: items[0].id,
+      memberItemIds: [items[0].id, items[1].id], label: "Morning connection" } });
+    if (!result.ok || result.command.kind !== "confirm_compass_category") throw new Error("expected_category");
+    expect(Object.isFrozen(result.command.memberItemIds)).toBe(true);
+    draft.memberItemIds[0] = "another-point";
+    expect(result.command.memberItemIds).toEqual([items[0].id, items[1].id]);
+    expect(Object.keys(result.command).sort()).toEqual(["kind", "label", "memberItemIds", "targetItemId"]);
+    expect(current.priorityId).toBe(items[0].id);
+    expect(current.attentionId).toBe(items[0].id);
+    expect(current.compassItems).toEqual(retained);
+  });
+
+  it("permits reviewed broadening without an implicit Priority, layout or attention transfer", () => {
+    const current = state({ compassItems: retained });
+    expect(buildCompassCategoryFormationIntent(current, { ...categoryDraft, memberItemIds: [items[0].id] }).command)
+      .toEqual({ kind: "confirm_compass_category", targetItemId: items[0].id, memberItemIds: [items[0].id], label: "Morning connection" });
+    expect(buildCompassCategoryFormationIntent(current, { ...categoryDraft, memberItemIds: [items[0].id], label: retained[0].label }).ok).toBe(false);
+    expect(current.priorityId).toBeNull();
+    expect(current.attentionId).toBeNull();
+    expect(retained[0].anchor).toBe("apex");
+    expect(retained[0].emphasis).toBe(2);
+  });
+
+  it("refuses combining away current Priority or attention until they are moved explicitly", () => {
+    for (const selected of [
+      { priorityId: items[1].id, attentionId: items[0].id },
+      { priorityId: items[0].id, attentionId: items[1].id },
+      { priorityId: null, attentionId: items[1].id },
+    ]) {
+      const current = state({ compassItems: retained, ...selected });
+      expect(buildCompassCategoryFormationIntent(current, categoryDraft).ok).toBe(false);
+      expect(current.priorityId).toBe(selected.priorityId);
+      expect(current.attentionId).toBe(selected.attentionId);
+    }
+  });
+
+  it("rejects stale lifecycle, malformed wording and missing/retired/duplicate member selections", () => {
+    const current = state({ compassItems: retained });
+    for (const lifecycle of [state({ ...current, pendingTurn: true }), state({ ...current, conversationId: null }),
+      state({ ...current, sessionStatus: "ended", ending: null })]) {
+      expect(buildCompassCategoryFormationIntent(lifecycle, categoryDraft).ok).toBe(false);
+    }
+    for (const memberItemIds of [[], [items[1].id], [items[0].id, items[0].id], [items[0].id, "point-c"], [items[0].id, "foreign-point"]]) {
+      expect(buildCompassCategoryFormationIntent(current, { ...categoryDraft, memberItemIds }).ok).toBe(false);
+    }
+    expect(buildCompassCategoryFormationIntent(current, { ...categoryDraft, targetItemId: "point-c" }).ok).toBe(false);
+    for (const label of ["", " ", "two\nlines", "bad\ud800text", "x".repeat(161)]) {
+      expect(buildCompassCategoryFormationIntent(current, { ...categoryDraft, label }).ok).toBe(false);
+    }
+  });
+
+  it("arranges only current heads without freeing the 24-row stored bound or selecting retired originals", () => {
+    const current = state({ compassItems: retained, priorityId: items[0].id, attentionId: items[0].id });
+    const selected: ExplorerCompassArrangementItem[] = [
+      { compassItemId: items[0].id, anchor: "apex", emphasis: 2 },
+      { compassItemId: items[1].id, anchor: "upper_left", emphasis: 3 },
+    ];
+    expect(buildCompassArrangementFormationIntent(current, items[0].id, selected, true).ok).toBe(true);
+    expect(buildCompassArrangementFormationIntent(current, items[0].id,
+      [...selected, { compassItemId: "point-c", anchor: null, emphasis: 1 }], true).ok).toBe(false);
+    expect(buildPriorityFormationIntent(current, "point-c", true).ok).toBe(false);
+    expect(buildAttentionFormationIntent(current, "point-c").ok).toBe(false);
+    const full = state({ compassItems: Array.from({ length: 24 }, (_, index) => ({ ...retained[0], id: `stored-${index}`,
+      mergedIntoItemId: index === 0 ? null : "stored-0" })) });
+    expect(currentCompassHeads(full)).toHaveLength(1);
+    expect(buildCompassFormationIntent(full, { sourceMessageId: source.id, label: "Another point" }).ok).toBe(false);
   });
 });
