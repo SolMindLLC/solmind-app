@@ -212,6 +212,7 @@ separately from attention, and require explicit destination/meaning/arrival
 confirmation for a private chosen Waypoint. Show chosen as In progress.
 Reached needs a later explicit evidence review and confirmation. No sharing,
 automatic interpretation, clinical score or browser storage is introduced.
+New Route readback preserves captured Priority/attention events without legacy reconstruction; Reached returns actual saved evidence/time.
 
 The server-only owners
 `src/lib/solmind/virtual-guide/explorerConversationComposition.ts` and

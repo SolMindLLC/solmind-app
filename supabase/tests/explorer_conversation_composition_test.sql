@@ -110,7 +110,7 @@ select ok(not has_function_privilege('service_role','ai.solmind_conversation_aut
   'internal authority helper is not an application RPC');
 
 select is((select conversation_state from public.solmind_read_explorer_conversation(pg_temp.cid(1),pg_temp.cid(50))),
-  '{"version":"explorer-conversation.v1","conversationId":null,"revision":0,"pendingTurn":false,"providerState":"unavailable","messages":[],"compassItems":[],"priorityId":null,"attentionId":null,"waypoints":[]}'::jsonb,
+  '{"version":"explorer-conversation.v1","conversationId":null,"revision":0,"pendingTurn":false,"providerState":"unavailable","messages":[],"compassItems":[],"priorityId":null,"attentionId":null,"route":[],"waypoints":[]}'::jsonb,
   'authorized empty Discovery has the exact closed browser shape');
 select ok((select authority_context->>'authorizationVersion' ~ '^AV2:[0-9A-F]{64}$'
   and authority_context->>'relationshipStatus'='active' and authority_context->>'adultAffirmation'='true'

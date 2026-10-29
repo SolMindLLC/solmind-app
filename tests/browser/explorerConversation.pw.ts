@@ -42,6 +42,35 @@ async function mockState(page: Page, read: () => unknown) {
   });
 }
 
+test("F01 saved Route and Reached evidence remain reviewable after reload without a command", async ({ page }) => {
+  const pointId = "40000000-0000-4000-8000-000000000001";
+  const state: ExplorerConversationState = { ...savedState(), revision: 5,
+    compassItems: [{ id: pointId, sourceMessageId: EXPLORER_MESSAGE, label: "Current point label" }],
+    priorityId: pointId, attentionId: pointId,
+    route: [{ operationId: "50000000-0000-4000-8000-000000000001", revision: 3,
+      kind: "priority_confirmed", compassItemId: pointId, label: "Captured earlier direction",
+      recordedAt: "2026-10-29T07:00:00.123456+00:00" }],
+    waypoints: [{ id: "60000000-0000-4000-8000-000000000001", sourceMessageId: GUIDE_MESSAGE,
+      destination: "One calm choice", meaning: "Room for what matters", arrivalSignal: "I can name a next step",
+      status: "reached", reachedEvidence: "I named a next step. <script>not markup</script>",
+      reachedAt: "2026-10-29T07:01:00.123456+00:00" }] };
+  let writes = 0;
+  await mockState(page, () => success(state));
+  await page.route("**/explorer/conversation/commands", route => { writes += 1; return route.abort(); });
+  await page.goto("/explorer/conversation");
+  await expect(page.getByRole("heading", { name: "Route", exact: true })).toBeVisible();
+  await expect(page.getByText("Captured earlier direction", { exact: false })).toBeVisible();
+  await page.getByText("Review saved Reached confirmation", { exact: true }).click();
+  await expect(page.getByText(state.waypoints[0].reachedEvidence!, { exact: true })).toBeVisible();
+  await expect(page.locator('time[datetime="2026-10-29T07:01:00.123456+00:00"]')).toBeVisible();
+  await expect(page.getByRole("button", { name: "Review Reached: One calm choice", exact: true })).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByText("Captured earlier direction", { exact: false })).toBeVisible();
+  await page.getByText("Review saved Reached confirmation", { exact: true }).click();
+  await expect(page.getByText(state.waypoints[0].reachedEvidence!, { exact: true })).toBeVisible();
+  expect(writes).toBe(0);
+});
+
 test("C01 empty Discovery loads without a write or scripted message", async ({ page }) => {
   let writes = 0;
   await mockState(page, () => success(emptyState()));

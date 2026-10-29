@@ -668,6 +668,7 @@ requires new supporting evidence and explicit confirmation. No sharing, model
 interpretation, clinical score, automatic lifecycle change, Guide-private
 projection or broader Guide work is added. Existing prototypes, S03A-S03E
 foundations and all login/session/logout owners retain their boundaries.
+Route captures new meaningful Priority/attention changes in revision order with immutable labels; Reached readback returns actual saved evidence/time.
 
 ## Explorer Sharing Boundary
 

@@ -27,6 +27,16 @@ export type ExplorerConversationWaypoint = Readonly<{
   meaning: string;
   arrivalSignal: string;
   status: "chosen" | "reached";
+  reachedEvidence?: string | null;
+  reachedAt?: string | null;
+}>;
+export type ExplorerConversationRouteEvent = Readonly<{
+  operationId: string;
+  revision: number;
+  kind: "priority_confirmed" | "priority_reoriented" | "attention_changed";
+  compassItemId: string;
+  label: string;
+  recordedAt: string;
 }>;
 export type ExplorerConversationState = Readonly<{
   version: typeof EXPLORER_CONVERSATION_VERSION;
@@ -39,6 +49,7 @@ export type ExplorerConversationState = Readonly<{
   priorityId: string | null;
   attentionId: string | null;
   waypoints: readonly ExplorerConversationWaypoint[];
+  route?: readonly ExplorerConversationRouteEvent[];
 }>;
 type CommandBase = Readonly<{ operationId: string; expectedRevision: number }>;
 export type ExplorerConversationCommand = CommandBase & (
@@ -122,7 +133,8 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
   }
   if (value.ok !== true || value.error !== null || !object(value.state)) return null;
   const state = value.state;
-  if (!keys(state, ["version", "conversationId", "revision", "pendingTurn", "providerState", "messages", "compassItems", "priorityId", "attentionId", "waypoints"]) ||
+  const hasRoute = Object.hasOwn(state, "route");
+  if (!keys(state, ["version", "conversationId", "revision", "pendingTurn", "providerState", "messages", "compassItems", "priorityId", "attentionId", "waypoints", ...(hasRoute ? ["route"] : [])]) ||
       state.version !== EXPLORER_CONVERSATION_VERSION || !revision(state.revision) ||
       typeof state.pendingTurn !== "boolean" ||
       !(state.conversationId === null || id(state.conversationId)) ||
@@ -152,19 +164,45 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
   const waypoints: ExplorerConversationWaypoint[] = [];
   const waypointIds = new Set<string>();
   for (const item of state.waypoints) {
-    if (!object(item) || !keys(item, ["id", "sourceMessageId", "destination", "meaning", "arrivalSignal", "status"]) ||
+    if (!object(item)) return null;
+    const hasReached = Object.hasOwn(item, "reachedEvidence") || Object.hasOwn(item, "reachedAt");
+    if (!keys(item, ["id", "sourceMessageId", "destination", "meaning", "arrivalSignal", "status", ...(hasReached ? ["reachedEvidence", "reachedAt"] : [])]) ||
         !id(item.id) || waypointIds.has(item.id) || !id(item.sourceMessageId) || !messageIds.has(item.sourceMessageId) ||
         !text(item.destination, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) || !text(item.meaning, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) ||
         !text(item.arrivalSignal, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) || !["chosen", "reached"].includes(item.status as string)) return null;
+    if (hasReached && (item.status === "chosen"
+      ? item.reachedEvidence !== null || item.reachedAt !== null
+      : !text(item.reachedEvidence, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) || !instant(item.reachedAt))) return null;
     waypointIds.add(item.id);
     waypoints.push(Object.freeze({ id: item.id, sourceMessageId: item.sourceMessageId, destination: item.destination,
-      meaning: item.meaning, arrivalSignal: item.arrivalSignal, status: item.status as ExplorerConversationWaypoint["status"] }));
+      meaning: item.meaning, arrivalSignal: item.arrivalSignal, status: item.status as ExplorerConversationWaypoint["status"],
+      ...(hasReached ? { reachedEvidence: item.reachedEvidence as string | null, reachedAt: item.reachedAt as string | null } : {}) }));
   }
-  if (state.conversationId === null && (state.revision !== 0 || state.pendingTurn || messages.length || compassItems.length || waypoints.length)) return null;
+  const route: ExplorerConversationRouteEvent[] = [];
+  const routeIds = new Set<string>();
+  if (hasRoute) {
+    if (!Array.isArray(state.route)) return null;
+    let previousRevision = 0;
+    for (const event of state.route) {
+      if (!object(event) || !keys(event, ["operationId", "revision", "kind", "compassItemId", "label", "recordedAt"]) ||
+          !id(event.operationId) || routeIds.has(event.operationId) || !revision(event.revision) ||
+          event.revision <= previousRevision || event.revision > state.revision ||
+          !["priority_confirmed", "priority_reoriented", "attention_changed"].includes(event.kind as string) ||
+          !id(event.compassItemId) || !compassIds.has(event.compassItemId) ||
+          !text(event.label, EXPLORER_CONVERSATION_LIMITS.labelCharacters) || !instant(event.recordedAt)) return null;
+      routeIds.add(event.operationId);
+      previousRevision = event.revision;
+      route.push(Object.freeze({ operationId: event.operationId, revision: event.revision,
+        kind: event.kind as ExplorerConversationRouteEvent["kind"], compassItemId: event.compassItemId,
+        label: event.label, recordedAt: event.recordedAt }));
+    }
+  }
+  if (state.conversationId === null && (state.revision !== 0 || state.pendingTurn || messages.length || compassItems.length || waypoints.length || route.length)) return null;
   return Object.freeze({ ok: true, error: null, state: Object.freeze({ version: EXPLORER_CONVERSATION_VERSION,
     conversationId: state.conversationId as string | null, revision: state.revision,
     pendingTurn: state.pendingTurn,
     providerState: state.providerState as ExplorerConversationState["providerState"], messages: Object.freeze(messages),
     compassItems: Object.freeze(compassItems), priorityId: state.priorityId as string | null,
-    attentionId: state.attentionId as string | null, waypoints: Object.freeze(waypoints) }) });
+    attentionId: state.attentionId as string | null, waypoints: Object.freeze(waypoints),
+    ...(hasRoute ? { route: Object.freeze(route) } : {}) }) });
 }

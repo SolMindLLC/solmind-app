@@ -26,6 +26,11 @@ export type ExplorerConversationFormationProps = Readonly<{
 const inputClass = "mt-2 w-full rounded-xl border border-slate-600 bg-slate-950 p-3 text-sm text-slate-100 disabled:opacity-60";
 const buttonClass = "rounded-xl border border-cyan-300/60 px-3 py-2 text-sm font-semibold text-cyan-100 disabled:cursor-not-allowed disabled:opacity-50";
 const panelClass = "rounded-3xl border border-slate-700 bg-slate-950/70 p-5";
+const routeLabels = {
+  priority_confirmed: "Priority confirmed",
+  priority_reoriented: "Priority reoriented",
+  attention_changed: "Attention moved",
+} as const;
 
 function SavedSource({ state, sourceMessageId }: Readonly<{
   state: ExplorerConversationState; sourceMessageId: string;
@@ -77,6 +82,7 @@ export function ExplorerConversationFormation({ state, busy, onCommand }: Explor
   const priorityReview = state.compassItems.find(item => item.id === priorityReviewId);
   const reachedReview = state.waypoints.find(item => item.id === reachedReviewId && item.status === "chosen");
   const hasSource = state.conversationId !== null && state.messages.length > 0;
+  const route = state.route ?? [];
 
   function submit(result: FormationIntentResult) {
     if (busy) return;
@@ -142,6 +148,21 @@ export function ExplorerConversationFormation({ state, busy, onCommand }: Explor
             </div>
           </div>
         ) : null}
+        <section aria-labelledby={`${id}-route-title`} className="mt-5 border-t border-slate-700 pt-4">
+          <h3 id={`${id}-route-title`} className="font-semibold text-slate-100">Route</h3>
+          {route.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-300">No recorded direction changes are available yet.</p>
+          ) : (
+            <ol className="mt-3 list-decimal space-y-3 pl-5">
+              {route.map(entry => (
+                <li key={entry.operationId} className="break-words text-sm text-slate-300">
+                  <p><span className="font-semibold text-slate-200">{routeLabels[entry.kind]}:</span> {entry.label}</p>
+                  <time dateTime={entry.recordedAt} className="mt-1 block text-xs text-slate-400">{new Date(entry.recordedAt).toLocaleString("en-US")}</time>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
         <form onSubmit={addCompass} className="mt-5 border-t border-slate-700 pt-4">
           <fieldset disabled={busy || !hasSource || state.compassItems.length >= EXPLORER_CONVERSATION_LIMITS.compassItems} className="space-y-3">
             <legend className="mb-3 font-semibold text-slate-100">Add a point you choose</legend>
@@ -169,6 +190,17 @@ export function ExplorerConversationFormation({ state, busy, onCommand }: Explor
               <h3 className="break-words font-semibold text-slate-100">{waypoint.destination}</h3>
               <p className="mt-1 text-xs font-semibold text-cyan-200">{waypoint.status === "reached" ? "Reached — confirmed by you" : "In progress — chosen by you"}</p>
               <dl className="mt-3 space-y-3 text-sm"><div><dt className="font-semibold text-slate-200">Why it matters</dt><dd className="mt-1 whitespace-pre-wrap break-words text-slate-300">{waypoint.meaning}</dd></div><div><dt className="font-semibold text-slate-200">Arrival signal</dt><dd className="mt-1 whitespace-pre-wrap break-words text-slate-300">{waypoint.arrivalSignal}</dd></div></dl>
+              {waypoint.status === "reached" ? (
+                waypoint.reachedEvidence != null && waypoint.reachedAt != null ? (
+                  <details className="mt-3">
+                    <summary className="cursor-pointer text-sm text-cyan-200">Review saved Reached confirmation</summary>
+                    <dl className="mt-3 space-y-3 text-sm">
+                      <div><dt className="font-semibold text-slate-200">Supporting evidence</dt><dd className="mt-1 whitespace-pre-wrap break-words text-slate-300">{waypoint.reachedEvidence}</dd></div>
+                      <div><dt className="font-semibold text-slate-200">Confirmed on</dt><dd className="mt-1 text-slate-300"><time dateTime={waypoint.reachedAt}>{new Date(waypoint.reachedAt).toLocaleString("en-US")}</time></dd></div>
+                    </dl>
+                  </details>
+                ) : <p className="mt-3 text-sm text-slate-300">Saved supporting evidence and confirmation time are unavailable for this earlier Waypoint.</p>
+              ) : null}
               <details className="mt-3"><summary className="cursor-pointer text-sm text-cyan-200">Review saved source</summary><SavedSource state={state} sourceMessageId={waypoint.sourceMessageId} /></details>
               {waypoint.status === "chosen" ? <button type="button" className={`${buttonClass} mt-3`} disabled={busy} onClick={() => { setReachedReviewId(waypoint.id); setReachedEvidence(""); setReachedConfirmed(false); setError(null); }}>Review Reached: {waypoint.destination}</button> : <p className="mt-3 text-sm text-slate-300">Meaningful progress does not mean your journey is over.</p>}
             </li>

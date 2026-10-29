@@ -147,6 +147,58 @@ describe("Explorer conversation command parser", () => {
 });
 
 describe("Explorer conversation closed result parser", () => {
+  const routeEvent = (revision: number) => ({ operationId: uuid(800 + revision), revision,
+    kind: "priority_confirmed", compassItemId: pointId, label: "The label saved at that time",
+    recordedAt: "2026-10-29T07:00:00.123456+00:00" });
+
+  it("preserves ordered captured Route facts without rewriting them from today's point label", () => {
+    const original = { ...populatedState(), route: [routeEvent(1), { ...routeEvent(3), kind: "attention_changed" }] };
+    const parsed = parseExplorerConversationResult(success(original));
+    expect(parsed).toEqual(success(original));
+    if (!parsed?.ok) throw new Error("expected_route");
+    expect(Object.isFrozen(parsed.state.route)).toBe(true);
+    expect(Object.isFrozen(parsed.state.route?.[0])).toBe(true);
+    original.route[0].label = "Changed after parsing";
+    expect(parsed.state.route?.[0].label).toBe("The label saved at that time");
+    expect(parseExplorerConversationResult(success({ ...emptyState(), route: [] }))).not.toBeNull();
+  });
+
+  it("refuses malformed, unordered, duplicate or foreign Route facts", () => {
+    for (const route of [null, {}, [routeEvent(0)], [routeEvent(4)], [routeEvent(2), routeEvent(1)],
+      [routeEvent(1), { ...routeEvent(2), operationId: routeEvent(1).operationId }],
+      [{ ...routeEvent(1), compassItemId: uuid(99) }], [{ ...routeEvent(1), kind: "automatic_priority" }],
+      [{ ...routeEvent(1), recordedAt: "not a date" }], [{ ...routeEvent(1), label: " " }],
+      [{ ...routeEvent(1), privateDraft: "must not escape" }]]) {
+      expect(parseExplorerConversationResult(success({ ...populatedState(), route }))).toBeNull();
+    }
+  });
+
+  it("reads actual Reached evidence and time together while accepting unchanged legacy projections", () => {
+    const original = populatedState();
+    expect(parseExplorerConversationResult(success(original))).toEqual(success(original));
+    const reached = { ...original.waypoints[0], status: "reached", reachedEvidence: "We ate together.\nIt felt unhurried.",
+      reachedAt: "2026-10-29T07:00:00.123456+00:00" };
+    expect(parseExplorerConversationResult(success({ ...original, waypoints: [reached] })))
+      .toEqual(success({ ...original, waypoints: [reached] }));
+    expect(parseExplorerConversationResult(success({ ...original, waypoints: [{ ...original.waypoints[0],
+      reachedEvidence: null, reachedAt: null }] }))).not.toBeNull();
+    for (const waypoint of [without(reached, "reachedAt"), without(reached, "reachedEvidence"),
+      { ...reached, reachedEvidence: null }, { ...reached, reachedAt: null },
+      { ...reached, status: "chosen" }, { ...reached, reachedAt: "not a date" },
+      { ...reached, reachedEvidence: "x".repeat(1_001) }]) {
+      expect(parseExplorerConversationResult(success({ ...original, waypoints: [waypoint] }))).toBeNull();
+    }
+  });
+
+  it("never accepts saved Route or Reached projection fields as browser commands", () => {
+    for (const command of validCommands) {
+      for (const extra of [{ route: [routeEvent(1)] }, { reachedAt: "2026-10-29T07:00:00Z" },
+        { reachedEvidence: "A claimed result" }]) {
+        expect(parseExplorerConversationCommand({ ...command, ...extra })).toBeNull();
+      }
+    }
+  });
+
   it("accepts valid empty Discovery without inventing a saved conversation or an available provider", () => {
     const parsed = parseExplorerConversationResult(success(emptyState()));
     expect(parsed).toEqual(success(emptyState()));
