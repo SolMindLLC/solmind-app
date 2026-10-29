@@ -12,7 +12,7 @@ export const ADMIN_BROWSER_SIGN_IN_PATHS = Object.freeze({
 export const GUIDE_BROWSER_SIGN_IN_HOME = "/guide/home" as const;
 export const ADMIN_BROWSER_SIGN_IN_HOME = "/admin/home" as const;
 export const PASSWORD_ROLE_BROWSER_NOT_MATCHED_MESSAGE =
-  "Couldn't sign you in. Check your password and latest code, or try again later.";
+  "Couldn't sign you in. Check your password and latest code. You can request a new code or try again later.";
 export const PASSWORD_ROLE_BROWSER_CONTRACT_FAILED = Object.freeze({
   ok: false, error: "password_role_browser_contract_failed",
 } as const);

@@ -369,7 +369,7 @@ describe("sign-in preview (approved screens A1, A2, A3, A3A, A4, M1, M2, M3)", (
       );
       expect(state.screen).toBe(SIGN_IN_SCREENS.enterCode);
       expect(enterCodeIntro(state.email)).toBe(
-        "If your email can receive a code, we've sent one. It works once and expires in 10 minutes.",
+        "Check your email for a sign-in code. If one arrives, enter the latest code below.",
       );
       expect(render(state)).not.toContain("solmind-admin");
     });
@@ -628,18 +628,25 @@ describe("sign-in preview (approved screens A1, A2, A3, A3A, A4, M1, M2, M3)", (
       expect(state.screen).toBe(SIGN_IN_SCREENS.enterCode);
       expect(state.email).toBe("avery@example.com");
       expect(enterCodeIntro(state.email)).toBe(
-        "If avery@example.com can receive a code, we've sent one. It works once and expires in 10 minutes.",
+        "Check avery@example.com for a sign-in code. If one arrives, enter the latest code below.",
       );
     });
 
-    it("never confirms that an account exists", () => {
+    it("confirms neither an account nor that a code was sent", () => {
       expect(enterCodeIntro("")).toBe(
-        "If your email can receive a code, we've sent one. It works once and expires in 10 minutes.",
+        "Check your email for a sign-in code. If one arrives, enter the latest code below.",
       );
       for (const { relativePath, source } of sources) {
         expect(/no account|not found|doesn't exist|does not exist|isn't registered/i.test(source), relativePath).toBe(
           false,
         );
+      }
+      // The same code screen also follows opaque failed/ambiguous delivery
+      // acknowledgments. It must never claim a send or reveal eligibility.
+      for (const email of ["", "admin-user", "known@example.com", "unknown@example.com"]) {
+        const copy = enterCodeIntro(email);
+        expect(copy).toContain("If one arrives, enter the latest code below.");
+        expect(copy).not.toMatch(/we['\u2019]ve sent|was sent|has been sent|delivered|account (?:exists|found)/i);
       }
     });
 
@@ -794,7 +801,7 @@ describe("sign-in preview (approved screens A1, A2, A3, A3A, A4, M1, M2, M3)", (
         expect(html.split(EXAMPLE_SCREEN_LABEL).length - 1, screen).toBe(1);
         const callout = html.indexOf(EXAMPLE_SCREEN_LABEL);
         if (screen === SIGN_IN_SCREENS.enterCode || screen === SIGN_IN_SCREENS.codeWrong) {
-          expect(callout, screen).toBeGreaterThan(html.indexOf("can receive a code"));
+          expect(callout, screen).toBeGreaterThan(html.indexOf("If one arrives"));
           expect(callout, screen).toBeLessThan(html.indexOf(ENTER_CODE_COPY.codeLabel));
         } else {
           expect(callout, screen).toBeLessThan(html.indexOf('<div role="status"'));
@@ -973,7 +980,7 @@ describe("optional dormant Explorer presentation without changing preview defaul
   it("UIV02 only opted-in consumers suppress preview additions and display supplied status", () => {
     const html = render(explorerOnCode(), "", "", { hidePreviewAdditions: true, status: createElement("p", { role: "status" }, "fixed-test-status") });
     expect(!html.includes("Preview controls") && !html.includes(EXAMPLE_SCREEN_LABEL), "preview additions omitted").toBe(true);
-    expect(html.includes("fixed-test-status") && html.includes("can receive a code"), "supplied status and accepted conditional text").toBe(true);
+    expect(html.includes("fixed-test-status") && html.includes("If one arrives"), "supplied status and neutral request text").toBe(true);
   });
   it("UIV03 pending disables submission and resend but keeps reset and departure usable", () => {
     const html = render(explorerOnCode(), "", "", { pending: true });

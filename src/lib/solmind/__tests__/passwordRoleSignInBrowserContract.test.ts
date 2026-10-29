@@ -40,7 +40,7 @@ describe("fixed role contract", () => {
   });
   it("uses the exact accepted common message", () => {
     expect(browser.PASSWORD_ROLE_BROWSER_NOT_MATCHED_MESSAGE).toBe(
-      "Couldn't sign you in. Check your password and latest code, or try again later.");
+      "Couldn't sign you in. Check your password and latest code. You can request a new code or try again later.");
   });
   it("keeps invalid identifier outcomes role-specific", () => {
     expect(browser.parseGuideSignInSendReply(server.GUIDE_SIGN_IN_INVALID_EMAIL).ok).toBe(true);

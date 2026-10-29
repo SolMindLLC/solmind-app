@@ -245,7 +245,7 @@ export function signingInAsLine(role: SolMindRole): string {
 }
 
 /**
- * A4's wording never confirms that an account exists: the same sentence
+ * A4's wording confirms neither an account nor delivery: the same sentence
  * appears whether or not the email belongs to anyone. An entry without "@"
  * (the Admin username that A3A accepts) is not an email address, so the
  * sentence says "your email" instead of showing it.
@@ -253,9 +253,9 @@ export function signingInAsLine(role: SolMindRole): string {
 export function enterCodeIntroParts(email: string): { before: string; shown: string; after: string } {
   const trimmed = email.trim();
   return {
-    before: "If ",
+    before: "Check ",
     shown: trimmed.includes("@") ? trimmed : "your email",
-    after: " can receive a code, we've sent one. It works once and expires in 10 minutes.",
+    after: " for a sign-in code. If one arrives, enter the latest code below.",
   };
 }
 
