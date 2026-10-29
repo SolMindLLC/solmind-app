@@ -26,6 +26,10 @@ const PORTS = Object.freeze({
   arrange: Object.freeze({ name: "solmind_confirm_explorer_compass_arrangement_v1", parameters: [...ACTOR,
     "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint", "p_priority_id", "p_items"],
     columns: ["outcome", "conversation_state"] }),
+  end: Object.freeze({ name: "solmind_end_explorer_conversation_v1", parameters: [...ACTOR,
+    "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint"], columns: ["outcome", "conversation_state"] }),
+  review: Object.freeze({ name: "solmind_read_ended_explorer_conversations_v1", parameters: [...ACTOR, "p_conversation_id"],
+    columns: ["outcome", "ended_conversations", "conversation_state"] }),
 });
 const FAILURE = "explorer_private_repository_unavailable";
 const OUTCOMES: Readonly<Record<keyof typeof PORTS, readonly string[]>> = Object.freeze({
@@ -33,6 +37,7 @@ const OUTCOMES: Readonly<Record<keyof typeof PORTS, readonly string[]>> = Object
   observe: ["ok", "exact_replay", "stale_revision"], prepare: ["ok", "exact_replay", "stale_revision", "stale_policy", "blocked", "unavailable"],
   settle: ["ok", "withheld", "exact_replay"], mutate: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   arrange: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
+  end: ["ok", "exact_replay", "already_ended", "stale_revision", "unavailable"], review: ["ok"],
 });
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !types.isProxy(value) && !Array.isArray(value) &&
@@ -89,8 +94,8 @@ function parameters(input: object, expected: readonly string[]): Readonly<Record
   return Object.freeze(copied);
 }
 
-// The returned object exposes seven exact ports, including atomic deliberate
-// formation mutation. There is no generic select/RPC/credential capability.
+// The returned object exposes nine exact ports, including deliberate
+// formation, ending and owned ended review. There is no generic select/RPC/credential capability.
 export function createExplorerPrivateConversationRepository(client: SupabaseClient): ExplorerPrivateConversationRepository {
   async function call(port: keyof typeof PORTS, input: object): Promise<ExplorerPrivateRpcRow> {
     try {
@@ -119,6 +124,6 @@ export function createExplorerPrivateConversationRepository(client: SupabaseClie
     },
     ensure: (input) => call("ensure", input), observe: (input) => call("observe", input), prepare: (input) => call("prepare", input),
     settle: (input) => call("settle", input), mutate: (input) => call("mutate", input),
-    arrange: (input) => call("arrange", input),
+    arrange: (input) => call("arrange", input), end: (input) => call("end", input), review: (input) => call("review", input),
   });
 }

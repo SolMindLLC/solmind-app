@@ -22,6 +22,7 @@ export type { ExplorerConversationFormationIntent } from "@/lib/solmind/explorer
 export type ExplorerConversationFormationProps = Readonly<{
   state: ExplorerConversationState;
   busy: boolean;
+  readOnly?: boolean;
   onCommand: (command: ExplorerConversationFormationIntent) => void;
 }>;
 
@@ -85,7 +86,7 @@ function SourceSelect({ id, state, value, onChange }: Readonly<{
   );
 }
 
-export function ExplorerConversationFormation({ state, busy, onCommand }: ExplorerConversationFormationProps) {
+export function ExplorerConversationFormation({ state, busy, readOnly = false, onCommand }: ExplorerConversationFormationProps) {
   const id = useId();
   const [compassSource, setCompassSource] = useState("");
   const [label, setLabel] = useState("");
@@ -132,7 +133,7 @@ export function ExplorerConversationFormation({ state, busy, onCommand }: Explor
   const route = state.route ?? [];
 
   function submit(result: FormationIntentResult) {
-    if (busy) return;
+    if (busy || readOnly) return;
     setError(result.error);
     if (result.ok) onCommand(result.command);
   }
@@ -141,7 +142,7 @@ export function ExplorerConversationFormation({ state, busy, onCommand }: Explor
     submit(buildCompassFormationIntent(state, { sourceMessageId: compassSource, label }));
   }
   function reviewArrangement(priorityId = state.priorityId) {
-    if (busy) return;
+    if (busy || readOnly) return;
     setArrangementDraft({ conversationId: state.conversationId, revision: state.revision, priorityId,
       items: state.compassItems.map(item => ({ compassItemId: item.id,
         anchor: item.anchor ?? null, emphasis: item.emphasis ?? null })) });
@@ -155,7 +156,7 @@ export function ExplorerConversationFormation({ state, busy, onCommand }: Explor
     setError(null);
   }
   function confirmArrangement() {
-    if (busy || arrangementDraft === null) return;
+    if (busy || readOnly || arrangementDraft === null) return;
     if (staleArrangement) {
       setError("Your saved Compass changed. Open a new arrangement review before confirming.");
       return;
@@ -181,11 +182,11 @@ export function ExplorerConversationFormation({ state, busy, onCommand }: Explor
         {item.emphasis == null ? "Placement and relative emphasis have not been recorded." : `Relative emphasis: ${emphasisLabels[item.emphasis]}.`}
       </p>
       <details className="mt-2"><summary className="cursor-pointer text-sm text-cyan-200">Review saved source</summary><SavedSource state={state} sourceMessageId={item.sourceMessageId} /></details>
-      <div className="mt-3 flex flex-wrap gap-2">
+      {!readOnly ? <div className="mt-3 flex flex-wrap gap-2">
         <button type="button" className={`${buttonClass} max-w-full break-words text-left`} disabled={busy || state.priorityId === item.id} onClick={() => reviewArrangement(item.id)}>Review Priority: {item.label}</button>
         <button type="button" className={`${buttonClass} max-w-full break-words text-left`} disabled={busy || state.attentionId === item.id || attentionUnavailable} onClick={() => submit(buildAttentionFormationIntent(state, item.id))}>Attend to: {item.label}</button>
-      </div>
-      {attentionUnavailable && state.attentionId !== item.id ? <p className="mt-2 text-xs text-slate-400">Arrange this point visibly before moving attention here.</p> : null}
+      </div> : null}
+      {!readOnly && attentionUnavailable && state.attentionId !== item.id ? <p className="mt-2 text-xs text-slate-400">Arrange this point visibly before moving attention here.</p> : null}
     </div>;
   }
   function chooseWaypoint(event: FormEvent<HTMLFormElement>) {
@@ -201,7 +202,7 @@ export function ExplorerConversationFormation({ state, busy, onCommand }: Explor
         Your Compass and Waypoints stay private in this conversation. Choosing a source does not share it.
         Only confirmed saved results appear below; unsaved edits stay on this page.
       </p>
-      {error ? <p role="alert" className="rounded-xl border border-amber-500/50 bg-slate-950 p-3 text-sm text-amber-100">{error}</p> : null}
+      {!readOnly && error ? <p role="alert" className="rounded-xl border border-amber-500/50 bg-slate-950 p-3 text-sm text-amber-100">{error}</p> : null}
 
       <section aria-labelledby={`${id}-compass-title`} className={panelClass}>
         <h2 id={`${id}-compass-title`} className="text-xl font-semibold text-slate-100">Session Compass</h2>
@@ -237,9 +238,9 @@ export function ExplorerConversationFormation({ state, busy, onCommand }: Explor
             <p className="mt-2 text-sm text-slate-300">Saved points outside the visible Compass, including points awaiting an arrangement. Every saved source remains reviewable.</p>
             {otherPaths.length === 0 ? <p className="mt-3 text-sm text-slate-400">No other paths are saved.</p> : <ul className="mt-3 space-y-3">{otherPaths.map(item => <li key={item.id}>{pointCard(item)}</li>)}</ul>}
           </details>
-          <button type="button" className={`${buttonClass} mt-4`} disabled={busy} onClick={() => reviewArrangement()}>Review Compass arrangement</button>
+          {!readOnly ? <button type="button" className={`${buttonClass} mt-4`} disabled={busy} onClick={() => reviewArrangement()}>Review Compass arrangement</button> : null}
         </>}
-        {arrangementDraft ? (
+        {!readOnly && arrangementDraft ? (
           <fieldset disabled={busy || staleArrangement} className="mt-4 space-y-4 rounded-2xl border border-amber-300/50 p-4">
             <legend className="px-1 font-semibold text-slate-100">Review Compass arrangement</legend>
             <p className="text-sm leading-6 text-slate-300">Choose each location and relative emphasis. Up to eight points can be visible; all remaining points stay in Other paths. No point is moved automatically.</p>
@@ -280,7 +281,7 @@ export function ExplorerConversationFormation({ state, busy, onCommand }: Explor
             <button type="button" className={buttonClass} disabled={!arrangementConfirmed || arrangementIssues.length > 0} onClick={confirmArrangement}>{changingPriority ? "Confirm new Priority and arrangement" : "Confirm arrangement"}</button>
           </fieldset>
         ) : null}
-        {arrangementDraft ? <button type="button" className={`${buttonClass} mt-3`} disabled={busy} onClick={() => { setArrangementDraft(null); setArrangementConfirmed(false); setError(null); }}>Close arrangement review</button> : null}
+        {!readOnly && arrangementDraft ? <button type="button" className={`${buttonClass} mt-3`} disabled={busy} onClick={() => { setArrangementDraft(null); setArrangementConfirmed(false); setError(null); }}>Close arrangement review</button> : null}
         <section aria-labelledby={`${id}-route-title`} className="mt-5 border-t border-slate-700 pt-4">
           <h3 id={`${id}-route-title`} className="font-semibold text-slate-100">Route</h3>
           {route.length === 0 ? (
@@ -304,7 +305,7 @@ export function ExplorerConversationFormation({ state, busy, onCommand }: Explor
             </ol>
           )}
         </section>
-        <form onSubmit={addCompass} className="mt-5 border-t border-slate-700 pt-4">
+        {!readOnly ? <form onSubmit={addCompass} className="mt-5 border-t border-slate-700 pt-4">
           <fieldset disabled={busy || !hasSource || state.compassItems.length >= EXPLORER_CONVERSATION_LIMITS.compassItems} className="space-y-3">
             <legend className="mb-3 font-semibold text-slate-100">Add a point you choose</legend>
             <SourceSelect id={`${id}-compass-source`} state={state} value={compassSource} onChange={setCompassSource} />
@@ -320,7 +321,7 @@ export function ExplorerConversationFormation({ state, busy, onCommand }: Explor
           <p className="mt-3 text-sm text-slate-400">New points stay in Other paths with no recorded placement or emphasis until you confirm an arrangement.</p>
           {!hasSource ? <p className="mt-3 text-sm text-slate-400">A saved conversation message is needed before adding a point.</p> : null}
           {state.compassItems.length >= EXPLORER_CONVERSATION_LIMITS.compassItems ? <p className="mt-3 text-sm text-slate-400">This private demo stores at most {EXPLORER_CONVERSATION_LIMITS.compassItems} points. All saved points remain available; another cannot be added here.</p> : null}
-        </form>
+        </form> : null}
       </section>
 
       <section aria-labelledby={`${id}-waypoints-title`} className={panelClass}>
@@ -344,11 +345,11 @@ export function ExplorerConversationFormation({ state, busy, onCommand }: Explor
                 ) : <p className="mt-3 text-sm text-slate-300">Saved supporting evidence and confirmation time are unavailable for this earlier Waypoint.</p>
               ) : null}
               <details className="mt-3"><summary className="cursor-pointer text-sm text-cyan-200">Review saved source</summary><SavedSource state={state} sourceMessageId={waypoint.sourceMessageId} /></details>
-              {waypoint.status === "chosen" ? <button type="button" className={`${buttonClass} mt-3`} disabled={busy} onClick={() => { setReachedReviewId(waypoint.id); setReachedEvidence(""); setReachedConfirmed(false); setError(null); }}>Review Reached: {waypoint.destination}</button> : <p className="mt-3 text-sm text-slate-300">Meaningful progress does not mean your journey is over.</p>}
+              {waypoint.status === "chosen" ? (!readOnly ? <button type="button" className={`${buttonClass} mt-3`} disabled={busy} onClick={() => { setReachedReviewId(waypoint.id); setReachedEvidence(""); setReachedConfirmed(false); setError(null); }}>Review Reached: {waypoint.destination}</button> : null) : <p className="mt-3 text-sm text-slate-300">Meaningful progress does not mean your journey is over.</p>}
             </li>
           ))}</ul>
         )}
-        {reachedReview ? (
+        {!readOnly && reachedReview ? (
           <fieldset disabled={busy} className="mt-4 space-y-3 rounded-2xl border border-cyan-300/50 p-4">
             <legend className="px-1 font-semibold text-slate-100">Review before confirming Reached</legend>
             <p className="whitespace-pre-wrap break-words text-sm text-slate-300">Destination: {reachedReview.destination}</p>
@@ -365,7 +366,7 @@ export function ExplorerConversationFormation({ state, busy, onCommand }: Explor
             </div>
           </fieldset>
         ) : null}
-        <form onSubmit={chooseWaypoint} className="mt-5 border-t border-slate-700 pt-4">
+        {!readOnly ? <form onSubmit={chooseWaypoint} className="mt-5 border-t border-slate-700 pt-4">
           <fieldset disabled={busy || !hasSource || state.waypoints.length >= EXPLORER_CONVERSATION_LIMITS.waypoints} className="space-y-3">
             <legend className="mb-3 font-semibold text-slate-100">Choose a private Waypoint</legend>
             <SourceSelect id={`${id}-waypoint-source`} state={state} value={waypointSource} onChange={value => { setWaypointSource(value); setWaypointConfirmed(false); }} />
@@ -387,7 +388,7 @@ export function ExplorerConversationFormation({ state, busy, onCommand }: Explor
           </fieldset>
           {!hasSource ? <p className="mt-3 text-sm text-slate-400">A saved conversation message is needed before choosing a Waypoint.</p> : null}
           {state.waypoints.length >= EXPLORER_CONVERSATION_LIMITS.waypoints ? <p className="mt-3 text-sm text-slate-400">This conversation has reached its private Waypoint limit.</p> : null}
-        </form>
+        </form> : null}
       </section>
     </aside>
   );

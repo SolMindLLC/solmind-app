@@ -9,6 +9,7 @@ export const EXPLORER_CONVERSATION_LIMITS = Object.freeze({
   messageCharacters: 8_192,
   labelCharacters: 160,
   waypointCharacters: 1_000,
+  endingCharacters: 2_048,
   messages: 100,
   compassItems: 24,
   visibleCompassItems: 8,
@@ -51,6 +52,13 @@ export type ExplorerConversationRouteEvent = Readonly<{
   items: readonly (ExplorerCompassArrangementItem & Readonly<{ label: string }>)[];
   recordedAt: string;
 }>;
+export type ExplorerConversationEnding = Readonly<{
+  operationId: string;
+  revision: number;
+  endedAt: string;
+  directionsTaken: string;
+  routeThroughRevision: number;
+}>;
 export type ExplorerConversationState = Readonly<{
   version: typeof EXPLORER_CONVERSATION_VERSION;
   conversationId: string | null;
@@ -63,10 +71,13 @@ export type ExplorerConversationState = Readonly<{
   attentionId: string | null;
   waypoints: readonly ExplorerConversationWaypoint[];
   route?: readonly ExplorerConversationRouteEvent[];
+  sessionStatus?: "active" | "ended" | null;
+  ending?: ExplorerConversationEnding | null;
 }>;
 type CommandBase = Readonly<{ operationId: string; expectedRevision: number }>;
 export type ExplorerConversationCommand = CommandBase & (
   | Readonly<{ kind: "send"; body: string }>
+  | Readonly<{ kind: "end_conversation"; conversationId: string }>
   | Readonly<{ kind: "add_compass"; sourceMessageId: string; label: string }>
   | Readonly<{ kind: "confirm_priority"; itemId: string }>
   | Readonly<{ kind: "set_attention"; itemId: string }>
@@ -112,6 +123,14 @@ function instant(value: unknown): value is string {
   const milliseconds = Date.parse(value);
   return Number.isFinite(milliseconds) && new Date(milliseconds).toISOString().slice(0, 19) === value.slice(0, 19);
 }
+// Exact selectors/times for new lifecycle surfaces. Keep prior parsers' behavior unchanged.
+export function isExplorerConversationId(value: unknown): value is string {
+  return typeof value === "string" && UUID.exec(value)?.[0] === value;
+}
+export function isExplorerConversationInstant(value: unknown): value is string {
+  return typeof value === "string" &&
+    /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?(?:Z|\+00:00)$/.exec(value)?.[0] === value && instant(value);
+}
 function anchor(value: unknown): value is ExplorerCompassAnchor | null {
   return value === null || EXPLORER_COMPASS_ANCHORS.includes(value as ExplorerCompassAnchor);
 }
@@ -131,6 +150,10 @@ export function parseExplorerConversationCommand(value: unknown): ExplorerConver
   switch (value.kind) {
     case "send":
       if (!keys(value, [...base, "body"]) || !text(value.body, EXPLORER_CONVERSATION_LIMITS.messageCharacters, true)) return null;
+      break;
+    case "end_conversation":
+      if (!keys(value, [...base, "conversationId"]) || !isExplorerConversationId(value.operationId) ||
+          !isExplorerConversationId(value.conversationId)) return null;
       break;
     case "add_compass":
       if (!keys(value, [...base, "sourceMessageId", "label"]) || !id(value.sourceMessageId) || !text(value.label, EXPLORER_CONVERSATION_LIMITS.labelCharacters)) return null;
@@ -174,7 +197,8 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
   if (value.ok !== true || value.error !== null || !object(value.state)) return null;
   const state = value.state;
   const hasRoute = Object.hasOwn(state, "route");
-  if (!keys(state, ["version", "conversationId", "revision", "pendingTurn", "providerState", "messages", "compassItems", "priorityId", "attentionId", "waypoints", ...(hasRoute ? ["route"] : [])]) ||
+  const hasLifecycle = Object.hasOwn(state, "sessionStatus") || Object.hasOwn(state, "ending");
+  if (!keys(state, ["version", "conversationId", "revision", "pendingTurn", "providerState", "messages", "compassItems", "priorityId", "attentionId", "waypoints", ...(hasRoute ? ["route"] : []), ...(hasLifecycle ? ["sessionStatus", "ending"] : [])]) ||
       state.version !== EXPLORER_CONVERSATION_VERSION || !revision(state.revision) ||
       typeof state.pendingTurn !== "boolean" ||
       !(state.conversationId === null || id(state.conversationId)) ||
@@ -271,11 +295,43 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
     }
   }
   if (state.conversationId === null && (state.revision !== 0 || state.pendingTurn || messages.length || compassItems.length || waypoints.length || route.length)) return null;
+  let ending: ExplorerConversationEnding | null = null;
+  if (hasLifecycle) {
+    if (state.conversationId === null) {
+      if (state.sessionStatus !== null || state.ending !== null) return null;
+    } else {
+      if (!isExplorerConversationId(state.conversationId) ||
+          !["active", "ended"].includes(state.sessionStatus as string)) return null;
+      if (state.sessionStatus === "active") {
+        if (state.ending !== null) return null;
+      } else {
+        if (state.providerState !== "unavailable" || state.pendingTurn) return null;
+        if (state.ending !== null) {
+          const saved = state.ending;
+          if (!object(saved) || !keys(saved, ["operationId", "revision", "endedAt", "directionsTaken", "routeThroughRevision"]) ||
+              !isExplorerConversationId(saved.operationId) || routeIds.has(saved.operationId) ||
+              !revision(saved.revision) || saved.revision < 1 || saved.revision !== state.revision ||
+              !revision(saved.routeThroughRevision) || saved.routeThroughRevision !== saved.revision - 1 ||
+              route.some(event => event.revision > (saved.routeThroughRevision as number)) ||
+              !isExplorerConversationInstant(saved.endedAt) ||
+              !text(saved.directionsTaken, EXPLORER_CONVERSATION_LIMITS.endingCharacters, true)) return null;
+          ending = Object.freeze({ operationId: saved.operationId, revision: saved.revision, endedAt: saved.endedAt,
+            directionsTaken: saved.directionsTaken, routeThroughRevision: saved.routeThroughRevision });
+        }
+      }
+    }
+  }
   return Object.freeze({ ok: true, error: null, state: Object.freeze({ version: EXPLORER_CONVERSATION_VERSION,
     conversationId: state.conversationId as string | null, revision: state.revision,
     pendingTurn: state.pendingTurn,
     providerState: state.providerState as ExplorerConversationState["providerState"], messages: Object.freeze(messages),
     compassItems: Object.freeze(compassItems), priorityId: state.priorityId as string | null,
     attentionId: state.attentionId as string | null, waypoints: Object.freeze(waypoints),
-    ...(hasRoute ? { route: Object.freeze(route) } : {}) }) });
+    ...(hasRoute ? { route: Object.freeze(route) } : {}),
+    ...(hasLifecycle ? { sessionStatus: state.sessionStatus as "active" | "ended" | null, ending } : {}) }) });
+}
+
+export function parseExplorerConversationState(value: unknown): ExplorerConversationState | null {
+  const parsed = parseExplorerConversationResult({ ok: true, state: value, error: null });
+  return parsed?.ok ? parsed.state : null;
 }

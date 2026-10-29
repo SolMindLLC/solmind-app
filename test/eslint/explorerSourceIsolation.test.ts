@@ -40,6 +40,7 @@ const EXPECTED_PROFILES: readonly Profile[] = [
   profile("virtual-guide/explorerConversationContext.ts", ["server-only", "./authorizedVirtualGuideContext",
     "../context/explorerSafeContext", "../onboarding", "node:util", "./effectiveMethodologyContext"], ["./explorerConversationComposition"]),
   profile("explorerConversationContract.ts", []),
+  profile("explorerConversationReviewContract.ts", ["./explorerConversationContract"]),
   profile("explorerPrivateConversationResponse.ts", ["./explorerConversationContract"]),
   profile("virtual-guide/explorerConversationComposition.ts", ["server-only", "node:crypto", "../explorerConversationContract", "./virtualGuideConversationContract"]),
   profile("virtual-guide/explorerPrivateConfigurationCandidate.ts", ["server-only"]),
@@ -48,7 +49,7 @@ const EXPECTED_PROFILES: readonly Profile[] = [
   profile("virtual-guide/explorerSafetyReplyInvocation.ts", ["server-only", "node:util", "./explorerSafetyReplyContract"]),
   profile("virtual-guide/explorerConversationSafety.ts", ["server-only", "./explorerSafetyReplyContract"], ["./explorerPrivateConfiguration"]),
   profile("virtual-guide/openAiLunaExplorerSafetyTransport.ts", ["server-only", "./openAiModelConfiguration", "./explorerSafetyReplyContract"], ["./explorerSafetyReplyInvocation"]),
-  profile("virtual-guide/explorerPrivateConversationComposition.ts", ["server-only", "./openAiModelConfiguration", "node:crypto", "node:util", "../explorerConversationContract", "./explorerConversationComposition", "./explorerPrivateConfiguration", "./explorerSafetyReplyContract", "./explorerSafetyReplyInvocation", "./explorerConversationSafety"], ["../explorerPrivateConversationResponse"]),
+  profile("virtual-guide/explorerPrivateConversationComposition.ts", ["server-only", "./openAiModelConfiguration", "node:crypto", "node:util", "../explorerConversationContract", "../explorerConversationReviewContract", "./explorerConversationComposition", "./explorerPrivateConfiguration", "./explorerSafetyReplyContract", "./explorerSafetyReplyInvocation", "./explorerConversationSafety"], ["../explorerPrivateConversationResponse"]),
   profile("supabase/explorerPrivateConversationRepository.ts", ["server-only", "node:util", "../explorerConversationContract"], ["@supabase/supabase-js", "../virtual-guide/explorerPrivateConversationComposition"]),
   profile("operations/explorerPrivateOperationalSignal.ts", ["server-only", "node:fs/promises", "node:path"], ["../virtual-guide/explorerPrivateConversationComposition"]),
   profile("virtual-guide/openAiLunaMethodologyScreeningTransport.ts", ["server-only", "./openAiModelConfiguration", "node:crypto", "./methodologySafetyScreenContract"], ["./methodologyScreeningComposition"]),
@@ -120,7 +121,7 @@ function expectFixedFailure(result: ESLint.LintResult, messageId: keyof typeof M
 const severity = (entry: unknown) => Array.isArray(entry) ? entry[0] : entry;
 
 describe("actual Explorer assembly source-isolation plugin and flat configuration", () => {
-  it("exports exactly the twenty-eight reviewed direct-source profiles, deeply frozen", () => {
+  it("exports exactly the twenty-nine reviewed direct-source profiles, deeply frozen", () => {
     expect(EXPLORER_SOURCE_PROFILES).toEqual(EXPECTED_PROFILES);
     expect(Object.isFrozen(EXPLORER_SOURCE_PROFILES)).toBe(true);
     for (const entry of EXPLORER_SOURCE_PROFILES) {

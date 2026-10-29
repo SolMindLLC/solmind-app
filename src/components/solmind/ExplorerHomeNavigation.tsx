@@ -22,6 +22,11 @@ export function ExplorerHomeNavigation({
           <a href="/explorer/conversation" className={`${destinationClassName} mb-3 hover:border-teal-700`}>Conversation and Compass</a>
         )}
         {navigationDisabled ? (
+          <span aria-disabled="true" className={`${destinationClassName} mb-3 opacity-60`}>Review ended conversations</span>
+        ) : (
+          <a href="/explorer/conversations" className={`${destinationClassName} mb-3 hover:border-teal-700`}>Review ended conversations</a>
+        )}
+        {navigationDisabled ? (
           <span aria-disabled="true" className={`${destinationClassName} opacity-60`}>
             Waypoint Suggestions
           </span>

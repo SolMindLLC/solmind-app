@@ -415,3 +415,22 @@ it("the older composition refuses a new arrangement rather than forwarding it to
     { operationId: command.operationId, fingerprint: explorerConversationCommandFingerprint(command) });
   expect(f.buildContext).not.toHaveBeenCalled(); noWrite(f);
 });
+
+describe("private-only ending identity", () => {
+  it("binds every End selection without mutating its command", () => {
+    const command = { kind: "end_conversation" as const, operationId: ID.operation, expectedRevision: 4, conversationId: ID.conversation };
+    const fingerprint = explorerConversationCommandFingerprint(command);
+    expect(fingerprint).toBe(createHash("sha256").update(JSON.stringify([
+      EXPLORER_CONVERSATION_VERSION, "end_conversation", ID.operation, 4, ID.conversation,
+    ])).digest("hex").toUpperCase());
+    expect(explorerConversationCommandFingerprint({ ...command, conversationId: ID.otherAccount })).not.toBe(fingerprint);
+    expect(explorerConversationCommandFingerprint({ ...command, expectedRevision: 5 })).not.toBe(fingerprint);
+    expect(command.expectedRevision).toBe(4);
+  });
+  it("never forwards End through the legacy generic mutation", async () => {
+    const f = fixture();
+    expect(await commandExplorerConversation({ command: { kind: "end_conversation", operationId: ID.operation,
+      expectedRevision: 4, conversationId: ID.conversation }, dependencies: f.dependencies })).toEqual(denied);
+    expect(f.read).not.toHaveBeenCalled(); expect(f.mutate).not.toHaveBeenCalled();
+  });
+});

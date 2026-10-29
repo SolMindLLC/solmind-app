@@ -220,3 +220,26 @@ describe("Formation presentation (static proof only)", () => {
     expect(onCommand).not.toHaveBeenCalled();
   });
 });
+
+
+it("read-only formation preserves saved Compass, Route, sources and Waypoint evidence while exposing no edit controls", () => {
+  const current = state({ conversationId: "conversation-a", revision: 4, sessionStatus: "ended", ending: null,
+    messages: [{ id: "message-a", role: "explorer", body: "A saved source <script>text only</script>", createdAt: "2026-10-29T07:00:00Z" }],
+    compassItems: [{ id: "point-a", sourceMessageId: "message-a", label: "Saved Priority", anchor: "apex", emphasis: 3 },
+      { id: "point-b", sourceMessageId: "message-a", label: "Saved Other path", anchor: null, emphasis: 1 }],
+    priorityId: "point-a", attentionId: "point-a", route: [{ operationId: "operation-route", revision: 2,
+      kind: "priority_confirmed", compassItemId: "point-a", label: "Captured direction", recordedAt: "2026-10-29T07:01:00Z" }],
+    waypoints: [{ id: "waypoint-chosen", sourceMessageId: "message-a", destination: "Still in progress",
+      meaning: "A saved meaning", arrivalSignal: "A saved signal", status: "chosen" },
+    { id: "waypoint-reached", sourceMessageId: "message-a", destination: "Saved arrival",
+      meaning: "A meaningful arrival", arrivalSignal: "I noticed it", status: "reached",
+      reachedEvidence: "Actual saved evidence", reachedAt: "2026-10-29T07:02:00Z" }] });
+  const onCommand = vi.fn();
+  const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: current, busy: false, readOnly: true, onCommand }));
+  for (const text of ["Saved Priority", "Saved Other path", "Captured direction", "Review saved source", "A saved source &lt;script&gt;text only&lt;/script&gt;",
+    "Still in progress", "In progress — chosen by you", "Saved arrival", "Actual saved evidence", "Review saved Reached confirmation"]) expect(html).toContain(text);
+  for (const tag of ["<form", "<button", "<input", "<select", "<textarea"]) expect(html).not.toContain(tag);
+  expect(html).not.toContain("Review Reached:");
+  expect(html).not.toContain("Add a point you choose");
+  expect(onCommand).not.toHaveBeenCalled();
+});

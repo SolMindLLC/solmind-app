@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 import { createExplorerPrivateConversationRepository } from "../explorerPrivateConversationRepository";
 import type { ExplorerPrivateEnsureParameters, ExplorerPrivateObserveParameters, ExplorerPrivatePrepareParameters,
-  ExplorerPrivateSettleParameters, ExplorerPrivateMutateParameters, ExplorerPrivateArrangeParameters } from "../../virtual-guide/explorerPrivateConversationComposition";
+  ExplorerPrivateSettleParameters, ExplorerPrivateMutateParameters, ExplorerPrivateArrangeParameters, ExplorerPrivateEndParameters, ExplorerPrivateReviewParameters } from "../../virtual-guide/explorerPrivateConversationComposition";
 
 const UUID = "00000000-0000-4000-8000-000000000001"; const SHA = "A".repeat(64);
 const ACTOR = { p_actor_user_account_id: UUID, p_user_session_id: UUID };
@@ -30,6 +30,9 @@ function mutate(): ExplorerPrivateMutateParameters { return { ...ACTOR, p_conver
 function arrange(): ExplorerPrivateArrangeParameters { return { ...ACTOR, p_conversation_id: UUID, p_operation_id: UUID,
   p_expected_revision: 0, p_command_fingerprint: SHA, p_priority_id: UUID,
   p_items: [{ compassItemId: UUID, anchor: "apex", emphasis: 2 }] }; }
+function end(): ExplorerPrivateEndParameters { return { ...ACTOR, p_conversation_id: UUID, p_operation_id: UUID,
+  p_expected_revision: 0, p_command_fingerprint: SHA }; }
+function review(): ExplorerPrivateReviewParameters { return { ...ACTOR, p_conversation_id: null }; }
 function fixture(row: unknown) {
   const abortSignal = vi.fn(async (_signal: AbortSignal) => ({ data: [row], error: null as { code: string; message: string } | null }));
   const rpc = vi.fn((_name: string, _parameters: unknown) => ({ abortSignal }));
@@ -37,9 +40,9 @@ function fixture(row: unknown) {
   return { repository, rpc, abortSignal };
 }
 describe("Closed private Explorer RPC repository (synthetic client)", () => {
-  it("exposes seven closed ports including deliberate mutation and arrangement, without generic access", () => {
+  it("exposes nine closed ports including deliberate formation, End and ended review, without generic access", () => {
     const f = fixture(null);
-    expect(Object.keys(f.repository).sort()).toEqual(["arrange", "ensure", "mutate", "observe", "prepare", "read", "settle"]);
+    expect(Object.keys(f.repository).sort()).toEqual(["arrange", "end", "ensure", "mutate", "observe", "prepare", "read", "review", "settle"]);
     expect(Object.isFrozen(f.repository)).toBe(true);
   });
   it("read derives exact actor fields and paired operation selectors", async () => {
@@ -190,5 +193,63 @@ describe("Closed Compass arrangement SDK port", () => {
     const unknown = fixture(null); unknown.abortSignal.mockRejectedValue(new Error("Synthetic acknowledgement loss"));
     await expect(unknown.repository.arrange!(arrange())).rejects.toThrowError("explorer_private_repository_unavailable");
     expect(unknown.rpc).toHaveBeenCalledOnce(); expect(unknown.abortSignal).toHaveBeenCalledOnce();
+  });
+});
+
+
+describe("Closed End and ended-review SDK capabilities", () => {
+  it("uses the exact six-argument End and three-argument review RPCs with their closed result columns", async () => {
+    const e = fixture({ outcome: "ok", conversation_state: null });
+    expect(await e.repository.end!(end())).toEqual({ outcome: "ok", conversation_state: null });
+    expect(e.rpc).toHaveBeenCalledExactlyOnceWith("solmind_end_explorer_conversation_v1", end());
+    expect(Object.keys(e.rpc.mock.calls[0][1] as object)).toHaveLength(6);
+    const v = fixture({ outcome: "ok", ended_conversations: [], conversation_state: null });
+    expect(await v.repository.review!(review())).toEqual({ outcome: "ok", ended_conversations: [], conversation_state: null });
+    expect(v.rpc).toHaveBeenCalledExactlyOnceWith("solmind_read_ended_explorer_conversations_v1", review());
+    expect(Object.keys(v.rpc.mock.calls[0][1] as object)).toHaveLength(3);
+    expect(e.abortSignal).toHaveBeenCalledOnce(); expect(v.abortSignal).toHaveBeenCalledOnce();
+  });
+
+  it.each(["ok", "exact_replay", "already_ended", "stale_revision", "unavailable"])("accepts only declared End outcome %s", async outcome => {
+    const f = fixture({ outcome, conversation_state: null });
+    expect(await f.repository.end!(end())).toEqual({ outcome, conversation_state: null });
+    expect(f.rpc).toHaveBeenCalledOnce();
+  });
+
+  it("rejects extra or getter parameters before either capability reaches RPC", async () => {
+    for (const method of ["end", "review"] as const) {
+      const original = method === "end" ? end() : review();
+      const input = { ...original, p_body: "Unreviewed content" }; const f = fixture(null);
+      if (method === "end") await expect(f.repository.end!(input as unknown as ExplorerPrivateEndParameters)).rejects.toThrowError("explorer_private_repository_unavailable");
+      else await expect(f.repository.review!(input as ExplorerPrivateReviewParameters)).rejects.toThrowError("explorer_private_repository_unavailable");
+      expect(f.rpc).not.toHaveBeenCalled();
+      const getter = vi.fn(() => UUID); Object.defineProperty(original, "p_conversation_id", { enumerable: true, get: getter });
+      const g = fixture(null);
+      if (method === "end") await expect(g.repository.end!(original as ExplorerPrivateEndParameters)).rejects.toThrowError("explorer_private_repository_unavailable");
+      else await expect(g.repository.review!(original as ExplorerPrivateReviewParameters)).rejects.toThrowError("explorer_private_repository_unavailable");
+      expect(getter).not.toHaveBeenCalled(); expect(g.rpc).not.toHaveBeenCalled();
+    }
+  });
+
+  it("rejects unknown/expanded result shapes and maps declared conflict/denial exceptions without detail", async () => {
+    for (const row of [{ outcome: "invented", conversation_state: null }, { outcome: "ok", conversation_state: null, policy_state: null }]) {
+      const f = fixture(row); await expect(f.repository.end!(end())).rejects.toThrowError("explorer_private_repository_unavailable");
+    }
+    for (const row of [{ outcome: "exact_replay", ended_conversations: [], conversation_state: null },
+      { outcome: "ok", ended_conversations: [], conversation_state: null, authority_context: {} }]) {
+      const f = fixture(row); await expect(f.repository.review!(review())).rejects.toThrowError("explorer_private_repository_unavailable");
+    }
+    const e = fixture(null); e.abortSignal.mockResolvedValue({ data: [], error: { code: "P0001", message: "solmind_explorer_private_operation_conflict" } });
+    expect(await e.repository.end!(end())).toEqual({ outcome: "operation_conflict" });
+    const v = fixture(null); v.abortSignal.mockResolvedValue({ data: [], error: { code: "P0001", message: "solmind_explorer_conversation_denied" } });
+    expect(await v.repository.review!(review())).toEqual({ outcome: "denied" });
+  });
+
+  it("does not repost either capability after an unknown acknowledgement", async () => {
+    const e = fixture(null); e.abortSignal.mockRejectedValue(new Error("Synthetic private acknowledgement loss"));
+    await expect(e.repository.end!(end())).rejects.toThrowError("explorer_private_repository_unavailable");
+    const v = fixture(null); v.abortSignal.mockRejectedValue(new Error("Synthetic private acknowledgement loss"));
+    await expect(v.repository.review!(review())).rejects.toThrowError("explorer_private_repository_unavailable");
+    expect(e.rpc).toHaveBeenCalledOnce(); expect(v.rpc).toHaveBeenCalledOnce();
   });
 });

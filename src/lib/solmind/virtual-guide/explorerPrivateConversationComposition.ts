@@ -4,9 +4,10 @@ import { types } from "node:util";
 import { parseOpenAiModelName } from "./openAiModelConfiguration";
 import {
   EXPLORER_CONVERSATION_VERSION, EXPLORER_CONVERSATION_LIMITS,
-  parseExplorerConversationCommand, parseExplorerConversationResult,
+  parseExplorerConversationCommand, parseExplorerConversationResult, isExplorerConversationId,
   type ExplorerConversationCommand, type ExplorerConversationResult, type ExplorerConversationState, type ExplorerCompassArrangementItem,
 } from "../explorerConversationContract";
+import { parseExplorerConversationReviewResult } from "../explorerConversationReviewContract";
 import { explorerConversationCommandFingerprint, type ExplorerConversationActor, type ExplorerConversationTurnIds, type ExplorerConversationDependencies } from "./explorerConversationComposition";
 import { parseExplorerPrivateConfigurationCandidate, type ExplorerPrivateConfigurationCandidate } from "./explorerPrivateConfiguration";
 import {
@@ -52,7 +53,11 @@ export type ExplorerPrivateMutateParameters = ActorParameters & Readonly<{
 export type ExplorerPrivateArrangeParameters = ActorParameters & Readonly<{
   p_conversation_id: string; p_operation_id: string; p_expected_revision: number; p_command_fingerprint: string;
   p_priority_id: string | null; p_items: readonly ExplorerCompassArrangementItem[] }>;
-export type ExplorerPrivateRpcRow = Readonly<{ outcome: string; conversation_state?: unknown; authority_context?: unknown;
+export type ExplorerPrivateEndParameters = ActorParameters & Readonly<{
+  p_conversation_id: string; p_operation_id: string; p_expected_revision: number; p_command_fingerprint: string }>;
+export type ExplorerPrivateReviewParameters = ActorParameters & Readonly<{ p_conversation_id: string | null }>;
+export type ExplorerPrivateConversationReviewResult = NonNullable<ReturnType<typeof parseExplorerConversationReviewResult>>;
+export type ExplorerPrivateRpcRow = Readonly<{ outcome: string; ended_conversations?: unknown; conversation_state?: unknown; authority_context?: unknown;
   policy_state?: unknown; dispatch_permitted?: boolean; saved_reply?: boolean }>;
 export type ExplorerPrivateReadRow = ExplorerPrivateRpcRow & Readonly<{ conversation_state: unknown }>;
 export type ExplorerPrivateConversationRepository = Readonly<{
@@ -63,6 +68,8 @@ export type ExplorerPrivateConversationRepository = Readonly<{
   settle: (parameters: ExplorerPrivateSettleParameters) => Promise<ExplorerPrivateRpcRow>;
   mutate?: (parameters: ExplorerPrivateMutateParameters) => Promise<ExplorerPrivateRpcRow>;
   arrange?: (parameters: ExplorerPrivateArrangeParameters) => Promise<ExplorerPrivateRpcRow>;
+  end?: (parameters: ExplorerPrivateEndParameters) => Promise<ExplorerPrivateRpcRow>;
+  review?: (parameters: ExplorerPrivateReviewParameters) => Promise<ExplorerPrivateRpcRow>;
 }>;
 export type ExplorerPrivateConversationResult = Readonly<{ result: ExplorerConversationResult; assistance: ExplorerPrivateAssistance | null }>;
 export type ExplorerPrivateOperationalReadiness = Readonly<{
@@ -253,6 +260,35 @@ export async function readExplorerPrivateConversation(dependencies: ExplorerPriv
       state: Object.freeze({ ...current.state, providerState: available ? "available" : "unavailable" }) }) : current, assistance: null });
   } catch { return failed(); }
 }
+function reviewFailure(error: "denied" | "unavailable" = "unavailable"): ExplorerPrivateConversationReviewResult {
+  return Object.freeze({ version: "explorer-conversation-review.v1", ok: false, items: null, state: null, error });
+}
+
+// This read uses only the current owned ended-review capability. It never
+// consults the active selector, configuration, context or provider path.
+export async function readEndedExplorerConversations(
+  dependencies: ExplorerPrivateConversationDependencies,
+  conversationId: string | null,
+): Promise<ExplorerPrivateConversationReviewResult> {
+  if (conversationId !== null && !isExplorerConversationId(conversationId)) {
+    return reviewFailure("denied");
+  }
+  try {
+    const actor = await dependencies.authenticate();
+    if (!actorValid(actor)) return reviewFailure("denied");
+    if (dependencies.repository.review === undefined) return reviewFailure();
+    const row = await dependencies.repository.review({ ...base(actor), p_conversation_id: conversationId });
+    if (row.outcome === "denied") return reviewFailure("denied");
+    if (row.outcome !== "ok") return reviewFailure();
+    const parsed = parseExplorerConversationReviewResult({ version: "explorer-conversation-review.v1", ok: true,
+      items: row.ended_conversations, state: row.conversation_state, error: null });
+    if (!parsed?.ok || (conversationId === null ? parsed.state !== null
+      : parsed.state === null || parsed.state.conversationId !== conversationId || parsed.state.sessionStatus !== "ended") ||
+      (parsed.state !== null && parsed.state.providerState !== "unavailable")) return reviewFailure();
+    return parsed;
+  } catch { return reviewFailure(); }
+}
+
 export async function commandExplorerPrivateConversation(input: Readonly<{ command: unknown; dependencies: ExplorerPrivateConversationDependencies; signal?: AbortSignal }>): Promise<ExplorerPrivateConversationResult> {
   let command: ReturnType<typeof parseExplorerConversationCommand>;
   try { command = parseExplorerConversationCommand(input.command); } catch { return failed("denied"); }
@@ -263,6 +299,22 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
     const actor: ExplorerConversationActor = authenticated;
     if (input.signal?.aborted) return failed();
     const fingerprint = explorerConversationCommandFingerprint(command);
+    if (command.kind === "end_conversation") {
+      // End and its replay cannot use the active-only preflight after commit.
+      // SQL owns fresh current authority, pending state and atomic closure.
+      if (dependencies.repository.end === undefined) return failed("denied");
+      const row = await dependencies.repository.end({ ...base(actor), p_conversation_id: command.conversationId,
+        p_operation_id: command.operationId, p_expected_revision: command.expectedRevision, p_command_fingerprint: fingerprint });
+      const ended = stateResult(row.outcome === "already_ended" ? { ...row, outcome: "ok" } : row);
+      if (!ended.ok) return Object.freeze({ result: ended, assistance: null });
+      if (ended.state.conversationId !== command.conversationId || ended.state.sessionStatus !== "ended") return failed();
+      if (row.outcome !== "already_ended") {
+        const ending = ended.state.ending;
+        if (ending == null || ending.operationId !== command.operationId || ending.revision !== ended.state.revision ||
+            ending.revision !== command.expectedRevision + 1 || ending.routeThroughRevision !== command.expectedRevision) return failed();
+      }
+      return Object.freeze({ result: ended, assistance: null });
+    }
     const readRow = await dependencies.repository.read(actor, { operationId: command.operationId, fingerprint });
     const read = stateResult(readRow); if (!read.ok) return Object.freeze({ result: read, assistance: null });
     // Historical exact command replay precedes new configuration/source/model work.

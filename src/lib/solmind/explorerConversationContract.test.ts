@@ -5,6 +5,9 @@ import {
   EXPLORER_CONVERSATION_VERSION,
   parseExplorerConversationCommand,
   parseExplorerConversationResult,
+  parseExplorerConversationState,
+  isExplorerConversationId,
+  isExplorerConversationInstant,
 } from "./explorerConversationContract";
 
 const uuid = (number: number) => `00000000-0000-4000-8000-${number.toString(16).padStart(12, "0")}`;
@@ -23,6 +26,7 @@ const validCommands = [
   { ...base, kind: "confirm_reached", waypointId, evidence: "We had an unhurried breakfast together." },
   { ...base, kind: "confirm_compass_arrangement", priorityId: pointId,
     items: [{ compassItemId: pointId, anchor: "apex", emphasis: 2 }] },
+  { ...base, kind: "end_conversation", conversationId: uuid(1) },
 ];
 function without(value: Record<string, unknown>, key: string): Record<string, unknown> {
   return Object.fromEntries(Object.entries(value).filter(([name]) => name !== key));
@@ -564,5 +568,104 @@ describe("Confirmed Compass arrangement boundaries", () => {
     expect(parseExplorerConversationResult(success({ ...original,
       compassItems: [...original.compassItems, { id: uuid(7), sourceMessageId: sourceId, label: "Added after the recorded arrangement", anchor: null, emphasis: null }],
       route: [event] }))).not.toBeNull();
+  });
+});
+
+
+describe("Owned End Session contract", () => {
+  const savedEnding = () => ({ operationId: uuid(950), revision: 4,
+    endedAt: "2026-10-29T10:00:00.123456+00:00", directionsTaken: "The confirmed Priority was Calmer mornings.\nThe saved Route has one change.",
+    routeThroughRevision: 3 });
+  const endedState = () => ({ ...populatedState(), revision: 4, sessionStatus: "ended", ending: savedEnding(), route: [{
+    operationId: uuid(900), revision: 2, kind: "priority_confirmed", compassItemId: pointId,
+    label: "The actual historical label", recordedAt: "2026-10-29T09:00:00Z",
+  }] });
+
+  it("requires an exact actual-conversation selector for End without accepting reflection or saved facts", () => {
+    const command = { ...base, kind: "end_conversation", conversationId: uuid(1) };
+    expect(parseExplorerConversationCommand(command)).toEqual(command);
+    for (const conversationId of [null, undefined, "", ` ${uuid(1)}`, `${uuid(1)}\n`, operationId.toUpperCase(), "not-an-id"]) {
+      expect(parseExplorerConversationCommand({ ...command, conversationId })).toBeNull();
+    }
+    expect(parseExplorerConversationCommand({ ...command, operationId: `${operationId}\n` })).toBeNull();
+    for (const extra of [{ body: "No new message" }, { sessionStatus: "ended" }, { ending: savedEnding() },
+      { directionsTaken: "Invented" }, { routeThroughRevision: 3 }]) {
+      expect(parseExplorerConversationCommand({ ...command, ...extra })).toBeNull();
+    }
+  });
+
+  it("preserves legacy absence and exact new active or page-only lifecycle pairs", () => {
+    expect(parseExplorerConversationState(populatedState())).toEqual(populatedState());
+    const active = { ...populatedState(), sessionStatus: "active", ending: null };
+    expect(parseExplorerConversationState(active)).toEqual(active);
+    const pageOnly = { ...emptyState(), sessionStatus: null, ending: null };
+    expect(parseExplorerConversationState(pageOnly)).toEqual(pageOnly);
+    expect(parseExplorerConversationState({ ...active, sessionStatus: undefined })).toBeNull();
+    expect(parseExplorerConversationState(without(active, "sessionStatus"))).toBeNull();
+    expect(parseExplorerConversationState(without(active, "ending"))).toBeNull();
+    expect(parseExplorerConversationState({ ...active, sessionStatus: null })).toBeNull();
+    expect(parseExplorerConversationState({ ...pageOnly, sessionStatus: "active" })).toBeNull();
+    expect(parseExplorerConversationState({ ...active, ending: savedEnding() })).toBeNull();
+  });
+
+  it("accepts honest legacy ended state without inventing a summary and refuses active capabilities", () => {
+    const legacy = { ...populatedState(), sessionStatus: "ended", ending: null };
+    expect(parseExplorerConversationState(legacy)).toEqual(legacy);
+    expect(parseExplorerConversationState({ ...legacy, providerState: "available" })).toBeNull();
+    expect(parseExplorerConversationState({ ...legacy, pendingTurn: true })).toBeNull();
+    expect(parseExplorerConversationState({ ...emptyState(), sessionStatus: "ended", ending: null })).toBeNull();
+    expect(parseExplorerConversationState({ ...legacy, sessionStatus: "archived" })).toBeNull();
+  });
+
+  it("reads the exact captured ending with saved Route and returns detached immutable facts", () => {
+    const original = endedState();
+    const parsed = parseExplorerConversationState(original);
+    expect(parsed).toEqual(original);
+    expect(parsed?.ending?.routeThroughRevision).toBe(3);
+    expect(Object.isFrozen(parsed?.ending)).toBe(true);
+    original.ending.directionsTaken = "Changed after parsing";
+    original.route[0].label = "Later label";
+    expect(parsed?.ending?.directionsTaken).toContain("Calmer mornings");
+    const route = parsed?.route?.[0];
+    expect(route?.kind !== "arrangement_confirmed" && route?.label).toBe("The actual historical label");
+  });
+
+  it("rejects missing, extra or contradictory saved ending fields rather than filling history", () => {
+    const original = endedState();
+    for (const key of Object.keys(original.ending)) {
+      expect(parseExplorerConversationState({ ...original, ending: without(original.ending, key) })).toBeNull();
+    }
+    for (const ending of [[], "ended", { ...savedEnding(), modelName: "unrelated" },
+      { ...savedEnding(), operationId: `${uuid(950)}\n` }, { ...savedEnding(), operationId: uuid(900) },
+      { ...savedEnding(), revision: 3 }, { ...savedEnding(), revision: 5 }, { ...savedEnding(), revision: 0 },
+      { ...savedEnding(), routeThroughRevision: 4 }, { ...savedEnding(), routeThroughRevision: 2 },
+      { ...savedEnding(), routeThroughRevision: -1 }]) {
+      expect(parseExplorerConversationState({ ...original, ending })).toBeNull();
+    }
+    expect(parseExplorerConversationState({ ...original, route: [{ ...original.route[0], revision: 4 }] })).toBeNull();
+    expect(parseExplorerConversationState({ ...original, conversationId: `${uuid(1)}\n` })).toBeNull();
+  });
+
+  it("requires actual UTC ending time and bounded nonempty valid text without trimming or model inference", () => {
+    const original = endedState();
+    for (const endedAt of ["not a date", "2026-10-29T05:00:00-05:00", "2026-02-30T10:00:00Z",
+      "2026-10-29T10:00:00Z\n", "2026-10-29T10:00:00Z ", null]) {
+      expect(parseExplorerConversationState({ ...original, ending: { ...savedEnding(), endedAt } })).toBeNull();
+    }
+    for (const directionsTaken of ["", " ", "bad\u0000text", "bad\ud800text", "x".repeat(2_049)]) {
+      expect(parseExplorerConversationState({ ...original, ending: { ...savedEnding(), directionsTaken } })).toBeNull();
+    }
+    const directionsTaken = "x".repeat(2_048);
+    expect(parseExplorerConversationState({ ...original, ending: { ...savedEnding(), directionsTaken } })?.ending?.directionsTaken).toBe(directionsTaken);
+    expect(parseExplorerConversationState({ ...original, ending: { ...savedEnding(), endedAt: "2026-10-29T10:00:00Z" } })).not.toBeNull();
+  });
+
+  it("exports full-input selector/time guards for the new read-only review surface", () => {
+    expect(isExplorerConversationId(uuid(1))).toBe(true);
+    expect(isExplorerConversationId(`${uuid(1)}\n`)).toBe(false);
+    expect(isExplorerConversationId(` ${uuid(1)}`)).toBe(false);
+    expect(isExplorerConversationInstant("2026-10-29T10:00:00.123456+00:00")).toBe(true);
+    expect(isExplorerConversationInstant("2026-10-29T10:00:00Z\n")).toBe(false);
+    expect(isExplorerConversationInstant("2026-02-30T10:00:00Z")).toBe(false);
   });
 });

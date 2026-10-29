@@ -79,6 +79,12 @@ function base(actor: ExplorerConversationActor): Record<string, unknown> {
   return { p_actor_user_account_id: actor.accountId, p_user_session_id: actor.applicationSessionId };
 }
 export function explorerConversationCommandFingerprint(command: ExplorerConversationCommand): string {
+  if (command.kind === "end_conversation") {
+    return createHash("sha256").update(JSON.stringify([
+      EXPLORER_CONVERSATION_VERSION, command.kind, command.operationId,
+      command.expectedRevision, command.conversationId,
+    ]), "utf8").digest("hex").toUpperCase();
+  }
   if (command.kind === "confirm_compass_arrangement") {
     const items = [...command.items].sort((left, right) => left.compassItemId < right.compassItemId ? -1 : left.compassItemId > right.compassItemId ? 1 : 0);
     return createHash("sha256").update(JSON.stringify([
@@ -112,6 +118,8 @@ export async function commandExplorerConversation(input: {
 }): Promise<ExplorerConversationResult> {
   const command = parseExplorerConversationCommand(input.command);
   if (!command) return failure("denied");
+  // Ending is private-v3 only; the legacy generic mutation has no End authority.
+  if (command.kind === "end_conversation") return failure("denied");
   const { dependencies } = input;
   try {
     const actor = await dependencies.authenticate();

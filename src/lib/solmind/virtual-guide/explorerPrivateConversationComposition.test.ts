@@ -2,9 +2,9 @@ import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getExplorerPrivateConfigurationCandidate } from "./explorerPrivateConfiguration";
 import { EXPLORER_SAFETY_REQUEST_VERSION } from "./explorerSafetyReplyContract";
-import { adaptPrivateGovernedExplorerContextBuilder, readExplorerPrivateConversation, commandExplorerPrivateConversation, deriveExplorerPrivateTurnIds, parseExplorerPrivatePolicy,
+import { adaptPrivateGovernedExplorerContextBuilder, readExplorerPrivateConversation, readEndedExplorerConversations, commandExplorerPrivateConversation, deriveExplorerPrivateTurnIds, parseExplorerPrivatePolicy,
   type ExplorerPrivateConversationDependencies, type ExplorerPrivateOperationalReadiness, type ExplorerPrivateRpcRow, type ExplorerPrivateReadRow,
-  type ExplorerPrivateEnsureParameters, type ExplorerPrivatePrepareParameters, type ExplorerPrivateSettleParameters, type ExplorerPrivateArrangeParameters } from "./explorerPrivateConversationComposition";
+  type ExplorerPrivateEnsureParameters, type ExplorerPrivatePrepareParameters, type ExplorerPrivateSettleParameters, type ExplorerPrivateArrangeParameters, type ExplorerPrivateEndParameters, type ExplorerPrivateReviewParameters } from "./explorerPrivateConversationComposition";
 import type { ExplorerConversationState, ExplorerConversationCommand } from "../explorerConversationContract";
 import type { ExplorerSafetyReplyPlan } from "./explorerConversationSafety";
 import { explorerConversationCommandFingerprint, type ExplorerConversationDependencies } from "./explorerConversationComposition";
@@ -44,14 +44,19 @@ function fixture() {
     return { outcome: "ok", conversation_state: current, policy_state: policy, saved_reply: parameters.p_reply_kind !== "none" }; });
   const mutate = vi.fn(async (): Promise<ExplorerPrivateRpcRow> => ({ outcome: "ok", conversation_state: current }));
   const arrange = vi.fn(async (_parameters: ExplorerPrivateArrangeParameters): Promise<ExplorerPrivateRpcRow> => {
-    void _parameters;
-      order.push("arrange"); return { outcome: "ok", conversation_state: current };
+    void _parameters; order.push("arrange"); return { outcome: "ok", conversation_state: current };
+  });
+  const end = vi.fn(async (_parameters: ExplorerPrivateEndParameters): Promise<ExplorerPrivateRpcRow> => {
+    void _parameters; order.push("end"); return { outcome: "ok", conversation_state: current };
+  });
+  const review = vi.fn(async (_parameters: ExplorerPrivateReviewParameters): Promise<ExplorerPrivateRpcRow> => {
+    void _parameters; order.push("review"); return { outcome: "ok", ended_conversations: [], conversation_state: null };
   });
   const generate = vi.fn(async () => { order.push("model"); return RAW; });
   const signal = vi.fn(async () => { order.push("signal"); });
   const resolve = vi.fn(async () => { order.push("configuration"); return readiness; });
   const dependencies: ExplorerPrivateConversationDependencies = {
-    authenticate: vi.fn(async () => ACTOR), repository: { read, ensure, observe, prepare, settle, mutate, arrange },
+    authenticate: vi.fn(async () => ACTOR), repository: { read, ensure, observe, prepare, settle, mutate, arrange, end, review },
     resolveOperationalReadiness: resolve, provider: { generate }, operationalSignal: { verificationReceiptSha256: SHA, emit: signal },
     renderer: { verificationReceiptSha256: SHA,
       // Explicit synthetic test bodies/receipts, never operational acceptance.
@@ -77,7 +82,7 @@ function fixture() {
           p_role_version: configuration.roleVersion, p_instruction_version: configuration.instructionVersion } };
     }),
   };
-  return { dependencies, read, ensure, observe, prepare, settle, mutate, arrange, generate, signal, resolve, order, readiness,
+  return { dependencies, read, ensure, observe, prepare, settle, mutate, arrange, end, review, generate, signal, resolve, order, readiness,
     getPrepared: () => prepared, setCurrent: (value: ExplorerConversationState) => { current = value; }, setPolicy: (value: Record<string, unknown>) => { policy = value; } };
 }
 function send(body = "Synthetic ordinary message.") { return { kind: "send", operationId: ID.operation, expectedRevision: 0, body }; }
@@ -278,7 +283,7 @@ describe("private read operational availability", () => {
     const output = await readExplorerPrivateConversation(f.dependencies);
     expect(output.result).toMatchObject({ ok: true, state: { providerState: "available" } });
     expect(f.resolve).toHaveBeenCalledOnce();
-    for (const port of [f.ensure, f.observe, f.prepare, f.settle, f.mutate, f.arrange, f.generate]) expect(port).not.toHaveBeenCalled();
+    for (const port of [f.ensure, f.observe, f.prepare, f.settle, f.mutate, f.arrange, f.end, f.review, f.generate]) expect(port).not.toHaveBeenCalled();
     const held = await readExplorerPrivateConversation({ ...f.dependencies, resolveOperationalReadiness: undefined });
     expect(held.result).toMatchObject({ ok: true, state: { providerState: "unavailable" } });
   });
@@ -306,7 +311,7 @@ describe("Private confirmed Compass arrangement routing", () => {
       { compassItemId: ID.version, anchor: "side_left", emphasis: 1 }],
   });
   function noOtherEffects(f: ReturnType<typeof fixture>) {
-    for (const port of [f.mutate, f.resolve, f.ensure, f.observe, f.prepare, f.settle, f.generate, f.signal,
+    for (const port of [f.mutate, f.end, f.review, f.resolve, f.ensure, f.observe, f.prepare, f.settle, f.generate, f.signal,
       f.dependencies.buildContext, f.dependencies.renderer?.render]) expect(port).not.toHaveBeenCalled();
   }
 
@@ -372,5 +377,139 @@ describe("Private confirmed Compass arrangement routing", () => {
     const output = await commandExplorerPrivateConversation({ command: command(), dependencies: f.dependencies });
     expect(output.result).toEqual({ ok: false, state: null, error: outcome === "denied" ? "denied" : "refresh_required" });
     expect(f.arrange).toHaveBeenCalledOnce(); noOtherEffects(f);
+  });
+});
+
+
+describe("Owned End and ended-review capabilities (synthetic ports)", () => {
+  const endCommand = (): Extract<ExplorerConversationCommand, { kind: "end_conversation" }> => ({
+    kind: "end_conversation", conversationId: ID.conversation, operationId: ID.operation, expectedRevision: 4,
+  });
+  const ended = (): ExplorerConversationState => ({ ...state(ID.conversation), revision: 5, sessionStatus: "ended",
+    ending: { operationId: ID.operation, revision: 5, endedAt: "2026-10-29T07:00:00.123456+00:00",
+      directionsTaken: "Synthetic saved ending. No Priority was confirmed. No recorded Route changes.", routeThroughRevision: 4 } });
+  const items = () => [{ conversationId: ID.conversation, endedAt: ended().ending!.endedAt }];
+  function noReflection(f: ReturnType<typeof fixture>) {
+    for (const port of [f.read, f.mutate, f.arrange, f.resolve, f.ensure, f.observe, f.prepare, f.settle, f.generate,
+      f.signal, f.dependencies.buildContext, f.dependencies.renderer?.render]) expect(port).not.toHaveBeenCalled();
+  }
+
+  it.each(["ok", "exact_replay"])("handles %s End before active-only reads and sends exactly six actor-bound arguments", async outcome => {
+    const f = fixture(); f.read.mockRejectedValue(new Error("active-only path must not be used"));
+    f.end.mockResolvedValue({ outcome, conversation_state: ended() });
+    const command = endCommand();
+    const output = await commandExplorerPrivateConversation({ command, dependencies: { ...f.dependencies,
+      resolveOperationalReadiness: undefined, provider: undefined, buildContext: undefined, renderer: undefined, operationalSignal: undefined } });
+    expect(output).toEqual({ result: { ok: true, state: ended(), error: null }, assistance: null });
+    expect(f.dependencies.authenticate).toHaveBeenCalledOnce();
+    expect(f.end).toHaveBeenCalledExactlyOnceWith({ p_actor_user_account_id: ID.actor, p_user_session_id: ID.app,
+      p_conversation_id: ID.conversation, p_operation_id: ID.operation, p_expected_revision: 4,
+      p_command_fingerprint: explorerConversationCommandFingerprint(command) });
+    expect(Object.keys(f.end.mock.calls[0][0])).toHaveLength(6);
+    expect(f.review).not.toHaveBeenCalled(); noReflection(f);
+  });
+
+  it("accepts a truthful already-ended legacy state without inventing a new ending operation", async () => {
+    const f = fixture(); const legacy = { ...ended(), ending: null };
+    f.end.mockResolvedValue({ outcome: "already_ended", conversation_state: legacy });
+    expect(await commandExplorerPrivateConversation({ command: endCommand(), dependencies: f.dependencies }))
+      .toEqual({ result: { ok: true, state: legacy, error: null }, assistance: null });
+    expect(f.end).toHaveBeenCalledOnce(); expect(f.review).not.toHaveBeenCalled(); noReflection(f);
+  });
+
+  it("refuses missing or mismatched ok/replay ending evidence instead of claiming successful closure", async () => {
+    const original = ended(); const ending = original.ending!;
+    for (const conversation_state of [
+      { ...original, conversationId: ID.pack }, { ...original, sessionStatus: "active", ending: null },
+      { ...original, ending: null }, { ...original, ending: { ...ending, operationId: ID.pack } },
+      { ...original, ending: { ...ending, revision: 4 } }, { ...original, ending: { ...ending, routeThroughRevision: 3 } },
+    ]) {
+      const f = fixture(); f.end.mockResolvedValue({ outcome: "ok", conversation_state });
+      expect((await commandExplorerPrivateConversation({ command: endCommand(), dependencies: f.dependencies })).result)
+        .toEqual({ ok: false, state: null, error: "unavailable" });
+      expect(f.end).toHaveBeenCalledOnce(); expect(f.review).not.toHaveBeenCalled(); noReflection(f);
+    }
+  });
+
+  it.each(["stale_revision", "operation_conflict", "denied", "unavailable"])("returns End %s without another port or retry", async outcome => {
+    const f = fixture(); f.end.mockResolvedValue({ outcome });
+    const output = await commandExplorerPrivateConversation({ command: endCommand(), dependencies: f.dependencies });
+    expect(output.result).toEqual({ ok: false, state: null,
+      error: outcome === "denied" ? "denied" : outcome === "unavailable" ? "unavailable" : "refresh_required" });
+    expect(f.end).toHaveBeenCalledOnce(); expect(f.review).not.toHaveBeenCalled(); noReflection(f);
+  });
+
+  it("denies unavailable End authority and closes unknown acknowledgement without an active read fallback", async () => {
+    const absent = fixture();
+    expect((await commandExplorerPrivateConversation({ command: endCommand(), dependencies: { ...absent.dependencies,
+      repository: { ...absent.dependencies.repository, end: undefined } } })).result).toEqual({ ok: false, state: null, error: "denied" });
+    expect(absent.end).not.toHaveBeenCalled(); expect(absent.review).not.toHaveBeenCalled(); noReflection(absent);
+    const unauthenticated = fixture();
+    expect((await commandExplorerPrivateConversation({ command: endCommand(), dependencies: { ...unauthenticated.dependencies,
+      authenticate: async () => null } })).result).toEqual({ ok: false, state: null, error: "denied" });
+    expect(unauthenticated.end).not.toHaveBeenCalled(); expect(unauthenticated.review).not.toHaveBeenCalled(); noReflection(unauthenticated);
+    const unknown = fixture(); unknown.end.mockRejectedValue(new Error("Synthetic private acknowledgement loss"));
+    expect((await commandExplorerPrivateConversation({ command: endCommand(), dependencies: unknown.dependencies })).result)
+      .toEqual({ ok: false, state: null, error: "unavailable" });
+    expect(unknown.end).toHaveBeenCalledOnce(); expect(unknown.review).not.toHaveBeenCalled(); noReflection(unknown);
+  });
+
+  it("reads owned ended metadata and a selected state through only the three-argument review capability", async () => {
+    const f = fixture(); f.review.mockResolvedValueOnce({ outcome: "ok", ended_conversations: items(), conversation_state: null })
+      .mockResolvedValueOnce({ outcome: "ok", ended_conversations: items(), conversation_state: ended() });
+    expect(await readEndedExplorerConversations(f.dependencies, null)).toEqual({ version: "explorer-conversation-review.v1",
+      ok: true, items: items(), state: null, error: null });
+    expect(await readEndedExplorerConversations(f.dependencies, ID.conversation)).toEqual({ version: "explorer-conversation-review.v1",
+      ok: true, items: items(), state: ended(), error: null });
+    expect(f.review.mock.calls.map(([parameters]) => parameters)).toEqual([
+      { p_actor_user_account_id: ID.actor, p_user_session_id: ID.app, p_conversation_id: null },
+      { p_actor_user_account_id: ID.actor, p_user_session_id: ID.app, p_conversation_id: ID.conversation },
+    ]);
+    expect(f.dependencies.authenticate).toHaveBeenCalledTimes(2); expect(f.end).not.toHaveBeenCalled(); noReflection(f);
+  });
+
+  it("preserves a legacy nullable review time/summary without inventing metadata or model readiness", async () => {
+    const f = fixture(); const legacy = { ...ended(), ending: null }; const legacyItems = [{ conversationId: ID.conversation, endedAt: null }];
+    f.review.mockResolvedValue({ outcome: "ok", ended_conversations: legacyItems, conversation_state: legacy });
+    expect(await readEndedExplorerConversations(f.dependencies, ID.conversation)).toEqual({ version: "explorer-conversation-review.v1",
+      ok: true, items: legacyItems, state: legacy, error: null });
+    expect(f.end).not.toHaveBeenCalled(); noReflection(f);
+  });
+
+  it("denies malformed selectors/identity and leaves absent or failed review unavailable without another read", async () => {
+    const f = fixture();
+    for (const selector of ["bad", ` ${ID.conversation}`, `${ID.conversation}\n`]) {
+      expect(await readEndedExplorerConversations(f.dependencies, selector)).toEqual({ version: "explorer-conversation-review.v1",
+        ok: false, items: null, state: null, error: "denied" });
+    }
+    expect(f.dependencies.authenticate).not.toHaveBeenCalled(); expect(f.review).not.toHaveBeenCalled();
+    expect(await readEndedExplorerConversations({ ...f.dependencies, authenticate: async () => null }, null))
+      .toEqual({ version: "explorer-conversation-review.v1", ok: false, items: null, state: null, error: "denied" });
+    const absent = await readEndedExplorerConversations({ ...f.dependencies, repository: { ...f.dependencies.repository, review: undefined } }, null);
+    expect(absent).toEqual({ version: "explorer-conversation-review.v1", ok: false, items: null, state: null, error: "unavailable" });
+    f.review.mockRejectedValue(new Error("Synthetic private review fault"));
+    expect(await readEndedExplorerConversations(f.dependencies, null)).toEqual({ version: "explorer-conversation-review.v1",
+      ok: false, items: null, state: null, error: "unavailable" });
+    expect(f.review).toHaveBeenCalledOnce(); expect(f.end).not.toHaveBeenCalled(); noReflection(f);
+  });
+
+  it("refuses wrong/active/unselected review projections and forwards a closed owned denial", async () => {
+    const projection = ended();
+    for (const row of [
+      { outcome: "ok", ended_conversations: items(), conversation_state: { ...projection, conversationId: ID.pack } },
+      { outcome: "ok", ended_conversations: items(), conversation_state: { ...projection, sessionStatus: "active", ending: null } },
+      { outcome: "ok", ended_conversations: items(), conversation_state: null },
+      { outcome: "ok", ended_conversations: null, conversation_state: projection },
+      { outcome: "ok", ended_conversations: [{ ...items()[0], privateText: "must not escape" }], conversation_state: projection },
+    ]) {
+      const f = fixture(); f.review.mockResolvedValue(row);
+      expect(await readEndedExplorerConversations(f.dependencies, ID.conversation)).toEqual({ version: "explorer-conversation-review.v1",
+        ok: false, items: null, state: null, error: "unavailable" });
+      expect(f.review).toHaveBeenCalledOnce(); expect(f.end).not.toHaveBeenCalled(); noReflection(f);
+    }
+    const f = fixture(); f.review.mockResolvedValue({ outcome: "denied" });
+    expect(await readEndedExplorerConversations(f.dependencies, null)).toEqual({ version: "explorer-conversation-review.v1",
+      ok: false, items: null, state: null, error: "denied" });
+    expect(f.end).not.toHaveBeenCalled(); noReflection(f);
   });
 });

@@ -23,7 +23,8 @@ const REQUEST_BYTE_LIMIT = 16_384;
 const fieldClass = "w-full rounded-xl border border-slate-500 bg-white p-3 text-slate-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700";
 const buttonClass = "rounded-xl bg-teal-800 px-4 py-3 font-semibold text-white hover:bg-teal-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 disabled:cursor-not-allowed disabled:opacity-50";
 
-type CommandIntent = ExplorerConversationFormationIntent | Readonly<{ kind: "send"; body: string }>;
+type CommandIntent = ExplorerConversationFormationIntent | Readonly<{ kind: "send"; body: string }> |
+  Readonly<{ kind: "end_conversation"; conversationId: string }>;
 type PendingCommand = Readonly<{ command: ExplorerConversationCommand; body: string }>;
 
 /** Decode before rendering; a malformed or non-success HTTP success is uncertain. */
@@ -57,6 +58,7 @@ export function ExplorerConversation() {
   const [draftError, setDraftError] = useState("");
   const [notice, setNotice] = useState("");
   const [assistance, setAssistance] = useState<ExplorerPrivateAssistance | null>(null);
+  const [endReview, setEndReview] = useState<Readonly<{ conversationId: string; revision: number }> | null>(null);
   const stateRef = useRef<ExplorerConversationState | null>(null);
   const busyRef = useRef(true);
   const pendingRef = useRef<PendingCommand | null>(null);
@@ -178,6 +180,21 @@ export function ExplorerConversation() {
           setUncertain(true);
           return;
         }
+        if (pending.command.kind === "end_conversation") {
+          // A confirmed owned ended projection is sufficient, including an
+          // already-ended result from another tab. Unknown outcomes stay pending.
+          if (result.state.conversationId !== pending.command.conversationId || result.state.sessionStatus !== "ended") {
+            setUncertain(true);
+            return;
+          }
+          replaceState(result.state);
+          setError(null);
+          setDraft("");
+          setEndReview(null);
+          pendingRef.current = null;
+          window.location.assign("/explorer/home");
+          return;
+        }
         replaceState(result.state);
         setError(null);
         setNotice(output?.assistance === null ? "Your saved conversation is up to date." : "");
@@ -202,7 +219,8 @@ export function ExplorerConversation() {
 
   const command = useCallback((intent: CommandIntent) => {
     const current = stateRef.current;
-    if (busyRef.current || pendingRef.current !== null || current === null || current.pendingTurn) return;
+    if (busyRef.current || pendingRef.current !== null || current === null || current.pendingTurn || current.sessionStatus === "ended") return;
+    if (intent.kind === "end_conversation" && (current.conversationId === null || intent.conversationId !== current.conversationId)) return;
     if (intent.kind === "send" && current.providerState !== "available") return;
     try {
       const stamped: ExplorerConversationCommand = Object.freeze({
@@ -233,7 +251,27 @@ export function ExplorerConversation() {
     command({ kind: "send", body });
   }
 
-  const held = busy || uncertain || state?.pendingTurn === true;
+  function reviewEnd() {
+    const current = stateRef.current;
+    if (busyRef.current || pendingRef.current !== null || current === null || current.conversationId === null ||
+        current.pendingTurn || current.sessionStatus === "ended") return;
+    setEndReview({ conversationId: current.conversationId, revision: current.revision });
+    setDraftError("");
+  }
+  function confirmEnd() {
+    const current = stateRef.current;
+    if (endReview === null || current === null || endReview.conversationId !== current.conversationId ||
+        endReview.revision !== current.revision) {
+      setDraftError("Your saved conversation changed. Close this review and review End Session again.");
+      return;
+    }
+    command({ kind: "end_conversation", conversationId: endReview.conversationId });
+  }
+
+  const ended = state?.sessionStatus === "ended";
+  const endBlocked = busy || uncertain || state?.pendingTurn === true;
+  const staleEndReview = endReview !== null && (state === null || endReview.conversationId !== state.conversationId || endReview.revision !== state.revision);
+  const held = endBlocked || endReview !== null || ended;
   const sendUnavailable = state?.providerState !== "available" || error === "provider_unavailable";
   const atMessageCapacity = state !== null && state.messages.length > EXPLORER_CONVERSATION_LIMITS.messages - 2;
   return (
@@ -282,18 +320,38 @@ export function ExplorerConversation() {
                 ))}
               </ol>
             )}
-            {sendUnavailable ? <p id="conversation-availability" className="my-4 rounded-xl bg-slate-100 p-4">The {SOLMIND_TERMS.virtualGuide} is unavailable. You can review saved messages and work with your saved Compass and Waypoints.</p> : null}
-            {atMessageCapacity ? <p id="conversation-capacity" className="my-4 rounded-xl bg-slate-100 p-4">This conversation has reached its saved-message limit. You can still review messages and work with your Compass and Waypoints.</p> : null}
-            <form onSubmit={send} className="mt-5 space-y-3">
+            {!ended && sendUnavailable ? <p id="conversation-availability" className="my-4 rounded-xl bg-slate-100 p-4">The {SOLMIND_TERMS.virtualGuide} is unavailable. You can review saved messages and work with your saved Compass and Waypoints.</p> : null}
+            {!ended && atMessageCapacity ? <p id="conversation-capacity" className="my-4 rounded-xl bg-slate-100 p-4">This conversation has reached its saved-message limit. You can still review messages and work with your Compass and Waypoints.</p> : null}
+            {!ended ? <form onSubmit={send} className="mt-5 space-y-3">
               <label className="block font-semibold" htmlFor="conversation-message">Your message</label>
               <textarea id="conversation-message" ref={composerRef} className={fieldClass} rows={5} value={draft} maxLength={EXPLORER_CONVERSATION_LIMITS.messageCharacters} disabled={held || sendUnavailable || atMessageCapacity} aria-describedby={atMessageCapacity ? "conversation-capacity" : sendUnavailable ? "conversation-availability" : undefined} onChange={event => { setDraft(event.target.value); setDraftError(""); }} />
               {draftError ? <p role="alert" className="text-amber-900">{draftError}</p> : null}
               <button type="submit" className={buttonClass} disabled={held || sendUnavailable || atMessageCapacity}>Send message</button>
-            </form>
+            </form> : <p className="my-4 rounded-xl bg-slate-100 p-4">This saved conversation has ended. It is available for read-only review.</p>}
           </section>
-          <ExplorerConversationFormation state={state} busy={held} onCommand={command} />
+          <ExplorerConversationFormation state={state} busy={held} readOnly={ended} onCommand={command} />
         </div>
       ) : null}
+      {state !== null ? <section aria-label="End Session" className="mt-6 rounded-2xl border border-slate-300 bg-white p-5">
+        {state.conversationId === null ? <>
+          <p>No saved conversation has been started. Returning home will not create or end one.</p>
+          <a className="mt-3 inline-block font-semibold text-teal-900 underline" href="/explorer/home">Return to Explorer home</a>
+        </> : ended ? <a className="font-semibold text-teal-900 underline" href="/explorer/conversations">Review ended conversations</a> : <>
+          <h2 className="text-xl font-semibold">End Session</h2>
+          <p className="mt-2 text-sm text-slate-700">End this saved conversation when you choose. Your messages, Compass, Route and Waypoints remain available for read-only review; ending does not sign you out.</p>
+          <button type="button" className={`${buttonClass} mt-3`} disabled={held} onClick={reviewEnd}>Review End Session</button>
+          {endReview !== null ? <div role="group" aria-label="Review End Session" className="mt-4 space-y-3 rounded-xl border border-amber-500 bg-amber-50 p-4">
+            <p>End this saved session and return to Explorer home? This closes this conversation; it does not mean your journey is over.</p>
+            <p>There are {state.messages.length} saved messages and {(state.route ?? []).length} recorded Route changes. A factual ending will be saved with the existing Route.</p>
+            {draft.length > 0 ? <p>Your unsaved message draft will not be saved.</p> : null}
+            {staleEndReview ? <p role="alert">Your saved conversation changed. Close this review and review End Session again.</p> : null}
+            <div className="flex flex-wrap gap-3">
+              <button type="button" className={buttonClass} disabled={endBlocked || staleEndReview} onClick={confirmEnd}>End Session and return home</button>
+              <button type="button" className={buttonClass} disabled={busy || uncertain} onClick={() => { setEndReview(null); setDraftError(""); }}>Keep this session open</button>
+            </div>
+          </div> : null}
+        </>}
+      </section> : null}
     </main>
   );
 }
