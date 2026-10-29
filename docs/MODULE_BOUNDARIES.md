@@ -2986,7 +2986,7 @@ PUBLICATION_TRANSPORT_RETURN_R10/STATUS_CLOSEOUT.json PASS. No outcome credit.
 The current private construction and its six v3 ports are owned by
 solmind-app/AGENTS.md and solmind-app/README.md. The older v1/v2/AV2 descriptions
 and dated eleven-profile proof above retain their predecessor scope. The current
-source graph has27 exact profiles and twelve erased type-only edges; do not infer
+source graph has28 exact profiles and twelve erased type-only edges; pure openAiModelConfiguration.ts validates the supplied SOLMIND_OPENAI_MODEL (undefined alone defaults to gpt-5.6-luna), and migration 20261028010000_openai_model_configuration_binding.sql captures immutable operation/screen model identity without a settings table or history backfill; do not infer
 new imports or activation from the older counts.
 
 Keep explorerPrivateConfigurationCandidate.ts and explorerPrivateConfiguration.ts,
@@ -3084,7 +3084,7 @@ filesystem append stopped; unknown completion never grants retry.
 
 src/lib/solmind/virtual-guide/openAiLunaMethodologyScreeningTransport.ts owns pure
 explicit-policy subject/manifest/request-byte binding and a dormant injected HTTP
-adapter. Preserve the pinned model/medium/store:false, structured output, absent
+adapter. Preserve the captured configured model/medium/store:false, structured output, absent
 tools/background/stream/retry, 128-KiB limits and omission of account/pack UUIDs
 from model input. Its 60-second local race covers fetch/body parsing, not a whole
 screening workflow, remote cancellation, billing or zero provider retention.

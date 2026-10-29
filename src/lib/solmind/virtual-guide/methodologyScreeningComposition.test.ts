@@ -25,7 +25,7 @@ function draft(): MethodologyScreeningDraft {
 const pass = () => ({ result: "pass", subject_sha256: SHA, findings: [] });
 const fresh = () => ({ outcome: "ok", screen_invocation_id: id(7), dispatch_permitted: true });
 type Execute = (request: MethodologyScreeningRequest, signal: AbortSignal) => Promise<unknown>;
-function fixture(timeout = 1000) {
+function fixture(timeout = 1000, modelName = "gpt-5.6-luna") {
   const events: string[] = [];
   const read = vi.fn<MethodologyScreeningRepository["readOwnedDraft"]>().mockImplementation(async () => { events.push("read"); return draft(); });
   const prepare = vi.fn<MethodologyScreeningRepository["prepare"]>().mockImplementation(async () => { events.push("prepare"); return fresh(); });
@@ -33,7 +33,7 @@ function fixture(timeout = 1000) {
   const settle = vi.fn<MethodologyScreeningRepository["settle"]>().mockImplementation(async () => { events.push("settle"); return { outcome: "ok" }; });
   const build = vi.fn<(input: unknown) => unknown>().mockImplementation(() => { events.push("build"); return BODY; });
   const factory = { repository: { readOwnedDraft: read, prepare, settle }, buildRequest: build, transport: { execute },
-    configuration: { policyVersion: "synthetic-policy.v1", policyManifestSha256: "A".repeat(64), transportTimeoutMilliseconds: timeout } };
+    configuration: { modelName, policyVersion: "synthetic-policy.v1", policyManifestSha256: "A".repeat(64), transportTimeoutMilliseconds: timeout } };
   const composition = createMethodologyScreeningComposition(factory);
   return { events, read, prepare, execute, settle, build, factory, composition };
 }
@@ -58,7 +58,7 @@ describe("held methodology screening composition with synthetic capabilities", (
     expect(f.prepare.mock.calls[0][0]).toEqual({
       p_actor_user_account_id: id(1), p_user_session_id: id(2), p_operation_id: id(6),
       p_methodology_context_pack_id: id(3), p_methodology_context_pack_version_id: id(4), p_screen_invocation_id: id(7),
-      p_content_sha256: SHA, p_policy_version: "synthetic-policy.v1", p_policy_manifest_sha256: "A".repeat(64), p_request_sha256: bodySha,
+      p_content_sha256: SHA, p_policy_version: "synthetic-policy.v1", p_policy_manifest_sha256: "A".repeat(64), p_request_sha256: bodySha, p_model_name: "gpt-5.6-luna",
     });
     const builder = f.build.mock.calls[0][0] as { subject: { subject: object; subjectSha256: string } };
     expect(builder).toEqual({ subject: { subject: { methodologyContextPackVersionId: id(4), content: CONTENT }, subjectSha256: SHA },
@@ -82,6 +82,24 @@ describe("held methodology screening composition with synthetic capabilities", (
     expect(JSON.stringify(result)).not.toContain(CONTENT); expect(JSON.stringify(result)).not.toContain(SHA);
   });
 
+  it("captures one configured model through builder bytes, hash, preparation and execution", async () => {
+    const modelName = "synthetic-screen-model.v2"; const f = fixture(1000, modelName);
+    const body = JSON.stringify({ model: modelName, test: "synthetic-only" });
+    f.build.mockImplementation(input => JSON.stringify({ model: (input as { modelName: string }).modelName, test: "synthetic-only" }));
+    f.factory.configuration.modelName = "changed-after-construction";
+    expect(await f.composition.run(runInput())).toEqual({ status: "completed", screenResult: "pass" });
+    expect(f.build.mock.calls[0][0]).toMatchObject({ modelName });
+    const expectedSha = createHash("sha256").update(body, "utf8").digest("hex").toUpperCase();
+    expect(f.prepare.mock.calls[0][0]).toMatchObject({ p_model_name: modelName, p_request_sha256: expectedSha });
+    expect(f.execute.mock.calls[0][0]).toMatchObject({ modelName, requestBody: body, requestSha256: expectedSha });
+    expect(f.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires an explicit configured model instead of inventing a default", () => {
+    const f = fixture(); const withoutModel: Partial<typeof f.factory.configuration> = { ...f.factory.configuration }; delete withoutModel.modelName;
+    expect(() => createMethodologyScreeningComposition({ ...f.factory, configuration: withoutModel })).toThrow("methodology_screening_unavailable");
+    expect(f.read).not.toHaveBeenCalled(); expect(f.prepare).not.toHaveBeenCalled(); noDispatch(f);
+  });
   it.each(["review", "fail"] as const)("distinguishes completed model %s from execution failure", async result => {
     const f = fixture(); const severity = result === "review" ? "review" : "fail";
     f.execute.mockResolvedValueOnce({ result, subject_sha256: SHA, findings: [
@@ -178,7 +196,7 @@ describe("held methodology screening composition with synthetic capabilities", (
     const f = fixture(); const read = deferred<unknown>(); f.read.mockReturnValueOnce(read.promise);
     const input = runInput(); const pending = f.composition.run(input);
     input.actor.accountId = id(99); input.packId = id(99);
-    f.factory.configuration.policyVersion = "changed-after-start"; f.factory.configuration.policyManifestSha256 = "B".repeat(64);
+    f.factory.configuration.modelName = "changed-after-start"; f.factory.configuration.policyVersion = "changed-after-start"; f.factory.configuration.policyManifestSha256 = "B".repeat(64);
     f.factory.buildRequest = vi.fn<(input: unknown) => unknown>().mockReturnValue(PRIVATE);
     f.factory.repository.prepare = vi.fn<MethodologyScreeningRepository["prepare"]>().mockRejectedValue(new Error(PRIVATE));
     f.factory.transport.execute = vi.fn<Execute>().mockRejectedValue(new Error(PRIVATE));
@@ -187,6 +205,8 @@ describe("held methodology screening composition with synthetic capabilities", (
     expect(await pending).toEqual({ status: "completed", screenResult: "pass" });
     expect(f.prepare.mock.calls[0][0].p_actor_user_account_id).toBe(id(1));
     expect(f.execute.mock.calls[0][0].policyVersion).toBe("synthetic-policy.v1");
+    expect(f.execute.mock.calls[0][0].modelName).toBe("gpt-5.6-luna");
+    expect(f.prepare.mock.calls[0][0].p_model_name).toBe("gpt-5.6-luna");
     expect(f.execute.mock.calls[0][0].requestBody).toBe(BODY);
   });
 
@@ -339,7 +359,7 @@ describe("held methodology screening composition with synthetic capabilities", (
     expect(getter.mock.calls.length).toBe(0); expect(trap.mock.calls.length).toBe(0);
   });
 
-  it.each([{ policyVersion: "" }, { policyVersion: "bad+label" }, { policyVersion: "x".repeat(121) },
+  it.each([{ modelName: undefined }, { modelName: " gpt-5.6-luna" }, { modelName: "invalid/model" }, { modelName: "gpt-5.6-luna\n" }, { modelName: "x".repeat(121) }, { policyVersion: "" }, { policyVersion: "bad+label" }, { policyVersion: "x".repeat(121) },
     { policyManifestSha256: "a".repeat(64) }, { transportTimeoutMilliseconds: 9 }, { transportTimeoutMilliseconds: 60_001 },
     { transportTimeoutMilliseconds: 10.5 }, { transportTimeoutMilliseconds: undefined }, { approvedPolicy: true },
   ])("rejects invalid configuration without inventing a default: %#", change => {

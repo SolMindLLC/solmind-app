@@ -25,7 +25,7 @@ function envelope(raw: string, overrides: Record<string, unknown> = {}) {
 const RAW = '{"protocol":"explorer-safety-reply.v1","classification":{"level":4,"minorIndicated":false},"candidateReply":{"content":"\\ud800"}}';
 function adapter(fetchImpl: typeof fetch) { return createOpenAiLunaExplorerSafetyTransport({ apiKey: "synthetic-never-transmitted-key", fetchImpl }); }
 describe("Dormant injected Explorer same-call HTTP transport", () => {
-  it("sends one exact unchanged compact input with fixed model/effort/no-store/no-tools and JSON outer instructions", async () => {
+  it("sends one exact unchanged compact input with default model and fixed effort/no-store/no-tools and JSON outer instructions", async () => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify(envelope(RAW)))); const input = request();
     const raw = await adapter(fetchImpl as typeof fetch).generate(input, new AbortController().signal);
     expect(raw).toBe(RAW); expect(fetchImpl).toHaveBeenCalledOnce();
@@ -65,6 +65,30 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
     const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(JSON.parse(init.body as string).model).toBe("gpt-5.6-luna");
   });
+  it.each(["synthetic-compatible.v1", "synthetic-compatible.v1-2026-10-28"])("captures one selected model and accepts its exact or dated reply: %s", async returnedModel => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify(envelope(RAW, { model: returnedModel }))));
+    const configuration = { apiKey: "synthetic-never-transmitted-key", fetchImpl: fetchImpl as typeof fetch,
+      modelName: "synthetic-compatible.v1" };
+    const transport = createOpenAiLunaExplorerSafetyTransport(configuration);
+    configuration.modelName = "other-model";
+    expect(await transport.generate(request(), new AbortController().signal)).toBe(RAW);
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(init.body as string).model).toBe("synthetic-compatible.v1");
+  });
+  it.each(["synthetic-compatible.v1-mini", "other-model"])("rejects a response outside the selected model: %s", async returnedModel => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify(envelope(RAW, { model: returnedModel }))));
+    const transport = createOpenAiLunaExplorerSafetyTransport({ apiKey: "synthetic-never-transmitted-key",
+      fetchImpl: fetchImpl as typeof fetch, modelName: "synthetic-compatible.v1" });
+    await expect(transport.generate(request(), new AbortController().signal)).rejects.toThrow("explorer_safety_http_invalid_response");
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+  it("refuses a malformed selected model before HTTP", () => {
+    const fetchImpl = vi.fn();
+    expect(() => createOpenAiLunaExplorerSafetyTransport({ apiKey: "synthetic-never-transmitted-key",
+      fetchImpl: fetchImpl as typeof fetch, modelName: " synthetic-compatible.v1" })).toThrow("explorer_safety_http_configuration");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
   it.each([{ model: "gpt-5.6-luna-mini" }, { model: "other-model" }, { status: "incomplete" }, { error: { detail: "private" } },
     { output: [{ type: "function_call", name: "unsafe" }] }])("rejects unsupported outer provider evidence: %j", async (overrides) => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify(envelope(RAW, overrides))));
@@ -91,5 +115,9 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
     expect(() => createOpenAiLunaExplorerSafetyTransport(configuration as unknown as Parameters<typeof createOpenAiLunaExplorerSafetyTransport>[0])).toThrow();
     expect(getter).not.toHaveBeenCalled();
     expect(() => createOpenAiLunaExplorerSafetyTransport({ apiKey: "synthetic" } as Parameters<typeof createOpenAiLunaExplorerSafetyTransport>[0])).toThrow();
+    const modelGetter = vi.fn();
+    const selected = Object.defineProperty({ apiKey: "synthetic", fetchImpl: vi.fn() }, "modelName", { enumerable: true, get: modelGetter });
+    expect(() => createOpenAiLunaExplorerSafetyTransport(selected)).toThrow();
+    expect(modelGetter).not.toHaveBeenCalled();
   });
 });

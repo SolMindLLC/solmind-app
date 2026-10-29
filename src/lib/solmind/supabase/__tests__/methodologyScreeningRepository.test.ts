@@ -30,7 +30,7 @@ const readResponse = () => envelope({ version_record: root() });
 const prepareParameters = (): MethodologyScreeningPrepareParameters => ({
   p_actor_user_account_id: id(1), p_user_session_id: id(2), p_operation_id: id(6), p_methodology_context_pack_id: id(3),
   p_methodology_context_pack_version_id: id(5), p_screen_invocation_id: id(7), p_content_sha256: SHA,
-  p_policy_version: "synthetic-screen-policy.v1", p_policy_manifest_sha256: "B".repeat(64), p_request_sha256: "C".repeat(64),
+  p_policy_version: "synthetic-screen-policy.v1", p_policy_manifest_sha256: "B".repeat(64), p_request_sha256: "C".repeat(64), p_model_name: "gpt-5.6-luna",
 });
 const prepareResponse = () => envelope({ outcome: "ok", screen_invocation_id: id(7), dispatch_permitted: true });
 const settleParameters = (status: "completed" | "failed" | "canceled" = "completed"): MethodologyScreeningSettleParameters => ({
@@ -193,12 +193,12 @@ describe("held methodology screening repository: synthetic SQL-shaped capability
     expect(getter).not.toHaveBeenCalled(); expect(trap).not.toHaveBeenCalled();
   });
 
-  it.each(["ok", "exact_replay"] as const)("uses exactly ten prepare arguments and projects %s correctly", async outcome => {
+  it.each(["ok", "exact_replay"] as const)("uses exactly eleven prepare arguments and projects %s correctly", async outcome => {
     const f = fixture(envelope({ outcome, screen_invocation_id: id(7), dispatch_permitted: outcome === "ok" }));
     expect(await f.repository.prepare(prepareParameters())).toEqual({ outcome, screen_invocation_id: id(7), dispatch_permitted: outcome === "ok" });
     expect(f.rpc.mock.calls[0][0]).toBe("solmind_prepare_methodology_screen");
     expect(f.rpc.mock.calls[0][1]).toEqual(prepareParameters());
-    expect(Object.keys(f.rpc.mock.calls[0][1])).toHaveLength(10); expect(Object.isFrozen(f.rpc.mock.calls[0][1])).toBe(true);
+    expect(Object.keys(f.rpc.mock.calls[0][1])).toHaveLength(11); expect(Object.isFrozen(f.rpc.mock.calls[0][1])).toBe(true);
     expect(f.rpc).toHaveBeenCalledTimes(1);
   });
   it.each([
@@ -213,6 +213,8 @@ describe("held methodology screening repository: synthetic SQL-shaped capability
   });
   it.each([
     { ...prepareParameters(), p_operation_id: id(171).toUpperCase() },
+    { ...prepareParameters(), p_model_name: undefined }, { ...prepareParameters(), p_model_name: " gpt-5.6-luna" },
+    { ...prepareParameters(), p_model_name: "invalid/model" }, { ...prepareParameters(), p_model_name: "gpt-5.6-luna\n" }, { ...prepareParameters(), p_model_name: "x".repeat(121) },
     { ...prepareParameters(), p_policy_version: "invalid policy" }, { ...prepareParameters(), p_policy_version: "a".repeat(121) },
     { ...prepareParameters(), p_content_sha256: "bad" }, { ...prepareParameters(), p_request_sha256: "c".repeat(64) },
     { ...prepareParameters(), p_policy_manifest_sha256: null }, { ...prepareParameters(), extra: true },
@@ -221,6 +223,11 @@ describe("held methodology screening repository: synthetic SQL-shaped capability
     expect(f.rpc).not.toHaveBeenCalled();
   });
 
+  it("passes an alternate captured model unchanged to the closed preparation RPC", async () => {
+    const f = fixture(prepareResponse()); const input = { ...prepareParameters(), p_model_name: "synthetic-screen-model.v2" };
+    expect(await f.repository.prepare(input)).toEqual({ outcome: "ok", screen_invocation_id: id(7), dispatch_permitted: true });
+    expect(f.rpc.mock.calls[0][1]).toEqual(input); expect(f.rpc).toHaveBeenCalledTimes(1);
+  });
   it.each(["completed", "failed", "canceled"] as const)("sends exactly seven settlement arguments for %s", async status => {
     const f = fixture(envelope({ outcome: "ok" }));
     expect(await f.repository.settle(settleParameters(status))).toEqual({ outcome: "ok" });

@@ -20,7 +20,7 @@ function fixture() {
     adultResources: ADULT, ageAppropriateResources: YOUTH, failureAssistance };
   const renderer = createExplorerPrivateReviewedRenderer(input);
   const readiness: ExplorerPrivateOperationalReadiness = {
-    configuration, configurationFingerprint: SHA, modelPolicyVersion: "synthetic-model.v1",
+    configuration, configurationFingerprint: SHA, modelName: "gpt-5.6-luna", modelPolicyVersion: "synthetic-model.v1",
     resourcePolicyVersion: input.resourcePolicyVersion, sourceVerificationReceiptSha256: SHA,
     resourceVerificationReceiptSha256: SHA, rendererVerificationReceiptSha256: SHA, signalVerificationReceiptSha256: SHA,
     methodology: { packId: ID, versionId: ID, contentSha256: SHA, authorizationVersion: "MV1:" + SHA },

@@ -97,7 +97,7 @@ create function pg_temp.screen_start(n integer,op_n integer default null,sha_ove
 returns table(outcome text,dispatch_permitted boolean) language sql as $$
   select r.outcome,r.dispatch_permitted from public.solmind_prepare_methodology_screen(pg_temp.gid(3),pg_temp.gid(57),
     pg_temp.gid(coalesce(op_n,n+2000)),pg_temp.gid(1000),pg_temp.gid(n),pg_temp.gid(n+3000),
-    coalesce(sha_override,pg_temp.sha(n)),'synthetic-screen-policy.v1',repeat('B',64),pg_temp.request_sha(n)) r
+    coalesce(sha_override,pg_temp.sha(n)),'synthetic-screen-policy.v1',repeat('B',64),pg_temp.request_sha(n),'gpt-5.6-luna') r
 $$;
 create function pg_temp.screen_terminal(n integer,status_name text default 'completed',result_name text default 'pass',findings jsonb default '[]')
 returns text language sql as $$
@@ -216,7 +216,7 @@ begin
     'synthetic-role.v1','synthetic-instruction.v1',methodology.hash_json(jsonb_build_array('synthetic-command',slot_n)),
     pg_temp.gid(10004+slot_n*10),pg_temp.gid(1000),saved.methodology_sha,saved.mv,'explorer-safety-reply.v1',saved.mode,
     repeat('A',64),'synthetic-fallback.v1','synthetic-model-policy.v1','synthetic-trusted.v1','synthetic-resources.v1',
-    saved.safety_version,saved.fallback,saved.minor);
+    saved.safety_version,saved.fallback,saved.minor,'gpt-5.6-luna');
 end $$;
 create function pg_temp.settle_private(slot_n integer,model integer default 0,minor_flag boolean default false,
   kind text default 'ordinary',body text default 'Synthetic saved reply.',status_name text default 'completed',
@@ -251,9 +251,16 @@ select is((select count(*)::integer from pg_constraint where conrelid='ai.explor
 select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'
   and p.proname in ('solmind_read_explorer_conversation_v3','solmind_ensure_explorer_conversation_v3',
     'solmind_observe_explorer_conversation_fallback_v3','solmind_prepare_explorer_conversation_turn_v3',
-    'solmind_settle_explorer_conversation_turn_v3','solmind_mutate_explorer_conversation_v3') and p.prosecdef and has_function_privilege('service_role',p.oid,'EXECUTE')
+    'solmind_settle_explorer_conversation_turn_v3','solmind_mutate_explorer_conversation_v3')
+  and (p.proname<>'solmind_prepare_explorer_conversation_turn_v3' or p.pronargs=37)
+  and p.prosecdef and has_function_privilege('service_role',p.oid,'EXECUTE')
   and not has_function_privilege('anon',p.oid,'EXECUTE') and not has_function_privilege('authenticated',p.oid,'EXECUTE')),6,
   'exact six closed definer ports including atomic formation are service-only');
+select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  cross join (values('anon'),('authenticated'),('service_role')) r(role_name)
+  where n.nspname='public' and p.proname='solmind_prepare_explorer_conversation_turn_v3' and p.pronargs=36
+    and has_function_privilege(r.role_name,p.oid,'EXECUTE')),0,
+  'model-less private preparation overload is retired for every API role');
 select is((select count(*)::integer from pg_proc p where p.proname in ('solmind_prepare_explorer_conversation_turn',
   'solmind_prepare_governed_explorer_conversation_turn','solmind_complete_explorer_conversation_turn',
   'solmind_prepare_virtual_guide_predispatch','solmind_mutate_explorer_conversation') and has_function_privilege('service_role',p.oid,'EXECUTE')),0,

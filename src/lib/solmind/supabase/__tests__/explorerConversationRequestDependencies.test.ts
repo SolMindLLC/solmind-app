@@ -64,7 +64,7 @@ describe("explicit private local HTTP composition", () => {
     const configuration = getExplorerPrivateConfigurationCandidate()!;
     const sha = "A".repeat(64);
     const receipts = Object.fromEntries(["policy", "source", "resources", "renderer", "signal", "provider", "target"].map(key => [key, { file: key + ".json", sha256: sha }]));
-    mocks.profile.mockReturnValue({ directory: process.cwd(), available: () => true, claim: vi.fn(),
+    mocks.profile.mockReturnValue({ directory: process.cwd(), modelName: "gpt-5.6-luna", available: () => true, claim: vi.fn(),
       adultResources: "Synthetic adult resource.", ageAppropriateResources: "Synthetic general resource.",
       failureAssistance: { support: "Synthetic support.", adultPolicy: "Synthetic boundary.", supportAndAdultPolicy: "Synthetic combined.", temporarilyUnavailable: "Synthetic uncertainty." },
       profile: { actorAccountId: ACCOUNT, explorerId: OTHER_ACCOUNT, guideId: OTHER_SESSION, packId: SESSION,

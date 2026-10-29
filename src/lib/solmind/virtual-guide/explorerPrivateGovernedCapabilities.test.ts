@@ -53,7 +53,7 @@ function fixture() {
   const operationalSignal = { verificationReceiptSha256: "C".repeat(64), emit: vi.fn(async () => undefined) };
   const input = { repository, methodologySource: source, packId: PACK, expectedScope: EXPECTED_SCOPE, configuration,
     acceptanceReceiptSha256: "D".repeat(64), sourceVerificationReceiptSha256: "E".repeat(64),
-    resourceVerificationReceiptSha256: "F".repeat(64), modelPolicyVersion: "synthetic-model.v1",
+    resourceVerificationReceiptSha256: "F".repeat(64), modelPolicyVersion: "synthetic-model.v1", modelName: "gpt-5.6-luna",
     resourcePolicyVersion: "synthetic-resources.v1", provider, renderer, operationalSignal };
   const capabilities = createExplorerPrivateGovernedCapabilities(input);
   return { input, capabilities, configuration, selection, source, authority, row, read, write, provider, renderer, operationalSignal };
@@ -152,6 +152,10 @@ describe("explicit private governed capability composition with synthetic proven
     const first = await f.capabilities.resolveOperationalReadiness(ACTOR, f.row);
     const second = await other.resolveOperationalReadiness(ACTOR, f.row);
     expect(first?.configurationFingerprint).not.toBe(second?.configurationFingerprint);
+    const selected = createExplorerPrivateGovernedCapabilities({ ...f.input, modelName: "synthetic-compatible-model" });
+    const third = await selected.resolveOperationalReadiness(ACTOR, f.row);
+    expect(third?.configurationFingerprint).toMatch(/^[A-F0-9]{64}$/);
+    expect(third?.configurationFingerprint).not.toBe(first?.configurationFingerprint);
     // A changed synthetic label is a changed binding, never proof of real acceptance.
     expect(f.provider.generate).not.toHaveBeenCalled(); expect(f.write).not.toHaveBeenCalled();
   });

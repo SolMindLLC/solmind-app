@@ -24,6 +24,7 @@ type Profile = Readonly<{ file: string; runtimeImports: readonly string[]; typeI
 const profile = (file: string, runtimeImports: readonly string[], typeImports: readonly string[] = []): Profile =>
   ({ file: `src/lib/solmind/${file}`, runtimeImports, typeImports });
 const EXPECTED_PROFILES: readonly Profile[] = [
+  profile("virtual-guide/openAiModelConfiguration.ts", ["server-only"]),
   profile("roles.ts", []),
   profile("onboarding.ts", []),
   profile("context/aiRoleContext.ts", ["../roles"]),
@@ -46,14 +47,14 @@ const EXPECTED_PROFILES: readonly Profile[] = [
   profile("virtual-guide/explorerSafetyReplyContract.ts", ["server-only", "node:crypto"]),
   profile("virtual-guide/explorerSafetyReplyInvocation.ts", ["server-only", "node:util", "./explorerSafetyReplyContract"]),
   profile("virtual-guide/explorerConversationSafety.ts", ["server-only", "./explorerSafetyReplyContract"], ["./explorerPrivateConfiguration"]),
-  profile("virtual-guide/openAiLunaExplorerSafetyTransport.ts", ["server-only", "./explorerSafetyReplyContract"], ["./explorerSafetyReplyInvocation"]),
-  profile("virtual-guide/explorerPrivateConversationComposition.ts", ["server-only", "node:crypto", "node:util", "../explorerConversationContract", "./explorerConversationComposition", "./explorerPrivateConfiguration", "./explorerSafetyReplyContract", "./explorerSafetyReplyInvocation", "./explorerConversationSafety"], ["../explorerPrivateConversationResponse"]),
+  profile("virtual-guide/openAiLunaExplorerSafetyTransport.ts", ["server-only", "./openAiModelConfiguration", "./explorerSafetyReplyContract"], ["./explorerSafetyReplyInvocation"]),
+  profile("virtual-guide/explorerPrivateConversationComposition.ts", ["server-only", "./openAiModelConfiguration", "node:crypto", "node:util", "../explorerConversationContract", "./explorerConversationComposition", "./explorerPrivateConfiguration", "./explorerSafetyReplyContract", "./explorerSafetyReplyInvocation", "./explorerConversationSafety"], ["../explorerPrivateConversationResponse"]),
   profile("supabase/explorerPrivateConversationRepository.ts", ["server-only", "node:util"], ["@supabase/supabase-js", "../virtual-guide/explorerPrivateConversationComposition"]),
   profile("operations/explorerPrivateOperationalSignal.ts", ["server-only", "node:fs/promises", "node:path"], ["../virtual-guide/explorerPrivateConversationComposition"]),
-  profile("virtual-guide/openAiLunaMethodologyScreeningTransport.ts", ["server-only", "node:crypto", "./methodologySafetyScreenContract"], ["./methodologyScreeningComposition"]),
+  profile("virtual-guide/openAiLunaMethodologyScreeningTransport.ts", ["server-only", "./openAiModelConfiguration", "node:crypto", "./methodologySafetyScreenContract"], ["./methodologyScreeningComposition"]),
   profile("operations/explorerPrivateRequestBudgets.ts", ["server-only", "node:util"], ["../virtual-guide/explorerPrivateConversationComposition"]),
   profile("operations/explorerPrivateReviewedRenderer.ts", ["server-only", "../virtual-guide/explorerSafetyReplyContract"], ["../virtual-guide/explorerPrivateConversationComposition", "../virtual-guide/explorerConversationSafety"]),
-  profile("virtual-guide/explorerPrivateGovernedCapabilities.ts", ["server-only", "node:crypto", "./explorerPrivateConfiguration", "./explorerPrivateConversationComposition", "./explorerConversationContext", "./effectiveMethodologyContext"]),
+  profile("virtual-guide/explorerPrivateGovernedCapabilities.ts", ["server-only", "./openAiModelConfiguration", "node:crypto", "./explorerPrivateConfiguration", "./explorerPrivateConversationComposition", "./explorerConversationContext", "./effectiveMethodologyContext"]),
 ];
 const CONTEXT_FILE = "src/lib/solmind/virtual-guide/explorerConversationContext.ts";
 const TYPE_EDGES = [
@@ -119,7 +120,7 @@ function expectFixedFailure(result: ESLint.LintResult, messageId: keyof typeof M
 const severity = (entry: unknown) => Array.isArray(entry) ? entry[0] : entry;
 
 describe("actual Explorer assembly source-isolation plugin and flat configuration", () => {
-  it("exports exactly the twenty-seven reviewed direct-source profiles, deeply frozen", () => {
+  it("exports exactly the twenty-eight reviewed direct-source profiles, deeply frozen", () => {
     expect(EXPLORER_SOURCE_PROFILES).toEqual(EXPECTED_PROFILES);
     expect(Object.isFrozen(EXPLORER_SOURCE_PROFILES)).toBe(true);
     for (const entry of EXPLORER_SOURCE_PROFILES) {

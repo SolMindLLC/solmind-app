@@ -8,15 +8,15 @@ import { createMethodologyScreeningComposition } from "./methodologyScreeningCom
 const ID = "00000000-0000-4000-8000-000000000001";
 const subject = bindMethodologySafetyScreenSubject({ methodologyContextPackVersionId: ID, content: "Synthetic non-clinical reflective methodology." });
 const policy = { version: "synthetic-screen-policy.v1", prohibitedPolicy: "Synthetic prohibition against false clinical identity.", behavioralBaselines: "Synthetic role/privacy baseline." };
-function fixture() {
-  const builder = createLunaMethodologyScreenRequestBuilder(policy);
-  const fixed = { task: "methodology_safety_screen", protocolVersion: "methodology-safety-screen.v1", providerName: "openai", modelName: "gpt-5.6-luna" } as const;
+function fixture(modelName?: string) {
+  const builder = createLunaMethodologyScreenRequestBuilder(policy, modelName);
+  const fixed = { task: "methodology_safety_screen", protocolVersion: "methodology-safety-screen.v1", providerName: "openai" } as const;
   const body = builder.buildRequest({ ...fixed, subject, ...builder.configuration });
-  const request: MethodologyScreeningRequest = { ...fixed, policyVersion: builder.configuration.policyVersion,
+  const request: MethodologyScreeningRequest = { ...fixed, modelName: builder.configuration.modelName, policyVersion: builder.configuration.policyVersion,
     policyManifestSha256: builder.configuration.policyManifestSha256, operationId: ID, invocationId: ID, packId: ID, versionId: ID,
     subjectSha256: subject.subjectSha256, requestSha256: createHash("sha256").update(body).digest("hex").toUpperCase(), requestBody: body };
   const value = { result: "pass", subject_sha256: subject.subjectSha256, findings: [] };
-  const envelope = { object: "response", model: "gpt-5.6-luna", status: "completed", error: null, incomplete_details: null,
+  const envelope = { object: "response", model: builder.configuration.modelName, status: "completed", error: null, incomplete_details: null,
     output: [{ type: "reasoning" }, { type: "message", role: "assistant", status: "completed", content: [{ type: "output_text", text: JSON.stringify(value) }] }] };
   const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(envelope), { headers: { "Content-Type": "application/json" } }));
   const transport = createOpenAiLunaMethodologyScreeningTransport({ apiKey: "synthetic-not-a-credential", fetchImpl });
@@ -41,6 +41,27 @@ describe("dormant exact Luna methodology screening request/HTTP owner", () => {
   it("binds policy bytes independent of property insertion order", () => {
     const f = fixture(); const other = createLunaMethodologyScreenRequestBuilder({ behavioralBaselines: policy.behavioralBaselines, version: policy.version, prohibitedPolicy: policy.prohibitedPolicy });
     expect(other.configuration).toEqual(f.builder.configuration);
+  });
+  it.each(["synthetic-compatible.v1", "synthetic-compatible.v1-2026-10-28"])("sends the captured selected model and accepts its exact or dated reply: %s", async model => {
+    const f = fixture("synthetic-compatible.v1");
+    f.fetchImpl.mockResolvedValue(new Response(JSON.stringify({ ...f.envelope, model }), { headers: { "Content-Type": "application/json" } }));
+    expect(await f.transport.execute(f.request, new AbortController().signal)).toEqual(f.value);
+    expect(f.builder.configuration.modelName).toBe("synthetic-compatible.v1");
+    expect(f.fetchImpl).toHaveBeenCalledOnce();
+    const [, init] = f.fetchImpl.mock.calls[0];
+    expect(JSON.parse(init!.body as string).model).toBe("synthetic-compatible.v1");
+  });
+  it.each(["synthetic-compatible.v1-mini", "other-model"])("rejects a response outside the selected model: %s", async model => {
+    const f = fixture("synthetic-compatible.v1");
+    f.fetchImpl.mockResolvedValue(new Response(JSON.stringify({ ...f.envelope, model }), { headers: { "Content-Type": "application/json" } }));
+    await expect(f.transport.execute(f.request, new AbortController().signal)).rejects.toThrow(/^methodology_screen_http_unavailable$/);
+    expect(f.fetchImpl).toHaveBeenCalledOnce();
+  });
+  it("refuses malformed selected models before building or dispatching", async () => {
+    const f = fixture();
+    expect(() => createLunaMethodologyScreenRequestBuilder(policy, " synthetic-compatible.v1")).toThrow(/^methodology_screen_http_unavailable$/);
+    await expect(f.transport.execute({ ...f.request, modelName: "bad/model" }, new AbortController().signal)).rejects.toThrow(/^methodology_screen_http_unavailable$/);
+    expect(f.fetchImpl).not.toHaveBeenCalled();
   });
   it.each(["gpt-5.6-luna-2026-10-27", "gpt-5.6-luna-mini", "other-model"])("accepts only Luna or its dated model name: %s", async model => {
     const f = fixture();

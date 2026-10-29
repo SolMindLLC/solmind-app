@@ -2,6 +2,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
+import { readOpenAiModelName } from "../virtual-guide/openAiModelConfiguration";
 
 const FAILURE = "explorer_private_local_run_unavailable";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -21,7 +22,7 @@ export type ExplorerPrivateLocalRunProfile = Readonly<{
   receipts: Readonly<Record<ReceiptName, Reference>>;
 }>;
 export type ExplorerPrivateLocalRun = Readonly<{
-  profile: ExplorerPrivateLocalRunProfile; directory: string;
+  profile: ExplorerPrivateLocalRunProfile; directory: string; modelName: string;
   adultResources: string; ageAppropriateResources: string;
   failureAssistance: Readonly<{ support: string; adultPolicy: string; supportAndAdultPolicy: string; temporarilyUnavailable: string }>;
   available: () => boolean;
@@ -108,12 +109,13 @@ export function loadExplorerPrivateLocalRun(
     // Receipt hashes bind actual operator evidence; they do not manufacture it.
     // The real governed DB resolver still proves screening and human authority.
     const policy = evidence.policy, grant = evidence.provider, target = evidence.target;
+    const modelName = readOpenAiModelName(environment);
     if (!object(policy) || policy.humanAccepted !== true || policy.requestSha256 !== POLICY_REQUEST ||
       policy.sourceDraftSha256 !== POLICY_DRAFT || !object(policy.amendedResourceSelection) ||
       !object(policy.amendedFailureAssistance) || !object(grant) ||
       grant.kind !== "solmind-private-explorer-provider-grant.v1" || grant.humanApproved !== true ||
       grant.runId !== profile.runId || grant.expiresAt !== profile.expiresAt || grant.artifactDirectory !== directory ||
-      grant.model !== "gpt-5.6-luna" || grant.endpoint !== "https://api.openai.com/v1/responses" ||
+      grant.model !== modelName || grant.endpoint !== "https://api.openai.com/v1/responses" ||
       grant.reasoningEffort !== "medium" || grant.maxOutputTokens !== 4096 || grant.store !== false || grant.timeoutMilliseconds !== 60_000 ||
       grant.maximumExplorerCalls !== 1 || grant.noRetry !== true || grant.noFallback !== true ||
       grant.credentialSource !== "OPENAI_API_KEY" || grant.explorerMessageSha256 !== profile.explorerMessageSha256 ||
@@ -129,7 +131,7 @@ export function loadExplorerPrivateLocalRun(
       !exact(help, ["support", "adultPolicy", "supportAndAdultPolicy", "temporarilyUnavailable"]) || !Object.values(help).every(text)) return null;
     const claimedFile = join(directory, `explorer-send-${profile.runId}.claimed`);
     const available = () => Date.now() < Date.parse(profile.expiresAt) && !existsSync(claimedFile);
-    return Object.freeze({ profile, directory, adultResources: resources.adultResources,
+    return Object.freeze({ profile, directory, modelName, adultResources: resources.adultResources,
       ageAppropriateResources: resources.ageAppropriateResources,
       failureAssistance: Object.freeze({ support: help.support as string, adultPolicy: help.adultPolicy as string,
         supportAndAdultPolicy: help.supportAndAdultPolicy as string, temporarilyUnavailable: help.temporarilyUnavailable as string }),

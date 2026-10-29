@@ -27,7 +27,7 @@ function fixture() {
     receipts: Object.fromEntries(["policy", "source", "resources", "renderer", "signal", "provider", "target"].map(key => [key, { file: key + ".json", sha256: SHA }])) as ExplorerPrivateLocalRun["profile"]["receipts"] };
   let claimed = false;
   const claim = vi.fn(() => { if (claimed) throw new Error("synthetic_already_claimed"); claimed = true; });
-  const run: ExplorerPrivateLocalRun = { profile, directory: "synthetic-unused-directory", adultResources: "Synthetic resource.",
+  const run: ExplorerPrivateLocalRun = { profile, directory: "synthetic-unused-directory", modelName: "gpt-5.6-luna", adultResources: "Synthetic resource.",
     ageAppropriateResources: "Synthetic resource.", failureAssistance: { support: "Synthetic.", adultPolicy: "Synthetic.",
       supportAndAdultPolicy: "Synthetic.", temporarilyUnavailable: "Synthetic." }, available: () => !claimed, claim };
   const policy = { contractVersion: "explorer-conversation-safety.v1", known: true, version: 1, restrictedLevel: null, adultReflectionStopped: false };
@@ -46,7 +46,7 @@ function fixture() {
   const evidence = { p_authorization_version: AV3, p_context_source_ids: [ids.messageId], p_intake_response_set_id: uuid(10),
     p_prompt_version: "synthetic-prompt", p_policy_version: "synthetic-policy", p_behavior_version: "synthetic-role",
     p_crisis_version: "synthetic-crisis", p_role_version: "synthetic-role", p_instruction_version: request.instructionVersion };
-  const readiness = { configuration, configurationFingerprint: SHA, modelPolicyVersion: profile.modelPolicyVersion,
+  const readiness = { configuration, configurationFingerprint: SHA, modelName: "gpt-5.6-luna", modelPolicyVersion: profile.modelPolicyVersion,
     resourcePolicyVersion: profile.resourcePolicyVersion, sourceVerificationReceiptSha256: SHA, resourceVerificationReceiptSha256: SHA,
     rendererVerificationReceiptSha256: SHA, signalVerificationReceiptSha256: SHA,
     methodology: { packId: profile.packId, versionId: profile.methodologyVersionId, contentSha256: subject.subjectSha256, authorizationVersion: MV1 } };

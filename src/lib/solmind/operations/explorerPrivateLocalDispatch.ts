@@ -25,7 +25,8 @@ export function withExplorerPrivateLocalDispatch(input: Readonly<{
   const expectedScope = Object.freeze({ type: "guide" as const, id: profile.guideId });
   return Object.freeze({
     async buildContext(args: Parameters<Build>[0]) {
-      if (captured || args.actor.accountId !== profile.actorAccountId || args.signal?.aborted) fail();
+      if (captured || args.actor.accountId !== profile.actorAccountId || args.signal?.aborted ||
+        args.readiness.modelName !== input.run.modelName) fail();
       const result = await input.buildContext(args);
       if (args.signal?.aborted || result.request.explorerId !== profile.explorerId ||
         createHash("sha256").update(args.command.body, "utf8").digest("hex").toUpperCase() !== profile.explorerMessageSha256) fail();

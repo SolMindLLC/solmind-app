@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { types } from "node:util";
+import { parseOpenAiModelName } from "./openAiModelConfiguration";
 import {
   EXPLORER_CONVERSATION_VERSION, EXPLORER_CONVERSATION_LIMITS,
   parseExplorerConversationCommand, parseExplorerConversationResult,
@@ -35,7 +36,7 @@ export type ExplorerPrivateContextEvidence = Readonly<{
 export type ExplorerPrivatePrepareParameters = ExplorerPrivateObserveParameters & MethodologyParameters & ExplorerPrivateContextEvidence & Readonly<{
   p_message_id: string; p_snapshot_id: string; p_invocation_id: string; p_body: string;
   p_context_serialization: string; p_context_fingerprint_sha256: string; p_request_mode: string;
-  p_trusted_response_version: string; p_resource_policy_version: string; p_expected_safety_version: number }>;
+  p_trusted_response_version: string; p_resource_policy_version: string; p_expected_safety_version: number; p_model_name: string }>;
 export type ExplorerPrivateReplyKind = "ordinary" | "urgent" | "crisis" | "restricted" | "adult_only" | "none";
 export type ExplorerPrivateSettleParameters = ActorParameters & Readonly<{
   p_conversation_id: string; p_operation_id: string; p_status: "completed" | "failed" | "canceled";
@@ -61,7 +62,7 @@ export type ExplorerPrivateConversationRepository = Readonly<{
 }>;
 export type ExplorerPrivateConversationResult = Readonly<{ result: ExplorerConversationResult; assistance: ExplorerPrivateAssistance | null }>;
 export type ExplorerPrivateOperationalReadiness = Readonly<{
-  configuration: ExplorerPrivateConfigurationCandidate; configurationFingerprint: string; modelPolicyVersion: string;
+  configuration: ExplorerPrivateConfigurationCandidate; configurationFingerprint: string; modelPolicyVersion: string; modelName: string;
   resourcePolicyVersion: string; sourceVerificationReceiptSha256: string; resourceVerificationReceiptSha256: string;
   rendererVerificationReceiptSha256: string; signalVerificationReceiptSha256: string;
   methodology: Readonly<{ packId: string; versionId: string; contentSha256: string; authorizationVersion: string }>;
@@ -210,6 +211,7 @@ async function ownedCapability<T>(operation: (signal: AbortSignal) => Promise<T>
 function verifiedReadiness(value: ExplorerPrivateOperationalReadiness | null, dependencies: ExplorerPrivateConversationDependencies): ExplorerPrivateOperationalReadiness | null {
   if (!value || !dependencies.provider || !dependencies.buildContext || !dependencies.renderer || !dependencies.operationalSignal) return null;
   const configuration = parseExplorerPrivateConfigurationCandidate(value.configuration);
+  const modelName = parseOpenAiModelName(value.modelName);
   if (!configuration || ![value.configurationFingerprint, value.sourceVerificationReceiptSha256, value.resourceVerificationReceiptSha256,
     value.rendererVerificationReceiptSha256, value.signalVerificationReceiptSha256].every((hash) => typeof hash === "string" && SHA.test(hash)) ||
     !VERSION.test(value.modelPolicyVersion) || !VERSION.test(value.resourcePolicyVersion) ||
@@ -220,7 +222,7 @@ function verifiedReadiness(value: ExplorerPrivateOperationalReadiness | null, de
     typeof dependencies.renderer.render !== "function" || typeof dependencies.operationalSignal.emit !== "function" ||
     !Object.values(dependencies.renderer.failureAssistance).every(bodyValid) ||
     Object.keys(dependencies.renderer.failureAssistance).sort().join("|") !== "adultPolicy|support|supportAndAdultPolicy|temporarilyUnavailable") return null;
-  return Object.freeze({ ...value, configuration, methodology: Object.freeze({ ...value.methodology }) });
+  return Object.freeze({ ...value, configuration, modelName, methodology: Object.freeze({ ...value.methodology }) });
 }
 async function freshState(dependencies: ExplorerPrivateConversationDependencies, actor: ExplorerConversationActor): Promise<ExplorerConversationResult> {
   try {
@@ -357,7 +359,7 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
         p_message_id: ids.messageId, p_snapshot_id: ids.snapshotId, p_invocation_id: ids.invocationId, p_body: command.body,
         p_context_serialization: request.authorizedContext, p_context_fingerprint_sha256: request.contextFingerprint, p_request_mode: mode,
         p_trusted_response_version: readiness.configuration.trustedResponses.version, p_resource_policy_version: readiness.resourcePolicyVersion,
-        p_expected_safety_version: policy.safetyVersion });
+        p_expected_safety_version: policy.safetyVersion, p_model_name: readiness.modelName });
       if (prepared.outcome === "exact_replay") return Object.freeze({ result: stateResult(prepared, true), assistance: null });
       if (prepared.outcome !== "ok" || prepared.dispatch_permitted !== true) return transient("preparation_unavailable");
       const currentPolicy = parseExplorerPrivatePolicy(prepared.policy_state);

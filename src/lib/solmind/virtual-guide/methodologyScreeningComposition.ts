@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { types } from "node:util";
+import { parseOpenAiModelName } from "./openAiModelConfiguration";
 import {
   bindMethodologySafetyScreenSubject,
   parseMethodologySafetyScreenResult,
@@ -22,7 +23,7 @@ export type MethodologyScreeningPrepareParameters = Readonly<{
   p_actor_user_account_id: string; p_user_session_id: string; p_operation_id: string;
   p_methodology_context_pack_id: string; p_methodology_context_pack_version_id: string;
   p_screen_invocation_id: string; p_content_sha256: string; p_policy_version: string;
-  p_policy_manifest_sha256: string; p_request_sha256: string;
+  p_policy_manifest_sha256: string; p_request_sha256: string; p_model_name: string;
 }>;
 export type MethodologyScreeningPersistenceResult = Readonly<{
   result: "pass" | "review" | "fail"; subject_sha256: string;
@@ -41,7 +42,7 @@ export type MethodologyScreeningRepository = Readonly<{
 }>;
 export type MethodologyScreeningRequest = Readonly<{
   task: "methodology_safety_screen"; protocolVersion: "methodology-safety-screen.v1";
-  providerName: "openai"; modelName: "gpt-5.6-luna";
+  providerName: "openai"; modelName: string;
   policyVersion: string; policyManifestSha256: string;
   operationId: string; invocationId: string; packId: string; versionId: string;
   subjectSha256: string; requestSha256: string; requestBody: string;
@@ -54,10 +55,10 @@ export type MethodologyScreeningRunResult = Readonly<
 type BuildInput = Readonly<{
   subject: BoundMethodologySafetyScreenSubject;
   task: "methodology_safety_screen"; protocolVersion: "methodology-safety-screen.v1";
-  providerName: "openai"; modelName: "gpt-5.6-luna";
+  providerName: "openai"; modelName: string;
   policyVersion: string; policyManifestSha256: string;
 }>;
-type Configuration = Readonly<{ policyVersion: string; policyManifestSha256: string; transportTimeoutMilliseconds: number }>;
+type Configuration = Readonly<{ modelName: string; policyVersion: string; policyManifestSha256: string; transportTimeoutMilliseconds: number }>;
 type RunInput = MethodologyScreeningReadInput & Readonly<{ operationId: string; invocationId: string; signal?: AbortSignal }>;
 type Execute = (request: MethodologyScreeningRequest, signal: AbortSignal) => Promise<unknown>;
 const UNAVAILABLE = "methodology_screening_unavailable";
@@ -65,7 +66,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const SHA256 = /^[0-9A-F]{64}$/;
 const LABEL = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/;
 const FIXED = Object.freeze({ task: "methodology_safety_screen", protocolVersion: "methodology-safety-screen.v1",
-  providerName: "openai", modelName: "gpt-5.6-luna" } as const);
+  providerName: "openai" } as const);
 
 function unavailable(): never { throw new Error(UNAVAILABLE); }
 function record(input: unknown, keys: readonly string[]): Record<string, unknown> {
@@ -110,12 +111,13 @@ function aborted(signal: AbortSignal | undefined): boolean {
   return getter.call(signal) as boolean;
 }
 function configuration(input: unknown): Configuration {
-  const value = record(input, ["policyVersion", "policyManifestSha256", "transportTimeoutMilliseconds"]);
+  const value = record(input, ["modelName", "policyVersion", "policyManifestSha256", "transportTimeoutMilliseconds"]);
+  const modelName = parseOpenAiModelName(value.modelName);
   if (typeof value.policyVersion !== "string" || !LABEL.test(value.policyVersion) ||
       typeof value.policyManifestSha256 !== "string" || !SHA256.test(value.policyManifestSha256) ||
       typeof value.transportTimeoutMilliseconds !== "number" || !Number.isSafeInteger(value.transportTimeoutMilliseconds) ||
       value.transportTimeoutMilliseconds < 10 || value.transportTimeoutMilliseconds > 60_000) unavailable();
-  return Object.freeze({ policyVersion: value.policyVersion, policyManifestSha256: value.policyManifestSha256,
+  return Object.freeze({ modelName, policyVersion: value.policyVersion, policyManifestSha256: value.policyManifestSha256,
     transportTimeoutMilliseconds: value.transportTimeoutMilliseconds });
 }
 function runInput(input: unknown): RunInput {
@@ -188,10 +190,10 @@ export function createMethodologyScreeningComposition(input: unknown): Readonly<
         const rawDraft = await promised(read(readInput, request.signal));
         if (aborted(request.signal)) return status("canceled");
         subject = draftSubject(rawDraft, request);
-        const body = requestBody(build(Object.freeze({ subject, ...FIXED, policyVersion: config.policyVersion,
+        const body = requestBody(build(Object.freeze({ subject, ...FIXED, modelName: config.modelName, policyVersion: config.policyVersion,
           policyManifestSha256: config.policyManifestSha256 })));
         if (aborted(request.signal)) return status("canceled");
-        outgoing = Object.freeze({ ...FIXED, policyVersion: config.policyVersion, policyManifestSha256: config.policyManifestSha256,
+        outgoing = Object.freeze({ ...FIXED, modelName: config.modelName, policyVersion: config.policyVersion, policyManifestSha256: config.policyManifestSha256,
           operationId: request.operationId, invocationId: request.invocationId, packId: request.packId, versionId: request.versionId,
           subjectSha256: subject.subjectSha256, requestSha256: createHash("sha256").update(body, "utf8").digest("hex").toUpperCase(), requestBody: body });
       } catch { return status(aborted(request.signal) ? "canceled" : "unavailable"); }
@@ -201,7 +203,7 @@ export function createMethodologyScreeningComposition(input: unknown): Readonly<
           p_operation_id: request.operationId, p_methodology_context_pack_id: request.packId,
           p_methodology_context_pack_version_id: request.versionId, p_screen_invocation_id: request.invocationId,
           p_content_sha256: outgoing.subjectSha256, p_policy_version: config.policyVersion,
-          p_policy_manifest_sha256: config.policyManifestSha256, p_request_sha256: outgoing.requestSha256,
+          p_policy_manifest_sha256: config.policyManifestSha256, p_request_sha256: outgoing.requestSha256, p_model_name: outgoing.modelName,
         }), request.signal)), ["outcome", "screen_invocation_id", "dispatch_permitted"]);
         if (receipt.screen_invocation_id !== request.invocationId) return status("unavailable");
         if (receipt.outcome === "exact_replay" && receipt.dispatch_permitted === false) return status("not_dispatched");

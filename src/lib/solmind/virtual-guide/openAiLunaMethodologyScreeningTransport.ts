@@ -2,9 +2,9 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { bindMethodologySafetyScreenSubject, METHODOLOGY_SAFETY_SCREEN_CRITERIA } from "./methodologySafetyScreenContract";
 import type { MethodologyScreeningRequest } from "./methodologyScreeningComposition";
+import { DEFAULT_OPENAI_MODEL, isOpenAiResponseModel, parseOpenAiModelName } from "./openAiModelConfiguration";
 
 const ENDPOINT = "https://api.openai.com/v1/responses";
-const MODEL = "gpt-5.6-luna";
 const FAILURE = "methodology_screen_http_unavailable";
 const BYTE_LIMIT = 131_072;
 const DEADLINE_MS = 60_000;
@@ -33,7 +33,7 @@ const SCHEMA = {
 type Policy = Readonly<{ version: string; prohibitedPolicy: string; behavioralBaselines: string }>;
 type BuildInput = Readonly<{ subject: ReturnType<typeof bindMethodologySafetyScreenSubject>;
   task: "methodology_safety_screen"; protocolVersion: "methodology-safety-screen.v1";
-  providerName: "openai"; modelName: "gpt-5.6-luna"; policyVersion: string; policyManifestSha256: string }>;
+  providerName: "openai"; modelName: string; policyVersion: string; policyManifestSha256: string }>;
 function fail(): never { throw new Error(FAILURE); }
 function hash(text: string): string { return createHash("sha256").update(text, "utf8").digest("hex").toUpperCase(); }
 function object(value: unknown): value is Record<string, unknown> {
@@ -52,22 +52,24 @@ function text(value: unknown): value is string {
 }
 
 // Explicit reviewed source text only: no default policy, content loader or approval.
-export function createLunaMethodologyScreenRequestBuilder(policy: Policy): Readonly<{
-  configuration: Readonly<{ policyVersion: string; policyManifestSha256: string; transportTimeoutMilliseconds: number }>;
+export function createLunaMethodologyScreenRequestBuilder(policy: Policy, modelName: string = DEFAULT_OPENAI_MODEL): Readonly<{
+  configuration: Readonly<{ policyVersion: string; policyManifestSha256: string; transportTimeoutMilliseconds: number; modelName: string }>;
   buildRequest: (input: BuildInput) => string;
 }> {
   if (!object(policy) || Object.keys(policy).sort().join("|") !== "behavioralBaselines|prohibitedPolicy|version" ||
     typeof policy.version !== "string" || !LABEL.test(policy.version) || !text(policy.prohibitedPolicy) || !text(policy.behavioralBaselines)) fail();
+  let selectedModel: string;
+  try { selectedModel = parseOpenAiModelName(modelName); } catch { fail(); }
   const pinned = Object.freeze({ version: policy.version, prohibitedPolicy: policy.prohibitedPolicy, behavioralBaselines: policy.behavioralBaselines });
   const policyManifestSha256 = hash(JSON.stringify({ ...pinned, instructions: INSTRUCTIONS, schema: SCHEMA }));
-  const configuration = Object.freeze({ policyVersion: pinned.version, policyManifestSha256, transportTimeoutMilliseconds: DEADLINE_MS });
+  const configuration = Object.freeze({ policyVersion: pinned.version, policyManifestSha256, transportTimeoutMilliseconds: DEADLINE_MS, modelName: selectedModel });
   return Object.freeze({ configuration,
     buildRequest(input: BuildInput): string {
       const subject = bindMethodologySafetyScreenSubject(input.subject.subject);
       if (subject.subjectSha256 !== input.subject.subjectSha256 || input.task !== "methodology_safety_screen" ||
-        input.protocolVersion !== "methodology-safety-screen.v1" || input.providerName !== "openai" || input.modelName !== MODEL ||
+        input.protocolVersion !== "methodology-safety-screen.v1" || input.providerName !== "openai" || input.modelName !== selectedModel ||
         input.policyVersion !== pinned.version || input.policyManifestSha256 !== policyManifestSha256) fail();
-      const body = JSON.stringify({ model: MODEL, reasoning: { effort: "medium" }, store: false, background: false, stream: false,
+      const body = JSON.stringify({ model: selectedModel, reasoning: { effort: "medium" }, store: false, background: false, stream: false,
         truncation: "disabled", instructions: INSTRUCTIONS,
         input: JSON.stringify({ task: "methodology_safety_screen", subject: { sha256: subject.subjectSha256, content: subject.subject.content },
           prohibitedPolicy: pinned.prohibitedPolicy, behavioralBaselines: pinned.behavioralBaselines }),
@@ -78,22 +80,23 @@ export function createLunaMethodologyScreenRequestBuilder(policy: Policy): Reado
   });
 }
 
-function checkedRequest(request: MethodologyScreeningRequest): string {
+function checkedRequest(request: MethodologyScreeningRequest): Readonly<{ body: string; modelName: string }> {
   if (!object(request) || !SHA.test(request.subjectSha256) || !SHA.test(request.requestSha256) ||
     !SHA.test(request.policyManifestSha256) || !text(request.requestBody) || hash(request.requestBody) !== request.requestSha256) fail();
+  const modelName = parseOpenAiModelName(request.modelName);
   const body: unknown = JSON.parse(request.requestBody);
   if (!object(body) || typeof body.input !== "string") fail();
   const input: unknown = JSON.parse(body.input);
   if (!object(input) || !object(input.subject) || typeof input.subject.content !== "string") fail();
   const builder = createLunaMethodologyScreenRequestBuilder({ version: request.policyVersion,
-    prohibitedPolicy: input.prohibitedPolicy as string, behavioralBaselines: input.behavioralBaselines as string });
+    prohibitedPolicy: input.prohibitedPolicy as string, behavioralBaselines: input.behavioralBaselines as string }, modelName);
   const subject = bindMethodologySafetyScreenSubject({ methodologyContextPackVersionId: request.versionId, content: input.subject.content });
   if (subject.subjectSha256 !== request.subjectSha256 || input.subject.sha256 !== subject.subjectSha256 ||
     builder.configuration.policyManifestSha256 !== request.policyManifestSha256 ||
-    builder.buildRequest({ ...request, subject }) !== request.requestBody) fail();
-  return request.requestBody;
+    builder.buildRequest({ ...request, subject, modelName }) !== request.requestBody) fail();
+  return Object.freeze({ body: request.requestBody, modelName });
 }
-async function modelResult(response: Response): Promise<unknown> {
+async function modelResult(response: Response, modelName: string): Promise<unknown> {
   if (!response.ok || response.redirected || !/^application\/json(?:\s*;|$)/i.test(response.headers.get("content-type") ?? "") || response.body === null) fail();
   const reader = response.body.getReader(); const decoder = new TextDecoder("utf-8", { fatal: true });
   let bytes = 0; let raw = "";
@@ -103,7 +106,7 @@ async function modelResult(response: Response): Promise<unknown> {
     raw += decoder.decode();
   } finally { reader.releaseLock(); }
   const envelope: unknown = JSON.parse(raw);
-  if (!object(envelope) || envelope.object !== "response" || typeof envelope.model !== "string" || !/^gpt-5\.6-luna(?:-\d{4}-\d{2}-\d{2})?$/.test(envelope.model) || envelope.status !== "completed" ||
+  if (!object(envelope) || envelope.object !== "response" || !isOpenAiResponseModel(modelName, envelope.model) || envelope.status !== "completed" ||
     envelope.error !== null || envelope.incomplete_details !== null || !Array.isArray(envelope.output) ||
     envelope.output.some(part => !object(part) || !["reasoning", "message"].includes(part.type as string))) fail();
   const messages = envelope.output.filter(part => object(part) && part.type === "message");
@@ -128,13 +131,13 @@ export function createOpenAiLunaMethodologyScreeningTransport(input: Readonly<{ 
     void deadline.catch(() => undefined);
     const cancel = () => { controller.abort(); rejectDeadline(new Error(FAILURE)); };
     try {
-      const body = checkedRequest(request);
+      const checked = checkedRequest(request);
       signal.addEventListener("abort", cancel, { once: true });
       if (signal.aborted) fail();
       timer = setTimeout(cancel, DEADLINE_MS);
       const pending = (async () => modelResult(await fetchImpl(ENDPOINT, { method: "POST",
         headers: { Authorization: "Bearer " + apiKey, Accept: "application/json", "Content-Type": "application/json" },
-        body, signal: controller.signal, redirect: "error", credentials: "omit", cache: "no-store" })))();
+        body: checked.body, signal: controller.signal, redirect: "error", credentials: "omit", cache: "no-store" }), checked.modelName))();
       const result = await Promise.race([pending, deadline]);
       if (signal.aborted || controller.signal.aborted || performance.now() >= deadlineAt) fail();
       return result;

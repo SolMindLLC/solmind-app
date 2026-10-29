@@ -20,6 +20,7 @@ import { createExplorerPrivateGovernedCapabilities } from "../virtual-guide/expl
 import { createOpenAiLunaExplorerSafetyTransport } from "../virtual-guide/openAiLunaExplorerSafetyTransport";
 import { createEffectiveMethodologySource } from "./effectiveMethodologySource";
 import { join } from "node:path";
+import { readOpenAiModelName } from "../virtual-guide/openAiModelConfiguration";
 
 // Preserve duplicate wire names and exact values. Framework cookie maps cannot
 // establish the raw-cookie ambiguity check owned by the banked login boundary.
@@ -112,6 +113,7 @@ export function createExplorerPrivateLocalRequestDependencies(
     const operationalSignal = createExplorerPrivateFileSignal({ filePath: join(run.directory, "explorer-private-signals.jsonl"),
       verificationReceiptSha256: profile.receipts.signal.sha256 });
     const credentialReady = () => {
+      if (readOpenAiModelName(environment) !== run.modelName) return false;
       const key = environment.OPENAI_API_KEY;
       return typeof key === "string" && key.length >= 1 && key.length <= 4096 &&
         !/[\s\u0000-\u001f\u007f-\u009f]/u.test(key);
@@ -121,13 +123,13 @@ export function createExplorerPrivateLocalRequestDependencies(
       // This exact credential source needs a later explicit provider grant.
       const apiKey = environment.OPENAI_API_KEY;
       if (!apiKey) throw new Error("explorer_private_local_dispatch_unavailable");
-      return createOpenAiLunaExplorerSafetyTransport({ apiKey, fetchImpl: fetch }).generate(request, signal);
+      return createOpenAiLunaExplorerSafetyTransport({ apiKey, fetchImpl: fetch, modelName: run.modelName }).generate(request, signal);
     };
     const governed = createExplorerPrivateGovernedCapabilities({ repository: base.repository, methodologySource,
       packId: profile.packId, expectedScope: { type: "guide", id: profile.guideId }, configuration,
       acceptanceReceiptSha256: profile.receipts.policy.sha256, sourceVerificationReceiptSha256: profile.receipts.source.sha256,
       resourceVerificationReceiptSha256: profile.receipts.resources.sha256, modelPolicyVersion: profile.modelPolicyVersion,
-      resourcePolicyVersion: profile.resourcePolicyVersion, renderer, operationalSignal, provider: { generate } });
+      resourcePolicyVersion: profile.resourcePolicyVersion, modelName: run.modelName, renderer, operationalSignal, provider: { generate } });
     const bound = withExplorerPrivateLocalDispatch({ run, authenticate: base.authenticate, repository: base.repository,
       methodologySource, buildContext: governed.buildContext, credentialReady, generate });
     return withExplorerPrivateRequestBudgets({ authenticate, repository,

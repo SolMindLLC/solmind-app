@@ -262,7 +262,7 @@ Keep these owners direct-import, server-only and off shared/client barrels:
   bounded injected invocation and retains valid classification independently of
   unusable candidate prose or canceled delivery. Missing observation is not zero.
 - `src/lib/solmind/virtual-guide/openAiLunaExplorerSafetyTransport.ts` owns only
-  the fixed, dormant HTTP adapter with injected credential/HTTP capabilities.
+  the OpenAI Responses HTTP adapter with injected credential/model/HTTP capabilities; `src/lib/solmind/virtual-guide/openAiModelConfiguration.ts` validates the supplied server `SOLMIND_OPENAI_MODEL` setting (undefined alone defaults to Luna), while the pinned provider grant independently controls use.
   It reads no environment and is not supplied by the default request factory.
 - `src/lib/solmind/virtual-guide/explorerConversationSafety.ts` owns pure pinned
   fallback, combination and trusted-response selection. It imports candidate
@@ -438,7 +438,7 @@ filesystem append stopped. No destination or operational adoption is configured.
 `src/lib/solmind/virtual-guide/openAiLunaMethodologyScreeningTransport.ts` owns
 the pure explicit-policy request builder and dormant injected HTTP transport.
 It binds subject/policy/manifest/request bytes, omits account/pack UUIDs from model
-input and uses the pinned model, medium effort, store:false, no tools/background/
+input and uses the captured configured model, medium effort, store:false, no tools/background/
 stream/retry, structured output and 128-KiB request/response limits. Its 60-second
 local race includes fetch/body parsing; it proves neither remote stop nor zero
 billing/retention. Standard provider abuse-monitoring retention remains a separate

@@ -68,6 +68,16 @@ describe("private local run data and durable finite admission", () => {
     expect(loadExplorerPrivateLocalRun(f.environment)!.available()).toBe(false);
     expect(readFileSync(join(f.directory, `explorer-send-${uuid(1)}.claimed`), "utf8")).toBe("consumed\n");
   });
+  it("does not transfer a pinned grant when the server model setting differs or is malformed", () => {
+    const f = fixture();
+    const credential = vi.fn(() => { throw new Error("must_not_read_credential"); });
+    for (const modelName of ["synthetic-compatible-model", "", "gpt-5.6-luna\n"]) {
+      const environment = Object.defineProperty({ ...f.environment, SOLMIND_OPENAI_MODEL: modelName }, "OPENAI_API_KEY", { get: credential });
+      expect(loadExplorerPrivateLocalRun(environment)).toBeNull();
+    }
+    expect(loadExplorerPrivateLocalRun(f.environment)?.modelName).toBe("gpt-5.6-luna");
+    expect(credential).not.toHaveBeenCalled();
+  });
   it.each(["policy", "source", "resources", "renderer", "signal", "provider", "target"])("holds on changed %s evidence", name => {
     const f = fixture(); writeFileSync(join(f.directory, name + ".json"), "{}");
     expect(loadExplorerPrivateLocalRun(f.environment)).toBeNull();

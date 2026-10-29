@@ -4,9 +4,10 @@ import {
   parseExplorerSafetyReplyRequest, type ExplorerSafetyRequestMode, type ExplorerSafetyReplyRequest,
 } from "./explorerSafetyReplyContract";
 import type { ExplorerSafetyReplyTransport } from "./explorerSafetyReplyInvocation";
+import { DEFAULT_OPENAI_MODEL, isOpenAiResponseModel, parseOpenAiModelName } from "./openAiModelConfiguration";
 
 export const OPENAI_LUNA_EXPLORER_SAFETY_ENDPOINT = "https://api.openai.com/v1/responses" as const;
-export const OPENAI_LUNA_EXPLORER_SAFETY_MODEL = "gpt-5.6-luna" as const;
+export const OPENAI_LUNA_EXPLORER_SAFETY_MODEL = DEFAULT_OPENAI_MODEL;
 export const OPENAI_LUNA_EXPLORER_SAFETY_EFFORT = "medium" as const;
 export class OpenAiLunaExplorerSafetyError extends Error {
   constructor(readonly code: "explorer_safety_http_configuration" | "explorer_safety_http_failed" | "explorer_safety_http_invalid_response") {
@@ -60,9 +61,9 @@ async function readBody(response: Response): Promise<string> {
     fail("explorer_safety_http_failed");
   } finally { reader.releaseLock(); }
 }
-function extractedModelText(envelope: unknown): string {
+function extractedModelText(envelope: unknown, modelName: string): string {
   if (!object(envelope) || envelope.object !== "response" || envelope.status !== "completed" ||
-    envelope.error !== null || envelope.incomplete_details !== null || typeof envelope.model !== "string" || !/^gpt-5\.6-luna(?:-\d{4}-\d{2}-\d{2})?$/.test(envelope.model) ||
+    envelope.error !== null || envelope.incomplete_details !== null || !isOpenAiResponseModel(modelName, envelope.model) ||
     !Array.isArray(envelope.output) || envelope.output.some((part) => !object(part) || !["reasoning", "message"].includes(part.type as string))) fail("explorer_safety_http_invalid_response");
   const messages = envelope.output.filter((part) => object(part) && part.type === "message");
   if (messages.length !== 1) fail("explorer_safety_http_invalid_response");
@@ -75,16 +76,19 @@ function extractedModelText(envelope: unknown): string {
   // to the independent result owner after this complete raw body is received.
   return raw;
 }
-export function createOpenAiLunaExplorerSafetyTransport(input: Readonly<{ apiKey: string; fetchImpl: typeof fetch }>): ExplorerSafetyReplyTransport {
-  let apiKey: string; let fetchImpl: typeof fetch;
+export function createOpenAiLunaExplorerSafetyTransport(input: Readonly<{ apiKey: string; fetchImpl: typeof fetch; modelName?: string }>): ExplorerSafetyReplyTransport {
+  let apiKey: string; let fetchImpl: typeof fetch; let modelName: string;
   try {
-    if (!object(input) || Reflect.ownKeys(input).length !== 2 ||
-      Reflect.ownKeys(input).some((key) => key !== "apiKey" && key !== "fetchImpl")) fail("explorer_safety_http_configuration");
+    if (!object(input) || Reflect.ownKeys(input).length < 2 || Reflect.ownKeys(input).length > 3 ||
+      Reflect.ownKeys(input).some((key) => key !== "apiKey" && key !== "fetchImpl" && key !== "modelName")) fail("explorer_safety_http_configuration");
     const key = Object.getOwnPropertyDescriptor(input, "apiKey");
     const http = Object.getOwnPropertyDescriptor(input, "fetchImpl");
+    const selected = Object.getOwnPropertyDescriptor(input, "modelName");
     if (!key?.enumerable || !("value" in key) || typeof key.value !== "string" || key.value.length < 1 ||
       key.value.length > 4096 || /[\s\u0000-\u001f\u007f-\u009f]/u.test(key.value) ||
       !http?.enumerable || !("value" in http) || typeof http.value !== "function") fail("explorer_safety_http_configuration");
+    if (selected && (!selected.enumerable || !("value" in selected))) fail("explorer_safety_http_configuration");
+    modelName = parseOpenAiModelName(selected ? selected.value : DEFAULT_OPENAI_MODEL);
     apiKey = key.value; fetchImpl = http.value as typeof fetch;
   } catch { fail("explorer_safety_http_configuration"); }
   return Object.freeze({
@@ -94,7 +98,7 @@ export function createOpenAiLunaExplorerSafetyTransport(input: Readonly<{ apiKey
       try {
         response = await fetchImpl(OPENAI_LUNA_EXPLORER_SAFETY_ENDPOINT, {
           method: "POST", headers: { Accept: "application/json", Authorization: "Bearer " + apiKey, "Content-Type": "application/json" },
-          body: JSON.stringify({ model: OPENAI_LUNA_EXPLORER_SAFETY_MODEL,
+          body: JSON.stringify({ model: modelName,
             reasoning: { effort: OPENAI_LUNA_EXPLORER_SAFETY_EFFORT }, store: false,
             instructions: explorerSafetyHttpInstructions(request.mode), input: request.authorizedContext, max_output_tokens: 4096 }),
           redirect: "error", signal,
@@ -103,7 +107,7 @@ export function createOpenAiLunaExplorerSafetyTransport(input: Readonly<{ apiKey
       let envelope: unknown;
       try { envelope = JSON.parse(await readBody(response)) as unknown; }
       catch (error) { if (error instanceof OpenAiLunaExplorerSafetyError) throw error; fail("explorer_safety_http_invalid_response"); }
-      return extractedModelText(envelope);
+      return extractedModelText(envelope, modelName);
     },
   });
 }

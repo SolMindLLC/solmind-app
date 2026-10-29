@@ -9,6 +9,7 @@ function profile(file, runtimeImports, typeImports = []) {
 }
 
 export const EXPLORER_SOURCE_PROFILES = Object.freeze([
+  profile("src/lib/solmind/virtual-guide/openAiModelConfiguration.ts", ["server-only"]),
   profile("src/lib/solmind/roles.ts", []),
   profile("src/lib/solmind/onboarding.ts", []),
   profile("src/lib/solmind/context/aiRoleContext.ts", ["../roles"]),
@@ -61,14 +62,14 @@ export const EXPLORER_SOURCE_PROFILES = Object.freeze([
   profile("src/lib/solmind/virtual-guide/explorerSafetyReplyContract.ts", ["server-only", "node:crypto"]),
   profile("src/lib/solmind/virtual-guide/explorerSafetyReplyInvocation.ts", ["server-only", "node:util", "./explorerSafetyReplyContract"]),
   profile("src/lib/solmind/virtual-guide/explorerConversationSafety.ts", ["server-only", "./explorerSafetyReplyContract"], ["./explorerPrivateConfiguration"]),
-  profile("src/lib/solmind/virtual-guide/openAiLunaExplorerSafetyTransport.ts", ["server-only", "./explorerSafetyReplyContract"], ["./explorerSafetyReplyInvocation"]),
-  profile("src/lib/solmind/virtual-guide/explorerPrivateConversationComposition.ts", ["server-only", "node:crypto", "node:util", "../explorerConversationContract", "./explorerConversationComposition", "./explorerPrivateConfiguration", "./explorerSafetyReplyContract", "./explorerSafetyReplyInvocation", "./explorerConversationSafety"], ["../explorerPrivateConversationResponse"]),
+  profile("src/lib/solmind/virtual-guide/openAiLunaExplorerSafetyTransport.ts", ["server-only", "./openAiModelConfiguration", "./explorerSafetyReplyContract"], ["./explorerSafetyReplyInvocation"]),
+  profile("src/lib/solmind/virtual-guide/explorerPrivateConversationComposition.ts", ["server-only", "./openAiModelConfiguration", "node:crypto", "node:util", "../explorerConversationContract", "./explorerConversationComposition", "./explorerPrivateConfiguration", "./explorerSafetyReplyContract", "./explorerSafetyReplyInvocation", "./explorerConversationSafety"], ["../explorerPrivateConversationResponse"]),
   profile("src/lib/solmind/supabase/explorerPrivateConversationRepository.ts", ["server-only", "node:util"], ["@supabase/supabase-js", "../virtual-guide/explorerPrivateConversationComposition"]),
   profile("src/lib/solmind/operations/explorerPrivateOperationalSignal.ts", ["server-only", "node:fs/promises", "node:path"], ["../virtual-guide/explorerPrivateConversationComposition"]),
-  profile("src/lib/solmind/virtual-guide/openAiLunaMethodologyScreeningTransport.ts", ["server-only", "node:crypto", "./methodologySafetyScreenContract"], ["./methodologyScreeningComposition"]),
+  profile("src/lib/solmind/virtual-guide/openAiLunaMethodologyScreeningTransport.ts", ["server-only", "./openAiModelConfiguration", "node:crypto", "./methodologySafetyScreenContract"], ["./methodologyScreeningComposition"]),
   profile("src/lib/solmind/operations/explorerPrivateRequestBudgets.ts", ["server-only", "node:util"], ["../virtual-guide/explorerPrivateConversationComposition"]),
   profile("src/lib/solmind/operations/explorerPrivateReviewedRenderer.ts", ["server-only", "../virtual-guide/explorerSafetyReplyContract"], ["../virtual-guide/explorerPrivateConversationComposition", "../virtual-guide/explorerConversationSafety"]),
-  profile("src/lib/solmind/virtual-guide/explorerPrivateGovernedCapabilities.ts", ["server-only", "node:crypto", "./explorerPrivateConfiguration", "./explorerPrivateConversationComposition", "./explorerConversationContext", "./effectiveMethodologyContext"]),
+  profile("src/lib/solmind/virtual-guide/explorerPrivateGovernedCapabilities.ts", ["server-only", "./openAiModelConfiguration", "node:crypto", "./explorerPrivateConfiguration", "./explorerPrivateConversationComposition", "./explorerConversationContext", "./effectiveMethodologyContext"]),
 ]);
 
 function selectedProfile(filename) {

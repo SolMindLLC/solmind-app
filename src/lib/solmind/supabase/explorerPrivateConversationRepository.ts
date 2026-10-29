@@ -15,7 +15,7 @@ const PORTS = Object.freeze({
   observe: Object.freeze({ name: "solmind_observe_explorer_conversation_fallback_v3", parameters: [...ACTOR, ...OBSERVATION], columns: ["outcome", "policy_state"] }),
   prepare: Object.freeze({ name: "solmind_prepare_explorer_conversation_turn_v3", parameters: [...ACTOR, ...OBSERVATION, ...METHODOLOGY,
     "p_context_source_ids", "p_authorization_version", "p_intake_response_set_id", "p_prompt_version", "p_policy_version", "p_behavior_version", "p_crisis_version", "p_role_version", "p_instruction_version",
-    "p_message_id", "p_snapshot_id", "p_invocation_id", "p_body", "p_context_serialization", "p_context_fingerprint_sha256", "p_request_mode", "p_trusted_response_version", "p_resource_policy_version", "p_expected_safety_version"],
+    "p_message_id", "p_snapshot_id", "p_invocation_id", "p_body", "p_context_serialization", "p_context_fingerprint_sha256", "p_request_mode", "p_trusted_response_version", "p_resource_policy_version", "p_expected_safety_version", "p_model_name"],
     columns: ["outcome", "conversation_state", "dispatch_permitted", "policy_state"] }),
   settle: Object.freeze({ name: "solmind_settle_explorer_conversation_turn_v3", parameters: [...ACTOR, "p_conversation_id", "p_operation_id", "p_status", "p_reply_message_id", "p_reply_kind", "p_reply_body",
     "p_model_level", "p_model_minor_indicated", "p_protocol_version", "p_request_mode", "p_configuration_fingerprint", "p_fallback_policy_version", "p_model_policy_version", "p_trusted_response_version", "p_resource_policy_version",

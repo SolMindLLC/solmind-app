@@ -35,10 +35,17 @@ select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid=
   where n.nspname='public' and p.proname in ('solmind_register_methodology_version','solmind_read_methodology_version',
     'solmind_prepare_methodology_screen','solmind_record_methodology_screen','solmind_confirm_methodology_admin_review',
     'solmind_decide_methodology_guide_review','solmind_resolve_explorer_methodology','solmind_prepare_governed_explorer_conversation_turn')
+    and (p.proname<>'solmind_prepare_methodology_screen' or (p.pronargs=11 and p.proargnames[11]='p_model_name'))
     and p.prosecdef and p.proowner='postgres'::regrole and has_function_privilege('service_role',p.oid,'EXECUTE')
     and not has_function_privilege('anon',p.oid,'EXECUTE') and not has_function_privilege('authenticated',p.oid,'EXECUTE')
     and 'search_path=""'=any(p.proconfig) and 'lock_timeout=2000ms'=any(p.proconfig)),7,
-  'seven governance ports retain bounded service-only execution; the legacy governed write capability is retired');
+  'seven active governance ports include eleven-argument screen preparation; legacy governed write remains retired');
+select ok((select p.proowner='postgres'::regrole
+  and not exists(select 1 from unnest(array['anon','authenticated','service_role']) r
+    where has_function_privilege(r,p.oid,'EXECUTE'))
+  from pg_proc p where p.oid=
+    'public.solmind_prepare_methodology_screen(uuid,uuid,uuid,uuid,uuid,uuid,text,text,text,text)'::regprocedure),
+  'retired ten-argument screen preparation remains postgres-owned and denies all API roles');
 select ok(not exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
   cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
   where (n.nspname='methodology' or (n.nspname='public' and p.proname in

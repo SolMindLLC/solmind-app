@@ -23,7 +23,7 @@ function state(conversationId: string | null): ExplorerConversationState {
 }
 function fixture() {
   const configuration = getExplorerPrivateConfigurationCandidate(); if (!configuration) throw new Error("synthetic_candidate_missing");
-  const readiness: ExplorerPrivateOperationalReadiness = { configuration, configurationFingerprint: SHA, modelPolicyVersion: "synthetic-model.v1",
+  const readiness: ExplorerPrivateOperationalReadiness = { configuration, configurationFingerprint: SHA, modelName: "gpt-5.6-luna", modelPolicyVersion: "synthetic-model.v1",
     resourcePolicyVersion: "synthetic-reviewed-resources.v1", sourceVerificationReceiptSha256: SHA, resourceVerificationReceiptSha256: SHA,
     rendererVerificationReceiptSha256: SHA, signalVerificationReceiptSha256: SHA,
     methodology: { packId: ID.pack, versionId: ID.version, contentSha256: SHA, authorizationVersion: "MV1:" + SHA } };

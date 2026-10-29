@@ -1,5 +1,6 @@
 import "server-only";
 import { types } from "node:util";
+import { parseOpenAiModelName } from "../virtual-guide/openAiModelConfiguration";
 import {
   bindMethodologySafetyScreenSubject,
   METHODOLOGY_SAFETY_SCREEN_CRITERIA,
@@ -20,7 +21,7 @@ const LABEL = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/;
 const PREPARE_KEYS = Object.freeze([
   "p_actor_user_account_id", "p_user_session_id", "p_operation_id", "p_methodology_context_pack_id",
   "p_methodology_context_pack_version_id", "p_screen_invocation_id", "p_content_sha256", "p_policy_version",
-  "p_policy_manifest_sha256", "p_request_sha256",
+  "p_policy_manifest_sha256", "p_request_sha256", "p_model_name",
 ]);
 const SETTLE_KEYS = Object.freeze([
   "p_screen_operation_id", "p_screen_invocation_id", "p_methodology_context_pack_version_id",
@@ -121,13 +122,14 @@ function parseDraft(row: Record<string, unknown>, expected: MethodologyScreening
 }
 function parsePrepare(input: unknown): MethodologyScreeningPrepareParameters {
   const raw = record(input, PREPARE_KEYS);
+  const modelName = parseOpenAiModelName(raw.p_model_name);
   if (typeof raw.p_policy_version !== "string" || !LABEL.test(raw.p_policy_version)) unavailable();
   return Object.freeze({
     p_actor_user_account_id: uuid(raw.p_actor_user_account_id), p_user_session_id: uuid(raw.p_user_session_id),
     p_operation_id: uuid(raw.p_operation_id), p_methodology_context_pack_id: uuid(raw.p_methodology_context_pack_id),
     p_methodology_context_pack_version_id: uuid(raw.p_methodology_context_pack_version_id), p_screen_invocation_id: uuid(raw.p_screen_invocation_id),
     p_content_sha256: digest(raw.p_content_sha256), p_policy_version: raw.p_policy_version,
-    p_policy_manifest_sha256: digest(raw.p_policy_manifest_sha256), p_request_sha256: digest(raw.p_request_sha256),
+    p_policy_manifest_sha256: digest(raw.p_policy_manifest_sha256), p_request_sha256: digest(raw.p_request_sha256), p_model_name: modelName,
   });
 }
 function snapshotResult(input: unknown, expectedSha: string): MethodologyScreeningPersistenceResult {

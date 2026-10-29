@@ -38,7 +38,7 @@ const PREPARE: ExplorerPrivatePrepareParameters = Object.freeze({ ...OBSERVE, ..
   p_message_id: ID, p_snapshot_id: ID, p_invocation_id: ID, p_body: "Synthetic submitted body.",
   p_context_serialization: "Synthetic context bytes.", p_context_fingerprint_sha256: SHA,
   p_request_mode: "classification_and_reply", p_trusted_response_version: "synthetic-trusted.v1",
-  p_resource_policy_version: "synthetic-resources.v1", p_expected_safety_version: 0 });
+  p_resource_policy_version: "synthetic-resources.v1", p_expected_safety_version: 0, p_model_name: "gpt-5.6-luna" });
 const SETTLE: ExplorerPrivateSettleParameters = Object.freeze({ ...ACTOR_PARAMETERS, p_conversation_id: ID,
   p_operation_id: ID, p_status: "completed", p_reply_message_id: null, p_reply_kind: "none", p_reply_body: null,
   p_model_level: 4, p_model_minor_indicated: true, p_protocol_version: "explorer-safety-reply.v1",
@@ -56,7 +56,7 @@ function contextInput(signal?: AbortSignal): Parameters<BuildContext>[0] {
   const configuration = getExplorerPrivateConfigurationCandidate();
   if (!configuration) throw new Error("synthetic_configuration_missing");
   const readiness: ExplorerPrivateOperationalReadiness = {
-    configuration, configurationFingerprint: SHA, modelPolicyVersion: "synthetic-model.v1",
+    configuration, configurationFingerprint: SHA, modelName: "gpt-5.6-luna", modelPolicyVersion: "synthetic-model.v1",
     resourcePolicyVersion: "synthetic-resources.v1", sourceVerificationReceiptSha256: SHA,
     resourceVerificationReceiptSha256: SHA, rendererVerificationReceiptSha256: SHA, signalVerificationReceiptSha256: SHA,
     methodology: { packId: ID, versionId: ID, contentSha256: SHA, authorizationVersion: "MV1:" + SHA },

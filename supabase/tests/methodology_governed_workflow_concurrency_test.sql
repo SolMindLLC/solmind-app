@@ -57,7 +57,7 @@ begin
     if n>1001 then
       select content_sha256 into sha from methodology.methodology_context_pack_version where methodology_context_pack_version_id=pg_temp.gcid(n);
       perform public.solmind_prepare_methodology_screen(pg_temp.gcid(3),pg_temp.gcid(57),pg_temp.gcid(n+2000),pg_temp.gcid(1000),pg_temp.gcid(n),
-        pg_temp.gcid(n+3000),sha,'synthetic-policy.v1',repeat('B',64),repeat('C',64));
+        pg_temp.gcid(n+3000),sha,'synthetic-policy.v1',repeat('B',64),repeat('C',64),'gpt-5.6-luna');
       perform public.solmind_record_methodology_screen(pg_temp.gcid(n+2000),pg_temp.gcid(n+3000),pg_temp.gcid(n),sha,repeat('C',64),'completed',
         jsonb_build_object('result','pass','subject_sha256',sha,'findings','[]'::jsonb));
       perform public.solmind_confirm_methodology_admin_review(pg_temp.gcid(3),pg_temp.gcid(57),pg_temp.gcid(n+4000),pg_temp.gcid(1000),pg_temp.gcid(n),sha,pg_temp.gcid(n+3000));
@@ -108,7 +108,7 @@ select is((select count(distinct pid)::integer from worker_pids),2,'two independ
 -- exact retry must never produce a second dispatch allowance or invocation.
 create function pg_temp.screen_start_sql() returns text language sql as $$
   select format($q$select * from public.solmind_prepare_methodology_screen(%L::uuid,%L::uuid,%L::uuid,
-    %L::uuid,%L::uuid,%L::uuid,%L,'synthetic-policy.v1',%L,%L)$q$,
+    %L::uuid,%L::uuid,%L::uuid,%L,'synthetic-policy.v1',%L,%L,'gpt-5.6-luna')$q$,
     pg_temp.gcid(3),pg_temp.gcid(57),pg_temp.gcid(3001),pg_temp.gcid(1000),pg_temp.gcid(1001),pg_temp.gcid(4001),
     v.content_sha256,repeat('B',64),repeat('C',64))
   from methodology.methodology_context_pack_version v where v.methodology_context_pack_version_id=pg_temp.gcid(1001)

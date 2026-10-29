@@ -1196,7 +1196,7 @@ PUBLICATION_TRANSPORT_RETURN_R10/STATUS_CLOSEOUT.json PASS. No outcome credit.
 The current private construction and its six v3 ports are owned by
 solmind-app/AGENTS.md and solmind-app/README.md. The older v1/v2/AV2 descriptions
 and dated eleven-profile proof above retain their predecessor scope. The current
-source graph has27 exact profiles and twelve erased type-only edges; do not infer
+source graph has28 exact profiles and twelve erased type-only edges; src/lib/solmind/virtual-guide/openAiModelConfiguration.ts validates an explicitly supplied environment/model name, actual Explorer composition matches its pinned grant, and SQL stores captured model identity for replay/settlement; do not infer
 new imports or activation from the older counts.
 
 Keep explorerPrivateConfigurationCandidate.ts and explorerPrivateConfiguration.ts,
@@ -1277,7 +1277,7 @@ absent from default wiring; supplying candidate data creates no activation grant
 | Owner | Boundary |
 | --- | --- |
 | src/lib/solmind/operations/explorerPrivateOperationalSignal.ts | Explicit dedicated local .jsonl path/receipt; version/time/closed-marker append only. No default/path/env lookup, directory creation, retry, private IDs or notification. No operational destination/adoption is configured; controller one-second await/abort is not proof filesystem writing stopped. |
-| src/lib/solmind/virtual-guide/openAiLunaMethodologyScreeningTransport.ts | Pure explicit-policy builder binds exact subject/policy manifest/request bytes; dormant injected HTTP adapter, pinned model/medium/store:false, no tools/background/stream/retry, structured output, no account/pack UUID model input, 128-KiB limits and 60-second local fetch/body-parse race. No key lookup, automatic policy acceptance, screen/human approval or activation. |
+| src/lib/solmind/virtual-guide/openAiLunaMethodologyScreeningTransport.ts | Pure explicit-policy builder binds exact subject/policy manifest/request bytes; dormant injected HTTP adapter, captured configured model/medium/store:false, no tools/background/stream/retry, structured output, no account/pack UUID model input, 128-KiB limits and 60-second local fetch/body-parse race. No key lookup, automatic policy acceptance, screen/human approval or activation. |
 
 Both imports remain server-only with erased controller/screening-caller type
 edges. Local timeout establishes no remote-stop, zero-billing or zero-retention

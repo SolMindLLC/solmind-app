@@ -18,7 +18,7 @@ function prepare(): ExplorerPrivatePrepareParameters { return { ...observe(), ..
   p_prompt_version: "synthetic.v1", p_policy_version: "synthetic.v1", p_behavior_version: "synthetic.v1", p_crisis_version: "synthetic.v1",
   p_role_version: "synthetic.v1", p_instruction_version: "synthetic.v1", p_message_id: UUID, p_snapshot_id: UUID, p_invocation_id: UUID,
   p_body: "Synthetic only.", p_context_serialization: "{}", p_context_fingerprint_sha256: SHA, p_request_mode: "classification_and_reply",
-  p_trusted_response_version: "synthetic.v1", p_resource_policy_version: "synthetic.v1", p_expected_safety_version: 0 }; }
+  p_trusted_response_version: "synthetic.v1", p_resource_policy_version: "synthetic.v1", p_expected_safety_version: 0, p_model_name: "gpt-5.6-luna" }; }
 function settle(): ExplorerPrivateSettleParameters { return { ...ACTOR, p_conversation_id: UUID, p_operation_id: UUID,
   p_status: "completed", p_reply_message_id: null, p_reply_kind: "none", p_reply_body: null, p_model_level: 0, p_model_minor_indicated: false,
   p_protocol_version: "explorer-safety-reply.v1", p_request_mode: "classification_only", p_configuration_fingerprint: SHA,

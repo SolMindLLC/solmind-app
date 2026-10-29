@@ -1,5 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
+import { parseOpenAiModelName } from "./openAiModelConfiguration";
 import { parseExplorerPrivateConfigurationCandidate, type ExplorerPrivateConfigurationCandidate } from "./explorerPrivateConfiguration";
 import { adaptPrivateGovernedExplorerContextBuilder, type ExplorerPrivateConversationDependencies,
   type ExplorerPrivateOperationalReadiness, type ExplorerPrivateConversationRepository } from "./explorerPrivateConversationComposition";
@@ -20,12 +21,13 @@ export function createExplorerPrivateGovernedCapabilities(input: Readonly<{
   repository: ExplorerPrivateConversationRepository; methodologySource: EffectiveMethodologySource;
   packId: string; expectedScope: EffectiveMethodologyScope; configuration: ExplorerPrivateConfigurationCandidate;
   acceptanceReceiptSha256: string; sourceVerificationReceiptSha256: string; resourceVerificationReceiptSha256: string;
-  modelPolicyVersion: string; resourcePolicyVersion: string;
+  modelPolicyVersion: string; resourcePolicyVersion: string; modelName: string;
   provider: NonNullable<ExplorerPrivateConversationDependencies["provider"]>;
   renderer: NonNullable<ExplorerPrivateConversationDependencies["renderer"]>;
   operationalSignal: NonNullable<ExplorerPrivateConversationDependencies["operationalSignal"]>;
 }>): Capabilities {
   const configuration = parseExplorerPrivateConfigurationCandidate(input.configuration);
+  const modelName = parseOpenAiModelName(input.modelName);
   const expectedScope = parseEffectiveMethodologyScope(input.expectedScope); const packId = input.packId;
   const { acceptanceReceiptSha256, sourceVerificationReceiptSha256, resourceVerificationReceiptSha256,
     modelPolicyVersion, resourcePolicyVersion } = input;
@@ -42,7 +44,7 @@ export function createExplorerPrivateGovernedCapabilities(input: Readonly<{
   const methodologySource = Object.freeze({ read: input.methodologySource.read });
   const configurationFingerprint = createHash("sha256").update(JSON.stringify({ configuration, packId, expectedScope,
     acceptanceReceiptSha256, sourceVerificationReceiptSha256, resourceVerificationReceiptSha256,
-    rendererVerificationReceiptSha256, signalVerificationReceiptSha256, modelPolicyVersion, resourcePolicyVersion })).digest("hex").toUpperCase();
+    rendererVerificationReceiptSha256, signalVerificationReceiptSha256, modelPolicyVersion, resourcePolicyVersion, modelName })).digest("hex").toUpperCase();
   const builder = createPrivateGovernedExplorerConversationContextBuilder({ repository: { read: input.repository.read },
     packId, expectedScope, methodologySource, configuration: {
       promptVersion: configuration.promptVersion, instructionVersion: configuration.instructionVersion, roleVersion: configuration.roleVersion,
@@ -55,7 +57,7 @@ export function createExplorerPrivateGovernedCapabilities(input: Readonly<{
       try {
         const selection = parseEffectiveMethodologySelection(await methodologySource.read({ actor, packId, expectedScope }), { packId, expectedScope });
         if (selection.contentSha256 !== configuration.methodologySubjectSha256) return null;
-        return Object.freeze({ configuration, configurationFingerprint, modelPolicyVersion, resourcePolicyVersion,
+        return Object.freeze({ configuration, configurationFingerprint, modelPolicyVersion, resourcePolicyVersion, modelName,
           sourceVerificationReceiptSha256, resourceVerificationReceiptSha256,
           rendererVerificationReceiptSha256, signalVerificationReceiptSha256,
           methodology: Object.freeze({ packId: selection.packId, versionId: selection.versionId, contentSha256: selection.contentSha256,
