@@ -251,11 +251,11 @@ select is((select count(*)::integer from pg_constraint where conrelid='ai.explor
 select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'
   and p.proname in ('solmind_read_explorer_conversation_v3','solmind_ensure_explorer_conversation_v3',
     'solmind_observe_explorer_conversation_fallback_v3','solmind_prepare_explorer_conversation_turn_v3',
-    'solmind_settle_explorer_conversation_turn_v3','solmind_mutate_explorer_conversation_v3')
+    'solmind_settle_explorer_conversation_turn_v3','solmind_mutate_explorer_conversation_v3','solmind_confirm_explorer_compass_arrangement_v1')
   and (p.proname<>'solmind_prepare_explorer_conversation_turn_v3' or p.pronargs=37)
   and p.prosecdef and has_function_privilege('service_role',p.oid,'EXECUTE')
-  and not has_function_privilege('anon',p.oid,'EXECUTE') and not has_function_privilege('authenticated',p.oid,'EXECUTE')),6,
-  'exact six closed definer ports including atomic formation are service-only');
+  and not has_function_privilege('anon',p.oid,'EXECUTE') and not has_function_privilege('authenticated',p.oid,'EXECUTE')),7,
+  'exact seven closed definer ports including confirmed arrangement are service-only');
 select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid=p.pronamespace
   cross join (values('anon'),('authenticated'),('service_role')) r(role_name)
   where n.nspname='public' and p.proname='solmind_prepare_explorer_conversation_turn_v3' and p.pronargs=36

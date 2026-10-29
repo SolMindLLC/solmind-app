@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   EXPLORER_CONVERSATION_VERSION,
+  EXPLORER_COMPASS_ANCHORS,
+  type ExplorerCompassArrangementItem,
   type ExplorerConversationState,
 } from "../explorerConversationContract";
 import {
   buildAttentionFormationIntent,
   buildCompassFormationIntent,
+  buildCompassArrangementFormationIntent,
   buildPriorityFormationIntent,
   buildReachedFormationIntent,
   buildWaypointFormationIntent,
@@ -69,9 +72,9 @@ describe("Explorer-owned formation command boundaries", () => {
   });
 
   it("bounds Compass additions without dropping any existing point or moving Priority", () => {
-    const full = state({ compassItems: Array.from({ length: 8 }, (_, index) => ({ ...items[0], id: `point-${index}` })), priorityId: "point-0" });
+    const full = state({ compassItems: Array.from({ length: 24 }, (_, index) => ({ ...items[0], id: `point-${index}` })), priorityId: "point-0" });
     expect(buildCompassFormationIntent(full, { sourceMessageId: source.id, label: "Another" }).ok).toBe(false);
-    expect(full.compassItems).toHaveLength(8);
+    expect(full.compassItems).toHaveLength(24);
     expect(full.priorityId).toBe("point-0");
   });
 
@@ -144,5 +147,82 @@ describe("Explorer-owned formation command boundaries", () => {
       expect(result.command).not.toHaveProperty(key);
     }
     expect(Object.isFrozen(result.command)).toBe(true);
+  });
+});
+
+
+describe("Explorer-reviewed Compass arrangement intents", () => {
+  const arrangement = (): ExplorerCompassArrangementItem[] => [
+    { compassItemId: items[0].id, anchor: "apex", emphasis: 3 },
+    { compassItemId: items[1].id, anchor: "side_left", emphasis: 1 },
+  ];
+
+  it("requires explicit confirmation and freezes the complete intent without supplying authority or captured labels", () => {
+    const current = state({ compassItems: items });
+    const selected = arrangement();
+    expect(buildCompassArrangementFormationIntent(current, null, selected, false).ok).toBe(false);
+    const result = buildCompassArrangementFormationIntent(current, null, selected, true);
+    expect(result).toEqual({ ok: true, error: null,
+      command: { kind: "confirm_compass_arrangement", priorityId: null, items: selected } });
+    if (!result.ok || result.command.kind !== "confirm_compass_arrangement") throw new Error("expected_arrangement_intent");
+    expect(Object.keys(result.command).sort()).toEqual(["items", "kind", "priorityId"]);
+    expect(Object.isFrozen(result.command)).toBe(true);
+    expect(Object.isFrozen(result.command.items)).toBe(true);
+    expect(Object.isFrozen(result.command.items[0])).toBe(true);
+    expect(result.command.items).not.toBe(selected);
+    selected[0] = { ...selected[0], anchor: null, emphasis: 1 };
+    expect(result.command.items[0]).toEqual({ compassItemId: items[0].id, anchor: "apex", emphasis: 3 });
+    expect(current.priorityId).toBeNull();
+    expect(current.attentionId).toBeNull();
+    expect(current.compassItems).toEqual(items);
+  });
+
+  it("permits deliberate Priority reorientation only at the apex while retaining current attention", () => {
+    const current = state({ compassItems: items, priorityId: items[0].id, attentionId: items[0].id });
+    const selected = [
+      { compassItemId: items[0].id, anchor: "side_left", emphasis: 1 },
+      { compassItemId: items[1].id, anchor: "apex", emphasis: 3 },
+    ] satisfies ExplorerCompassArrangementItem[];
+    const result = buildCompassArrangementFormationIntent(current, items[1].id, selected, true);
+    expect(result.command).toEqual({ kind: "confirm_compass_arrangement", priorityId: items[1].id, items: selected });
+    expect(current.priorityId).toBe(items[0].id);
+    expect(current.attentionId).toBe(items[0].id);
+    expect(buildCompassArrangementFormationIntent(current, null, selected, true).ok).toBe(false);
+    expect(buildCompassArrangementFormationIntent(current, items[0].id, selected, true).ok).toBe(false);
+    expect(buildCompassArrangementFormationIntent(current, items[1].id,
+      [{ ...selected[0], anchor: null }, selected[1]], true).ok).toBe(false);
+  });
+
+  it("refuses incomplete, duplicate, foreign or incoherent selections without changing saved points", () => {
+    const current = state({ compassItems: items });
+    for (const selected of [
+      [], [arrangement()[0]], [...arrangement(), { compassItemId: "foreign-point", anchor: null, emphasis: 1 }],
+      [arrangement()[0], { ...arrangement()[1], compassItemId: items[0].id }],
+      [arrangement()[0], { ...arrangement()[1], compassItemId: "foreign-point" }],
+      [arrangement()[0], { ...arrangement()[1], anchor: "apex" }],
+    ] satisfies ExplorerCompassArrangementItem[][]) {
+      expect(buildCompassArrangementFormationIntent(current, null, selected, true).ok).toBe(false);
+    }
+    expect(buildCompassArrangementFormationIntent(current, "foreign-point", arrangement(), true).ok).toBe(false);
+    expect(current.compassItems).toEqual(items);
+    expect(current.priorityId).toBeNull();
+    expect(current.attentionId).toBeNull();
+  });
+
+  it("retains 24 total points with eight visible and 16 Other paths, and permits the ninth saved point", () => {
+    const points = Array.from({ length: 24 }, (_, index) => ({ ...items[0], id: `point-${index}` }));
+    const selected: ExplorerCompassArrangementItem[] = points.map((point, index) => ({ compassItemId: point.id,
+      anchor: index < 8 ? EXPLORER_COMPASS_ANCHORS[index] : null, emphasis: 2 }));
+    const result = buildCompassArrangementFormationIntent(state({ compassItems: points }), null, selected, true);
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.command.kind !== "confirm_compass_arrangement") throw new Error("expected_full_arrangement");
+    expect(result.command.items).toHaveLength(24);
+    expect(result.command.items.filter(item => item.anchor !== null)).toHaveLength(8);
+    expect(result.command.items.filter(item => item.anchor === null)).toHaveLength(16);
+    expect(buildCompassFormationIntent(state({ compassItems: points.slice(0, 8) }),
+      { sourceMessageId: source.id, label: "The ninth retained point" }).command)
+      .toEqual({ kind: "add_compass", sourceMessageId: source.id, label: "The ninth retained point" });
+    expect(buildCompassFormationIntent(state({ compassItems: points }),
+      { sourceMessageId: source.id, label: "A twenty-fifth point" }).ok).toBe(false);
   });
 });

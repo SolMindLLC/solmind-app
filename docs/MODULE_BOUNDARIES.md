@@ -668,7 +668,7 @@ requires new supporting evidence and explicit confirmation. No sharing, model
 interpretation, clinical score, automatic lifecycle change, Guide-private
 projection or broader Guide work is added. Existing prototypes, S03A-S03E
 foundations and all login/session/logout owners retain their boundaries.
-Route captures new meaningful Priority/attention changes in revision order with immutable labels; Reached readback returns actual saved evidence/time.
+Explicit complete-set Compass arrangement preserves up to 24 saved points/eight visible anchors, emphasis, confirmed Priority and independent attention; Route captures immutable labels/placements and Reached returns saved evidence/time.
 
 ## Explorer Sharing Boundary
 

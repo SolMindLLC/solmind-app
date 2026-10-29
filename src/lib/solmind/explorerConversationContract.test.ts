@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   EXPLORER_CONVERSATION_LIMITS,
+  EXPLORER_COMPASS_ANCHORS,
   EXPLORER_CONVERSATION_VERSION,
   parseExplorerConversationCommand,
   parseExplorerConversationResult,
@@ -20,6 +21,8 @@ const validCommands = [
   { ...base, kind: "confirm_waypoint", sourceMessageId: sourceId,
     destination: "An unhurried morning", meaning: "Connecting with my family", arrivalSignal: "A calm breakfast together" },
   { ...base, kind: "confirm_reached", waypointId, evidence: "We had an unhurried breakfast together." },
+  { ...base, kind: "confirm_compass_arrangement", priorityId: pointId,
+    items: [{ compassItemId: pointId, anchor: "apex", emphasis: 2 }] },
 ];
 function without(value: Record<string, unknown>, key: string): Record<string, unknown> {
   return Object.fromEntries(Object.entries(value).filter(([name]) => name !== key));
@@ -159,7 +162,9 @@ describe("Explorer conversation closed result parser", () => {
     expect(Object.isFrozen(parsed.state.route)).toBe(true);
     expect(Object.isFrozen(parsed.state.route?.[0])).toBe(true);
     original.route[0].label = "Changed after parsing";
-    expect(parsed.state.route?.[0].label).toBe("The label saved at that time");
+    const first = parsed.state.route?.[0];
+    if (first?.kind === "arrangement_confirmed") throw new Error("expected_original_route_event");
+    expect(first?.label).toBe("The label saved at that time");
     expect(parseExplorerConversationResult(success({ ...emptyState(), route: [] }))).not.toBeNull();
   });
 
@@ -335,7 +340,7 @@ describe("Explorer conversation closed result parser", () => {
     const maximum = { ...original, messages, compassItems, waypoints, priorityId: compassItems[0].id, attentionId: compassItems[1].id };
     const parsed = parseExplorerConversationResult(success(maximum));
     expect(parsed?.ok && parsed.state.messages.length).toBe(100);
-    expect(parsed?.ok && parsed.state.compassItems.length).toBe(8);
+    expect(parsed?.ok && parsed.state.compassItems.length).toBe(24);
     expect(parsed?.ok && parsed.state.waypoints.length).toBe(20);
     expect(parseExplorerConversationResult(success({ ...maximum, messages: [...messages, { ...messages[0], id: uuid(250) }] }))).toBeNull();
     expect(parseExplorerConversationResult(success({ ...maximum, compassItems: [...compassItems, { ...compassItems[0], id: uuid(350) }] }))).toBeNull();
@@ -405,5 +410,159 @@ describe("Explorer conversation closed result parser", () => {
     expect(parsed.state.compassItems[0].label).toBe("Calmer mornings");
     expect(parsed.state.waypoints[0].destination).toBe("An unhurried morning");
     expect(parsed.state.messages).toHaveLength(2);
+  });
+});
+
+
+describe("Confirmed Compass arrangement boundaries", () => {
+  const otherPointId = uuid(5);
+  const selected = () => [
+    { compassItemId: pointId, anchor: "apex", emphasis: 3 },
+    { compassItemId: otherPointId, anchor: null, emphasis: 1 },
+  ];
+  const command = () => ({ ...base, kind: "confirm_compass_arrangement", priorityId: pointId, items: selected() });
+  const arrangedState = () => ({ ...populatedState(), compassItems: [
+    { id: pointId, sourceMessageId: sourceId, label: "Current Priority label", anchor: "apex", emphasis: 3 },
+    { id: otherPointId, sourceMessageId: sourceId, label: "Current attention label", anchor: "side_left", emphasis: 1 },
+  ], attentionId: otherPointId });
+  const captured = () => ({ operationId: uuid(901), revision: 2, kind: "arrangement_confirmed",
+    previousPriorityId: null, priorityId: pointId, items: [
+      { compassItemId: pointId, label: "Priority label captured at confirmation", anchor: "apex", emphasis: 3 },
+      { compassItemId: otherPointId, label: "Attention label captured at confirmation", anchor: "side_left", emphasis: 1 },
+    ], recordedAt: "2026-10-29T07:02:00.123456+00:00" });
+
+  it("detaches and freezes the exact batch items without accepting labels or renamed ID keys", () => {
+    const original = command();
+    const parsed = parseExplorerConversationCommand(original);
+    expect(parsed).toEqual(original);
+    if (parsed?.kind !== "confirm_compass_arrangement") throw new Error("expected_arrangement");
+    expect(Object.isFrozen(parsed)).toBe(true);
+    expect(Object.isFrozen(parsed.items)).toBe(true);
+    expect(Object.isFrozen(parsed.items[0])).toBe(true);
+    expect(parsed.items).not.toBe(original.items);
+    expect(parsed.items[0]).not.toBe(original.items[0]);
+    original.items[0].emphasis = 1;
+    original.items.push({ compassItemId: uuid(20), anchor: null, emphasis: 2 });
+    expect(parsed.items).toHaveLength(2);
+    expect(parsed.items[0].emphasis).toBe(3);
+    for (const item of [
+      { ...selected()[0], label: "Browser-supplied label" },
+      { itemId: pointId, anchor: "apex", emphasis: 3 },
+      ...Object.keys(selected()[0]).map(key => without(selected()[0], key)),
+    ]) expect(parseExplorerConversationCommand({ ...command(), items: [item] })).toBeNull();
+  });
+
+  it("accepts all eight explicit anchors and 24 total points, preserving Other paths and nullable Priority", () => {
+    expect(EXPLORER_COMPASS_ANCHORS).toEqual([
+      "apex", "upper_left", "upper_right", "side_left", "side_right", "lower_left", "lower_center", "lower_right",
+    ]);
+    const items = Array.from({ length: 24 }, (_, index) => ({ compassItemId: uuid(100 + index),
+      anchor: index < 8 ? EXPLORER_COMPASS_ANCHORS[index] : null, emphasis: 2 }));
+    const parsed = parseExplorerConversationCommand({ ...command(), priorityId: null, items });
+    expect(parsed?.kind).toBe("confirm_compass_arrangement");
+    if (parsed?.kind !== "confirm_compass_arrangement") throw new Error("expected_arrangement");
+    expect(parsed.priorityId).toBeNull();
+    expect(parsed.items).toHaveLength(24);
+    expect(parsed.items.filter(item => item.anchor !== null)).toHaveLength(8);
+    expect(parsed.items.filter(item => item.anchor === null)).toHaveLength(16);
+    expect(parseExplorerConversationCommand({ ...command(), priorityId: null, items: [] })).not.toBeNull();
+    expect(parseExplorerConversationCommand({ ...command(), priorityId: null,
+      items: [...items, { compassItemId: uuid(124), anchor: null, emphasis: 2 }] })).toBeNull();
+  });
+
+  it("rejects duplicate, malformed or incoherent command selections without repairing them", () => {
+    for (const items of [
+      [selected()[0], { ...selected()[1], compassItemId: pointId }],
+      [selected()[0], { ...selected()[1], anchor: "apex" }],
+      [{ ...selected()[0], compassItemId: ` ${pointId}` }],
+      [{ ...selected()[0], anchor: "north" }], [{ ...selected()[0], anchor: "apex " }],
+      [{ ...selected()[0], emphasis: null }], [{ ...selected()[0], emphasis: 0 }],
+      [{ ...selected()[0], emphasis: 4 }], [{ ...selected()[0], emphasis: 1.5 }],
+      [{ ...selected()[0], emphasis: "3" }], [{ ...selected()[0], anchor: null }],
+    ]) expect(parseExplorerConversationCommand({ ...command(), items })).toBeNull();
+    expect(parseExplorerConversationCommand({ ...command(), priorityId: uuid(99) })).toBeNull();
+    for (const items of [null, {}, "[]"]) {
+      expect(parseExplorerConversationCommand({ ...command(), items })).toBeNull();
+    }
+  });
+
+  it("preserves legacy absence, explicit unarranged pairs and selected Other paths without inferring Priority", () => {
+    const legacy = populatedState();
+    const parsedLegacy = parseExplorerConversationResult(success(legacy));
+    expect(parsedLegacy).toEqual(success(legacy));
+    if (!parsedLegacy?.ok) throw new Error("expected_legacy");
+    expect(parsedLegacy.state.compassItems[0]).not.toHaveProperty("anchor");
+    expect(parsedLegacy.state.compassItems[0]).not.toHaveProperty("emphasis");
+    for (const placement of [{ anchor: null, emphasis: null }, { anchor: null, emphasis: 2 },
+      { anchor: "apex", emphasis: 3 }]) {
+      const original = { ...legacy, priorityId: null, attentionId: null,
+        compassItems: [{ ...legacy.compassItems[0], ...placement }] };
+      const parsed = parseExplorerConversationResult(success(original));
+      expect(parsed).toEqual(success(original));
+      expect(parsed?.ok && parsed.state.priorityId).toBeNull();
+    }
+  });
+
+  it("rejects partial placement pairs, duplicate anchors and off-Compass Priority or attention in a saved arrangement", () => {
+    const legacy = populatedState();
+    for (const placement of [{ anchor: null }, { emphasis: null }, { anchor: "apex" }, { emphasis: 2 },
+      { anchor: "apex", emphasis: null }, { anchor: "unknown", emphasis: 2 },
+      { anchor: null, emphasis: 4 }, { anchor: null, emphasis: 1.5 }]) {
+      expect(parseExplorerConversationResult(success({ ...legacy, priorityId: null, attentionId: null,
+        compassItems: [{ ...legacy.compassItems[0], ...placement }] }))).toBeNull();
+    }
+    const original = arrangedState();
+    for (const changed of [
+      { ...original, compassItems: [original.compassItems[0], { ...original.compassItems[1], anchor: "apex" }] },
+      { ...original, compassItems: [{ ...original.compassItems[0], anchor: "upper_left" }, original.compassItems[1]] },
+      { ...original, compassItems: [original.compassItems[0], { ...original.compassItems[1], anchor: null }] },
+      { ...original, compassItems: [original.compassItems[0], { ...original.compassItems[1], anchor: null, emphasis: null }] },
+    ]) expect(parseExplorerConversationResult(success(changed))).toBeNull();
+  });
+
+  it("reads the exact seven-key captured Route union in revision order with detached historical labels", () => {
+    const event = captured();
+    const earlier = { operationId: uuid(900), revision: 1, kind: "priority_confirmed", compassItemId: otherPointId,
+      label: "Earlier captured label", recordedAt: "2026-10-29T07:01:00Z" };
+    const original = { ...arrangedState(), route: [earlier, event] };
+    const parsed = parseExplorerConversationResult(success(original));
+    expect(parsed).toEqual(success(original));
+    if (!parsed?.ok) throw new Error("expected_captured_arrangement");
+    const saved = parsed.state.route?.[1];
+    if (saved?.kind !== "arrangement_confirmed") throw new Error("expected_arrangement_route");
+    expect(Object.keys(saved)).toHaveLength(7);
+    expect(Object.isFrozen(saved)).toBe(true);
+    expect(Object.isFrozen(saved.items)).toBe(true);
+    expect(Object.isFrozen(saved.items[0])).toBe(true);
+    expect(saved.items[0].label).toBe("Priority label captured at confirmation");
+    expect(saved.items[0].label).not.toBe(original.compassItems[0].label);
+    event.items[0].label = "Changed after parsing";
+    event.items.push({ compassItemId: uuid(98), label: "Changed later", anchor: "lower_left", emphasis: 2 });
+    expect(saved.items).toHaveLength(2);
+    expect(saved.items[0].label).toBe("Priority label captured at confirmation");
+    expect(parsed.state.route?.map(entry => entry.operationId)).toEqual([earlier.operationId, event.operationId]);
+    expect(parseExplorerConversationResult(success({ ...arrangedState(), route: [captured(), earlier] }))).toBeNull();
+  });
+
+  it("rejects foreign or malformed captured arrangement facts while allowing later additions to current state", () => {
+    const event = captured();
+    for (const key of Object.keys(event)) {
+      expect(parseExplorerConversationResult(success({ ...arrangedState(), route: [without(event, key)] }))).toBeNull();
+    }
+    for (const changed of [
+      { ...event, privateDraft: "must not escape" }, { ...event, arrangement: event.items },
+      { ...event, previousPriorityId: uuid(99) }, { ...event, priorityId: otherPointId },
+      { ...event, previousPriorityId: pointId, priorityId: null },
+      { ...event, items: [event.items[0], { ...event.items[1], compassItemId: uuid(99) }] },
+      { ...event, items: [event.items[0], { ...event.items[1], compassItemId: pointId }] },
+      { ...event, items: [event.items[0], { ...event.items[1], anchor: "apex" }] },
+      { ...event, items: [{ ...event.items[0], label: " " }, event.items[1]] },
+      { ...event, items: [{ ...event.items[0], sourceMessageId: sourceId }, event.items[1]] },
+      ...Object.keys(event.items[0]).map(key => ({ ...event, items: [without(event.items[0], key), event.items[1]] })),
+    ]) expect(parseExplorerConversationResult(success({ ...arrangedState(), route: [changed] }))).toBeNull();
+    const original = arrangedState();
+    expect(parseExplorerConversationResult(success({ ...original,
+      compassItems: [...original.compassItems, { id: uuid(7), sourceMessageId: sourceId, label: "Added after the recorded arrangement", anchor: null, emphasis: null }],
+      route: [event] }))).not.toBeNull();
   });
 });

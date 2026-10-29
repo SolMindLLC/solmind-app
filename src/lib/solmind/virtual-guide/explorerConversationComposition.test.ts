@@ -371,9 +371,47 @@ describe("Explorer conversation composition with synthetic ports", () => {
   it("E27 command fingerprints preserve text bytes and bind the exact operation/revision", () => {
     const first = explorerConversationCommandFingerprint(send);
     expect(first).toMatch(/^[A-F0-9]{64}$/);
+    expect(first).toBe("0207D9DCC82D95EB2E5F18E3B6C48A28CC49C8FED0855D2AB03414EBEDB3C496");
     expect(explorerConversationCommandFingerprint({ body: send.body, expectedRevision: send.expectedRevision, operationId: send.operationId, kind: "send" })).toBe(first);
     for (const changed of [{ ...send, body: `${send.body} ` }, { ...send, expectedRevision: 5 }, { ...send, operationId: ID.otherSession }]) {
       expect(explorerConversationCommandFingerprint(changed)).not.toBe(first);
     }
   });
+});
+
+
+it("arrangement fingerprint binds Priority and per-point values while equivalent complete sets preserve replay identity", () => {
+  const command: Extract<ExplorerConversationCommand, { kind: "confirm_compass_arrangement" }> = {
+    kind: "confirm_compass_arrangement", operationId: ID.operation, expectedRevision: 4, priorityId: null,
+    items: [{ compassItemId: ID.item, anchor: "apex", emphasis: 3 },
+      { compassItemId: ID.waypoint, anchor: null, emphasis: 1 }],
+  };
+  const fingerprint = explorerConversationCommandFingerprint(command);
+  expect(fingerprint).toMatch(/^[A-F0-9]{64}$/);
+  expect(explorerConversationCommandFingerprint({ ...command, items: command.items.map(item => ({
+    emphasis: item.emphasis, anchor: item.anchor, compassItemId: item.compassItemId,
+  })) })).toBe(fingerprint);
+  const reordered = { ...command, items: [...command.items].reverse() };
+  const originalOrder = reordered.items.map(item => item.compassItemId);
+  expect(explorerConversationCommandFingerprint(reordered)).toBe(fingerprint);
+  expect(reordered.items.map(item => item.compassItemId)).toEqual(originalOrder);
+  for (const changed of [
+    { ...command, priorityId: ID.item },
+    { ...command, items: [{ ...command.items[0], anchor: "upper_left" }, command.items[1]] },
+    { ...command, items: [{ ...command.items[0], emphasis: 1 }, command.items[1]] },
+    { ...command, items: [{ ...command.items[0], compassItemId: ID.otherSession }, command.items[1]] },
+    { ...command, operationId: ID.otherSession }, { ...command, expectedRevision: 5 },
+  ] satisfies ExplorerConversationCommand[]) {
+    expect(explorerConversationCommandFingerprint(changed)).not.toBe(fingerprint);
+  }
+});
+
+it("the older composition refuses a new arrangement rather than forwarding it to generic mutation", async () => {
+  const f = fixture();
+  const command: ExplorerConversationCommand = { kind: "confirm_compass_arrangement", operationId: ID.operation,
+    expectedRevision: 4, priorityId: null, items: [{ compassItemId: ID.item, anchor: "apex", emphasis: 2 }] };
+  expect(await commandExplorerConversation({ command, dependencies: f.dependencies })).toEqual(denied);
+  expect(f.read).toHaveBeenCalledExactlyOnceWith(actor,
+    { operationId: command.operationId, fingerprint: explorerConversationCommandFingerprint(command) });
+  expect(f.buildContext).not.toHaveBeenCalled(); noWrite(f);
 });

@@ -79,6 +79,13 @@ function base(actor: ExplorerConversationActor): Record<string, unknown> {
   return { p_actor_user_account_id: actor.accountId, p_user_session_id: actor.applicationSessionId };
 }
 export function explorerConversationCommandFingerprint(command: ExplorerConversationCommand): string {
+  if (command.kind === "confirm_compass_arrangement") {
+    const items = [...command.items].sort((left, right) => left.compassItemId < right.compassItemId ? -1 : left.compassItemId > right.compassItemId ? 1 : 0);
+    return createHash("sha256").update(JSON.stringify([
+      EXPLORER_CONVERSATION_VERSION, command.kind, command.operationId, command.expectedRevision,
+      command.priorityId, items.map(item => [item.compassItemId, item.anchor, item.emphasis]),
+    ]), "utf8").digest("hex").toUpperCase();
+  }
   return createHash("sha256").update(JSON.stringify([
     EXPLORER_CONVERSATION_VERSION, command.kind, command.operationId, command.expectedRevision,
     "body" in command ? command.body : null,
@@ -119,6 +126,8 @@ export async function commandExplorerConversation(input: {
     // a new context. Current history may already contain that turn and its reply.
     if (row.outcome === "exact_replay") return read;
     if (read.state.pendingTurn) return failure("refresh_required");
+    // Saved arrangement is a separate current-policy private capability.
+    if (command.kind === "confirm_compass_arrangement") return failure("denied");
     if (command.kind !== "send") {
       if (read.state.conversationId === null) return failure("denied");
       const parameters = { ...base(actor), p_conversation_id: read.state.conversationId,

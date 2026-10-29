@@ -281,27 +281,27 @@ update identity.user_session set session_status='active',ended_at=null where use
 
 -- Exercise finite capacity using only synthetic rows in this rollback scope.
 do $$ declare x integer; r record; begin
-  for x in 0..5 loop
+  for x in 0..21 loop
     select * into r from pg_temp.mutate(200+x,12+x,'add_compass',pg_temp.cid(61),null,null,'Synthetic capacity item '||x);
     if r.outcome is distinct from 'ok' then raise exception 'synthetic_compass_capacity_setup_failed'; end if;
   end loop;
 end $$;
-select is((select count(*)::integer from ai.explorer_conversation_compass_item where conversation_id=pg_temp.cid(51)),8,
-  'eight explicitly accepted Compass items fit the finite bound');
-select is((select outcome from pg_temp.mutate(206,18,'add_compass',pg_temp.cid(61),null,null,'Synthetic ninth item')),
-  'unavailable','ninth Compass item is refused without an operation');
-select is((select count(*)::integer from ai.explorer_conversation_operation where operation_id=pg_temp.cid(206)),0,
+select is((select count(*)::integer from ai.explorer_conversation_compass_item where conversation_id=pg_temp.cid(51)),24,
+  '24 explicitly accepted Compass items fit the disclosed private-demo storage bound');
+select is((select outcome from pg_temp.mutate(222,34,'add_compass',pg_temp.cid(61),null,null,'Synthetic twenty-fifth item')),
+  'unavailable','twenty-fifth Compass item is refused without dropping saved content');
+select is((select count(*)::integer from ai.explorer_conversation_operation where operation_id=pg_temp.cid(222)),0,
   'Compass capacity refusal has no retained operation');
 do $$ declare x integer; r record; begin
   for x in 0..18 loop
-    select * into r from pg_temp.mutate(300+x,18+x,'confirm_waypoint',pg_temp.cid(64),null,null,null,
+    select * into r from pg_temp.mutate(300+x,34+x,'confirm_waypoint',pg_temp.cid(64),null,null,null,
       'Synthetic capacity destination '||x,'Synthetic capacity meaning','Synthetic capacity arrival');
     if r.outcome is distinct from 'ok' then raise exception 'synthetic_waypoint_capacity_setup_failed'; end if;
   end loop;
 end $$;
 select is((select count(*)::integer from content.waypoint where source_ai_interaction_session_id=pg_temp.cid(51)),20,
   '20 explicit private Waypoints fit the finite bound');
-select is((select outcome from pg_temp.mutate(319,37,'confirm_waypoint',pg_temp.cid(61),null,null,null,
+select is((select outcome from pg_temp.mutate(319,53,'confirm_waypoint',pg_temp.cid(61),null,null,null,
   'Synthetic twenty-first destination','Synthetic meaning','Synthetic arrival')),'unavailable','twenty-first Waypoint is refused');
 select is((select count(*)::integer from ai.explorer_conversation_operation where operation_id=pg_temp.cid(319)),0,
   'Waypoint capacity refusal has no retained operation');
@@ -311,7 +311,7 @@ insert into ai.ai_interaction_message(ai_interaction_message_id,ai_interaction_s
   sender_type,sender_user_account_id,sender_role_context,content_text)
 select pg_temp.cid(1000+n),pg_temp.cid(51),n,'user',pg_temp.cid(1),'explorer','Synthetic capacity history '||n
   from generate_series(5,99) n;
-select is((select outcome from pg_temp.prepare_turn(3,'Synthetic turn beyond reserved pair capacity',37)),
+select is((select outcome from pg_temp.prepare_turn(3,'Synthetic turn beyond reserved pair capacity',53)),
   'unavailable','99 saved messages cannot reserve an Explorer/reply pair under the 100-message cap');
 select is((select count(*)::integer from ai.ai_context_snapshot where ai_interaction_session_id=pg_temp.cid(51)),3,
   'message-cap refusal creates no additional successor evidence');

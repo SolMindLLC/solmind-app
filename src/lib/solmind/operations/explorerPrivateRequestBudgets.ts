@@ -37,6 +37,7 @@ export function withExplorerPrivateRequestBudgets(dependencies: ExplorerPrivateC
     prepare: (...args: Parameters<typeof source.prepare>) => bounded(() => source.prepare(...args), 10_000),
     settle: (...args: Parameters<typeof source.settle>) => bounded(() => source.settle(...args), 10_000),
     ...(source.mutate === undefined ? {} : { mutate: (input: Parameters<NonNullable<typeof source.mutate>>[0]) => bounded(() => source.mutate!(input), 10_000) }),
+    ...(source.arrange === undefined ? {} : { arrange: (input: Parameters<NonNullable<typeof source.arrange>>[0]) => bounded(() => source.arrange!(input), 10_000) }),
   });
   return Object.freeze({ authenticate: () => bounded(() => dependencies.authenticate(), 10_000), repository,
     ...(dependencies.resolveOperationalReadiness === undefined ? {} : {

@@ -1,5 +1,7 @@
 import {
   EXPLORER_CONVERSATION_LIMITS,
+  EXPLORER_COMPASS_ANCHORS,
+  type ExplorerCompassArrangementItem,
   type ExplorerConversationCommand,
   type ExplorerConversationMessage,
   type ExplorerConversationState,
@@ -71,7 +73,7 @@ export function buildCompassFormationIntent(
     return refuse("Choose a saved conversation message for this Compass point.");
   }
   if (state.compassItems.length >= EXPLORER_CONVERSATION_LIMITS.compassItems) {
-    return refuse("Your Compass has eight points. You can keep exploring without adding another point.");
+    return refuse("This conversation has 24 saved points. Your saved conversation remains available without adding another point.");
   }
   if (!validText(draft.label, EXPLORER_CONVERSATION_LIMITS.labelCharacters, false)) {
     return refuse("Enter a Compass label of 1 to 160 characters on one line.");
@@ -89,6 +91,10 @@ export function buildPriorityFormationIntent(
   }
   if (confirmed !== true) return refuse("Confirm this Priority only when it reflects your choice.");
   if (state.priorityId === itemId) return refuse("This point is already your confirmed Priority.");
+  if (state.compassItems.some(item => item.emphasis != null) &&
+      !state.compassItems.some(item => item.id === itemId && item.anchor === "apex")) {
+    return refuse("Review and confirm the arrangement to place your new Priority at the top.");
+  }
   return accept({ kind: "confirm_priority", itemId });
 }
 
@@ -100,7 +106,38 @@ export function buildAttentionFormationIntent(
     return refuse("Choose a saved Compass point for current attention.");
   }
   if (state.attentionId === itemId) return refuse("Current attention is already on this point.");
+  if (state.compassItems.some(item => item.emphasis != null) &&
+      !state.compassItems.some(item => item.id === itemId && item.anchor != null)) {
+    return refuse("Place this point on your Compass before moving current attention to it.");
+  }
   return accept({ kind: "set_attention", itemId });
+}
+
+export function buildCompassArrangementFormationIntent(
+  state: ExplorerConversationState,
+  priorityId: string | null,
+  items: readonly ExplorerCompassArrangementItem[],
+  confirmed: boolean,
+): FormationIntentResult {
+  if (!state.conversationId || state.pendingTurn) return refuse("Reload the saved conversation before arranging its Compass.");
+  if (!confirmed) return refuse("Review the placement, emphasis and Priority, then confirm your arrangement.");
+  if (state.priorityId !== null && priorityId === null) return refuse("Keep or explicitly choose a Priority; this action does not clear it.");
+  if (items.length !== state.compassItems.length || items.length > EXPLORER_CONVERSATION_LIMITS.compassItems ||
+      new Set(items.map(item => item.compassItemId)).size !== items.length ||
+      items.some(item => !state.compassItems.some(point => point.id === item.compassItemId) ||
+        !(item.anchor === null || EXPLORER_COMPASS_ANCHORS.includes(item.anchor)) ||
+        ![1, 2, 3].includes(item.emphasis))) return refuse("Include every saved point once with valid placement and emphasis.");
+  const visible = items.filter(item => item.anchor !== null);
+  if (visible.length > EXPLORER_CONVERSATION_LIMITS.visibleCompassItems ||
+      new Set(visible.map(item => item.anchor)).size !== visible.length) return refuse("Choose a different visible location for each point; Other paths keeps the rest.");
+  if (priorityId !== null && !items.some(item => item.compassItemId === priorityId && item.anchor === "apex")) {
+    return refuse("Place the Priority you choose at the top of the Compass.");
+  }
+  if (state.attentionId !== null && !visible.some(item => item.compassItemId === state.attentionId)) {
+    return refuse("Keep current attention visible; move attention explicitly before placing that point in Other paths.");
+  }
+  return accept({ kind: "confirm_compass_arrangement", priorityId,
+    items: Object.freeze(items.map(item => Object.freeze({ compassItemId: item.compassItemId, anchor: item.anchor, emphasis: item.emphasis }))) });
 }
 
 export function buildWaypointFormationIntent(

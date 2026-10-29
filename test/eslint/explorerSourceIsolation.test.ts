@@ -49,7 +49,7 @@ const EXPECTED_PROFILES: readonly Profile[] = [
   profile("virtual-guide/explorerConversationSafety.ts", ["server-only", "./explorerSafetyReplyContract"], ["./explorerPrivateConfiguration"]),
   profile("virtual-guide/openAiLunaExplorerSafetyTransport.ts", ["server-only", "./openAiModelConfiguration", "./explorerSafetyReplyContract"], ["./explorerSafetyReplyInvocation"]),
   profile("virtual-guide/explorerPrivateConversationComposition.ts", ["server-only", "./openAiModelConfiguration", "node:crypto", "node:util", "../explorerConversationContract", "./explorerConversationComposition", "./explorerPrivateConfiguration", "./explorerSafetyReplyContract", "./explorerSafetyReplyInvocation", "./explorerConversationSafety"], ["../explorerPrivateConversationResponse"]),
-  profile("supabase/explorerPrivateConversationRepository.ts", ["server-only", "node:util"], ["@supabase/supabase-js", "../virtual-guide/explorerPrivateConversationComposition"]),
+  profile("supabase/explorerPrivateConversationRepository.ts", ["server-only", "node:util", "../explorerConversationContract"], ["@supabase/supabase-js", "../virtual-guide/explorerPrivateConversationComposition"]),
   profile("operations/explorerPrivateOperationalSignal.ts", ["server-only", "node:fs/promises", "node:path"], ["../virtual-guide/explorerPrivateConversationComposition"]),
   profile("virtual-guide/openAiLunaMethodologyScreeningTransport.ts", ["server-only", "./openAiModelConfiguration", "node:crypto", "./methodologySafetyScreenContract"], ["./methodologyScreeningComposition"]),
   profile("operations/explorerPrivateRequestBudgets.ts", ["server-only", "node:util"], ["../virtual-guide/explorerPrivateConversationComposition"]),

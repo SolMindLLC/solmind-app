@@ -4,11 +4,13 @@ import { useId, useState, type FormEvent } from "react";
 import {
   EXPLORER_CONVERSATION_LIMITS,
   type ExplorerConversationState,
+  type ExplorerCompassAnchor,
+  type ExplorerCompassArrangementItem,
 } from "@/lib/solmind/explorerConversationContract";
 import {
   buildAttentionFormationIntent,
   buildCompassFormationIntent,
-  buildPriorityFormationIntent,
+  buildCompassArrangementFormationIntent,
   buildReachedFormationIntent,
   buildWaypointFormationIntent,
   findFormationSource,
@@ -26,6 +28,26 @@ export type ExplorerConversationFormationProps = Readonly<{
 const inputClass = "mt-2 w-full rounded-xl border border-slate-600 bg-slate-950 p-3 text-sm text-slate-100 disabled:opacity-60";
 const buttonClass = "rounded-xl border border-cyan-300/60 px-3 py-2 text-sm font-semibold text-cyan-100 disabled:cursor-not-allowed disabled:opacity-50";
 const panelClass = "rounded-3xl border border-slate-700 bg-slate-950/70 p-5";
+const compassPositions: readonly Readonly<{ anchor: ExplorerCompassAnchor; label: string; className: string }>[] = [
+  { anchor: "apex", label: "Top position", className: "col-start-2 row-start-1" },
+  { anchor: "upper_left", label: "Upper left", className: "col-start-1 row-start-2" },
+  { anchor: "upper_right", label: "Upper right", className: "col-start-3 row-start-2" },
+  { anchor: "side_left", label: "Detour — left", className: "col-start-1 row-start-3" },
+  { anchor: "side_right", label: "Detour — right", className: "col-start-3 row-start-3" },
+  { anchor: "lower_left", label: "Excursion — lower left", className: "col-start-1 row-start-4" },
+  { anchor: "lower_center", label: "Excursion — lower center", className: "col-start-2 row-start-4" },
+  { anchor: "lower_right", label: "Excursion — lower right", className: "col-start-3 row-start-4" },
+];
+const emphasisLabels = { 1: "Light", 2: "Regular", 3: "Strong" } as const;
+function placementLabel(anchor: ExplorerCompassAnchor | null) {
+  return compassPositions.find(position => position.anchor === anchor)?.label ?? "Other paths";
+}
+type ArrangementDraft = Readonly<{
+  conversationId: string | null;
+  revision: number;
+  priorityId: string | null;
+  items: readonly Readonly<{ compassItemId: string; anchor: ExplorerCompassAnchor | null; emphasis: 1 | 2 | 3 | null }>[];
+}>;
 const routeLabels = {
   priority_confirmed: "Priority confirmed",
   priority_reoriented: "Priority reoriented",
@@ -72,14 +94,39 @@ export function ExplorerConversationFormation({ state, busy, onCommand }: Explor
   const [meaning, setMeaning] = useState("");
   const [arrivalSignal, setArrivalSignal] = useState("");
   const [waypointConfirmed, setWaypointConfirmed] = useState(false);
-  const [priorityReviewId, setPriorityReviewId] = useState<string | null>(null);
+  const [arrangementDraft, setArrangementDraft] = useState<ArrangementDraft | null>(null);
+  const [arrangementConfirmed, setArrangementConfirmed] = useState(false);
   const [reachedReviewId, setReachedReviewId] = useState<string | null>(null);
   const [reachedEvidence, setReachedEvidence] = useState("");
   const [reachedConfirmed, setReachedConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const priority = state.compassItems.find(item => item.id === state.priorityId);
   const attention = state.compassItems.find(item => item.id === state.attentionId);
-  const priorityReview = state.compassItems.find(item => item.id === priorityReviewId);
+  const hasArrangement = state.compassItems.some(item => item.emphasis != null);
+  const otherPaths = state.compassItems.filter(item => item.anchor == null);
+  const staleArrangement = arrangementDraft !== null &&
+    (arrangementDraft.conversationId !== state.conversationId || arrangementDraft.revision !== state.revision);
+  const draftPriority = state.compassItems.find(item => item.id === arrangementDraft?.priorityId);
+  const changingPriority = arrangementDraft !== null && arrangementDraft.priorityId !== state.priorityId;
+  const arrangementIssues: string[] = [];
+  if (arrangementDraft !== null) {
+    const usedAnchors = new Set<ExplorerCompassAnchor>();
+    let duplicateAnchor = false;
+    for (const item of arrangementDraft.items) {
+      if (item.anchor !== null) {
+        if (usedAnchors.has(item.anchor)) duplicateAnchor = true;
+        usedAnchors.add(item.anchor);
+      }
+    }
+    if (duplicateAnchor) arrangementIssues.push("Choose a different location for each visible point; no point will be moved automatically.");
+    if (arrangementDraft.items.some(item => item.emphasis === null)) arrangementIssues.push("Choose relative emphasis for every point, including Other paths.");
+    if (arrangementDraft.priorityId !== null && arrangementDraft.items.find(item => item.compassItemId === arrangementDraft.priorityId)?.anchor !== "apex") {
+      arrangementIssues.push("Place the proposed Priority at the top position before confirming.");
+    }
+    if (state.attentionId !== null && arrangementDraft.items.find(item => item.compassItemId === state.attentionId)?.anchor == null) {
+      arrangementIssues.push("Keep the current attention point in a visible position.");
+    }
+  }
   const reachedReview = state.waypoints.find(item => item.id === reachedReviewId && item.status === "chosen");
   const hasSource = state.conversationId !== null && state.messages.length > 0;
   const route = state.route ?? [];
@@ -92,6 +139,54 @@ export function ExplorerConversationFormation({ state, busy, onCommand }: Explor
   function addCompass(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     submit(buildCompassFormationIntent(state, { sourceMessageId: compassSource, label }));
+  }
+  function reviewArrangement(priorityId = state.priorityId) {
+    if (busy) return;
+    setArrangementDraft({ conversationId: state.conversationId, revision: state.revision, priorityId,
+      items: state.compassItems.map(item => ({ compassItemId: item.id,
+        anchor: item.anchor ?? null, emphasis: item.emphasis ?? null })) });
+    setArrangementConfirmed(false);
+    setError(null);
+  }
+  function editArrangementItem(compassItemId: string, patch: Partial<Pick<ArrangementDraft["items"][number], "anchor" | "emphasis">>) {
+    setArrangementDraft(draft => draft === null ? null : { ...draft,
+      items: draft.items.map(item => item.compassItemId === compassItemId ? { ...item, ...patch } : item) });
+    setArrangementConfirmed(false);
+    setError(null);
+  }
+  function confirmArrangement() {
+    if (busy || arrangementDraft === null) return;
+    if (staleArrangement) {
+      setError("Your saved Compass changed. Open a new arrangement review before confirming.");
+      return;
+    }
+    const items: ExplorerCompassArrangementItem[] = [];
+    for (const item of arrangementDraft.items) {
+      if (item.emphasis === null) {
+        setError("Choose relative emphasis for every point, including Other paths, before confirming.");
+        return;
+      }
+      items.push({ compassItemId: item.compassItemId, anchor: item.anchor, emphasis: item.emphasis });
+    }
+    submit(buildCompassArrangementFormationIntent(state, arrangementDraft.priorityId, items, arrangementConfirmed));
+  }
+  function pointCard(item: ExplorerConversationState["compassItems"][number]) {
+    const emphasisClass = item.emphasis === 3 ? "text-lg font-bold" : item.emphasis === 1 ? "text-sm font-medium" : "font-semibold";
+    const attentionUnavailable = hasArrangement && item.anchor == null;
+    return <div className="min-w-0 rounded-2xl border border-slate-700 bg-slate-950 p-3">
+      <h4 className={`break-words text-slate-100 ${emphasisClass}`}>{item.label}</h4>
+      <p className="mt-1 text-xs text-slate-300">
+        {state.priorityId === item.id ? "Confirmed Priority. " : ""}
+        {state.attentionId === item.id ? "Current attention. " : ""}
+        {item.emphasis == null ? "Placement and relative emphasis have not been recorded." : `Relative emphasis: ${emphasisLabels[item.emphasis]}.`}
+      </p>
+      <details className="mt-2"><summary className="cursor-pointer text-sm text-cyan-200">Review saved source</summary><SavedSource state={state} sourceMessageId={item.sourceMessageId} /></details>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button type="button" className={`${buttonClass} max-w-full break-words text-left`} disabled={busy || state.priorityId === item.id} onClick={() => reviewArrangement(item.id)}>Review Priority: {item.label}</button>
+        <button type="button" className={`${buttonClass} max-w-full break-words text-left`} disabled={busy || state.attentionId === item.id || attentionUnavailable} onClick={() => submit(buildAttentionFormationIntent(state, item.id))}>Attend to: {item.label}</button>
+      </div>
+      {attentionUnavailable && state.attentionId !== item.id ? <p className="mt-2 text-xs text-slate-400">Arrange this point visibly before moving attention here.</p> : null}
+    </div>;
   }
   function chooseWaypoint(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -118,36 +213,74 @@ export function ExplorerConversationFormation({ state, busy, onCommand }: Explor
           <p className="mt-2 break-words text-slate-100">{priority?.label ?? "No Priority confirmed"}</p>
         </div>
         <p className="mt-3 break-words text-sm text-cyan-200">Current attention: {attention?.label ?? "No attention point chosen"}</p>
+        <p className="mt-3 text-sm leading-6 text-slate-300">
+          Higher positions express relative priority. Side positions are Detours; lower positions are Excursions.
+          Light, Regular and Strong express your relative emphasis, not a score. Priority stays at the top once confirmed.
+        </p>
         {state.compassItems.length === 0 ? (
           <p className="mt-3 text-sm text-slate-300">Discovery mode — no topic or Priority has been invented.</p>
-        ) : (
-          <ul className="mt-4 space-y-3">
-            {state.compassItems.map(item => (
-              <li key={item.id} className="rounded-2xl border border-slate-700 p-3">
-                <p className="break-words font-medium text-slate-100">{item.label}</p>
-                <p className="mt-1 text-xs text-slate-300">
-                  {state.priorityId === item.id ? "Confirmed Priority. " : ""}
-                  {state.attentionId === item.id ? "Current attention." : ""}
-                </p>
-                <details className="mt-2"><summary className="cursor-pointer text-sm text-cyan-200">Review saved source</summary><SavedSource state={state} sourceMessageId={item.sourceMessageId} /></details>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button type="button" className={buttonClass} disabled={busy || state.priorityId === item.id} onClick={() => { setPriorityReviewId(item.id); setError(null); }}>Review Priority: {item.label}</button>
-                  <button type="button" className={buttonClass} disabled={busy || state.attentionId === item.id} onClick={() => submit(buildAttentionFormationIntent(state, item.id))}>Attend to: {item.label}</button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-        {priorityReview && state.priorityId !== priorityReview.id ? (
-          <div role="group" aria-label="Confirm Priority choice" className="mt-4 rounded-2xl border border-amber-300/50 p-4">
-            <p className="break-words text-sm text-slate-100">Make “{priorityReview.label}” your Priority? Current attention will remain separate.</p>
-            <SavedSource state={state} sourceMessageId={priorityReview.sourceMessageId} />
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button type="button" className={buttonClass} disabled={busy} onClick={() => submit(buildPriorityFormationIntent(state, priorityReview.id, true))}>Confirm Priority</button>
-              <button type="button" className={buttonClass} disabled={busy} onClick={() => setPriorityReviewId(null)}>Keep current Priority</button>
+        ) : <>
+          <section aria-label="Saved Compass arrangement" className="mt-4 overflow-x-auto">
+            <div className="grid min-w-[34rem] grid-cols-3 gap-3">
+              {compassPositions.map(position => {
+                const item = state.compassItems.find(point => point.anchor === position.anchor);
+                return <div key={position.anchor} className={`min-w-0 ${position.className}`}>
+                  <h3 className="mb-2 text-xs font-semibold text-slate-300">{position.label}</h3>
+                  {item ? pointCard(item) : <p className="rounded-2xl border border-dashed border-slate-700 p-3 text-xs text-slate-400">No point placed here</p>}
+                  {position.anchor === "apex" && item && state.priorityId === null ? <p className="mt-2 text-xs text-amber-200">No Priority confirmed — placement alone does not confirm it.</p> : null}
+                </div>;
+              })}
             </div>
-          </div>
+          </section>
+          <details className="mt-4 rounded-2xl border border-slate-700 p-4">
+            <summary className="cursor-pointer font-semibold text-slate-100">Other paths ({otherPaths.length})</summary>
+            <p className="mt-2 text-sm text-slate-300">Saved points outside the visible Compass, including points awaiting an arrangement. Every saved source remains reviewable.</p>
+            {otherPaths.length === 0 ? <p className="mt-3 text-sm text-slate-400">No other paths are saved.</p> : <ul className="mt-3 space-y-3">{otherPaths.map(item => <li key={item.id}>{pointCard(item)}</li>)}</ul>}
+          </details>
+          <button type="button" className={`${buttonClass} mt-4`} disabled={busy} onClick={() => reviewArrangement()}>Review Compass arrangement</button>
+        </>}
+        {arrangementDraft ? (
+          <fieldset disabled={busy || staleArrangement} className="mt-4 space-y-4 rounded-2xl border border-amber-300/50 p-4">
+            <legend className="px-1 font-semibold text-slate-100">Review Compass arrangement</legend>
+            <p className="text-sm leading-6 text-slate-300">Choose each location and relative emphasis. Up to eight points can be visible; all remaining points stay in Other paths. No point is moved automatically.</p>
+            <p className="break-words text-sm text-cyan-200">Current attention stays on: {attention?.label ?? "No attention point chosen"}. A chosen attention point must remain visible.</p>
+            {staleArrangement ? <p role="alert" className="text-sm text-amber-200">Your saved Compass changed. Close this review and open a new one before confirming.</p> : null}
+            <label htmlFor={`${id}-arrangement-priority`} className="block text-sm text-slate-200">Priority for this arrangement
+              <select id={`${id}-arrangement-priority`} className={inputClass} value={arrangementDraft.priorityId ?? ""} onChange={event => {
+                setArrangementDraft({ ...arrangementDraft, priorityId: event.target.value || null });
+                setArrangementConfirmed(false); setError(null);
+              }}>
+                {state.priorityId === null ? <option value="">No Priority confirmed</option> : null}
+                {state.compassItems.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+              </select>
+            </label>
+            {changingPriority ? <p className="break-words rounded-xl border border-amber-300/50 p-3 text-sm text-amber-100">Priority will change from “{priority?.label ?? "No Priority confirmed"}” to “{draftPriority?.label ?? "No Priority confirmed"}”. Place the new Priority at the top and explicitly relocate any point already there. Current attention remains separate.</p> : <p className="text-sm text-slate-300">{priority ? "Your existing Priority must remain at the top and cannot be cleared here." : "A point at the top does not become Priority unless you explicitly choose and confirm it."}</p>}
+            <ul className="space-y-4">{arrangementDraft.items.map((draftItem, index) => {
+              const point = state.compassItems.find(item => item.id === draftItem.compassItemId);
+              if (!point) return null;
+              return <li key={draftItem.compassItemId} className="rounded-xl border border-slate-700 p-3">
+                <h3 className="break-words font-semibold text-slate-100">{point.label}</h3>
+                <p className="mt-1 text-xs text-slate-300">{point.id === arrangementDraft.priorityId ? "Proposed Priority. " : ""}{point.id === state.attentionId ? "Current attention. " : ""}Preview: {placementLabel(draftItem.anchor)}; {draftItem.emphasis === null ? "relative emphasis not chosen" : emphasisLabels[draftItem.emphasis]}.</p>
+                <label htmlFor={`${id}-location-${index}`} className="mt-3 block text-sm text-slate-200">Location for {point.label}
+                  <select id={`${id}-location-${index}`} className={inputClass} value={draftItem.anchor ?? ""} onChange={event => editArrangementItem(point.id, { anchor: event.target.value === "" ? null : event.target.value as ExplorerCompassAnchor })}>
+                    <option value="">Other paths</option>
+                    {compassPositions.map(position => <option key={position.anchor} value={position.anchor}>{position.label}</option>)}
+                  </select>
+                </label>
+                <label htmlFor={`${id}-emphasis-${index}`} className="mt-3 block text-sm text-slate-200">Relative emphasis for {point.label}
+                  <select id={`${id}-emphasis-${index}`} className={inputClass} value={draftItem.emphasis ?? ""} onChange={event => editArrangementItem(point.id, { emphasis: event.target.value === "" ? null : Number(event.target.value) as 1 | 2 | 3 })}>
+                    <option value="">Choose relative emphasis</option>
+                    <option value="1">Light</option><option value="2">Regular</option><option value="3">Strong</option>
+                  </select>
+                </label>
+              </li>;
+            })}</ul>
+            {arrangementIssues.length > 0 ? <ul aria-label="Arrangement items to resolve" className="list-disc space-y-2 rounded-xl border border-amber-300/50 p-4 pl-8 text-sm text-amber-100">{arrangementIssues.map(issue => <li key={issue}>{issue}</li>)}</ul> : null}
+            <label className="flex items-start gap-3 text-sm text-slate-200"><input type="checkbox" className="mt-1" checked={arrangementConfirmed} onChange={event => setArrangementConfirmed(event.target.checked)} />{changingPriority ? "I reviewed the new Priority, every placement and relative emphasis, and the unchanged current attention." : "I reviewed every placement and relative emphasis, the Priority choice, and the unchanged current attention."}</label>
+            <button type="button" className={buttonClass} disabled={!arrangementConfirmed || arrangementIssues.length > 0} onClick={confirmArrangement}>{changingPriority ? "Confirm new Priority and arrangement" : "Confirm arrangement"}</button>
+          </fieldset>
         ) : null}
+        {arrangementDraft ? <button type="button" className={`${buttonClass} mt-3`} disabled={busy} onClick={() => { setArrangementDraft(null); setArrangementConfirmed(false); setError(null); }}>Close arrangement review</button> : null}
         <section aria-labelledby={`${id}-route-title`} className="mt-5 border-t border-slate-700 pt-4">
           <h3 id={`${id}-route-title`} className="font-semibold text-slate-100">Route</h3>
           {route.length === 0 ? (
@@ -156,7 +289,15 @@ export function ExplorerConversationFormation({ state, busy, onCommand }: Explor
             <ol className="mt-3 list-decimal space-y-3 pl-5">
               {route.map(entry => (
                 <li key={entry.operationId} className="break-words text-sm text-slate-300">
-                  <p><span className="font-semibold text-slate-200">{routeLabels[entry.kind]}:</span> {entry.label}</p>
+                  {entry.kind === "arrangement_confirmed" ? <>
+                    <p className="font-semibold text-slate-200">Compass arrangement confirmed</p>
+                    <p className="mt-1">{entry.previousPriorityId !== entry.priorityId
+                      ? `Priority changed from “${entry.items.find(item => item.compassItemId === entry.previousPriorityId)?.label ?? "No Priority confirmed"}” to “${entry.items.find(item => item.compassItemId === entry.priorityId)?.label ?? "No Priority confirmed"}”.`
+                      : entry.priorityId === null ? "No Priority confirmed." : `Priority retained: ${entry.items.find(item => item.compassItemId === entry.priorityId)?.label ?? "Recorded Priority"}.`}</p>
+                    <details className="mt-2"><summary className="cursor-pointer text-cyan-200">Review recorded placement and emphasis</summary>
+                      <ul className="mt-2 space-y-2">{entry.items.map(item => <li key={item.compassItemId} className="break-words">{item.label} — {placementLabel(item.anchor)}; {emphasisLabels[item.emphasis]}.</li>)}</ul>
+                    </details>
+                  </> : <p><span className="font-semibold text-slate-200">{routeLabels[entry.kind]}:</span> {entry.label}</p>}
                   <time dateTime={entry.recordedAt} className="mt-1 block text-xs text-slate-400">{new Date(entry.recordedAt).toLocaleString("en-US")}</time>
                 </li>
               ))}
@@ -176,8 +317,9 @@ export function ExplorerConversationFormation({ state, busy, onCommand }: Explor
               <button type="button" className={buttonClass} onClick={() => { setCompassSource(""); setLabel(""); setError(null); }}>Clear point draft</button>
             </div>
           </fieldset>
+          <p className="mt-3 text-sm text-slate-400">New points stay in Other paths with no recorded placement or emphasis until you confirm an arrangement.</p>
           {!hasSource ? <p className="mt-3 text-sm text-slate-400">A saved conversation message is needed before adding a point.</p> : null}
-          {state.compassItems.length >= EXPLORER_CONVERSATION_LIMITS.compassItems ? <p className="mt-3 text-sm text-slate-400">All eight points are in use. Your conversation remains available without adding another point.</p> : null}
+          {state.compassItems.length >= EXPLORER_CONVERSATION_LIMITS.compassItems ? <p className="mt-3 text-sm text-slate-400">This private demo stores at most {EXPLORER_CONVERSATION_LIMITS.compassItems} points. All saved points remain available; another cannot be added here.</p> : null}
         </form>
       </section>
 

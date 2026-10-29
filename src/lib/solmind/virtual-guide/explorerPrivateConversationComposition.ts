@@ -5,7 +5,7 @@ import { parseOpenAiModelName } from "./openAiModelConfiguration";
 import {
   EXPLORER_CONVERSATION_VERSION, EXPLORER_CONVERSATION_LIMITS,
   parseExplorerConversationCommand, parseExplorerConversationResult,
-  type ExplorerConversationCommand, type ExplorerConversationResult, type ExplorerConversationState,
+  type ExplorerConversationCommand, type ExplorerConversationResult, type ExplorerConversationState, type ExplorerCompassArrangementItem,
 } from "../explorerConversationContract";
 import { explorerConversationCommandFingerprint, type ExplorerConversationActor, type ExplorerConversationTurnIds, type ExplorerConversationDependencies } from "./explorerConversationComposition";
 import { parseExplorerPrivateConfigurationCandidate, type ExplorerPrivateConfigurationCandidate } from "./explorerPrivateConfiguration";
@@ -49,6 +49,9 @@ export type ExplorerPrivateMutateParameters = ActorParameters & Readonly<{
   p_conversation_id: string; p_operation_id: string; p_expected_revision: number; p_command_fingerprint: string;
   p_kind: string; p_source_message_id: string | null; p_item_id: string | null; p_waypoint_id: string | null;
   p_label: string | null; p_destination: string | null; p_meaning: string | null; p_arrival_signal: string | null; p_evidence: string | null }>;
+export type ExplorerPrivateArrangeParameters = ActorParameters & Readonly<{
+  p_conversation_id: string; p_operation_id: string; p_expected_revision: number; p_command_fingerprint: string;
+  p_priority_id: string | null; p_items: readonly ExplorerCompassArrangementItem[] }>;
 export type ExplorerPrivateRpcRow = Readonly<{ outcome: string; conversation_state?: unknown; authority_context?: unknown;
   policy_state?: unknown; dispatch_permitted?: boolean; saved_reply?: boolean }>;
 export type ExplorerPrivateReadRow = ExplorerPrivateRpcRow & Readonly<{ conversation_state: unknown }>;
@@ -59,6 +62,7 @@ export type ExplorerPrivateConversationRepository = Readonly<{
   prepare: (parameters: ExplorerPrivatePrepareParameters) => Promise<ExplorerPrivateRpcRow>;
   settle: (parameters: ExplorerPrivateSettleParameters) => Promise<ExplorerPrivateRpcRow>;
   mutate?: (parameters: ExplorerPrivateMutateParameters) => Promise<ExplorerPrivateRpcRow>;
+  arrange?: (parameters: ExplorerPrivateArrangeParameters) => Promise<ExplorerPrivateRpcRow>;
 }>;
 export type ExplorerPrivateConversationResult = Readonly<{ result: ExplorerConversationResult; assistance: ExplorerPrivateAssistance | null }>;
 export type ExplorerPrivateOperationalReadiness = Readonly<{
@@ -266,7 +270,15 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
     if (read.state.pendingTurn || input.signal?.aborted) return failed("refresh_required");
     let policy = parseExplorerPrivatePolicy(readRow.policy_state);
     if (command.kind !== "send") {
-      if (!dependencies.repository.mutate || !read.state.conversationId || policy.status !== "known" || policy.restrictedLevel !== null || policy.adultReflectionStopped) return failed("denied");
+      if (!read.state.conversationId || policy.status !== "known" || policy.restrictedLevel !== null || policy.adultReflectionStopped) return failed("denied");
+      if (command.kind === "confirm_compass_arrangement") {
+        if (!dependencies.repository.arrange) return failed("denied");
+        const row = await dependencies.repository.arrange({ ...base(actor), p_conversation_id: read.state.conversationId,
+          p_operation_id: command.operationId, p_expected_revision: command.expectedRevision,
+          p_command_fingerprint: fingerprint, p_priority_id: command.priorityId, p_items: command.items });
+        return Object.freeze({ result: stateResult(row), assistance: null });
+      }
+      if (!dependencies.repository.mutate) return failed("denied");
       const row = await dependencies.repository.mutate({ ...base(actor), p_conversation_id: read.state.conversationId,
         p_operation_id: command.operationId, p_expected_revision: command.expectedRevision, p_command_fingerprint: fingerprint,
         p_kind: command.kind, p_source_message_id: "sourceMessageId" in command ? command.sourceMessageId : null,

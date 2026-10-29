@@ -1,6 +1,7 @@
 import "server-only";
 import { types } from "node:util";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { EXPLORER_COMPASS_ANCHORS, EXPLORER_CONVERSATION_LIMITS } from "../explorerConversationContract";
 import type { ExplorerPrivateConversationRepository, ExplorerPrivateRpcRow } from "../virtual-guide/explorerPrivateConversationComposition";
 
 const ACTOR = ["p_actor_user_account_id", "p_user_session_id"] as const;
@@ -22,12 +23,16 @@ const PORTS = Object.freeze({
     "p_fallback_level", "p_fallback_minor_indicated", "p_delivery_interested"], columns: ["outcome", "conversation_state", "policy_state", "saved_reply"] }),
   mutate: Object.freeze({ name: "solmind_mutate_explorer_conversation_v3", parameters: [...ACTOR, "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint", "p_kind", "p_source_message_id", "p_item_id", "p_waypoint_id", "p_label", "p_destination", "p_meaning", "p_arrival_signal", "p_evidence"],
     columns: ["outcome", "conversation_state"] }),
+  arrange: Object.freeze({ name: "solmind_confirm_explorer_compass_arrangement_v1", parameters: [...ACTOR,
+    "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint", "p_priority_id", "p_items"],
+    columns: ["outcome", "conversation_state"] }),
 });
 const FAILURE = "explorer_private_repository_unavailable";
 const OUTCOMES: Readonly<Record<keyof typeof PORTS, readonly string[]>> = Object.freeze({
   read: ["ok", "exact_replay"], ensure: ["created", "reused", "held", "stale_revision"],
   observe: ["ok", "exact_replay", "stale_revision"], prepare: ["ok", "exact_replay", "stale_revision", "stale_policy", "blocked", "unavailable"],
   settle: ["ok", "withheld", "exact_replay"], mutate: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
+  arrange: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
 });
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !types.isProxy(value) && !Array.isArray(value) &&
@@ -40,7 +45,30 @@ function parameters(input: object, expected: readonly string[]): Readonly<Record
     const property = Object.getOwnPropertyDescriptor(input, key);
     if (!property?.enumerable || !("value" in property)) throw new Error(FAILURE);
     const value: unknown = property.value;
+    if (key === "p_items" && !Array.isArray(value)) throw new Error(FAILURE);
     if (Array.isArray(value)) {
+      if (key === "p_items") {
+        if (types.isProxy(value) || Object.getPrototypeOf(value) !== Array.prototype ||
+            value.length > EXPLORER_CONVERSATION_LIMITS.compassItems || Reflect.ownKeys(value).length !== value.length + 1) throw new Error(FAILURE);
+        const items: Record<string, unknown>[] = [];
+        for (let index = 0; index < value.length; index += 1) {
+          const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+          if (!descriptor?.enumerable || !("value" in descriptor) || !object(descriptor.value) ||
+              Reflect.ownKeys(descriptor.value).length !== 3) throw new Error(FAILURE);
+          const item: Record<string, unknown> = {};
+          for (const name of ["compassItemId", "anchor", "emphasis"]) {
+            const field = Object.getOwnPropertyDescriptor(descriptor.value, name);
+            if (!field?.enumerable || !("value" in field)) throw new Error(FAILURE);
+            item[name] = field.value;
+          }
+          if (typeof item.compassItemId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(item.compassItemId) ||
+              !(item.anchor === null || EXPLORER_COMPASS_ANCHORS.includes(item.anchor as typeof EXPLORER_COMPASS_ANCHORS[number])) ||
+              (item.emphasis !== 1 && item.emphasis !== 2 && item.emphasis !== 3)) throw new Error(FAILURE);
+          items.push(Object.freeze(item));
+        }
+        copied[key] = Object.freeze(items);
+        continue;
+      }
       if (key !== "p_context_source_ids" || types.isProxy(value) || Object.getPrototypeOf(value) !== Array.prototype ||
         value.length < 1 || value.length > 256 || Reflect.ownKeys(value).length !== value.length + 1) throw new Error(FAILURE);
       const identifiers: string[] = [];
@@ -61,7 +89,7 @@ function parameters(input: object, expected: readonly string[]): Readonly<Record
   return Object.freeze(copied);
 }
 
-// The returned object exposes six exact v3 ports, including atomic deliberate
+// The returned object exposes seven exact ports, including atomic deliberate
 // formation mutation. There is no generic select/RPC/credential capability.
 export function createExplorerPrivateConversationRepository(client: SupabaseClient): ExplorerPrivateConversationRepository {
   async function call(port: keyof typeof PORTS, input: object): Promise<ExplorerPrivateRpcRow> {
@@ -91,5 +119,6 @@ export function createExplorerPrivateConversationRepository(client: SupabaseClie
     },
     ensure: (input) => call("ensure", input), observe: (input) => call("observe", input), prepare: (input) => call("prepare", input),
     settle: (input) => call("settle", input), mutate: (input) => call("mutate", input),
+    arrange: (input) => call("arrange", input),
   });
 }

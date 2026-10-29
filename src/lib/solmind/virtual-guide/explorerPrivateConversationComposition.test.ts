@@ -4,10 +4,10 @@ import { getExplorerPrivateConfigurationCandidate } from "./explorerPrivateConfi
 import { EXPLORER_SAFETY_REQUEST_VERSION } from "./explorerSafetyReplyContract";
 import { adaptPrivateGovernedExplorerContextBuilder, readExplorerPrivateConversation, commandExplorerPrivateConversation, deriveExplorerPrivateTurnIds, parseExplorerPrivatePolicy,
   type ExplorerPrivateConversationDependencies, type ExplorerPrivateOperationalReadiness, type ExplorerPrivateRpcRow, type ExplorerPrivateReadRow,
-  type ExplorerPrivateEnsureParameters, type ExplorerPrivatePrepareParameters, type ExplorerPrivateSettleParameters } from "./explorerPrivateConversationComposition";
-import type { ExplorerConversationState } from "../explorerConversationContract";
+  type ExplorerPrivateEnsureParameters, type ExplorerPrivatePrepareParameters, type ExplorerPrivateSettleParameters, type ExplorerPrivateArrangeParameters } from "./explorerPrivateConversationComposition";
+import type { ExplorerConversationState, ExplorerConversationCommand } from "../explorerConversationContract";
 import type { ExplorerSafetyReplyPlan } from "./explorerConversationSafety";
-import type { ExplorerConversationDependencies } from "./explorerConversationComposition";
+import { explorerConversationCommandFingerprint, type ExplorerConversationDependencies } from "./explorerConversationComposition";
 
 const ID = { actor: "00000000-0000-4000-8000-000000000001", app: "00000000-0000-4000-8000-000000000002",
   conversation: "00000000-0000-4000-8000-000000000003", explorer: "00000000-0000-4000-8000-000000000004",
@@ -43,11 +43,15 @@ function fixture() {
       messages: parameters.p_reply_body && parameters.p_reply_message_id ? [...current.messages, { id: parameters.p_reply_message_id, role: "virtualGuide", body: parameters.p_reply_body, createdAt: "2026-10-25T18:00:01Z" }] : current.messages };
     return { outcome: "ok", conversation_state: current, policy_state: policy, saved_reply: parameters.p_reply_kind !== "none" }; });
   const mutate = vi.fn(async (): Promise<ExplorerPrivateRpcRow> => ({ outcome: "ok", conversation_state: current }));
+  const arrange = vi.fn(async (_parameters: ExplorerPrivateArrangeParameters): Promise<ExplorerPrivateRpcRow> => {
+    void _parameters;
+      order.push("arrange"); return { outcome: "ok", conversation_state: current };
+  });
   const generate = vi.fn(async () => { order.push("model"); return RAW; });
   const signal = vi.fn(async () => { order.push("signal"); });
   const resolve = vi.fn(async () => { order.push("configuration"); return readiness; });
   const dependencies: ExplorerPrivateConversationDependencies = {
-    authenticate: vi.fn(async () => ACTOR), repository: { read, ensure, observe, prepare, settle, mutate },
+    authenticate: vi.fn(async () => ACTOR), repository: { read, ensure, observe, prepare, settle, mutate, arrange },
     resolveOperationalReadiness: resolve, provider: { generate }, operationalSignal: { verificationReceiptSha256: SHA, emit: signal },
     renderer: { verificationReceiptSha256: SHA,
       // Explicit synthetic test bodies/receipts, never operational acceptance.
@@ -73,7 +77,7 @@ function fixture() {
           p_role_version: configuration.roleVersion, p_instruction_version: configuration.instructionVersion } };
     }),
   };
-  return { dependencies, read, ensure, observe, prepare, settle, mutate, generate, signal, resolve, order, readiness,
+  return { dependencies, read, ensure, observe, prepare, settle, mutate, arrange, generate, signal, resolve, order, readiness,
     getPrepared: () => prepared, setCurrent: (value: ExplorerConversationState) => { current = value; }, setPolicy: (value: Record<string, unknown>) => { policy = value; } };
 }
 function send(body = "Synthetic ordinary message.") { return { kind: "send", operationId: ID.operation, expectedRevision: 0, body }; }
@@ -274,7 +278,7 @@ describe("private read operational availability", () => {
     const output = await readExplorerPrivateConversation(f.dependencies);
     expect(output.result).toMatchObject({ ok: true, state: { providerState: "available" } });
     expect(f.resolve).toHaveBeenCalledOnce();
-    for (const port of [f.ensure, f.observe, f.prepare, f.settle, f.mutate, f.generate]) expect(port).not.toHaveBeenCalled();
+    for (const port of [f.ensure, f.observe, f.prepare, f.settle, f.mutate, f.arrange, f.generate]) expect(port).not.toHaveBeenCalled();
     const held = await readExplorerPrivateConversation({ ...f.dependencies, resolveOperationalReadiness: undefined });
     expect(held.result).toMatchObject({ ok: true, state: { providerState: "unavailable" } });
   });
@@ -285,5 +289,88 @@ describe("private read operational availability", () => {
     const output = await readExplorerPrivateConversation({ ...f.dependencies, authenticate: async () => null });
     expect(output.result).toEqual({ ok: false, state: null, error: "denied" });
     expect(f.resolve).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("Private confirmed Compass arrangement routing", () => {
+  const currentState = (): ExplorerConversationState => ({ ...state(ID.conversation), revision: 4,
+    messages: [{ id: ID.intake, role: "explorer", body: "A saved synthetic arrangement source.", createdAt: "2026-10-29T07:00:00Z" }],
+    compassItems: [
+      { id: ID.pack, sourceMessageId: ID.intake, label: "An Explorer-selected Priority" },
+      { id: ID.version, sourceMessageId: ID.intake, label: "An independently selected attention point" },
+    ], priorityId: ID.pack, attentionId: ID.version });
+  const command = (): Extract<ExplorerConversationCommand, { kind: "confirm_compass_arrangement" }> => ({
+    kind: "confirm_compass_arrangement", operationId: ID.operation, expectedRevision: 4, priorityId: ID.pack,
+    items: [{ compassItemId: ID.pack, anchor: "apex", emphasis: 3 },
+      { compassItemId: ID.version, anchor: "side_left", emphasis: 1 }],
+  });
+  function noOtherEffects(f: ReturnType<typeof fixture>) {
+    for (const port of [f.mutate, f.resolve, f.ensure, f.observe, f.prepare, f.settle, f.generate, f.signal,
+      f.dependencies.buildContext, f.dependencies.renderer?.render]) expect(port).not.toHaveBeenCalled();
+  }
+
+  it("uses the fresh trusted actor and exact eight arrangement arguments without readiness, context or provider capabilities", async () => {
+    const f = fixture(); f.setCurrent(currentState());
+    const input = command();
+    const output = await commandExplorerPrivateConversation({ command: input, dependencies: { ...f.dependencies,
+      resolveOperationalReadiness: undefined, provider: undefined, buildContext: undefined, renderer: undefined, operationalSignal: undefined } });
+    expect(output.result.ok).toBe(true); expect(output.assistance).toBeNull();
+    expect(f.dependencies.authenticate).toHaveBeenCalledOnce();
+    expect(f.read).toHaveBeenCalledExactlyOnceWith(ACTOR,
+      { operationId: input.operationId, fingerprint: explorerConversationCommandFingerprint(input) });
+    expect(f.arrange).toHaveBeenCalledExactlyOnceWith({ p_actor_user_account_id: ID.actor, p_user_session_id: ID.app,
+      p_conversation_id: ID.conversation, p_operation_id: ID.operation, p_expected_revision: 4,
+      p_command_fingerprint: explorerConversationCommandFingerprint(input), p_priority_id: ID.pack, p_items: input.items });
+    expect(Object.keys(f.arrange.mock.calls[0][0])).toHaveLength(8);
+    expect(f.order).toEqual(["read", "arrange"]);
+    noOtherEffects(f);
+  });
+
+  it.each([null, { ...POLICY, known: false }, { ...POLICY, restrictedLevel: 3 },
+    { ...POLICY, adultReflectionStopped: true }])("denies new arrangement under unknown/restricted/adult-stop policy (%j)", async policy_state => {
+    const f = fixture(); f.read.mockResolvedValue({ outcome: "ok", conversation_state: currentState(), policy_state });
+    const output = await commandExplorerPrivateConversation({ command: command(), dependencies: f.dependencies });
+    expect(output).toEqual({ result: { ok: false, state: null, error: "denied" }, assistance: null });
+    expect(f.arrange).not.toHaveBeenCalled(); noOtherEffects(f);
+  });
+
+  it("denies missing current conversation or arrangement port without falling back to mutate", async () => {
+    for (const missing of ["conversation", "port"] as const) {
+      const f = fixture(); f.setCurrent(missing === "conversation" ? state(null) : currentState());
+      const dependencies = missing === "port" ? { ...f.dependencies, repository: { ...f.dependencies.repository, arrange: undefined } } : f.dependencies;
+      expect((await commandExplorerPrivateConversation({ command: command(), dependencies })).result)
+        .toEqual({ ok: false, state: null, error: "denied" });
+      expect(f.arrange).not.toHaveBeenCalled(); noOtherEffects(f);
+    }
+  });
+
+  it("resolves exact historical arrangement replay before policy, configuration or the now-absent arrangement port", async () => {
+    const f = fixture(); f.read.mockResolvedValue({ outcome: "exact_replay", conversation_state: currentState(), policy_state: null });
+    const output = await commandExplorerPrivateConversation({ command: command(), dependencies: { ...f.dependencies,
+      repository: { ...f.dependencies.repository, arrange: undefined }, resolveOperationalReadiness: undefined,
+      provider: undefined, buildContext: undefined } });
+    expect(output.result).toMatchObject({ ok: true, state: { revision: 4, priorityId: ID.pack, attentionId: ID.version } });
+    expect(output.assistance).toBeNull(); expect(f.read).toHaveBeenCalledOnce();
+    expect(f.arrange).not.toHaveBeenCalled(); noOtherEffects(f);
+  });
+
+  it("denies browser authority before auth and absent identity before repository access", async () => {
+    const malformed = fixture();
+    expect((await commandExplorerPrivateConversation({ command: { ...command(), actorId: ID.actor }, dependencies: malformed.dependencies })).result)
+      .toEqual({ ok: false, state: null, error: "denied" });
+    expect(malformed.dependencies.authenticate).not.toHaveBeenCalled(); expect(malformed.read).not.toHaveBeenCalled();
+    expect(malformed.arrange).not.toHaveBeenCalled(); noOtherEffects(malformed);
+    const absent = fixture();
+    expect((await commandExplorerPrivateConversation({ command: command(), dependencies: { ...absent.dependencies, authenticate: async () => null } })).result)
+      .toEqual({ ok: false, state: null, error: "denied" });
+    expect(absent.read).not.toHaveBeenCalled(); expect(absent.arrange).not.toHaveBeenCalled(); noOtherEffects(absent);
+  });
+
+  it.each(["stale_revision", "operation_conflict", "denied"])("returns arrangement %s once without a new model path", async outcome => {
+    const f = fixture(); f.setCurrent(currentState()); f.arrange.mockResolvedValue({ outcome });
+    const output = await commandExplorerPrivateConversation({ command: command(), dependencies: f.dependencies });
+    expect(output.result).toEqual({ ok: false, state: null, error: outcome === "denied" ? "denied" : "refresh_required" });
+    expect(f.arrange).toHaveBeenCalledOnce(); noOtherEffects(f);
   });
 });

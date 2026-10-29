@@ -112,4 +112,111 @@ describe("Formation presentation (static proof only)", () => {
     expect(html).not.toContain("Saved supporting evidence and confirmation time are unavailable");
     expect(onCommand).not.toHaveBeenCalled();
   });
+
+
+  it("renders fixed saved positions and keeps a ninth point reviewable in Other paths", () => {
+    const anchors = ["apex", "upper_left", "upper_right", "side_left", "side_right", "lower_left", "lower_center", "lower_right"] as const;
+    const source = { id: "message-a", role: "explorer" as const, body: "An exact saved source.", createdAt: "2026-10-29T07:00:00Z" };
+    const points = anchors.map((anchor, index) => ({ id: `point-${index}`, sourceMessageId: source.id,
+      label: `Saved anchored choice ${index}`, anchor, emphasis: (index % 3 + 1) as 1 | 2 | 3 }));
+    const overflow = { id: "point-other", sourceMessageId: source.id, label: "A ninth preserved path", anchor: null, emphasis: 2 as const };
+    const onCommand = vi.fn();
+    const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: state({
+      conversationId: "conversation-a", messages: [source], compassItems: [overflow, ...points.toReversed()],
+      priorityId: "point-0", attentionId: "point-3",
+    }), busy: false, onCommand }));
+    const saved = html.slice(html.indexOf('aria-label="Saved Compass arrangement"'), html.indexOf("Other paths ("));
+    const other = html.slice(html.indexOf("Other paths ("));
+    expect(saved).toContain("Top position");
+    expect(saved).toContain("Detour — left");
+    expect(saved).toContain("Excursion — lower center");
+    for (let index = 0; index < points.length - 1; index += 1) {
+      expect(saved.indexOf(points[index].label)).toBeLessThan(saved.indexOf(points[index + 1].label));
+    }
+    expect(saved).not.toContain(overflow.label);
+    expect(other).toContain("Other paths (1)");
+    expect(other).toContain(overflow.label);
+    expect(other).toContain(source.body);
+    expect(other).toContain("Arrange this point visibly before moving attention here.");
+    expect(other).toMatch(/<button[^>]*disabled=""[^>]*>Attend to: A ninth preserved path<\/button>/);
+    expect(html).toContain("Relative emphasis: Light.");
+    expect(html).toContain("Relative emphasis: Regular.");
+    expect(html).toContain("Relative emphasis: Strong.");
+    expect(html).toContain("Current attention: Saved anchored choice 3");
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+
+  it("leaves legacy and new unarranged points unplaced instead of deriving a layout from array order", () => {
+    const current = state({ conversationId: "conversation-a", compassItems: [
+      { id: "point-a", sourceMessageId: "message-a", label: "Legacy point" },
+      { id: "point-b", sourceMessageId: "message-a", label: "New unarranged point", anchor: null, emphasis: null },
+    ], priorityId: "point-a", attentionId: "point-b" });
+    const onCommand = vi.fn();
+    const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: current, busy: false, onCommand }));
+    const saved = html.slice(html.indexOf('aria-label="Saved Compass arrangement"'), html.indexOf("Other paths ("));
+    expect(saved).not.toContain("Legacy point");
+    expect(saved).not.toContain("New unarranged point");
+    expect(saved.match(/No point placed here/g)).toHaveLength(8);
+    expect(html).toContain("Other paths (2)");
+    expect(html.match(/Placement and relative emphasis have not been recorded./g)).toHaveLength(2);
+    expect(html).toContain("Current attention: New unarranged point");
+    expect(html).toContain("New points stay in Other paths with no recorded placement or emphasis");
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+
+  it("allows saved apex placement in Discovery without inventing a confirmed Priority", () => {
+    const onCommand = vi.fn();
+    const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: state({
+      conversationId: "conversation-a", compassItems: [
+        { id: "point-a", sourceMessageId: "message-a", label: "An Explorer-placed top point", anchor: "apex", emphasis: 3 },
+      ],
+    }), busy: false, onCommand }));
+    expect(html).toContain("An Explorer-placed top point");
+    expect(html).toContain("No Priority confirmed — placement alone does not confirm it.");
+    expect(html).not.toContain("Confirmed Priority. ");
+    expect(html).toContain("No attention point chosen");
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+
+  it("renders arrangement Route facts from captured labels and preserves the existing event order", () => {
+    const onCommand = vi.fn();
+    const current = state({ conversationId: "conversation-a", revision: 8, compassItems: [
+      { id: "point-a", sourceMessageId: "message-a", label: "Today's first label", anchor: "side_left", emphasis: 1 },
+      { id: "point-b", sourceMessageId: "message-a", label: "Today's second label", anchor: "apex", emphasis: 3 },
+    ], priorityId: "point-b", attentionId: "point-a", route: [
+      { operationId: "route-original", revision: 2, kind: "priority_confirmed", compassItemId: "point-a", label: "The first captured Priority", recordedAt: "2026-10-29T07:01:00Z" },
+      { operationId: "route-arranged", revision: 4, kind: "arrangement_confirmed", previousPriorityId: "point-a", priorityId: "point-b", items: [
+        { compassItemId: "point-a", label: "Captured first <choice>", anchor: "side_left", emphasis: 1 },
+        { compassItemId: "point-b", label: "Captured second choice", anchor: "apex", emphasis: 3 },
+      ], recordedAt: "2026-10-29T07:02:00.123456+00:00" },
+      { operationId: "route-attention", revision: 7, kind: "attention_changed", compassItemId: "point-a", label: "Captured attention afterward", recordedAt: "2026-10-29T07:03:00Z" },
+    ] });
+    const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: current, busy: false, onCommand }));
+    const route = html.slice(html.indexOf("Compass arrangement confirmed"), html.indexOf("Add a point you choose"));
+    expect(html.indexOf("The first captured Priority")).toBeLessThan(html.indexOf("Compass arrangement confirmed"));
+    expect(html.indexOf("Compass arrangement confirmed")).toBeLessThan(html.indexOf("Captured attention afterward"));
+    expect(route).toContain("Priority changed from “Captured first &lt;choice&gt;” to “Captured second choice”.");
+    expect(route).toContain("Captured first &lt;choice&gt; — Detour — left; Light.");
+    expect(route).toContain("Captured second choice — Top position; Strong.");
+    expect(route).toContain("2026-10-29T07:02:00.123456+00:00");
+    expect(route).not.toContain("Today&#x27;s");
+    expect(route).not.toContain("<choice>");
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+
+  it("discloses the private-demo storage bound while retaining every saved overflow point", () => {
+    const onCommand = vi.fn();
+    const points = Array.from({ length: 24 }, (_, index) => ({ id: `point-${index}`, sourceMessageId: "message-a",
+      label: `Retained path ${index}`, anchor: null, emphasis: null }));
+    const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: state({
+      conversationId: "conversation-a", compassItems: points,
+      messages: [{ id: "message-a", role: "explorer", body: "A saved source for these retained points.", createdAt: "2026-10-29T07:00:00Z" }],
+    }), busy: false, onCommand }));
+    expect(html).toContain("Other paths (24)");
+    expect(html).toContain("This private demo stores at most 24 points.");
+    expect(html).toContain("All saved points remain available; another cannot be added here.");
+    for (const point of points) expect(html).toContain(`>${point.label}</h4>`);
+    expect(html).toContain('<fieldset disabled=""');
+    expect(onCommand).not.toHaveBeenCalled();
+  });
 });

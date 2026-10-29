@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 import { createExplorerPrivateConversationRepository } from "../explorerPrivateConversationRepository";
 import type { ExplorerPrivateEnsureParameters, ExplorerPrivateObserveParameters, ExplorerPrivatePrepareParameters,
-  ExplorerPrivateSettleParameters, ExplorerPrivateMutateParameters } from "../../virtual-guide/explorerPrivateConversationComposition";
+  ExplorerPrivateSettleParameters, ExplorerPrivateMutateParameters, ExplorerPrivateArrangeParameters } from "../../virtual-guide/explorerPrivateConversationComposition";
 
 const UUID = "00000000-0000-4000-8000-000000000001"; const SHA = "A".repeat(64);
 const ACTOR = { p_actor_user_account_id: UUID, p_user_session_id: UUID };
@@ -27,6 +27,9 @@ function settle(): ExplorerPrivateSettleParameters { return { ...ACTOR, p_conver
 function mutate(): ExplorerPrivateMutateParameters { return { ...ACTOR, p_conversation_id: UUID, p_operation_id: UUID,
   p_expected_revision: 0, p_command_fingerprint: SHA, p_kind: "set_attention", p_source_message_id: null, p_item_id: UUID,
   p_waypoint_id: null, p_label: null, p_destination: null, p_meaning: null, p_arrival_signal: null, p_evidence: null }; }
+function arrange(): ExplorerPrivateArrangeParameters { return { ...ACTOR, p_conversation_id: UUID, p_operation_id: UUID,
+  p_expected_revision: 0, p_command_fingerprint: SHA, p_priority_id: UUID,
+  p_items: [{ compassItemId: UUID, anchor: "apex", emphasis: 2 }] }; }
 function fixture(row: unknown) {
   const abortSignal = vi.fn(async (_signal: AbortSignal) => ({ data: [row], error: null as { code: string; message: string } | null }));
   const rpc = vi.fn((_name: string, _parameters: unknown) => ({ abortSignal }));
@@ -34,9 +37,9 @@ function fixture(row: unknown) {
   return { repository, rpc, abortSignal };
 }
 describe("Closed private Explorer RPC repository (synthetic client)", () => {
-  it("exposes six named v3 ports including atomic deliberate mutation, without generic access", () => {
+  it("exposes seven closed ports including deliberate mutation and arrangement, without generic access", () => {
     const f = fixture(null);
-    expect(Object.keys(f.repository).sort()).toEqual(["ensure", "mutate", "observe", "prepare", "read", "settle"]);
+    expect(Object.keys(f.repository).sort()).toEqual(["arrange", "ensure", "mutate", "observe", "prepare", "read", "settle"]);
     expect(Object.isFrozen(f.repository)).toBe(true);
   });
   it("read derives exact actor fields and paired operation selectors", async () => {
@@ -115,5 +118,77 @@ describe("Root cycle1 source identity hostile arrays", () => {
       const f = fixture(null); await expect(f.repository.prepare({ ...prepare(), p_context_source_ids: ids })).rejects.toThrow(); expect(f.rpc).not.toHaveBeenCalled();
     }
     expect(trap).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("Closed Compass arrangement SDK port", () => {
+  it("calls only the named eight-argument arrangement RPC with deeply detached frozen item data", async () => {
+    const f = fixture({ outcome: "ok", conversation_state: null });
+    const items = [...arrange().p_items]; const originalItem = items[0];
+    const input = { ...arrange(), p_items: items };
+    const pending = f.repository.arrange!(input);
+    expect(f.rpc).toHaveBeenCalledExactlyOnceWith("solmind_confirm_explorer_compass_arrangement_v1", input);
+    const copied = f.rpc.mock.calls[0][1] as ExplorerPrivateArrangeParameters;
+    expect(Object.keys(copied)).toHaveLength(8);
+    expect(copied).not.toBe(input); expect(copied.p_items).not.toBe(items); expect(copied.p_items[0]).not.toBe(originalItem);
+    expect(Object.isFrozen(copied)).toBe(true); expect(Object.isFrozen(copied.p_items)).toBe(true);
+    expect(Object.isFrozen(copied.p_items[0])).toBe(true);
+    Object.assign(originalItem, { anchor: null, emphasis: 1 });
+    items.push({ compassItemId: "00000000-0000-4000-8000-000000000002", anchor: null, emphasis: 1 });
+    expect(copied.p_items).toEqual([{ compassItemId: UUID, anchor: "apex", emphasis: 2 }]);
+    expect(await pending).toEqual({ outcome: "ok", conversation_state: null });
+    expect(f.abortSignal).toHaveBeenCalledOnce(); expect(f.abortSignal.mock.calls[0][0]).toBeInstanceOf(AbortSignal);
+  });
+
+  it("refuses extra top-level/private item fields, non-array items and malformed selected data before RPC", async () => {
+    const item = arrange().p_items[0];
+    for (const input of [
+      { ...arrange(), p_body: "Unreviewed extra text" }, { ...arrange(), p_model_name: "unreviewed-model" },
+      { ...arrange(), p_items: [{ ...item, label: "Browser-supplied private label" }] },
+      { ...arrange(), p_items: [{ ...item, accountId: UUID }] },
+      { ...arrange(), p_items: null }, { ...arrange(), p_items: "[]" }, { ...arrange(), p_items: {} },
+      { ...arrange(), p_items: [{ ...item, emphasis: null }] }, { ...arrange(), p_items: [{ ...item, emphasis: 4 }] },
+      { ...arrange(), p_items: [{ ...item, anchor: "north" }] },
+      { ...arrange(), p_items: [{ ...item, compassItemId: ` ${UUID}` }] },
+    ]) {
+      const f = fixture(null);
+      await expect(f.repository.arrange!(input as unknown as ExplorerPrivateArrangeParameters)).rejects.toThrowError("explorer_private_repository_unavailable");
+      expect(f.rpc).not.toHaveBeenCalled();
+    }
+  });
+
+  it("does not execute top-level, index or item getters while rejecting their input", async () => {
+    for (const level of ["parameters", "index", "item"] as const) {
+      const f = fixture(null); const getter = vi.fn(() => UUID);
+      const input = arrange(); const items = [{ ...input.p_items[0] }];
+      if (level === "parameters") Object.defineProperty(input, "p_items", { enumerable: true, get: getter });
+      else if (level === "index") Object.defineProperty(items, "0", { enumerable: true, get: getter });
+      else Object.defineProperty(items[0], "compassItemId", { enumerable: true, get: getter });
+      const candidate = level === "parameters" ? input : { ...input, p_items: items };
+      await expect(f.repository.arrange!(candidate)).rejects.toThrowError("explorer_private_repository_unavailable");
+      expect(getter).not.toHaveBeenCalled(); expect(f.rpc).not.toHaveBeenCalled();
+    }
+  });
+
+  it("rejects sparse, expanded, subclass and proxy item arrays without reading proxy traps", async () => {
+    const trap = vi.fn(); const item = arrange().p_items[0];
+    class Extended extends Array<typeof item> {}
+    const expanded = [item]; Object.defineProperty(expanded, "private", { value: UUID });
+    for (const p_items of [new Array<typeof item>(1), expanded, Extended.of(item), new Proxy([item], { get: trap })]) {
+      const f = fixture(null);
+      await expect(f.repository.arrange!({ ...arrange(), p_items })).rejects.toThrowError("explorer_private_repository_unavailable");
+      expect(f.rpc).not.toHaveBeenCalled();
+    }
+    expect(trap).not.toHaveBeenCalled();
+  });
+
+  it("rejects expanded arrangement results and never retries an unknown acknowledgement", async () => {
+    const expanded = fixture({ outcome: "ok", conversation_state: null, policy_state: null });
+    await expect(expanded.repository.arrange!(arrange())).rejects.toThrowError("explorer_private_repository_unavailable");
+    expect(expanded.rpc).toHaveBeenCalledOnce();
+    const unknown = fixture(null); unknown.abortSignal.mockRejectedValue(new Error("Synthetic acknowledgement loss"));
+    await expect(unknown.repository.arrange!(arrange())).rejects.toThrowError("explorer_private_repository_unavailable");
+    expect(unknown.rpc).toHaveBeenCalledOnce(); expect(unknown.abortSignal).toHaveBeenCalledOnce();
   });
 });
