@@ -5,7 +5,7 @@ import { parseOpenAiModelName } from "./openAiModelConfiguration";
 import {
   EXPLORER_CONVERSATION_VERSION, EXPLORER_CONVERSATION_LIMITS,
   parseExplorerConversationCommand, parseExplorerConversationResult, isExplorerConversationId,
-  type ExplorerConversationCommand, type ExplorerConversationResult, type ExplorerConversationState, type ExplorerCompassArrangementItem,
+  type ExplorerConversationCommand, type ExplorerConversationResult, type ExplorerConversationState, type ExplorerCompassArrangementItem, type ExplorerWaypointClarificationAnswer,
 } from "../explorerConversationContract";
 import { parseExplorerConversationReviewResult } from "../explorerConversationReviewContract";
 import { explorerConversationCommandFingerprint, type ExplorerConversationActor, type ExplorerConversationTurnIds, type ExplorerConversationDependencies } from "./explorerConversationComposition";
@@ -56,6 +56,9 @@ export type ExplorerPrivateArrangeParameters = ActorParameters & Readonly<{
 export type ExplorerPrivateCategoryParameters = ActorParameters & Readonly<{
   p_conversation_id: string; p_operation_id: string; p_expected_revision: number; p_command_fingerprint: string;
   p_target_item_id: string; p_member_item_ids: readonly string[]; p_label: string }>;
+export type ExplorerPrivateWaypointRevisionParameters = ActorParameters & Readonly<{
+  p_conversation_id: string; p_operation_id: string; p_expected_revision: number; p_command_fingerprint: string;
+  p_kind: "revise_waypoint" | "revisit_waypoint"; p_waypoint_id: string; p_answers: readonly ExplorerWaypointClarificationAnswer[] }>;
 export type ExplorerPrivateReleaseParameters = ActorParameters & Readonly<{
   p_conversation_id: string; p_operation_id: string; p_expected_revision: number; p_command_fingerprint: string;
   p_waypoint_id: string }>;
@@ -75,6 +78,7 @@ export type ExplorerPrivateConversationRepository = Readonly<{
   mutate?: (parameters: ExplorerPrivateMutateParameters) => Promise<ExplorerPrivateRpcRow>;
   arrange?: (parameters: ExplorerPrivateArrangeParameters) => Promise<ExplorerPrivateRpcRow>;
   category?: (parameters: ExplorerPrivateCategoryParameters) => Promise<ExplorerPrivateRpcRow>;
+  waypointRevision?: (parameters: ExplorerPrivateWaypointRevisionParameters) => Promise<ExplorerPrivateRpcRow>;
   release?: (parameters: ExplorerPrivateReleaseParameters) => Promise<ExplorerPrivateRpcRow>;
   end?: (parameters: ExplorerPrivateEndParameters) => Promise<ExplorerPrivateRpcRow>;
   review?: (parameters: ExplorerPrivateReviewParameters) => Promise<ExplorerPrivateRpcRow>;
@@ -345,6 +349,19 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
     let policy = parseExplorerPrivatePolicy(readRow.policy_state);
     if (command.kind !== "send") {
       if (!read.state.conversationId || policy.status !== "known" || policy.restrictedLevel !== null || policy.adultReflectionStopped) return failed("denied");
+      if (command.kind === "revise_waypoint" || command.kind === "revisit_waypoint") {
+        if (!dependencies.repository.waypointRevision) return failed("denied");
+        const row = await dependencies.repository.waypointRevision({ ...base(actor), p_conversation_id: read.state.conversationId,
+          p_operation_id: command.operationId, p_expected_revision: command.expectedRevision,
+          p_command_fingerprint: fingerprint, p_kind: command.kind, p_waypoint_id: command.waypointId, p_answers: command.answers });
+        const saved = stateResult(row);
+        if (!saved.ok) return Object.freeze({ result: saved, assistance: null });
+        const successor = saved.state.waypoints.find(item => item.id === command.operationId);
+        if (saved.state.conversationId !== read.state.conversationId ||
+            successor?.lifecycle?.predecessorWaypointId !== command.waypointId ||
+            successor.lifecycle.creationReason !== (command.kind === "revise_waypoint" ? "revision" : "revisit")) return failed();
+        return Object.freeze({ result: saved, assistance: null });
+      }
       if (command.kind === "confirm_compass_arrangement") {
         if (!dependencies.repository.arrange) return failed("denied");
         const row = await dependencies.repository.arrange({ ...base(actor), p_conversation_id: read.state.conversationId,

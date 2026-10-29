@@ -1,7 +1,7 @@
 import "server-only";
 import { types } from "node:util";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { EXPLORER_COMPASS_ANCHORS, EXPLORER_CONVERSATION_LIMITS } from "../explorerConversationContract";
+import { EXPLORER_COMPASS_ANCHORS, EXPLORER_CONVERSATION_LIMITS, parseExplorerWaypointClarificationAnswers } from "../explorerConversationContract";
 import type { ExplorerPrivateConversationRepository, ExplorerPrivateRpcRow } from "../virtual-guide/explorerPrivateConversationComposition";
 
 const ACTOR = ["p_actor_user_account_id", "p_user_session_id"] as const;
@@ -29,6 +29,9 @@ const PORTS = Object.freeze({
   category: Object.freeze({ name: "solmind_confirm_explorer_compass_category_v1", parameters: [...ACTOR,
     "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint", "p_target_item_id", "p_member_item_ids", "p_label"],
     columns: ["outcome", "conversation_state"] }),
+  waypointRevision: Object.freeze({ name: "solmind_confirm_explorer_waypoint_revision_v1", parameters: [...ACTOR,
+    "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint", "p_kind", "p_waypoint_id", "p_answers"],
+    columns: ["outcome", "conversation_state"] }),
   release: Object.freeze({ name: "solmind_release_explorer_waypoint_v1", parameters: [...ACTOR,
     "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint", "p_waypoint_id"],
     columns: ["outcome", "conversation_state"] }),
@@ -44,6 +47,7 @@ const OUTCOMES: Readonly<Record<keyof typeof PORTS, readonly string[]>> = Object
   settle: ["ok", "withheld", "exact_replay"], mutate: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   arrange: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   category: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
+  waypointRevision: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   release: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   end: ["ok", "exact_replay", "already_ended", "stale_revision", "unavailable"], review: ["ok"],
 });
@@ -58,8 +62,27 @@ function parameters(input: object, expected: readonly string[]): Readonly<Record
     const property = Object.getOwnPropertyDescriptor(input, key);
     if (!property?.enumerable || !("value" in property)) throw new Error(FAILURE);
     const value: unknown = property.value;
-    if ((key === "p_items" || key === "p_member_item_ids") && !Array.isArray(value)) throw new Error(FAILURE);
+    if ((key === "p_items" || key === "p_member_item_ids" || key === "p_answers") && !Array.isArray(value)) throw new Error(FAILURE);
     if (Array.isArray(value)) {
+      if (key === "p_answers") {
+        if (types.isProxy(value) || Object.getPrototypeOf(value) !== Array.prototype || value.length > 3 ||
+            Reflect.ownKeys(value).length !== value.length + 1) throw new Error(FAILURE);
+        const safe: Record<string, unknown>[] = [];
+        for (let index = 0; index < value.length; index++) {
+          const entry = Object.getOwnPropertyDescriptor(value, String(index));
+          if (!entry?.enumerable || !("value" in entry) || !object(entry.value) || Reflect.ownKeys(entry.value).length !== 2) throw new Error(FAILURE);
+          const copied: Record<string, unknown> = {};
+          for (const name of ["component", "answer"]) {
+            const field = Object.getOwnPropertyDescriptor(entry.value, name);
+            if (!field?.enumerable || !("value" in field)) throw new Error(FAILURE);
+            copied[name] = field.value;
+          }
+          safe.push(copied);
+        }
+        const answers = parseExplorerWaypointClarificationAnswers(safe);
+        if (answers === null) throw new Error(FAILURE);
+        copied[key] = answers; continue;
+      }
       if (key === "p_items") {
         if (types.isProxy(value) || Object.getPrototypeOf(value) !== Array.prototype ||
             value.length > EXPLORER_CONVERSATION_LIMITS.compassItems || Reflect.ownKeys(value).length !== value.length + 1) throw new Error(FAILURE);
@@ -104,7 +127,7 @@ function parameters(input: object, expected: readonly string[]): Readonly<Record
   return Object.freeze(copied);
 }
 
-// The returned object exposes eleven exact ports, including deliberate
+// The returned object exposes twelve exact ports, including deliberate
 // formation, ending and owned ended review. There is no generic select/RPC/credential capability.
 export function createExplorerPrivateConversationRepository(client: SupabaseClient): ExplorerPrivateConversationRepository {
   async function call(port: keyof typeof PORTS, input: object): Promise<ExplorerPrivateRpcRow> {
@@ -134,6 +157,6 @@ export function createExplorerPrivateConversationRepository(client: SupabaseClie
     },
     ensure: (input) => call("ensure", input), observe: (input) => call("observe", input), prepare: (input) => call("prepare", input),
     settle: (input) => call("settle", input), mutate: (input) => call("mutate", input),
-    arrange: (input) => call("arrange", input), category: (input) => call("category", input), release: (input) => call("release", input), end: (input) => call("end", input), review: (input) => call("review", input),
+    arrange: (input) => call("arrange", input), category: (input) => call("category", input), release: (input) => call("release", input), waypointRevision: (input) => call("waypointRevision", input), end: (input) => call("end", input), review: (input) => call("review", input),
   });
 }

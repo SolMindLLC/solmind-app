@@ -367,4 +367,24 @@ describe("Category presentation (static proof only)", () => {
     expect(onCommand).not.toHaveBeenCalled();
   });
 
+  it("keeps earlier Reached evidence/source and attributes successor answers to the Explorer rather than a model", () => {
+    const source = { id: "message-a", role: "explorer" as const, body: "Original saved source", createdAt: "2026-10-29T10:00:00Z" };
+    const earlier = { id: "waypoint-a", sourceMessageId: source.id, destination: "Original destination", meaning: "Original meaning", arrivalSignal: "Original signal", status: "reached" as const, reachedEvidence: "Actual earlier observation", reachedAt: "2026-10-29T11:00:00Z" };
+    const successor = { id: "waypoint-b", sourceMessageId: source.id, destination: "New destination", meaning: "Original meaning", arrivalSignal: "Original signal", status: "chosen" as const, lifecycle: { predecessorWaypointId: earlier.id, creationReason: "revisit" as const, clarifications: [{ component: "destination" as const, questionKey: "waypoint.destination.v1" as const, answer: "New destination", recordedAt: "2026-10-29T12:00:00Z" }] } };
+    const onCommand = vi.fn();
+    const stateValue = state({ conversationId: "conversation-a", sessionStatus: "active", messages: [source], waypoints: [earlier, successor] });
+    const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: stateValue, busy: false, readOnly: true, onCommand }));
+    expect(html).toContain("Superseded — earlier Reached confirmation");
+    expect(html).toContain("Actual earlier observation");
+    expect(html).toContain("Original destination");
+    expect(html).toContain("Original saved source");
+    expect(html).toContain("New destination");
+    expect(html).toContain("Explorer clarification in this conversation — destination");
+    expect(html).toContain("Application question: Where do you want to arrive now?");
+    expect(html).toContain("kept separately from model replies");
+    expect(html).not.toContain("Revisit this Waypoint in the conversation");
+    expect(html).not.toContain("Clarify this Waypoint in the conversation");
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+
 });

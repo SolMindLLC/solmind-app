@@ -591,3 +591,46 @@ describe("owned private Waypoint release capability", () => {
     }
   });
 });
+
+
+describe("private conversation-confirmed Waypoint successor",()=>{
+ const command={kind:"revise_waypoint" as const,operationId:ID.operation,expectedRevision:0,waypointId:ID.actor,
+  answers:[{component:"destination" as const,answer:"A clarified destination"}]};
+ const current=()=>({...state(ID.conversation),sessionStatus:"active" as const,ending:null,messages:[{id:ID.intake,role:"explorer" as const,body:"Synthetic saved source",createdAt:"2026-10-29T14:00:00Z"}],
+  waypoints:[{id:ID.actor,sourceMessageId:ID.intake,destination:"Old destination",meaning:"It matters",arrivalSignal:"Visible signal",status:"chosen" as const}]});
+ const saved=()=>{const before=current();return {...before,revision:1,waypoints:[...before.waypoints,{...before.waypoints[0],id:ID.operation,destination:command.answers[0].answer,
+  lifecycle:{predecessorWaypointId:ID.actor,creationReason:"revision" as const,clarifications:[{...command.answers[0],questionKey:"waypoint.destination.v1" as const,recordedAt:"2026-10-29T15:30:00Z"}]}}]};};
+ it("forwards only nine derived arguments, returns immutable successor, never invokes the provider",async()=>{
+  const f=fixture();f.setCurrent(current());const waypointRevision=vi.fn(async()=>({outcome:"ok",conversation_state:saved()}));
+  expect((await commandExplorerPrivateConversation({command,dependencies:{...f.dependencies,repository:{...f.dependencies.repository,waypointRevision}}})).result.ok).toBe(true);
+  expect(waypointRevision).toHaveBeenCalledExactlyOnceWith({p_actor_user_account_id:ID.actor,p_user_session_id:ID.app,p_conversation_id:ID.conversation,
+    p_operation_id:ID.operation,p_expected_revision:0,p_command_fingerprint:explorerConversationCommandFingerprint(command),p_kind:command.kind,p_waypoint_id:ID.actor,p_answers:command.answers});
+  for(const port of [f.ensure,f.observe,f.prepare,f.settle,f.mutate,f.resolve,f.generate])expect(port).not.toHaveBeenCalled();
+ });
+ it("retains known-clear/pending/capability gates and exactreplay before new reflection",async()=>{
+  for(const reason of ["unknown","restricted","adult","pending","absent","replay"] as const){
+   const f=fixture();f.setCurrent({...current(),pendingTurn:reason==="pending"});
+   if(reason==="unknown")f.setPolicy({known:false});if(reason==="restricted")f.setPolicy({...POLICY,restrictedLevel:3});if(reason==="adult")f.setPolicy({...POLICY,adultReflectionStopped:true});
+   if(reason==="replay")f.read.mockResolvedValue({outcome:"exact_replay",conversation_state:saved()});
+   const waypointRevision=vi.fn();const r=await commandExplorerPrivateConversation({command,dependencies:{...f.dependencies,repository:{...f.dependencies.repository,...(reason==="absent"?{}:{waypointRevision})}}});
+   expect(r.result.ok).toBe(reason==="replay");expect(waypointRevision).not.toHaveBeenCalled();expect(f.generate).not.toHaveBeenCalled();expect(f.mutate).not.toHaveBeenCalled();
+  }
+ });
+});
+
+it("does not claim a confirmed successor from an unrelated well-formed repository state",async()=>{
+ const command={kind:"revise_waypoint" as const,operationId:ID.operation,expectedRevision:0,waypointId:ID.actor,
+  answers:[{component:"destination" as const,answer:"Clarified destination"}]};
+ const source={id:ID.intake,role:"explorer" as const,body:"Synthetic saved source",createdAt:"2026-10-29T14:00:00Z"};
+ const prior={id:ID.actor,sourceMessageId:ID.intake,destination:"Old destination",meaning:"It matters",arrivalSignal:"Visible signal",status:"chosen" as const};
+ const current={...state(ID.conversation),sessionStatus:"active" as const,ending:null,messages:[source],waypoints:[prior]};
+ const successor={...prior,id:ID.operation,destination:command.answers[0].answer,lifecycle:{predecessorWaypointId:ID.actor,creationReason:"revision" as const,
+  clarifications:[{...command.answers[0],questionKey:"waypoint.destination.v1" as const,recordedAt:"2026-10-29T15:30:00Z"}]}};
+ const historicalReached={...prior,status:"reached" as const,reachedEvidence:"Earlier evidence",reachedAt:"2026-10-29T15:10:00Z"};
+ for(const returned of [current,{...current,revision:1,waypoints:[prior,{...successor,id:ID.explorer}]},
+  {...current,revision:1,waypoints:[historicalReached,{...successor,lifecycle:{...successor.lifecycle,creationReason:"revisit" as const}}]}]){
+  const f=fixture();f.setCurrent(current);const waypointRevision=vi.fn(async()=>({outcome:"ok",conversation_state:returned}));
+  expect((await commandExplorerPrivateConversation({command,dependencies:{...f.dependencies,repository:{...f.dependencies.repository,waypointRevision}}})).result.ok).toBe(false);
+  expect(waypointRevision).toHaveBeenCalledOnce();expect(f.generate).not.toHaveBeenCalled();expect(f.mutate).not.toHaveBeenCalled();
+ }
+});

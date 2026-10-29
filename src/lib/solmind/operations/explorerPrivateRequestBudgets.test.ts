@@ -295,3 +295,12 @@ it("bounds the optional release port at ten seconds without reposting", async ()
     expect(release).toHaveBeenCalledTimes(2);expect(vi.getTimerCount()).toBe(0);
   } finally {vi.useRealTimers();}
 });
+
+
+it("propagates the successor port under the same10second unknownack boundary",async()=>{
+ vi.useFakeTimers();try{const f=fixture();const input={...ACTOR_PARAMETERS,p_conversation_id:ID,p_operation_id:ID,p_expected_revision:1,p_command_fingerprint:SHA,p_kind:"revisit_waypoint" as const,p_waypoint_id:ID,p_answers:[]};
+ const waypointRevision=vi.fn<NonNullable<ExplorerPrivateConversationRepository["waypointRevision"]>>(async()=>ROW);
+ const wrapped=withExplorerPrivateRequestBudgets({...f.dependencies,repository:{...f.repository,waypointRevision}});expect(await wrapped.repository.waypointRevision!(input)).toBe(ROW);
+ expect(waypointRevision).toHaveBeenCalledExactlyOnceWith(input);waypointRevision.mockImplementation(()=>new Promise(()=>undefined));const p=wrapped.repository.waypointRevision!(input);const rejected=expect(p).rejects.toThrowError(FAILURE);await vi.advanceTimersByTimeAsync(10_000);await rejected;expect(waypointRevision).toHaveBeenCalledTimes(2);expect(vi.getTimerCount()).toBe(0);
+ }finally{vi.useRealTimers();}
+});

@@ -40,9 +40,9 @@ function fixture(row: unknown) {
   return { repository, rpc, abortSignal };
 }
 describe("Closed private Explorer RPC repository (synthetic client)", () => {
-  it("exposes eleven closed ports including category formation, End and ended review, without generic access", () => {
+  it("exposes twelve closed ports including category formation, End and ended review, without generic access", () => {
     const f = fixture(null);
-    expect(Object.keys(f.repository).sort()).toEqual(["arrange", "category", "end", "ensure", "mutate", "observe", "prepare", "read", "release", "review", "settle"]);
+    expect(Object.keys(f.repository).sort()).toEqual(["arrange", "category", "end", "ensure", "mutate", "observe", "prepare", "read", "release", "review", "settle", "waypointRevision"]);
     expect(Object.isFrozen(f.repository)).toBe(true);
   });
   it("read derives exact actor fields and paired operation selectors", async () => {
@@ -305,4 +305,22 @@ describe("closed Waypoint release SDK capability", () => {
     const g = fixture(null);g.abortSignal.mockRejectedValue(new Error("Synthetic loss"));
     await expect(g.repository.release!(input())).rejects.toThrow();expect(g.rpc).toHaveBeenCalledOnce();
   });
+});
+
+
+describe("closed clarification successor SDK",()=>{
+ const input=()=>({...ACTOR,p_conversation_id:UUID,p_operation_id:UUID,p_expected_revision:1,p_command_fingerprint:SHA,p_kind:"revise_waypoint" as const,p_waypoint_id:UUID,
+   p_answers:[{component:"destination" as const,answer:"A clarified destination"}]});
+ it("sends exact9arguments and copies only closed bounded answers",async()=>{
+  const f=fixture({outcome:"ok",conversation_state:null});const original=input();await f.repository.waypointRevision!(original);
+  expect(f.rpc).toHaveBeenCalledExactlyOnceWith("solmind_confirm_explorer_waypoint_revision_v1",original);
+  const sent=f.rpc.mock.calls[0][1] as typeof original;expect(Object.keys(sent)).toHaveLength(9);expect(sent.p_answers).not.toBe(original.p_answers);expect(Object.isFrozen(sent.p_answers)).toBe(true);expect(Object.isFrozen(sent.p_answers[0])).toBe(true);
+ });
+ it("refuses reordered,duplicate,expanded,getter and malformed answer frames beforeIO",async()=>{
+  const trap=vi.fn();const getter={component:"destination",answer:"one"};Object.defineProperty(getter,"answer",{enumerable:true,get:trap});
+  for(const answers of [[{component:"meaning",answer:"why"},{component:"destination",answer:"where"}],Array(4).fill({component:"destination",answer:"where"}),
+    [{component:"destination",answer:" padded "}],[{component:"destination",answer:"where",extra:true}],[getter],new Proxy([], {get:trap})]){
+   const f=fixture(null);await expect(f.repository.waypointRevision!({...input(),p_answers:answers} as unknown as Parameters<NonNullable<typeof f.repository.waypointRevision>>[0])).rejects.toThrow();expect(f.rpc).not.toHaveBeenCalled();
+  }expect(trap).not.toHaveBeenCalled();
+ });
 });

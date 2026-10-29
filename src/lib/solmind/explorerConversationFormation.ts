@@ -1,6 +1,8 @@
 import {
   EXPLORER_CONVERSATION_LIMITS,
   EXPLORER_COMPASS_ANCHORS,
+  parseExplorerWaypointClarificationAnswers,
+  type ExplorerWaypointClarificationAnswer,
   type ExplorerCompassArrangementItem,
   type ExplorerConversationCommand,
   type ExplorerConversationCompassItem,
@@ -243,6 +245,9 @@ export function buildReachedFormationIntent(
 ): FormationIntentResult {
   const waypoint = state.waypoints.find(item => item.id === waypointId);
   if (!waypoint) return refuse("Choose a saved private Waypoint to review.");
+  if (state.waypoints.some(item => item.lifecycle?.predecessorWaypointId === waypoint.id)) {
+    return refuse("This earlier Waypoint is retained as superseded history.");
+  }
   if (waypoint.status !== "chosen") return refuse("This Waypoint is already Reached.");
   if (waypoint.release !== undefined) return refuse("This Waypoint was released and is retained as private history.");
   if (!validText(evidence, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true)) {
@@ -269,11 +274,57 @@ export function buildWaypointReleaseFormationIntent(
     return refuse("The saved conversation changed. Review this Waypoint again before releasing it.");
   }
   const waypoint = state.waypoints.find(item => item.id === waypointId);
-  if (!waypoint || waypoint.status !== "chosen" || waypoint.release !== undefined) {
+  if (!waypoint || waypoint.status !== "chosen" || waypoint.release !== undefined ||
+      state.waypoints.some(item => item.lifecycle?.predecessorWaypointId === waypoint.id)) {
     return refuse("Choose a current in-progress Waypoint to review for release.");
   }
   if (confirmed !== true) {
     return refuse("Review the destination, meaning, arrival signal and saved source, then confirm release.");
   }
   return accept({ kind: "release_waypoint", waypointId: waypoint.id });
+}
+
+export type WaypointRevisionReview = Readonly<{
+  conversationId: string;
+  revision: number;
+  waypointId: string;
+  kind: "revise_waypoint" | "revisit_waypoint";
+  answers: readonly ExplorerWaypointClarificationAnswer[];
+}>;
+
+// The application asks fixed questions in the conversation. These answers stay
+// draft-only until the Explorer confirms this exact current definition review.
+export function buildWaypointRevisionFormationIntent(
+  state: ExplorerConversationState,
+  review: WaypointRevisionReview,
+  confirmed: boolean,
+): FormationIntentResult {
+  if (!state.conversationId || state.sessionStatus !== "active" || state.pendingTurn ||
+      review.conversationId !== state.conversationId || !Number.isSafeInteger(review.revision) ||
+      review.revision < 0 || review.revision !== state.revision) {
+    return refuse("The saved conversation changed. Review the current Waypoint and your answers again.");
+  }
+  const waypoint = state.waypoints.find(item => item.id === review.waypointId);
+  if (!waypoint || state.waypoints.some(item => item.lifecycle?.predecessorWaypointId === waypoint.id)) {
+    return refuse("Choose the latest saved Waypoint in this history to review.");
+  }
+  if (state.waypoints.length >= EXPLORER_CONVERSATION_LIMITS.waypoints) {
+    return refuse("This conversation has reached its private Waypoint limit; saved history remains available.");
+  }
+  const answers = parseExplorerWaypointClarificationAnswers(review.answers);
+  if (answers === null) return refuse("Review each answered question once, in destination, meaning and arrival-signal order.");
+  if (review.kind === "revise_waypoint") {
+    if (waypoint.status !== "chosen" || waypoint.release !== undefined || answers.length === 0 ||
+        !answers.some(answer => answer.answer !== waypoint[answer.component])) {
+      return refuse("A revision needs a changed answer for a current in-progress Waypoint.");
+    }
+  } else if (review.kind === "revisit_waypoint") {
+    if (waypoint.status !== "reached" && waypoint.release === undefined) {
+      return refuse("Revisit a latest Reached or released Waypoint to begin a new current lifecycle.");
+    }
+  } else return refuse("Choose revision or revisit for this Waypoint review.");
+  if (confirmed !== true) {
+    return refuse("Review the resulting destination, meaning, arrival signal and source history, then confirm this new private choice.");
+  }
+  return accept({ kind: review.kind, waypointId: waypoint.id, answers });
 }

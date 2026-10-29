@@ -469,3 +469,17 @@ describe("private Waypoint release identity", () => {
     expect(f.mutate).not.toHaveBeenCalled(); expect(f.buildContext).not.toHaveBeenCalled();
   });
 });
+
+
+describe("conversation-confirmed Waypoint successor identity",()=>{
+ const command={kind:"revise_waypoint" as const,operationId:ID.operation,expectedRevision:4,waypointId:ID.conversation,
+   answers:[{component:"destination" as const,answer:"A clarified destination"}]};
+ it("binds changed answers and lifecyclekind to the exact operation",()=>{
+  const hash=explorerConversationCommandFingerprint(command);
+  for(const c of [{...command,kind:"revisit_waypoint" as const},{...command,answers:[{component:"meaning" as const,answer:"A clarified destination"}]},
+    {...command,answers:[{component:"destination" as const,answer:"Another destination"}]},{...command,waypointId:ID.otherAccount}]) expect(explorerConversationCommandFingerprint(c)).not.toBe(hash);
+ });
+ it("denies both successor kinds in the legacy writer without a new context",async()=>{
+  for(const kind of ["revise_waypoint","revisit_waypoint"] as const){const f=fixture();expect(await commandExplorerConversation({command:{...command,kind},dependencies:f.dependencies})).toEqual(denied);expect(f.mutate).not.toHaveBeenCalled();expect(f.buildContext).not.toHaveBeenCalled();}
+ });
+});

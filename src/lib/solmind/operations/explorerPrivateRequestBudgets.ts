@@ -39,6 +39,7 @@ export function withExplorerPrivateRequestBudgets(dependencies: ExplorerPrivateC
     ...(source.mutate === undefined ? {} : { mutate: (input: Parameters<NonNullable<typeof source.mutate>>[0]) => bounded(() => source.mutate!(input), 10_000) }),
     ...(source.arrange === undefined ? {} : { arrange: (input: Parameters<NonNullable<typeof source.arrange>>[0]) => bounded(() => source.arrange!(input), 10_000) }),
     ...(source.category === undefined ? {} : { category: (input: Parameters<NonNullable<typeof source.category>>[0]) => bounded(() => source.category!(input), 10_000) }),
+    ...(source.waypointRevision === undefined ? {} : { waypointRevision: (input: Parameters<NonNullable<typeof source.waypointRevision>>[0]) => bounded(() => source.waypointRevision!(input), 10_000) }),
     ...(source.release === undefined ? {} : { release: (input: Parameters<NonNullable<typeof source.release>>[0]) => bounded(() => source.release!(input), 10_000) }),
     ...(source.end === undefined ? {} : { end: (input: Parameters<NonNullable<typeof source.end>>[0]) => bounded(() => source.end!(input), 10_000) }),
     ...(source.review === undefined ? {} : { review: (input: Parameters<NonNullable<typeof source.review>>[0]) => bounded(() => source.review!(input), 10_000) }),

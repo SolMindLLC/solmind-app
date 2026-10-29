@@ -3060,7 +3060,7 @@ does not permit a server value import into a browser module.
 
 src/lib/solmind/supabase/explorerConversationRequestDependencies.ts shares the
 existing raw-cookie authentication source between retained predecessor and new
-private factories; malformed unrelated pairs alone are skipped. The closed eleven-port private repository adds exact7arg public.solmind_release_explorer_waypoint_v1 alongside exact9arg category/End/review capabilities, with propagated10s await budget, immutable definition/source/release facts and active-only reflective writers; owned Release preserves safety/stop state and abort is not remote rollback.
+private factories; malformed unrelated pairs alone are skipped. The closed twelve-port private repository adds exact9arg public.solmind_confirm_explorer_waypoint_revision_v1 and7arg Release alongside category/End/review, with propagated10s await budget and immutable definition/lineage/app-question-Explorer-answer history. Revision/revisit require current unrestricted active reflection; owned Release preserves safety/stop state, no clarification becomes AI context, and abort is not remote rollback.
 Its default has only auth/repository; readiness/provider/context/renderer/signal
 require explicit trusted server injection. No new provider credential/environment
 lookup, fake operational default or candidate-driven activation is introduced.
