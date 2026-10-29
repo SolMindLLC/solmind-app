@@ -1108,9 +1108,9 @@ describe("POST /login/explorer/verify - hold, then write (contract 25 Section 15
         },
       ],
       [
-        "a session that would outlast the hour (an abnormal clock)",
+        "a session beyond the explicit five-second cookie-calculation allowance",
         () => {
-          rpcHandlers[SESSION] = () => rows([sessionRow({ expires_at: printedExpiry(3_601) })]);
+          rpcHandlers[SESSION] = () => rows([sessionRow({ expires_at: printedExpiry(3_606) })]);
         },
       ],
       [

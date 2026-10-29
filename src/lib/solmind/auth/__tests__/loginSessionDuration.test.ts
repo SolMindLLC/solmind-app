@@ -208,7 +208,7 @@ describe("loginSessionDuration - the session function's expires_at", () => {
 });
 
 describe("loginSessionDuration - the cookies' Max-Age (contract 25 Section 7; item 6)", () => {
-  it("LSD-007 the Max-Age matches the returned expiry: the session's remaining life in whole seconds, rounding down, with no cap, and none under 1 or over 3600", () => {
+  it("LSD-007 Max-Age rounds down remaining life, clamps at 3600 for at most a five-second positive gap, and refuses expired or larger excess", () => {
     expect(loginSessionCookieMaxAgeSeconds(NOW + 3_480_000, NOW)).toBe(3480);
     expect(loginSessionCookieMaxAgeSeconds(NOW + 3_479_999, NOW)).toBe(3479);
     expect(loginSessionCookieMaxAgeSeconds(NOW + 2_000_500, NOW)).toBe(2000);
@@ -217,15 +217,19 @@ describe("loginSessionDuration - the cookies' Max-Age (contract 25 Section 7; it
     expect(loginSessionCookieMaxAgeSeconds(NOW + 999, NOW)).toBeNull();
     expect(loginSessionCookieMaxAgeSeconds(NOW, NOW)).toBeNull();
     expect(loginSessionCookieMaxAgeSeconds(NOW - 1_000, NOW)).toBeNull();
-    // The Max-Age boundaries 3600 and 3601: a remaining life of exactly 3600
-    // seconds is 3600, and more than 3600 is refused, never capped.
+    // At most exactly five seconds beyond the ceiling is tolerated only
+    // here; each accepted cookie remains at most 3600 seconds.
     expect(loginSessionCookieMaxAgeSeconds(NOW + 3_600_000, NOW)).toBe(3600);
     expect(loginSessionCookieMaxAgeSeconds(NOW + 3_600_999, NOW)).toBe(3600);
-    expect(loginSessionCookieMaxAgeSeconds(NOW + 3_601_000, NOW)).toBeNull();
+    for (const seconds of [3601, 3602, 3603, 3604, 3605]) {
+      expect(loginSessionCookieMaxAgeSeconds(NOW + seconds * 1000, NOW)).toBe(3600);
+    }
+    expect(loginSessionCookieMaxAgeSeconds(NOW + 3_605_001, NOW)).toBeNull();
+    expect(loginSessionCookieMaxAgeSeconds(NOW + 3_606_000, NOW)).toBeNull();
     expect(loginSessionCookieMaxAgeSeconds(NOW + 86_400_000, NOW)).toBeNull();
   });
 
-  it("LSD-008 does not cap the Max-Age at the requested duration: with this server's clock behind the database's it is the longer remaining life the expiry shows, and over 3600 it is refused; malformed inputs are refused", () => {
+  it("LSD-008 a shorter session keeps its actual remaining life despite a small clock gap; excess beyond the fixed cookie tolerance and malformed inputs refuse", () => {
     // The database's clock ahead of this server's: its expiry is later than
     // this server would compute, and the Max-Age is the remaining life it
     // shows. 5 seconds ahead on a 3480-second session gives 3485, and 8
@@ -234,9 +238,9 @@ describe("loginSessionDuration - the cookies' Max-Age (contract 25 Section 7; it
     expect(loginSessionCookieMaxAgeSeconds(NOW + 9_000, NOW)).toBe(9);
     // Behind instead: the shorter remaining life stands.
     expect(loginSessionCookieMaxAgeSeconds(NOW + 3_475_000, NOW)).toBe(3475);
-    // 121 seconds ahead on a 3480-second session shows 3601 seconds, which no
-    // session lasts: an abnormal state, refused.
-    expect(loginSessionCookieMaxAgeSeconds(NOW + 3_601_000, NOW)).toBeNull();
+    // 126 seconds ahead on a 3480-second session shows 3606 seconds:
+    // explicitly outside the five-second ceiling tolerance, still refused.
+    expect(loginSessionCookieMaxAgeSeconds(NOW + 3_606_000, NOW)).toBeNull();
 
     for (const [expiresAt, now] of [
       [NOW + 3_480_000.5, NOW],

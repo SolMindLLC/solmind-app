@@ -8,7 +8,7 @@ const JSON_MEDIA_TYPE = /^application\/json(?:\s*;\s*charset\s*=\s*utf-8)?$/iu;
 
 export type LogoutBrowserFetch = (path: string, init: RequestInit) => Promise<Response>;
 export type LogoutBrowserResult = Readonly<{
-  outcome: "signed_out" | "sign_out_unconfirmed" | "denied" | "unavailable" | "cancelled" | "busy";
+  outcome: "signed_out" | "no_current_sign_in" | "sign_out_unconfirmed" | "denied" | "unavailable" | "cancelled" | "busy";
 }>;
 export type LogoutBrowserRequest = Readonly<{
   request(): Promise<LogoutBrowserResult>;
@@ -39,7 +39,7 @@ function parseReply(value: unknown): LogoutBrowserResult {
   const field = Object.getOwnPropertyDescriptor(value, "outcome");
   if (!field || !field.enumerable || !("value" in field)) return UNAVAILABLE;
   const outcome: unknown = field.value;
-  return outcome === "signed_out" || outcome === "sign_out_unconfirmed" || outcome === "denied"
+  return outcome === "signed_out" || outcome === "no_current_sign_in" || outcome === "sign_out_unconfirmed" || outcome === "denied"
     ? Object.freeze({ outcome }) : UNAVAILABLE;
 }
 

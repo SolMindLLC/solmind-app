@@ -50,3 +50,19 @@ describe("Admin home with shared expiry and logout boundaries", () => {
     f.close();
   });
 });
+
+
+it("shows local absence without claiming remote sign-out and keeps fixed Admin re-entry", async () => {
+  const f = setup(async () => json("no_current_sign_in"));
+  await f.binding.signOut();
+  expect(f.binding.read().screen).toBe("no_current_sign_in");
+  const html = renderToStaticMarkup(createElement(AdminSessionOutcome, { outcome: "no_current_sign_in" }));
+  expect(html.includes("No current sign-in was found at this browser address.")).toBe(true);
+  expect(html.includes('href="/login/admin"')).toBe(true);
+  expect(html.includes("SM-OUT-01") || html.includes("You're signed out") || html.includes("Admin home")).toBe(false);
+  expect(f.timers.size).toBe(0);
+  expect(f.calls.length).toBe(1);
+  await f.binding.signOut();
+  expect(f.calls.length).toBe(1);
+  f.close();
+});

@@ -70,8 +70,13 @@ export async function handleLogout(request: Request, ports: LogoutPorts): Promis
     const bindings = requestCookies.filter(({ name }) => name === policy.bindingCookieName);
     const presentedSessionId = bindings.length === 1 && isLogoutUuid(bindings[0].value) ? bindings[0].value : null;
 
+    // Absence is local to this trusted browser address, not proof of remote
+    // revocation. Any owned-looking current-policy family member, even an
+    // empty value or suspicious suffix, keeps the ordinary logout path.
+    const noCurrentSignIn = validShape && !requestCookies.some(({ name }) =>
+      name.startsWith(policy.authCookieName) || name.startsWith(policy.bindingCookieName));
     let confirmed = false;
-    if (validShape) {
+    if (validShape && !noCurrentSignIn) {
       let database: LogoutDatabaseDependencies | undefined;
       let provider: LogoutProviderCleanup | undefined;
       try { database = ports.createDatabase(); } catch { needsReport = true; }
@@ -94,9 +99,10 @@ export async function handleLogout(request: Request, ports: LogoutPorts): Promis
         if (cleaned !== "cleaned") needsReport = true;
       }
     }
-    if (!confirmed) needsReport = true;
+    if (!confirmed && !noCurrentSignIn) needsReport = true;
     try {
-      const result = (ports.createResponse ?? response)(confirmed ? "signed_out" : "sign_out_unconfirmed");
+      const result = (ports.createResponse ?? response)(confirmed ? "signed_out"
+        : noCurrentSignIn ? "no_current_sign_in" : "sign_out_unconfirmed");
       for (const [name, value] of Object.entries(LOGOUT_RESPONSE_HEADERS)) result.headers.set(name, value);
       const clear = writeLogoutSessionCookieClears({
         trustedOrigin, requestCookies,

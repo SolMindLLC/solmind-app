@@ -51,9 +51,10 @@ describe("connected Explorer, Guide and Admin composition without mounted claims
   });
   it("L05 thin pages pass only fixed serializable presentation props", () => {
     const start = LoginPage();
-    const role = ExplorerLoginPage();
-    const guide = GuideLoginPage();
-    const admin = AdminLoginPage();
+    for (const page of [ExplorerLoginPage(), GuideLoginPage(), AdminLoginPage()]) expect(page.props.children.length).toBe(2);
+    const role = ExplorerLoginPage().props.children[1];
+    const guide = GuideLoginPage().props.children[1];
+    const admin = AdminLoginPage().props.children[1];
     expect(admin.type === LoginExperience && admin.props.initialAdmin === true && Object.keys(admin.props).length === 1).toBe(true);
     expect(guide.type === LoginExperience && guide.props.initialGuide === true && Object.keys(guide.props).length === 1).toBe(true);
     expect(start.type === LoginExperience && Object.keys(start.props).length === 0).toBe(true);

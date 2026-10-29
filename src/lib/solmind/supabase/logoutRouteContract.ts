@@ -4,7 +4,7 @@ import { SESSION_COOKIE_NO_STORE_HEADERS } from "../auth/sessionCookiePolicy";
 
 // Closed browser contract. Detailed failure reasons belong only to internal,
 // value-free reporting; the page owns the SM-OUT-01 uncertainty message.
-export type LogoutOutcome = "signed_out" | "sign_out_unconfirmed" | "denied";
+export type LogoutOutcome = "signed_out" | "no_current_sign_in" | "sign_out_unconfirmed" | "denied";
 export const LOGOUT_ERROR_CATEGORY = "SM-OUT-01" as const;
 export const LOGOUT_RESPONSE_HEADERS = Object.freeze({
   ...Object.fromEntries(SESSION_COOKIE_NO_STORE_HEADERS.map(({ name, value }) => [name, value])),

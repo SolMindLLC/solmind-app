@@ -1441,8 +1441,8 @@ coverage and unperformed proof are in
 
 `src/app/logout/route.ts` is a thin dynamic Node.js POST handler. Under
 `src/lib/solmind/supabase/`, `logoutRouteContract.ts` owns the exact empty-JSON,
-no-query request and closed outcomes; `logoutComposition.ts` owns ordering and
-safe clearing; `logoutDependencies.ts` constructs independent database/provider
+no-query request and closed outcomes including guarded local no_current_sign_in absence; `logoutComposition.ts` owns ordering and
+safe clearing with no remote constructors for true current-policy cookie absence; cookie Max-Age alone clamps exactly5s clock excess to3600; LoopbackSignInAddressWarning offers a public fixed-role opposite-loopback link. `logoutDependencies.ts` constructs independent database/provider
 capabilities; `userSessionLogoutCaller.ts` calls only
 `solmind_logout_user_session(account, presentedSession)` once; and
 `logoutProviderSignOut.ts` owns bounded explicit-token local cleanup. These

@@ -9,7 +9,7 @@ import {
 
 const GUIDE_REENTRY_PATH = "/login/guide" as const;
 
-type Screen = "home" | "signed_out" | "session_ended" | "unconfirmed" | "restoring";
+type Screen = "home" | "signed_out" | "no_current_sign_in" | "session_ended" | "unconfirmed" | "restoring";
 type Snapshot = Readonly<{ screen: Screen; pending: boolean; warning: boolean }>;
 type HomePorts = Readonly<{
   fetch: LogoutBrowserFetch;
@@ -115,7 +115,7 @@ export function createGuideHomeViewBinding(session: ExplorerExpiry, ports: HomeP
       try { outcome = (await current.request.request()).outcome; }
       catch { outcome = "unavailable"; }
       if (active !== current || retired || listeners.size === 0) return;
-      end(outcome === "signed_out" ? "signed_out" : "unconfirmed");
+      end(outcome === "signed_out" ? "signed_out" : outcome === "no_current_sign_in" ? "no_current_sign_in" : "unconfirmed");
     },
   });
 }
@@ -123,7 +123,7 @@ export function createGuideHomeViewBinding(session: ExplorerExpiry, ports: HomeP
 export function GuideSessionOutcome({ outcome }: Readonly<{ outcome: Exclude<Screen, "home"> }>) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => { headingRef.current?.focus(); }, [outcome]);
-  const heading = outcome === "signed_out" ? "You're signed out" : outcome === "session_ended" ? "Your session ended" : outcome === "restoring" ? "Checking your session..." : "Sign-out could not be confirmed";
+  const heading = outcome === "signed_out" ? "You're signed out" : outcome === "no_current_sign_in" ? "No current sign-in was found at this browser address." : outcome === "session_ended" ? "Your session ended" : outcome === "restoring" ? "Checking your session..." : "Sign-out could not be confirmed";
   return <main style={{ maxWidth: 560, margin: "64px auto", padding: 24 }}>
     <h1 ref={headingRef} tabIndex={-1}>{heading}</h1>
     {outcome === "signed_out" ? <p>{SIGNED_OUT_PRIVACY}</p> : null}

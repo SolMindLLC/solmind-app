@@ -24,13 +24,12 @@
 // Whole seconds round down everywhere, so neither the remaining life nor the
 // Max-Age is ever overstated.
 //
-// The Max-Age is the session's remaining life worked out from the returned
-// `expires_at`, as contract 25 Sections 6 and 7 say, with no cap. A session
-// cookie may be given only 1 to 3600 seconds (the session bound of
-// AUTH-RLS-DEC-039, which login step 6's cookie writer of sub-slice S6-2 also
-// accepts), so a remaining life outside that range gives null: under 1
-// second no cookie may be written, and over 3600 seconds, which only this
-// server's clock running behind the database's can show, is an abnormal state.
+// The Max-Age comes from the returned `expires_at`, as contract 25 Sections
+// 6 and 7 say. The cookie ceiling remains 3600 seconds. At this calculation
+// only, allow a positive database/app clock gap of at most 5 seconds beyond
+// that ceiling and clamp the cookie to 3600. Larger excess or under 1 second
+// gives null. This changes neither stored expiry nor authentication authority;
+// provider lifetime, the 120-second reserve and expired sessions get no grace.
 //
 // Only the session-creation caller of this sub-slice, in `../supabase/`,
 // imports this module; login step 6's Explorer sign-in routes (S6-8) call
@@ -51,6 +50,9 @@ export const LOGIN_SESSION_DURATION_LIMITS: Readonly<{
 // safe integer.
 const MAXIMUM_EPOCH_MILLISECONDS = 8_640_000_000_000_000;
 const MAXIMUM_EPOCH_SECONDS = 8_640_000_000_000;
+
+// Fixed cookie-calculation tolerance only, not a session/token expiry allowance.
+const MAXIMUM_COOKIE_CLOCK_GAP_MILLISECONDS = 5_000;
 
 // `expires_at` as PostgreSQL prints a `timestamptz` in JSON: the date, `T`,
 // the time, up to six fraction digits, and an offset (`+00:00` on Supabase;
@@ -151,10 +153,10 @@ export function parseLoginSessionExpiresAt(value: unknown): number | null {
 
 // Contract 25 Section 7: the cookies' Max-Age, from the session's expiry and
 // the current time (both epoch milliseconds): the session's remaining life in
-// whole seconds, rounded down, with no cap. Null when that is under 1 second,
-// so no cookie is written with a lifetime of 0 or less; when it is over 3600
-// seconds (see the module comment); or when an input is not a whole number in
-// range.
+// whole seconds, rounded down and clamped to the 3600-second cookie ceiling.
+// Null under 1 second, more than exactly 5 seconds beyond that ceiling, or
+// when an input is not a whole number in range. Stored/provider expiries and
+// every authentication check retain their existing bounds.
 export function loginSessionCookieMaxAgeSeconds(
   sessionExpiresAtMilliseconds: number,
   nowMilliseconds: number,
@@ -165,12 +167,13 @@ export function loginSessionCookieMaxAgeSeconds(
   ) {
     return null;
   }
-  const remaining = Math.floor((sessionExpiresAtMilliseconds - nowMilliseconds) / 1000);
+  const remainingMilliseconds = sessionExpiresAtMilliseconds - nowMilliseconds;
+  const remaining = Math.floor(remainingMilliseconds / 1000);
   if (
     remaining < LOGIN_SESSION_DURATION_LIMITS.minimumSeconds ||
-    remaining > LOGIN_SESSION_DURATION_LIMITS.maximumSeconds
+    remainingMilliseconds > LOGIN_SESSION_DURATION_LIMITS.maximumSeconds * 1000 + MAXIMUM_COOKIE_CLOCK_GAP_MILLISECONDS
   ) {
     return null;
   }
-  return remaining;
+  return Math.min(remaining, LOGIN_SESSION_DURATION_LIMITS.maximumSeconds);
 }

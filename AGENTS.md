@@ -658,8 +658,8 @@ No token, account/session ID, password, code or selector enters URLs, logs,
 browser storage or home props. GET never refreshes, clears cookies or signs out.
 
 `src/lib/solmind/logoutBrowserRequest.ts` owns the one guarded POST `/logout`;
-only confirmed `signed_out` shows S1. Unconfirmed/refused/missing answers show
-honest SM-OUT-01 uncertainty; never claim administrator notification. Guard denial
+only confirmed `signed_out` shows S1; closed no_current_sign_in reports local cookie absence, never remote revocation. Unconfirmed/refused/missing answers show
+honest SM-OUT-01 uncertainty; never claim administrator notification. Cookie Max-Age alone allows exactly5s positive clock gap, clamped3600; public loopback warning links fixed role without redirect. Guard denial
 or apparent expiry shows S2 with fixed `/login/explorer` re-entry. The five-minute
 warning is advisory; Stay signed in remains a separate later amendment. Paul
 approved the sign-in and session reminder text on 2026-10-17; the exact messages

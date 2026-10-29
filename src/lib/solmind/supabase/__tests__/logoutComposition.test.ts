@@ -127,4 +127,77 @@ describe("logout request coordination", () => {
     expect(response === partial).toBe(false); expect(response.cookies.getAll()).toHaveLength(0);
     expect(await response.json()).toEqual({ outcome: "denied" });
   });
+
+  it("preserves confirmed logout with the banked first-occurrence duplicate-auth semantics", async () => {
+    const h = harness(); h.jar.push({ name: "solmind-auth", value: "ignored-later-value" });
+    const response = await handleLogout(request(), h.ports);
+    expect(await response.json()).toEqual({ outcome: "signed_out" });
+    expect(h.database.endSession).toHaveBeenCalledExactlyOnceWith(account, session);
+  });
+
+  it.each([origin, "https://solmind.example"])("reports local absence only after safe clears without constructing remote capabilities (%s)", async trustedOrigin => {
+    const h = harness(); h.jar.splice(0, h.jar.length, { name: "remembered-browser", value: "keep" });
+    const input = new Request(trustedOrigin + "/logout", { method: "POST", body: "{}",
+      headers: { Origin: trustedOrigin, "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" } });
+    const response = await handleLogout(input, { ...h.ports, loadOrigin: () => trustedOrigin });
+    expect(await response.json()).toEqual({ outcome: "no_current_sign_in" });
+    expect(h.events).toEqual([]);
+    expect(h.ports.createDatabase).not.toHaveBeenCalled(); expect(h.ports.createProvider).not.toHaveBeenCalled();
+    expect(h.ports.report).not.toHaveBeenCalled();
+    const prefix = trustedOrigin.startsWith("https:") ? "__Host-" : "";
+    expect(response.cookies.getAll().map(({ name }) => name)).toEqual([
+      prefix + "solmind-auth", prefix + "solmind-auth-code-verifier", prefix + "solmind-session",
+    ]);
+    expect(response.cookies.getAll().every(({ value, maxAge }) => value === "" && maxAge === 0)).toBe(true);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-cache, no-store, must-revalidate, max-age=0");
+  });
+
+  it.each([
+    [{ name: "solmind-auth", value: "" }],
+    [{ name: "solmind-session", value: "" }],
+    [{ name: "solmind-auth.0", value: "partial" }],
+    [{ name: "solmind-auth-code-verifier", value: "partial" }],
+    [{ name: "solmind-auth-suspicious", value: "partial" }],
+    [{ name: "solmind-session.suspicious", value: "partial" }],
+    [{ name: "solmind-auth", value: "invalid" }, { name: "solmind-auth", value: "invalid" }],
+    [{ name: "solmind-session", value: session }, { name: "solmind-session", value: session }],
+  ].map(entries => ({ entries })))("does not mistake partial, invalid or duplicate owned credentials for local absence %#", async ({ entries }) => {
+    const h = harness(); h.jar.splice(0, h.jar.length, ...entries);
+    const response = await handleLogout(request(), h.ports);
+    expect(await response.json()).toEqual({ outcome: "sign_out_unconfirmed" });
+    expect(h.database.endSession).not.toHaveBeenCalled();
+    expect(h.ports.report).toHaveBeenCalledExactlyOnceWith("SM-OUT-01");
+  });
+
+  it.each([["{\"extra\":true}", ""], ["{}", "?extra=1"]])("does not classify an invalid request shape as local absence", async (body, query) => {
+    const h = harness(); h.jar.splice(0);
+    const response = await handleLogout(request(body, query), h.ports);
+    expect(await response.json()).toEqual({ outcome: "sign_out_unconfirmed" });
+    expect(h.ports.createDatabase).not.toHaveBeenCalled(); expect(h.ports.createProvider).not.toHaveBeenCalled();
+  });
+
+  it("refuses failed or malformed cookie reads rather than claiming local absence", async () => {
+    for (const readCookies of [async () => null, async () => { throw new Error("private"); }]) {
+      const h = harness();
+      const response = await handleLogout(request(), { ...h.ports, readCookies });
+      expect(await response.json()).toEqual({ outcome: "denied" });
+      expect(h.ports.createDatabase).not.toHaveBeenCalled(); expect(h.ports.createProvider).not.toHaveBeenCalled();
+      expect(response.cookies.getAll()).toHaveLength(0);
+    }
+  });
+
+  it("discards local absence when any safe cookie clear fails", async () => {
+    const h = harness(); h.jar.splice(0); let partial: NextResponse | undefined;
+    const response = await handleLogout(request(), { ...h.ports, createResponse: outcome => {
+      const result = NextResponse.json({ outcome }); partial = result;
+      result.cookies.set = (() => { throw new Error("private"); }) as typeof result.cookies.set;
+      return result;
+    } });
+    expect(response === partial).toBe(false);
+    expect(await response.json()).toEqual({ outcome: "denied" });
+    expect(response.cookies.getAll()).toHaveLength(0);
+    expect(h.ports.createDatabase).not.toHaveBeenCalled(); expect(h.ports.createProvider).not.toHaveBeenCalled();
+    expect(h.ports.report).toHaveBeenCalledExactlyOnceWith("SM-OUT-01");
+  });
+
 });

@@ -91,7 +91,7 @@ describe("configuration and fixed dispatch", () => {
 });
 
 describe("closed response", () => {
-  for (const outcome of ["signed_out", "sign_out_unconfirmed", "denied"] as const) {
+  for (const outcome of ["signed_out", "no_current_sign_in", "sign_out_unconfirmed", "denied"] as const) {
     it("preserves valid server outcome " + outcome, async () => {
       resultIs(await factory(async () => json({ outcome })).request(), outcome);
     });

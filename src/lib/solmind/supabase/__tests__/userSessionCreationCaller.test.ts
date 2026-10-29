@@ -356,7 +356,7 @@ describe("userSessionCreationCaller - creating a session (contract 25 Sections 6
     expect(late.rpc).not.toHaveBeenCalled();
   });
 
-  it("USC-003 the Max-Age is the session's remaining life from the returned expiry, with no cap, and an answer under 1 second or over 3600 seconds from its end is failed", async () => {
+  it("USC-003 Max-Age uses returned expiry, clamps a positive gap up to five seconds at the 3600 ceiling, and fails under one second or outside that bound", async () => {
     const cases: ReadonlyArray<readonly [string, number, ResultView]> = [
       ["clocks in step", NOW + REQUESTED * 1000, accepted("created", REQUESTED)],
       ["3000.999 seconds left", NOW + 3_000_999, accepted("created", 3000)],
@@ -364,10 +364,15 @@ describe("userSessionCreationCaller - creating a session (contract 25 Sections 6
       // The database's clock 5 seconds ahead of this server's: the remaining
       // life the expiry shows, not capped at the requested duration.
       ["database 5 seconds ahead", NOW + (REQUESTED + 5) * 1000, accepted("created", REQUESTED + 5)],
-      // Exactly 3600 seconds left, and one more (the database's clock 120
-      // and 121 seconds ahead): the second is an abnormal state.
+      // The fixed positive-gap allowance changes only cookie calculation.
       ["3600 seconds left", NOW + 3_600_000, accepted("created", 3600)],
-      ["3601 seconds left", NOW + 3_601_000, refused("failed")],
+      ["3601 seconds left clamped", NOW + 3_601_000, accepted("created", 3600)],
+      ["3602 seconds left clamped", NOW + 3_602_000, accepted("created", 3600)],
+      ["3603 seconds left clamped", NOW + 3_603_000, accepted("created", 3600)],
+      ["3604 seconds left clamped", NOW + 3_604_000, accepted("created", 3600)],
+      ["3605 seconds left clamped", NOW + 3_605_000, accepted("created", 3600)],
+      ["3605.001 seconds exceeds tolerance", NOW + 3_605_001, refused("failed")],
+      ["3606 seconds outside tolerance", NOW + 3_606_000, refused("failed")],
       ["0.999 seconds left", NOW + 999, refused("failed")],
       ["0 seconds left", NOW, refused("failed")],
       ["expired a minute ago", NOW - 60_000, refused("failed")],
@@ -406,6 +411,10 @@ describe("userSessionCreationCaller - creating a session (contract 25 Sections 6
     const creator = buildCreator({ rpcClient: existing.client });
     expect(view(await creator.create(request())), "existing").toEqual(accepted("existing", REQUESTED));
     expect(existing.rpc).toHaveBeenCalledTimes(1);
+    const existingWithGap = fakeRpc(() => rpcResponse([sessionRow({ outcome: "existing" }, NOW + 3_605_000)]));
+    expect(view(await buildCreator({ rpcClient: existingWithGap.client }).create(request())), "existing at fixed gap bound")
+      .toEqual(accepted("existing", 3600));
+    expect(existingWithGap.rpc).toHaveBeenCalledTimes(1);
 
     // An `existing` answer gets every check a `created` one does.
     const rows: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
@@ -414,6 +423,7 @@ describe("userSessionCreationCaller - creating a session (contract 25 Sections 6
       ["extra key", sessionRow({ outcome: "existing", extra: true })],
       ["0.5 seconds left", sessionRow({ outcome: "existing" }, NOW + 500)],
       ["expired", sessionRow({ outcome: "existing" }, NOW - 1_000)],
+      ["3606 seconds outside tolerance", sessionRow({ outcome: "existing" }, NOW + 3_606_000)],
     ];
     for (const [label, row] of rows) {
       const rpc = fakeRpc(() => rpcResponse([row]));

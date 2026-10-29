@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { readRawRequestCookies } from "@/lib/solmind/auth/readRawRequestCookies";
 import { loadTrustedApplicationOrigin } from "@/lib/solmind/auth/trustedApplicationOrigin";
 import { handleLogout } from "@/lib/solmind/supabase/logoutComposition";
 import {
@@ -11,9 +11,9 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   return handleLogout(request, {
     loadOrigin: loadTrustedApplicationOrigin,
-    // Route Handlers expose Next's mutable cookies, which carry response
-    // metadata such as path. The strict auth reader accepts name/value only.
-    readCookies: async () => (await cookies()).getAll().map(({ name, value }) => ({ name, value })),
+    // Called only after the existing same-origin guard. Preserve owned raw
+    // duplicates and malformed framing so it cannot masquerade as absence.
+    readCookies: async () => readRawRequestCookies(request.headers.get("cookie")),
     createDatabase: createLogoutDatabaseDependencies,
     createProvider: createLogoutProviderCleanupDependencies,
     report: (category) => { console.warn(category); },
