@@ -1213,6 +1213,7 @@ strict AV2 entries; compact input remains wi007-v0.1+onboarding-fields-v2.
 
 supabase/migrations/20261025010000_explorer_source_exclusion.sql owns bounded
 current-source inspection and committed content-free exclusion accountability;
+`supabase/migrations/20261028000000_explorer_private_deferred_guard_privilege.sql` runs the existing deferred coherence check as its postgres owner at commit; its body, empty search_path, deferred timing and API-role grants stay unchanged.
 supabase/migrations/20261025020000_explorer_private_safety_lifecycle.sql owns the
 real first-Send container, minimum actual positive private evidence, monotonic
 conversation policy and atomic terminal/formation transitions. Five legacy direct

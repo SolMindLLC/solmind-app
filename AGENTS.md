@@ -305,6 +305,7 @@ that evidence. Whole-field checks do not prove semantic origin, fragment/paraphr
 coverage or complete operational protection. Prior private safety rows never enter
 the model context. Scheduled snapshot-integrity/Admin paging remains unfinished.
 
+`supabase/migrations/20261028000000_explorer_private_deferred_guard_privilege.sql` runs the existing deferred coherence check as its postgres owner at commit; its body, empty search_path, deferred timing and API-role grants stay unchanged.
 `supabase/migrations/20261025020000_explorer_private_safety_lifecycle.sql`
 owns the additive private state/evidence and six-port lifecycle. Only a deliberate
 first Send with complete operational configuration/current authority may create or
