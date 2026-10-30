@@ -38,6 +38,7 @@ const NEW_SOURCE_FILES = [
   "src/lib/solmind/explorerConversationScreenDisplay.ts",
   "src/lib/solmind/explorerConversationScreenSample.ts",
   "src/lib/solmind/explorerSpeakerStyle.ts",
+  "src/components/solmind/ExplorerSpeakerIcon.tsx",
 ];
 const ALL_NOTES = Object.values(notYetImplementedNotes(SAMPLE_CONVERSATION_SCREEN.support.guideName));
 
@@ -187,7 +188,7 @@ describe("interim Explorer conversation screen", () => {
       "@/lib/solmind/explorerConversationScreen", "@/lib/solmind/explorerConversationScreenDisplay",
       "@/lib/solmind/explorerConversationScreenSample", "@/lib/solmind/explorerSpeakerStyle",
       "./terms", "./explorerConversationScreen", "./explorerConversationScreenDisplay",
-      "@/components/solmind/ExplorerConversationScreenPreview",
+      "@/components/solmind/ExplorerConversationScreenPreview", "./ExplorerSpeakerIcon",
     ]);
     for (const file of NEW_SOURCE_FILES) {
       const source = readFileSync(path.join(appRoot, file), "utf8");
@@ -273,7 +274,7 @@ describe("interim Explorer conversation screen", () => {
       renderToStaticMarkup(createElement(ConversationTranscript, { speakerStyle, transcript: SAMPLE_CONVERSATION_SCREEN.transcript }));
     const logo = render("logo");
     expect(logo).toContain('class="flex items-center gap-2 text-xs font-semibold text-[#F57602]" id="conversation-preview-turn-1-speaker"');
-    expect(logo).toContain('class="flex items-center gap-2 text-xs font-semibold text-[#F7DDC6]" id="conversation-preview-turn-2-speaker"');
+    expect(logo).toContain('class="flex items-center gap-2 text-xs font-semibold text-[#8BC6EE]" id="conversation-preview-turn-2-speaker"');
     expect(logo.split('data-speaker-icon="virtualGuide"').length - 1).toBe(3);
     expect(logo.split('data-speaker-icon="explorer"').length - 1).toBe(3);
     const original = render("original");

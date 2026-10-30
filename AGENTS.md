@@ -113,8 +113,10 @@ Waypoint, quotation, and sharing controls must not imply that a model, human
 Guide, or sharing service is connected. Genuine server-side Virtual Guide
 conversation remains `PRJ01_R-WS09-WI021-S03`. The shared
 `src/lib/solmind/explorerSpeakerStyle.ts` owns the speaker-label style used by
-both this route and the interim screen (Paul's 2026-10-29 speaker-label trial);
-`SPEAKER_LABEL_STYLE = "original"` restores the earlier labels.
+both this route and the interim screen (Paul's 2026-10-29 speaker-label trial,
+revised 2026-10-30), and `src/components/solmind/ExplorerSpeakerIcon.tsx` draws
+its two small icons; `SPEAKER_LABEL_STYLE = "original"` restores the earlier
+labels.
 
 The interim `/explorer/conversation-preview` route is a non-functional design
 review of the full Explorer conversation screen: the S01R2 look, Jade rail
@@ -127,7 +129,8 @@ content tagged "Sample". Only `ExplorerConversationScreenPreview.tsx` imports
 the sample; the parts take read-only display props typed in
 `explorerConversationScreenDisplay.ts`. From existing code the route imports
 only `SOLMIND_LOGO_SRC` and `SOLMIND_TERMS`, plus the shared
-`explorerSpeakerStyle.ts`, and it has no source-isolation profile. It inherits
+`explorerSpeakerStyle.ts` and `ExplorerSpeakerIcon.tsx`, and it has no
+source-isolation profile. It inherits
 every S01R2 no-provider, no-persistence, no-auth, no-browser-storage,
 no-URL-state, no-timer, no-notification, and no-real-user boundary. Unwired
 controls stay focusable with `aria-disabled` and a visible note linked by

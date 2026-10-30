@@ -79,11 +79,12 @@ import {
 } from "@/lib/solmind/explorerCompassComparison";
 import {
   SPEAKER_LABEL_STYLE,
-  SPEAKER_LOGO_ICON_CLASS,
   speakerLabelClass,
   type SpeakerLabelStyle,
 } from "@/lib/solmind/explorerSpeakerStyle";
 import { SOLMIND_TERMS } from "@/lib/solmind/terms";
+
+import { SpeakerIcon } from "./ExplorerSpeakerIcon";
 
 // ---------------------------------------------------------------------------
 // Element identifiers and shared class names
@@ -758,7 +759,8 @@ export function VirtualGuideIdentity({
 }
 
 // Speaker icons follow SPEAKER_LABEL_STYLE in explorerSpeakerStyle.ts: "logo"
-// draws them from the supplied logo; "original" keeps the badges below.
+// shows the shared icons in ExplorerSpeakerIcon.tsx; "original" keeps the
+// badges below.
 function VirtualGuideAvatar({
   large = false,
   speakerStyle = SPEAKER_LABEL_STYLE,
@@ -766,15 +768,7 @@ function VirtualGuideAvatar({
   large?: boolean;
   speakerStyle?: SpeakerLabelStyle;
 }) {
-  if (speakerStyle === "logo") {
-    return (
-      <span
-        aria-hidden="true"
-        className={joinClasses(large ? "h-9 w-9" : "h-6 w-6", SPEAKER_LOGO_ICON_CLASS.virtualGuide)}
-        data-speaker-icon="virtualGuide"
-      />
-    );
-  }
+  if (speakerStyle === "logo") return <SpeakerIcon size={large ? "large" : "small"} speaker="virtualGuide" />;
 
   return (
     <span
@@ -790,15 +784,7 @@ function VirtualGuideAvatar({
 }
 
 function ExplorerAvatar({ speakerStyle = SPEAKER_LABEL_STYLE }: { speakerStyle?: SpeakerLabelStyle }) {
-  if (speakerStyle === "logo") {
-    return (
-      <span
-        aria-hidden="true"
-        className={joinClasses("h-6 w-6", SPEAKER_LOGO_ICON_CLASS.explorer)}
-        data-speaker-icon="explorer"
-      />
-    );
-  }
+  if (speakerStyle === "logo") return <SpeakerIcon speaker="explorer" />;
 
   return (
     <span

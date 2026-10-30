@@ -173,7 +173,8 @@ the owner of server-side provider conversation.
 
 The interim `/explorer/conversation-preview` design review keeps its own split.
 It imports only `SOLMIND_LOGO_SRC` from the S01R2 owners, plus the shared
-speaker-style module `src/lib/solmind/explorerSpeakerStyle.ts` that S01R2 also
+speaker-style module `src/lib/solmind/explorerSpeakerStyle.ts` and the shared
+speaker icons `src/components/solmind/ExplorerSpeakerIcon.tsx` that S01R2 also
 uses:
 
 - `src/app/explorer/conversation-preview/page.tsx` only composes the client

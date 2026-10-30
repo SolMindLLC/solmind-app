@@ -127,9 +127,11 @@ read-only display props typed in
 `src/lib/solmind/explorerConversationScreen.ts` plus
 `explorerConversationScreenSample.ts` own the "Not yet implemented:" sentences
 and tagged sample content. `src/lib/solmind/explorerSpeakerStyle.ts` owns the
-speaker labels and logo icons shared with `/explorer/compass-comparison`
-(Paul's 2026-10-29 speaker-label trial); setting its `SPEAKER_LABEL_STYLE`
-constant to `"original"` reverts both screens to the earlier gold labels.
+speaker labels shared with `/explorer/compass-comparison` (Paul's 2026-10-29
+speaker-label trial, revised 2026-10-30), and
+`src/components/solmind/ExplorerSpeakerIcon.tsx` draws their two small icons
+for both screens; setting `SPEAKER_LABEL_STYLE` in `explorerSpeakerStyle.ts`
+to `"original"` reverts both screens to the earlier gold labels.
 `/explorer/conversation` is unchanged; the S01R2 files change only in speaker
 labels and icons.
 Every functional control is focusable, `aria-disabled`, and described by its

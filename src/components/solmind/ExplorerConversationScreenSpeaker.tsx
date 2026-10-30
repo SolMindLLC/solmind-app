@@ -1,14 +1,15 @@
 import { SPEAKER_STYLE_SWITCH_LABEL } from "@/lib/solmind/explorerConversationScreen";
 import type { ScreenSpeaker } from "@/lib/solmind/explorerConversationScreenDisplay";
-import { SPEAKER_LOGO_ICON_CLASS, type SpeakerLabelStyle } from "@/lib/solmind/explorerSpeakerStyle";
+import type { SpeakerLabelStyle } from "@/lib/solmind/explorerSpeakerStyle";
 
 import { IconBoot, IconHand } from "./ExplorerConversationScreenIcons";
 import { FOCUS_RING, LayoutOnlyTag, joinClasses } from "./ExplorerConversationScreenNotYetImplemented";
+import { SpeakerIcon } from "./ExplorerSpeakerIcon";
 
-// Speaker badges for the interim screen. "logo" draws the eclipse ring (Virtual
-// Guide) or the face (You) from the supplied logo; "original" keeps the
-// hand and boot badges exactly as before. Badges are decorative: the visible
-// label beside each one names the speaker.
+// Speaker badges for the interim screen. "logo" shows the shared small icons
+// drawn in ExplorerSpeakerIcon.tsx; "original" keeps the hand and boot badges
+// exactly as before. Badges are decorative: the visible label beside each one
+// names the speaker.
 
 const BADGE_SIZE = { small: "h-6 w-6", large: "h-9 w-9" } as const;
 const GLYPH_SIZE = { small: "h-3.5 w-3.5", large: "h-5 w-5" } as const;
@@ -20,15 +21,7 @@ type SpeakerBadgeProps = Readonly<{
 }>;
 
 export function SpeakerBadge({ speaker, speakerStyle, size = "small" }: SpeakerBadgeProps) {
-  if (speakerStyle === "logo") {
-    return (
-      <span
-        aria-hidden="true"
-        className={joinClasses(BADGE_SIZE[size], SPEAKER_LOGO_ICON_CLASS[speaker])}
-        data-speaker-icon={speaker}
-      />
-    );
-  }
+  if (speakerStyle === "logo") return <SpeakerIcon size={size} speaker={speaker} />;
 
   return (
     <span

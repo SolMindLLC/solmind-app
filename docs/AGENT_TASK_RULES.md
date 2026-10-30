@@ -219,7 +219,8 @@ stays focusable with `aria-disabled` and a visible "Not yet implemented:" note
 linked by `aria-describedby`; only controls tagged "Layout only: works in this
 preview" act, in component memory. Keep each new file at or under 300 lines;
 from existing code import only `SOLMIND_LOGO_SRC` and `SOLMIND_TERMS`, plus the
-shared `explorerSpeakerStyle.ts`; and add no source-isolation profile. Only
+shared `explorerSpeakerStyle.ts` and `ExplorerSpeakerIcon.tsx`; and add no
+source-isolation profile. Only
 `ExplorerConversationScreenPreview.tsx` imports the sample; the parts take
 read-only display props typed in `explorerConversationScreenDisplay.ts`.
 `/explorer/conversation` is unchanged; the S01R2 files change only in speaker

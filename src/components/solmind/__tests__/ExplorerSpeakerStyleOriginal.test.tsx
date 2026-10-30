@@ -19,7 +19,7 @@ describe("speaker label style set to original", () => {
     const html = renderToStaticMarkup(createElement(S01R2Page));
     expect(html).not.toContain("data-speaker-icon");
     expect(html).not.toContain("text-[#F57602]");
-    expect(html).not.toContain("text-[#F7DDC6]");
+    expect(html).not.toContain("text-[#8BC6EE]");
     expect(html.split(ORIGINAL_LABEL).length - 1).toBeGreaterThanOrEqual(2);
     expect(html).toContain(
       '<span aria-hidden="true" class="grid shrink-0 place-items-center rounded-full border border-amber-300/60 bg-amber-300/10 font-semibold tracking-wide text-amber-100 shadow-[0_0_14px_rgba(245,158,11,0.25)] h-9 w-9 text-[11px]">VG</span>',

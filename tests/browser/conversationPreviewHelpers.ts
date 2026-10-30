@@ -14,7 +14,7 @@ export const SEPTEMBER_ROUTE = "/explorer/compass-comparison";
 export const CAPTURES = path.resolve(__dirname, "..", "..", "captures");
 export const UNWIRED = '[data-preview-control="unwired"]';
 export const MIND_ORANGE = "rgb(245, 118, 2)";
-export const WARM_IVORY = "rgb(247, 221, 198)";
+export const SKY_BLUE = "rgb(139, 198, 238)";
 
 export type Guard = { blocked: string[]; errors: string[]; origin: string };
 
@@ -107,18 +107,21 @@ export async function expectTabReachesControls(page: Page) {
   expect(reached.size).toBe(expected);
 }
 
-// Speaker labels: logo icons are drawn from the logo file and each label has its own colour.
+// Speaker labels: in the new style each label and its small drawn icon share the speaker's colour.
 export async function readSpeakers(page: Page) {
   return page.evaluate(() => {
-    const icons = [...document.querySelectorAll<HTMLElement>("[data-speaker-icon]")]
+    const icons = [...document.querySelectorAll<Element>("[data-speaker-icon]")]
       .filter((icon) => icon.getClientRects().length > 0)
       .map((icon) => {
         const style = getComputedStyle(icon);
+        const box = icon.getBoundingClientRect();
         return {
-          speaker: icon.dataset.speakerIcon ?? "",
+          speaker: icon.getAttribute("data-speaker-icon") ?? "",
+          tag: icon.tagName.toLowerCase(),
+          colour: style.color,
           image: style.backgroundImage,
-          mask: style.maskImage || style.getPropertyValue("-webkit-mask-image"),
-          width: icon.getBoundingClientRect().width,
+          width: box.width,
+          height: box.height,
         };
       });
     const labels = [...document.querySelectorAll<HTMLElement>("article p[id$='-speaker']")].map((label) => ({
@@ -133,13 +136,16 @@ export async function expectLogoSpeakers(page: Page) {
   const { icons, labels } = await readSpeakers(page);
   expect(icons.length).toBeGreaterThanOrEqual(3);
   for (const icon of icons) {
-    expect(icon.image, icon.speaker).toContain("solmind-dark-logo.png");
-    expect(icon.mask, icon.speaker).toContain("radial-gradient");
+    expect(icon.tag, icon.speaker).toBe("svg");
+    expect(icon.image, icon.speaker).toBe("none");
+    expect(icon.colour, icon.speaker).toBe(icon.speaker === "explorer" ? SKY_BLUE : MIND_ORANGE);
     expect(icon.width, icon.speaker).toBeGreaterThanOrEqual(24);
+    expect(icon.height, icon.speaker).toBe(icon.width);
   }
+  expect([...new Set(icons.map((icon) => icon.speaker))].sort()).toEqual(["explorer", "virtualGuide"]);
   expect(labels.length).toBeGreaterThanOrEqual(2);
   for (const label of labels) {
-    expect(label.colour, label.text).toBe(label.text.endsWith("You") ? WARM_IVORY : MIND_ORANGE);
+    expect(label.colour, label.text).toBe(label.text.endsWith("You") ? SKY_BLUE : MIND_ORANGE);
   }
 }
 
@@ -147,7 +153,7 @@ export async function expectOriginalSpeakers(page: Page) {
   const { icons, labels } = await readSpeakers(page);
   expect(icons).toEqual([]);
   expect(labels.length).toBeGreaterThanOrEqual(2);
-  for (const label of labels) expect([MIND_ORANGE, WARM_IVORY], label.text).not.toContain(label.colour);
+  for (const label of labels) expect([MIND_ORANGE, SKY_BLUE], label.text).not.toContain(label.colour);
 }
 
 // On load both screens follow SPEAKER_LABEL_STYLE, so setting it to "original"

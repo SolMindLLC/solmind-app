@@ -18,19 +18,19 @@ describe("speaker label style set to logo", () => {
   it("SL01 the S01R2 screen shows the logo labels and icons", () => {
     const html = renderToStaticMarkup(createElement(S01R2Page));
     expect(html).toContain(`${LABEL} text-[#F57602]"`);
-    expect(html).toContain(`${LABEL} text-[#F7DDC6]"`);
+    expect(html).toContain(`${LABEL} text-[#8BC6EE]"`);
     expect(html).not.toContain(`${LABEL} text-amber-200"`);
     expect(html).toContain('data-speaker-icon="virtualGuide"');
     expect(html).toContain('data-speaker-icon="explorer"');
     expect(html).not.toContain(">VG</span>");
     expect(html).toContain("Mary (Virtual Guide)</p>");
-    expect(html).toContain('data-speaker-icon="explorer"></span>You</p>');
+    expect(/data-speaker-icon="explorer" focusable="false" viewBox="0 0 24 24">(?:(?!<svg)[\s\S])*?<\/svg>You<\/p>/.test(html)).toBe(true);
   });
 
   it("SL02 the interim screen starts from the constant with New selected", () => {
     const html = renderToStaticMarkup(createElement(InterimPage));
     expect(html).toContain(`${LABEL} text-[#F57602]" id="conversation-preview-turn-1-speaker"`);
-    expect(html).toContain(`${LABEL} text-[#F7DDC6]" id="conversation-preview-turn-2-speaker"`);
+    expect(html).toContain(`${LABEL} text-[#8BC6EE]" id="conversation-preview-turn-2-speaker"`);
     expect(html.split('data-speaker-icon="virtualGuide"').length - 1).toBe(4);
     expect(html.split('data-speaker-icon="explorer"').length - 1).toBe(3);
     expect(/aria-pressed="true"[^>]*>New</.test(html)).toBe(true);
