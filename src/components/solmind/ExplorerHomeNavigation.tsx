@@ -75,6 +75,20 @@ export function ExplorerHomeNavigation({
                 </a>
               )}
             </li>
+            <li>
+              {navigationDisabled ? (
+                <span aria-disabled="true" className={`${destinationClassName} opacity-60`}>
+                  Conversation screen design review
+                </span>
+              ) : (
+                <a href="/explorer/conversation-preview" className={`${destinationClassName} hover:border-teal-700`}>
+                  Conversation screen design review
+                </a>
+              )}
+              <p className="mt-1 text-sm">
+                Design review only: sample content and working layout controls; conversation features are not connected.
+              </p>
+            </li>
           </ul>
         </nav>
       </details>

@@ -171,6 +171,31 @@ no-notification, and no-real-user constraints. Its fixed replies must not be
 described as semantic interpretation or a genuine model response. S03 remains
 the owner of server-side provider conversation.
 
+The interim `/explorer/conversation-preview` design review keeps its own split.
+It imports only `SOLMIND_LOGO_SRC` from the S01R2 owners, plus the shared
+speaker-style module `src/lib/solmind/explorerSpeakerStyle.ts` that S01R2 also
+uses:
+
+- `src/app/explorer/conversation-preview/page.tsx` only composes the client
+  boundary and exports honest metadata;
+- `ExplorerConversationScreenPreview.tsx` owns layout state only (panel,
+  drawer, narrow conversation spaces, Compass view, quote list, speaker-label
+  switch);
+- the other `ExplorerConversationScreen*.tsx` files own presentation, read the
+  fixed wording directly, and receive read-only display props typed in
+  `explorerConversationScreenDisplay.ts`; only
+  `ExplorerConversationScreenPreview.tsx` imports the sample; and
+- `explorerConversationScreen.ts` and `explorerConversationScreenSample.ts`
+  own the "Not yet implemented:" sentences and the tagged sample content.
+
+Setting `SPEAKER_LABEL_STYLE` to `"original"` restores the earlier labels on
+both screens. `/explorer/conversation` is unchanged; the S01R2 files change
+only in speaker labels and icons.
+
+It has no provider, persistence, auth, route handler, browser storage, URL
+state, timer, notification, or real-user effect. At a later cutover the
+existing connected `ExplorerConversation.tsx` stays the only fetch owner.
+
 The retained sign-in preview keeps the same split: `SignInPreview.tsx` owns
 its client boundary, `SignInPreviewParts.tsx` owns presentation, and
 `signInPreview.ts` owns the approved copy and pure screen transitions.
@@ -2497,7 +2522,9 @@ Conversation and Compass entry, authenticated inbox link and collapsed
 fixed-script previews. Each destination retains its own authorization and data
 boundary; the previews remain unconnected. Navigation grants no persistence,
 AI/human Guide/provider or session authority. ExplorerHome retains its
-session/logout lifecycle.
+session/logout lifecycle. The Design previews fold also links the interim
+`/explorer/conversation-preview` design review with its own "Design review
+only" line; the fold's older fixed-script sentence is unchanged.
 
 Four issuance/four redemption slots are per loaded module/process, not
 distributed/per-account. October 21 R04 genuine functional/contention

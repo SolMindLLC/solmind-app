@@ -114,6 +114,36 @@ provider, persistence, authentication, server route, notification, actual
 sharing, deployment, or real-user effect. Genuine provider conversation stays
 in separately gated S03.
 
+The interim `/explorer/conversation-preview` route is a non-functional design
+review of the full conversation screen. `src/app/explorer/conversation-preview/page.tsx`
+stays thin; `src/components/solmind/ExplorerConversationScreenPreview.tsx`
+owns layout state only and is the only importer of the sample; the other
+`ExplorerConversationScreen*.tsx` parts, including
+`ExplorerConversationScreenNavigation.tsx`,
+`ExplorerConversationScreenSpeaker.tsx` and
+`ExplorerConversationScreenFutureActions.tsx`, own presentation and take
+read-only display props typed in
+`src/lib/solmind/explorerConversationScreenDisplay.ts`; and
+`src/lib/solmind/explorerConversationScreen.ts` plus
+`explorerConversationScreenSample.ts` own the "Not yet implemented:" sentences
+and tagged sample content. `src/lib/solmind/explorerSpeakerStyle.ts` owns the
+speaker labels and logo icons shared with `/explorer/compass-comparison`
+(Paul's 2026-10-29 speaker-label trial); setting its `SPEAKER_LABEL_STYLE`
+constant to `"original"` reverts both screens to the earlier gold labels.
+`/explorer/conversation` is unchanged; the S01R2 files change only in speaker
+labels and icons.
+Every functional control is focusable, `aria-disabled`, and described by its
+visible note; only layout-only controls act. Tests:
+`src/lib/solmind/__tests__/explorerConversationScreen.test.ts`,
+`src/lib/solmind/__tests__/explorerSpeakerStyle.test.ts`,
+`src/components/solmind/__tests__/ExplorerConversationScreenPreview.test.tsx`,
+`src/components/solmind/__tests__/ExplorerSpeakerStyleOriginal.test.tsx`,
+`src/components/solmind/__tests__/ExplorerSpeakerStyleLogo.test.tsx`,
+`tests/browser/explorerConversationPreview.pw.ts` and
+`tests/browser/explorerSpeakerStyle.pw.ts`, with shared browser helpers in
+`tests/browser/conversationPreviewHelpers.ts`. It adds no provider,
+persistence, authentication, route handler, storage, or real-user effect.
+
 The retained sign-in preview follows the same split; banked `/login`
 instead composes `src/components/solmind/LoginExperience.tsx` as described
 below. `src/components/solmind/SignInPreview.tsx` owns the preview client
@@ -825,7 +855,7 @@ banking.
 | supabase/migrations/20261016000000_login_challenge_ownership_lookup.sql; supabase/migrations/20261029010000_login_password_failure_attempts.sql; src/lib/solmind/supabase/loginAccountLookupCallers.ts | Non-consuming exact ownership plus narrow service-role password-failure recorder, shared counter and atomic audit; terminal/stale selectors are writeless, not a provider-call cap |
 | src/lib/solmind/passwordRoleSignInBrowserContract.ts, guideSignInBrowserTransport.ts, guideSignInFlowController.ts; src/components/solmind/GuideSignIn.tsx | Guide-only requests/results and private attempt state; no password on send, storage/logging or request-selected authority |
 | src/lib/solmind/auth/guideHomeAccess.ts; src/app/guide/home/page.tsx; src/components/solmind/GuideHome.tsx | Current principal/session/role/binding guard, raw-cookie ambiguity, minimal time projection, finite reminder and shared logout/Guide re-entry |
-| src/components/solmind/ExplorerHomeNavigation.tsx | Presentational Conversation and Compass entry, authenticated inbox link and collapsed fixed-script previews; each feature retains its own authorization; no provider/session authority |
+| src/components/solmind/ExplorerHomeNavigation.tsx | Presentational Conversation and Compass entry, authenticated inbox link, collapsed fixed-script previews and the interim conversation screen design review link; each feature retains its own authorization; no provider/session authority |
 | src/lib/solmind/auth/adminLoginIdentifierNormalizer.ts | Shared approved Admin parser, unused by Guide; consumed by the separate Admin connection; no first-Admin setup |
 
 October 21 R04 genuine functional/contention observations and isolated app/

@@ -212,6 +212,19 @@ provider adapter, route handler, persistence, auth, safety classification, or
 real sharing behavior to this S01R2 surface. Those require a separately gated
 S03 design and implementation.
 
+The interim `/explorer/conversation-preview` design review inherits the same
+prohibitions and is stricter: it has no scripted replies and no working
+conversation, Compass, Waypoint, or sharing behaviour. Every functional control
+stays focusable with `aria-disabled` and a visible "Not yet implemented:" note
+linked by `aria-describedby`; only controls tagged "Layout only: works in this
+preview" act, in component memory. Keep each new file at or under 300 lines;
+from existing code import only `SOLMIND_LOGO_SRC` and `SOLMIND_TERMS`, plus the
+shared `explorerSpeakerStyle.ts`; and add no source-isolation profile. Only
+`ExplorerConversationScreenPreview.tsx` imports the sample; the parts take
+read-only display props typed in `explorerConversationScreenDisplay.ts`.
+`/explorer/conversation` is unchanged; the S01R2 files change only in speaker
+labels and icons, which `SPEAKER_LABEL_STYLE` reverts.
+
 ### Virtual Guide S03B conversation contract
 
 Keep `src/lib/solmind/virtual-guide/virtualGuideConversationContract.ts`

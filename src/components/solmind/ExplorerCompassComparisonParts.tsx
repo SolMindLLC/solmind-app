@@ -77,6 +77,12 @@ import {
   type WaypointDetailState,
   type WorkspaceView,
 } from "@/lib/solmind/explorerCompassComparison";
+import {
+  SPEAKER_LABEL_STYLE,
+  SPEAKER_LOGO_ICON_CLASS,
+  speakerLabelClass,
+  type SpeakerLabelStyle,
+} from "@/lib/solmind/explorerSpeakerStyle";
 import { SOLMIND_TERMS } from "@/lib/solmind/terms";
 
 // ---------------------------------------------------------------------------
@@ -751,7 +757,25 @@ export function VirtualGuideIdentity({
   );
 }
 
-function VirtualGuideAvatar({ large = false }: { large?: boolean }) {
+// Speaker icons follow SPEAKER_LABEL_STYLE in explorerSpeakerStyle.ts: "logo"
+// draws them from the supplied logo; "original" keeps the badges below.
+function VirtualGuideAvatar({
+  large = false,
+  speakerStyle = SPEAKER_LABEL_STYLE,
+}: {
+  large?: boolean;
+  speakerStyle?: SpeakerLabelStyle;
+}) {
+  if (speakerStyle === "logo") {
+    return (
+      <span
+        aria-hidden="true"
+        className={joinClasses(large ? "h-9 w-9" : "h-6 w-6", SPEAKER_LOGO_ICON_CLASS.virtualGuide)}
+        data-speaker-icon="virtualGuide"
+      />
+    );
+  }
+
   return (
     <span
       aria-hidden="true"
@@ -765,7 +789,17 @@ function VirtualGuideAvatar({ large = false }: { large?: boolean }) {
   );
 }
 
-function ExplorerAvatar() {
+function ExplorerAvatar({ speakerStyle = SPEAKER_LABEL_STYLE }: { speakerStyle?: SpeakerLabelStyle }) {
+  if (speakerStyle === "logo") {
+    return (
+      <span
+        aria-hidden="true"
+        className={joinClasses("h-6 w-6", SPEAKER_LOGO_ICON_CLASS.explorer)}
+        data-speaker-icon="explorer"
+      />
+    );
+  }
+
   return (
     <span
       aria-hidden="true"
@@ -1018,6 +1052,7 @@ type ConversationTurnViewProps = {
   onSelectChoice: (choiceId: ConversationChoiceId) => void;
   onAnswer: (turnId: string, answer: VerificationAnswer) => void;
   onReturnToQuotation: () => void;
+  speakerStyle?: SpeakerLabelStyle;
 };
 
 export function ConversationTurnView({
@@ -1030,6 +1065,7 @@ export function ConversationTurnView({
   onSelectChoice,
   onAnswer,
   onReturnToQuotation,
+  speakerStyle = SPEAKER_LABEL_STYLE,
 }: ConversationTurnViewProps) {
   const isGuide = turn.speaker === "virtualGuide";
   const domId = turnElementId(turn.id);
@@ -1050,8 +1086,11 @@ export function ConversationTurnView({
       id={domId}
       tabIndex={-1}
     >
-      <p className="flex items-center gap-2 text-xs font-semibold text-amber-200" id={speakerId}>
-        {isGuide ? <VirtualGuideAvatar /> : <ExplorerAvatar />}
+      <p
+        className={joinClasses("flex items-center gap-2 text-xs font-semibold", speakerLabelClass(speakerStyle, turn.speaker))}
+        id={speakerId}
+      >
+        {isGuide ? <VirtualGuideAvatar speakerStyle={speakerStyle} /> : <ExplorerAvatar speakerStyle={speakerStyle} />}
         {getSpeakerLabel(turn, virtualGuideName)}
       </p>
       {highlight ? (

@@ -2,6 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createExplorerHomeViewBinding, ExplorerHome, ExplorerSessionOutcome } from "../ExplorerHome";
+import { ExplorerHomeNavigation } from "../ExplorerHomeNavigation";
 import { SESSION_WARNING, SIGNED_OUT_PRIVACY, SIGN_OUT_UNCERTAINTY } from "../../../lib/solmind/explorerLoginJourney";
 
 const base = Date.parse("2026-10-16T12:00:00.000Z");
@@ -192,4 +193,26 @@ it("shows local absence without claiming remote sign-out and keeps fixed Explore
   await f.binding.signOut();
   expect(f.fetch.mock.calls.length).toBe(1);
   unsubscribe();
+});
+
+describe("Explorer home design previews", () => {
+  it("H16 links the conversation screen design review with its own honest line", () => {
+    const html = renderToStaticMarkup(createElement(ExplorerHomeNavigation));
+    expect(html.includes('href="/explorer/conversation-preview"')).toBe(true);
+    expect(html.includes("Conversation screen design review")).toBe(true);
+    expect(html.includes("Design review only: sample content and working layout controls; conversation features are not connected.")).toBe(true);
+    expect(html.includes("nothing on this screen works yet")).toBe(false);
+    expect(html.includes("These previews use a fixed local script.")).toBe(true);
+    expect(html.includes('href="/explorer/compass-comparison"') && html.includes('href="/explorer"')).toBe(true);
+  });
+  it("H17 a pending home disables the design review link like the other previews", () => {
+    const html = renderToStaticMarkup(createElement(ExplorerHomeNavigation, { navigationDisabled: true }));
+    expect(html.includes('href="/explorer/conversation-preview"')).toBe(false);
+    expect(html.includes('<span aria-disabled="true" class="block rounded-xl border border-slate-300 bg-white p-4 text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-teal-700 opacity-60">Conversation screen design review</span>')).toBe(true);
+    expect(html.includes("<a ")).toBe(false);
+  });
+  it("H18 the signed-in home renders the design review link", () => {
+    const html = renderToStaticMarkup(createElement(ExplorerHome, { session }));
+    expect(html.includes('href="/explorer/conversation-preview"')).toBe(true);
+  });
 });

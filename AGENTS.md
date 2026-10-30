@@ -111,7 +111,31 @@ no-persistence, no-auth, no-browser-storage, no-notification, and no-real-user
 boundary. Its message replies remain a fixed local script; its conversation,
 Waypoint, quotation, and sharing controls must not imply that a model, human
 Guide, or sharing service is connected. Genuine server-side Virtual Guide
-conversation remains `PRJ01_R-WS09-WI021-S03`.
+conversation remains `PRJ01_R-WS09-WI021-S03`. The shared
+`src/lib/solmind/explorerSpeakerStyle.ts` owns the speaker-label style used by
+both this route and the interim screen (Paul's 2026-10-29 speaker-label trial);
+`SPEAKER_LABEL_STYLE = "original"` restores the earlier labels.
+
+The interim `/explorer/conversation-preview` route is a non-functional design
+review of the full Explorer conversation screen: the S01R2 look, Jade rail
+navigation, and wireframe v6 behaviour shown only as placeholders. Keep its
+route thin. `ExplorerConversationScreenPreview.tsx` is its only client boundary
+and owns layout state only; the other `ExplorerConversationScreen*.tsx` parts
+take no connected data. `explorerConversationScreen.ts` owns the "Not yet
+implemented:" sentences and `explorerConversationScreenSample.ts` the sample
+content tagged "Sample". Only `ExplorerConversationScreenPreview.tsx` imports
+the sample; the parts take read-only display props typed in
+`explorerConversationScreenDisplay.ts`. From existing code the route imports
+only `SOLMIND_LOGO_SRC` and `SOLMIND_TERMS`, plus the shared
+`explorerSpeakerStyle.ts`, and it has no source-isolation profile. It inherits
+every S01R2 no-provider, no-persistence, no-auth, no-browser-storage,
+no-URL-state, no-timer, no-notification, and no-real-user boundary. Unwired
+controls stay focusable with `aria-disabled` and a visible note linked by
+`aria-describedby`; only controls marked "Layout only: works in this preview"
+act. The placeholder sentences are unapproved AI drafts.
+`/explorer/conversation` is unchanged; the S01R2 files change only in speaker
+labels and icons, which `SPEAKER_LABEL_STYLE` reverts. Removing this route
+later is a deletion that needs a named go-ahead.
 
 The first provider-dispatch increment for that later lane is the bounded S03B
 conversation contract under `src/lib/solmind/virtual-guide/`. Keep it
