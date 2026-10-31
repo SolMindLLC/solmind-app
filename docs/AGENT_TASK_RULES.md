@@ -1150,10 +1150,13 @@ in full under a unique `pending` name, then hard-linked to the slot name, which
 fails if the slot exists: each place has one winner across requests, processes
 and restarts, and a slot is never visible half-written. A place is reserved
 before the attempt, stays counted if the outcome is unknown, and is never
-deleted, reset or released; one bound request reserves at most once. Any entry
+deleted, reset or released; one bound request reserves at most once, and a
+later call on it is refused before any further read. Any entry
 named for the day that is not a complete valid slot record (damaged, partial, a
 folder or link, or an unexpected name) holds every run until it is resolved; an
-unfinished `pending` file never counts. If midnight passes during a reservation,
+unfinished `pending` file never counts, and one whose write fails is removed
+where possible.
+If midnight passes during a reservation,
 that place stays counted on the old day and nothing is forwarded against it. The
 folder must already exist; the app never creates it, and a missing or unreadable
 ledger, or a ledger folder that is itself a link, keeps every run held.
@@ -1167,8 +1170,18 @@ names count, so earlier days' files may be archived; the folder itself must be
 left out of any `.validation` cleanup. Deleting today's files or moving the clock
 forward would give fresh places; nothing local prevents that, and the observer
 count is the cross-check. A reached count shows the existing unavailable state
-on the next readiness check; the reply to the last allowed send still reports
-available, so the following Send shows the existing unavailable message. Message
+on the next readiness check, and the reply to the last allowed send already
+reports unavailable. The private controller's optional `sendCapacityAvailable`
+check is made where a Send would otherwise report available after the readiness
+check: on a saved reply, and on an exact replay found by the fallback
+observation, the second read or preparation. Failure paths, and a replay found
+by the first read, still report unavailable, as before. It can only turn
+available into unavailable,
+never the reverse; a check that
+fails or answers anything but true reports unavailable. Only the local factory
+wires it, to the run's own availability (profile expiry and today's count); the
+budget wrapper passes it through unwrapped, and the explicit factory neither
+accepts nor passes it. Message
 text is no longer bound by code: the rule that test messages are invented, never
 a real person's words, rests on the operator. Product limits (the per-Explorer
 allowance, hard stops, notices, Admin alerts and database settings) are a later

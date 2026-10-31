@@ -634,3 +634,59 @@ it("does not claim a confirmed successor from an unrelated well-formed repositor
   expect(waypointRevision).toHaveBeenCalledOnce();expect(f.generate).not.toHaveBeenCalled();expect(f.mutate).not.toHaveBeenCalled();
  }
 });
+describe("Send capacity after a saved Send result", () => {
+  const SAVED_REPLY = "One saved synthetic reply.";
+  function withCapacity(f: ReturnType<typeof fixture>, check: (() => boolean) | undefined) {
+    return check === undefined ? f.dependencies : { ...f.dependencies, sendCapacityAvailable: check };
+  }
+  it("reports unavailable with the saved reply when the last allowed Send used the last place, and available below it", async () => {
+    for (const [room, expected] of [[false, "unavailable"], [true, "available"]] as const) {
+      const f = fixture(); const check = vi.fn(() => { f.order.push("capacity"); return room; });
+      const output = await commandExplorerPrivateConversation({ command: send(), dependencies: withCapacity(f, check) });
+      expect(output.result.ok).toBe(true); expect(output.assistance).toBeNull();
+      expect(output.result.ok && output.result.state.providerState).toBe(expected);
+      expect(output.result.ok && output.result.state.messages.map(message => message.body)).toContain(SAVED_REPLY);
+      expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
+      // Checked once, after the reply is saved.
+      expect(check).toHaveBeenCalledOnce(); expect(f.order.slice(-2)).toEqual(["settle", "capacity"]);
+    }
+  });
+  it("keeps the earlier available result when no check is supplied", async () => {
+    const f = fixture(); const output = await commandExplorerPrivateConversation({ command: send(), dependencies: withCapacity(f, undefined) });
+    expect(output.result.ok && output.result.state.providerState).toBe("available");
+  });
+  it("reports unavailable, and still returns the saved reply, when the check throws or answers anything but true", async () => {
+    for (const check of [() => { throw new Error("synthetic capacity failure"); }, () => 1 as unknown as boolean, () => "true" as unknown as boolean]) {
+      const f = fixture(); const output = await commandExplorerPrivateConversation({ command: send(), dependencies: withCapacity(f, check) });
+      expect(output.result.ok && output.result.state.providerState).toBe("unavailable");
+      expect(output.result.ok && output.result.state.messages.map(message => message.body)).toContain(SAVED_REPLY);
+      expect(f.generate).toHaveBeenCalledOnce();
+    }
+  });
+  it.each(["observe", "builder", "prepare"] as const)("applies the check to an exact %s replay, which never dispatches", async stage => {
+    for (const [check, expected] of [[() => false, "unavailable"], [() => true, "available"], [undefined, "available"]] as const) {
+      const f = fixture(); const replay = { outcome: "exact_replay", conversation_state: state(ID.conversation), policy_state: POLICY };
+      const original = f.read.getMockImplementation()!;
+      if (stage === "observe") f.observe.mockResolvedValue({ outcome: "exact_replay", policy_state: POLICY });
+      if (stage === "prepare") f.prepare.mockResolvedValue(replay);
+      else f.read.mockImplementationOnce(original).mockImplementationOnce(async () => replay);
+      const output = await commandExplorerPrivateConversation({ command: send(), dependencies: withCapacity(f, check) });
+      expect(output.result.ok && output.result.state.providerState).toBe(expected);
+      expect(f.generate).not.toHaveBeenCalled(); expect(f.settle).not.toHaveBeenCalled();
+      expect(f.prepare).toHaveBeenCalledTimes(stage === "prepare" ? 1 : 0);
+    }
+  });
+  it("never turns an unavailable result into available", async () => {
+    // A replay found by the first read and a failed settlement both keep reporting unavailable.
+    const first = fixture(); const firstCheck = vi.fn(() => true);
+    first.read.mockResolvedValue({ outcome: "exact_replay", conversation_state: state(ID.conversation), policy_state: null });
+    const replayed = await commandExplorerPrivateConversation({ command: send(), dependencies: withCapacity(first, firstCheck) });
+    expect(replayed.result.ok && replayed.result.state.providerState).toBe("unavailable");
+    const failedSettle = fixture(); const settleCheck = vi.fn(() => true);
+    failedSettle.settle.mockRejectedValue(new Error("lost acknowledgment"));
+    const uncertain = await commandExplorerPrivateConversation({ command: send(), dependencies: withCapacity(failedSettle, settleCheck) });
+    expect(uncertain.assistance?.persisted).toBe(false);
+    expect(uncertain.result.ok && uncertain.result.state.providerState).toBe("unavailable");
+    expect(firstCheck).not.toHaveBeenCalled(); expect(settleCheck).not.toHaveBeenCalled();
+  });
+});

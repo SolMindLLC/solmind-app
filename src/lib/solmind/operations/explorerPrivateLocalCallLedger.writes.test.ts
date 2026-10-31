@@ -7,7 +7,8 @@ import { explorerPrivateLocalLedgerDay, readExplorerPrivateLocalCallUsage, reser
 
 vi.mock("node:fs", async importOriginal => {
   const actual = await importOriginal<typeof import("node:fs")>();
-  return { ...actual, writeSync: vi.fn(actual.writeSync), fsyncSync: vi.fn(actual.fsyncSync), linkSync: vi.fn(actual.linkSync) };
+  return { ...actual, writeSync: vi.fn(actual.writeSync), fsyncSync: vi.fn(actual.fsyncSync), linkSync: vi.fn(actual.linkSync),
+    unlinkSync: vi.fn(actual.unlinkSync) };
 });
 const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
 
@@ -23,6 +24,7 @@ afterEach(() => {
   vi.mocked(fs.writeSync).mockImplementation(actual.writeSync as typeof fs.writeSync);
   vi.mocked(fs.fsyncSync).mockImplementation(actual.fsyncSync);
   vi.mocked(fs.linkSync).mockImplementation(actual.linkSync);
+  vi.mocked(fs.unlinkSync).mockImplementation(actual.unlinkSync);
 });
 function ledger() {
   const base = actual.mkdtempSync(PREFIX); bases.push(base);
@@ -46,13 +48,32 @@ describe("ledger writes are complete before a place exists", () => {
     ["a failed sync", () => vi.mocked(fs.fsyncSync).mockImplementation(() => { throw new Error("synthetic_sync_failure"); })],
     ["a failed link", () => vi.mocked(fs.linkSync).mockImplementation(() => { throw Object.assign(new Error("synthetic_link_failure"), { code: "EIO" }); })],
   ])("refuses on %s and creates no place, so nothing can be forwarded", (_name, breakIt) => {
-    const root = ledger(); breakIt();
-    expect(() => reserveExplorerPrivateLocalCall(root, 2, RUN)).toThrow(FAILURE);
-    expect(slots(root)).toHaveLength(0);
-    // An unfinished pending file never counts, so the next working attempt still has every place.
+    const root = ledger();
+    // An existing place and another request's unfinished pending file must both survive the cleanup.
+    expect(reserveExplorerPrivateLocalCall(root, 3, RUN).slot).toBe(1);
+    const foreign = `${explorerPrivateLocalLedgerDay(Date.now())}.pending-${"a".repeat(32)}.tmp`;
+    actual.writeFileSync(join(root, foreign), "unfinished");
+    const before = actual.readdirSync(root).sort();
+    breakIt();
+    expect(() => reserveExplorerPrivateLocalCall(root, 3, RUN)).toThrow(FAILURE);
+    // Only this attempt's own pending file was removed.
+    expect(actual.readdirSync(root).sort()).toEqual(before);
     vi.mocked(fs.writeSync).mockImplementation(actual.writeSync as typeof fs.writeSync);
     vi.mocked(fs.fsyncSync).mockImplementation(actual.fsyncSync);
     vi.mocked(fs.linkSync).mockImplementation(actual.linkSync);
+    expect(readExplorerPrivateLocalCallUsage(root, 3)?.reserved).toBe(1);
+    expect(reserveExplorerPrivateLocalCall(root, 3, RUN).slot).toBe(2);
+  });
+  it("keeps refusing safely when the cleanup itself fails: the leftover pending file never counts", () => {
+    const root = ledger();
+    vi.mocked(fs.writeSync).mockImplementation(() => { throw new Error("synthetic_write_failure"); });
+    vi.mocked(fs.unlinkSync).mockImplementation(() => { throw new Error("synthetic_unlink_failure"); });
+    expect(() => reserveExplorerPrivateLocalCall(root, 2, RUN)).toThrow(FAILURE);
+    const names = actual.readdirSync(root);
+    expect(names).toHaveLength(1);
+    expect(names[0]).toMatch(new RegExp(`^${explorerPrivateLocalLedgerDay(Date.now())}\\.pending-[0-9a-f]{32}\\.tmp$`));
+    vi.mocked(fs.writeSync).mockImplementation(actual.writeSync as typeof fs.writeSync);
+    vi.mocked(fs.unlinkSync).mockImplementation(actual.unlinkSync);
     expect(readExplorerPrivateLocalCallUsage(root, 2)?.reserved).toBe(0);
     expect(reserveExplorerPrivateLocalCall(root, 2, RUN).slot).toBe(1);
   });

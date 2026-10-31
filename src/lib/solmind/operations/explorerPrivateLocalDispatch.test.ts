@@ -124,6 +124,25 @@ describe("finite local dispatch authority", () => {
     await expect(f.bound.provider.generate(f.request, new AbortController().signal)).rejects.toThrow();
     expect(f.reserve).toHaveBeenCalledOnce(); expect(f.ledger.used()).toBe(1); expect(f.generate).not.toHaveBeenCalled();
   });
+  it("refuses a later call on a request that already reserved, before any further read", async () => {
+    const f = await prepared(); const first = new AbortController();
+    f.reserve.mockImplementationOnce(() => { const place = f.ledger.take(); first.abort(); return place; });
+    await expect(f.bound.provider.generate(f.request, first.signal)).rejects.toThrow();
+    const reads = f.read.mock.calls.length, authentications = f.authenticate.mock.calls.length;
+    const methodologyReads = f.methodologySource.read.mock.calls.length;
+    await expect(f.bound.provider.generate(f.request, new AbortController().signal)).rejects.toThrow("explorer_private_local_dispatch_unavailable");
+    expect(f.read).toHaveBeenCalledTimes(reads); expect(f.authenticate).toHaveBeenCalledTimes(authentications);
+    expect(f.methodologySource.read).toHaveBeenCalledTimes(methodologyReads); expect(f.credentialReady).toHaveBeenCalledOnce();
+    expect(f.reserve).toHaveBeenCalledOnce(); expect(f.generate).not.toHaveBeenCalled();
+  });
+  it("keeps one reservation per request when a second call overlaps a first that reserved and was cancelled", async () => {
+    // Both calls pass the early check before either reserves; only the one-reservation latch stops the second.
+    const f = await prepared(); const a = new AbortController(), b = new AbortController();
+    f.reserve.mockImplementationOnce(() => { const place = f.ledger.take(); a.abort(); return place; });
+    const outcomes = await Promise.allSettled([f.bound.provider.generate(f.request, a.signal), f.bound.provider.generate(f.request, b.signal)]);
+    expect(outcomes.map(outcome => outcome.status)).toEqual(["rejected", "rejected"]);
+    expect(f.reserve).toHaveBeenCalledOnce(); expect(f.ledger.used()).toBe(1); expect(f.generate).not.toHaveBeenCalled();
+  });
   it("never forwards against a day that ended after the place was reserved", async () => {
     const f = await prepared(); f.reserve.mockImplementationOnce(() => ({ ...f.ledger.take(), day: "2000-01-01" }));
     await expect(f.bound.provider.generate(f.request, f.caller.signal)).rejects.toThrow("explorer_private_local_dispatch_unavailable");

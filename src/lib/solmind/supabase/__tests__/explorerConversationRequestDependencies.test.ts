@@ -18,6 +18,8 @@ vi.mock("../../operations/explorerPrivateLocalRunProfile", () => ({ loadExplorer
   EXPLORER_PRIVATE_LOCAL_CALL_LEDGER_ROOT: "C:\\synthetic-fixed-ledger-root" }));
 import { createExplorerPrivateLocalRequestDependencies, createExplorerPrivateConversationRequestDependencies, createExplorerConversationRequestDependencies, readExplorerConversationCookies } from "../explorerConversationRequestDependencies";
 import { getExplorerPrivateConfigurationCandidate } from "../../virtual-guide/explorerPrivateConfiguration";
+import { parseExplorerSafetyReplyRequest } from "../../virtual-guide/explorerSafetyReplyContract";
+import { createHash } from "node:crypto";
 
 const ACCOUNT = "10000000-0000-4000-8000-000000000001";
 const OTHER_ACCOUNT = "10000000-0000-4000-8000-000000000002";
@@ -91,10 +93,31 @@ describe("explicit private local HTTP composition", () => {
     const run = syntheticRun(() => true); mocks.profile.mockReturnValue(run);
     const credential = vi.fn(() => { throw new Error("must_not_read_credential"); });
     const dependencies = createExplorerPrivateLocalRequestDependencies(null, Object.defineProperty({}, "OPENAI_API_KEY", { get: credential }));
-    // With no prepared turn the reserving provider refuses before any credential, reservation or network use;
-    // the unguarded transport would have read the credential first.
-    await expect(dependencies.provider!.generate({} as never, new AbortController().signal)).rejects.toThrow();
+    // A well-formed request with no prepared turn: the reserving provider refuses with its own error before
+    // any credential, reservation or network use; the unguarded transport would have read the credential first.
+    const authorizedContext = JSON.stringify({ immediateExplorerMessage: { content: "Synthetic message." } });
+    const request = { contractVersion: "explorer-safety-request.v2" as const, invocationId: OTHER_ACCOUNT, explorerId: ACCOUNT,
+      sessionId: OTHER_SESSION, contextSnapshotId: SESSION, authorizedContext,
+      contextFingerprint: createHash("sha256").update(authorizedContext).digest("hex").toUpperCase(), mode: "classification_and_reply" as const,
+      classificationPolicyVersion: "synthetic-model", fallbackPolicyVersion: "synthetic-fallback", instructionVersion: "synthetic-instructions" };
+    expect(parseExplorerSafetyReplyRequest(request)).toEqual(request);
+    await expect(dependencies.provider!.generate(request, new AbortController().signal)).rejects.toThrow("explorer_private_local_dispatch_unavailable");
     expect(credential).not.toHaveBeenCalled(); expect(run.reserve).not.toHaveBeenCalled();
+  });
+  it("wires the run's own availability as the after-Send capacity check, and only in the local factory", () => {
+    let room = true;
+    const run = syntheticRun(() => room); mocks.profile.mockReturnValue(run);
+    const dependencies = createExplorerPrivateLocalRequestDependencies(null, {});
+    expect(dependencies.sendCapacityAvailable).toBe(run.available);
+    expect(dependencies.sendCapacityAvailable!()).toBe(true);
+    room = false; expect(dependencies.sendCapacityAvailable!()).toBe(false);
+    for (const port of Object.values(privateRepository)) expect(port).not.toHaveBeenCalled();
+    expect(run.reserve).not.toHaveBeenCalled();
+    // Held local configuration and the explicit factory carry no capacity check, even if one is passed at run time.
+    mocks.profile.mockReturnValue(null);
+    expect(createExplorerPrivateLocalRequestDependencies(null, {}).sendCapacityAvailable).toBeUndefined();
+    const explicit = createExplorerPrivateConversationRequestDependencies(null, { sendCapacityAvailable: () => false } as never);
+    expect(explicit.sendCapacityAvailable).toBeUndefined();
   });
   it("reports no readiness once today's allowance is used or for a different actor, without reading or reserving", async () => {
     const used = syntheticRun(() => false); mocks.profile.mockReturnValue(used);

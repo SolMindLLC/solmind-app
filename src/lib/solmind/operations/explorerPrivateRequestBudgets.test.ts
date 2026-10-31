@@ -233,6 +233,15 @@ describe("private request port budgets with explicit synthetic dependencies", ()
     expect(provider.generate).not.toHaveBeenCalled(); expect(renderer.render).not.toHaveBeenCalled(); expect(operationalSignal.emit).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it("passes the synchronous send-capacity check through unwrapped, and keeps it absent when not supplied", () => {
+    const f = fixture(); const sendCapacityAvailable = vi.fn(() => false);
+    const wrapped = withExplorerPrivateRequestBudgets({ ...f.dependencies, sendCapacityAvailable });
+    expect(wrapped.sendCapacityAvailable).toBe(sendCapacityAvailable);
+    expect(wrapped.sendCapacityAvailable!()).toBe(false); expect(sendCapacityAvailable).toHaveBeenCalledExactlyOnceWith();
+    expect(withExplorerPrivateRequestBudgets(f.dependencies)).not.toHaveProperty("sendCapacityAvailable");
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });
 
 

@@ -107,6 +107,11 @@ export type ExplorerPrivateConversationDependencies = Readonly<{
       trustedResponseVersion: string; resourcePolicyVersion: string }>> }>;
   operationalSignal?: Readonly<{ verificationReceiptSha256: string;
     emit: (marker: ExplorerPrivateSignalMarker, signal: AbortSignal) => Promise<void> }>;
+  // Optional synchronous check made where a Send would otherwise report the Virtual Guide available
+  // after the readiness check (a saved reply, or a later exact replay): is there room for another
+  // Send now? Anything but true reports it unavailable. It can only turn "available" into
+  // "unavailable", never the reverse; when absent, the earlier "available" result is unchanged.
+  sendCapacityAvailable?: () => boolean;
 }>;
 // Only an explicit AV3 governed builder can satisfy this adapter. It reuses
 // exact assembled context BYTES; it never invokes the old prose-first runtime.
@@ -391,6 +396,12 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
     if (!dependencies.resolveOperationalReadiness) return failed("provider_unavailable");
     const readiness = verifiedReadiness(await dependencies.resolveOperationalReadiness(actor, readRow), dependencies);
     if (!readiness || input.signal?.aborted) return failed("provider_unavailable");
+    // Checked wherever this Send would otherwise report available (a saved reply or a later exact
+    // replay), so the reply to the last allowed Send already reports the Virtual Guide unavailable.
+    const capacity = (): boolean => {
+      if (dependencies.sendCapacityAvailable === undefined) return true;
+      try { return dependencies.sendCapacityAvailable() === true; } catch { return false; }
+    };
     const failureAssistance = Object.freeze({ ...dependencies.renderer!.failureAssistance });
     const render = dependencies.renderer!.render;
     const emitSignal = dependencies.operationalSignal!.emit;
@@ -439,7 +450,7 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
       const observed = await dependencies.repository.observe(observationParameters);
       if (observed.outcome === "exact_replay") {
         const replay = await dependencies.repository.read(actor, { operationId: command.operationId, fingerprint });
-        return replay.outcome === "exact_replay" ? Object.freeze({ result: stateResult(replay, true), assistance: null }) : transient("preparation_unavailable");
+        return replay.outcome === "exact_replay" ? Object.freeze({ result: stateResult(replay, capacity()), assistance: null }) : transient("preparation_unavailable");
       }
       if (observed.outcome !== "ok") return transient("preparation_unavailable");
       policy = parseExplorerPrivatePolicy(observed.policy_state);
@@ -449,7 +460,7 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
       const builderRow = await dependencies.repository.read(actor, { operationId: command.operationId, fingerprint });
       const builderState = stateResult(builderRow, true);
       if (!builderState.ok || builderState.state.conversationId !== ids.conversationId) return transient("preparation_unavailable");
-      if (builderRow.outcome === "exact_replay") return Object.freeze({ result: builderState, assistance: null });
+      if (builderRow.outcome === "exact_replay") return Object.freeze({ result: stateResult(builderRow, capacity()), assistance: null });
       if (builderState.state.pendingTurn || builderState.state.revision !== command.expectedRevision) return transient("preparation_unavailable");
       policy = parseExplorerPrivatePolicy(builderRow.policy_state);
       rememberedPolicy = retainKnownPolicy(rememberedPolicy, policy);
@@ -471,7 +482,7 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
         p_context_serialization: request.authorizedContext, p_context_fingerprint_sha256: request.contextFingerprint, p_request_mode: mode,
         p_trusted_response_version: readiness.configuration.trustedResponses.version, p_resource_policy_version: readiness.resourcePolicyVersion,
         p_expected_safety_version: policy.safetyVersion, p_model_name: readiness.modelName });
-      if (prepared.outcome === "exact_replay") return Object.freeze({ result: stateResult(prepared, true), assistance: null });
+      if (prepared.outcome === "exact_replay") return Object.freeze({ result: stateResult(prepared, capacity()), assistance: null });
       if (prepared.outcome !== "ok" || prepared.dispatch_permitted !== true) return transient("preparation_unavailable");
       const currentPolicy = parseExplorerPrivatePolicy(prepared.policy_state);
       const preparedState = stateResult(prepared, true);
@@ -524,7 +535,7 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
       policy = parseExplorerPrivatePolicy(settled.policy_state);
       rememberedPolicy = retainKnownPolicy(rememberedPolicy, policy);
       if (!deliveryInterested || input.signal?.aborted) return failed();
-      const completed = stateResult(settled, true);
+      const completed = stateResult(settled, capacity());
       if (settled.saved_reply === true && completed.ok) return Object.freeze({ result: completed, assistance: null });
       return transient(renderFailed ? "trusted_render_unavailable" : "preparation_unavailable");
     } catch { return transient("preparation_unavailable"); }

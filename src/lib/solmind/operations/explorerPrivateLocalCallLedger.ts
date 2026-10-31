@@ -133,8 +133,10 @@ export function reserveExplorerPrivateLocalCall(root: string, limit: number, run
     if (reserved >= limit) fail();
     for (let slot = reserved + 1; slot <= limit; slot += 1) {
       const pending = join(root, `${day}.pending-${randomBytes(16).toString("hex")}.tmp`);
-      writeComplete(pending, Buffer.from(JSON.stringify({ version: SLOT_VERSION, day, slot,
-        reservedAt: new Date().toISOString(), runId }) + "\n", "utf8"));
+      try {
+        writeComplete(pending, Buffer.from(JSON.stringify({ version: SLOT_VERSION, day, slot,
+          reservedAt: new Date().toISOString(), runId }) + "\n", "utf8"));
+      } catch { removeQuietly(pending); fail(); }
       let linked = false;
       try {
         linkSync(pending, join(root, slotName(day, slot)));

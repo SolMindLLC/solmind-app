@@ -57,7 +57,9 @@ export function createExplorerConversationRequestDependencies(rawCookieHeader: s
   return Object.freeze({ authenticate, repository: createExplorerConversationRepository(client) });
 }
 
-export type ExplorerPrivateRequestCapabilities = Omit<ExplorerPrivateConversationDependencies, "authenticate" | "repository">;
+// The send-capacity check belongs to the local daily test allowance only, so the explicit factory
+// below neither accepts nor passes it.
+export type ExplorerPrivateRequestCapabilities = Omit<ExplorerPrivateConversationDependencies, "authenticate" | "repository" | "sendCapacityAvailable">;
 export function createExplorerPrivateConversationRequestDependencies(
   rawCookieHeader: string | null,
   capabilities?: ExplorerPrivateRequestCapabilities,
@@ -119,6 +121,9 @@ export function createExplorerPrivateLocalRequestDependencies(
       methodologySource, buildContext: governed.buildContext, credentialReady, generate });
     return withExplorerPrivateRequestBudgets({ authenticate, repository,
       ...governed, ...bound,
+      // After a Send, the same profile-expiry and daily-count check as readiness, so the reply
+      // to the last allowed Send already reports the Virtual Guide unavailable.
+      sendCapacityAvailable: run.available,
       resolveOperationalReadiness: async (actor, row) => {
         if (!run.available() || actor.accountId !== profile.actorAccountId) return null;
         const ready = await governed.resolveOperationalReadiness(actor, row);

@@ -56,5 +56,7 @@ export function withExplorerPrivateRequestBudgets(dependencies: ExplorerPrivateC
     ...(dependencies.provider === undefined ? {} : { provider: dependencies.provider }),
     ...(dependencies.renderer === undefined ? {} : { renderer: dependencies.renderer }),
     ...(dependencies.operationalSignal === undefined ? {} : { operationalSignal: dependencies.operationalSignal }),
+    // Synchronous and returns no Promise, so it passes through unwrapped.
+    ...(dependencies.sendCapacityAvailable === undefined ? {} : { sendCapacityAvailable: dependencies.sendCapacityAvailable }),
   });
 }

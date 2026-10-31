@@ -8,7 +8,8 @@ import { createPrivateGovernedExplorerConversationContextBuilder } from "./explo
 import { parseEffectiveMethodologyScope, parseEffectiveMethodologySelection,
   type EffectiveMethodologyScope, type EffectiveMethodologySource } from "./effectiveMethodologyContext";
 
-type Capabilities = Required<Omit<ExplorerPrivateConversationDependencies, "authenticate" | "repository">>;
+// The send-capacity check is the local daily test allowance's, not a governed capability.
+type Capabilities = Required<Omit<ExplorerPrivateConversationDependencies, "authenticate" | "repository" | "sendCapacityAvailable">>;
 const FAILURE = "explorer_private_governed_capabilities_unavailable";
 const SHA = /^[0-9A-F]{64}$/;
 /**

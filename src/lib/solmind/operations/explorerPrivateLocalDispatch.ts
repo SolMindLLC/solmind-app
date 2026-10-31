@@ -46,7 +46,8 @@ export function withExplorerPrivateLocalDispatch(input: Readonly<{
         let sessionExpiresAt = Number.POSITIVE_INFINITY;
         const alive = () => !attempted && !signal.aborted && !frame?.args.signal?.aborted &&
           Date.now() < Date.parse(profile.expiresAt) && Date.now() < sessionExpiresAt;
-        if (!frame || !alive() || JSON.stringify(request) !== JSON.stringify(frame.result.request)) fail();
+        // A request that already reserved its one place is refused before any further reads.
+        if (!frame || reserved || !alive() || JSON.stringify(request) !== JSON.stringify(frame.result.request)) fail();
         const actor = await input.authenticate();
         if (!alive() || !actor || actor.accountId !== frame.args.actor.accountId ||
           actor.applicationSessionId !== frame.args.actor.applicationSessionId) fail();
