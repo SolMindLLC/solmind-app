@@ -7,30 +7,45 @@ import { getExplorerPrivateConfigurationCandidate } from "../virtual-guide/explo
 import { bindMethodologySafetyScreenSubject } from "../virtual-guide/methodologySafetyScreenContract";
 import type { ExplorerPrivateConversationDependencies } from "../virtual-guide/explorerPrivateConversationComposition";
 import type { ExplorerPrivateLocalRun } from "./explorerPrivateLocalRunProfile";
+import { explorerPrivateLocalLedgerDay } from "./explorerPrivateLocalCallLedger";
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const SHA = "A".repeat(64), AV3 = "AV3:" + SHA, MV1 = "MV1:" + SHA;
 type Build = NonNullable<ExplorerPrivateConversationDependencies["buildContext"]>;
-function fixture() {
+// A synthetic stand-in for the shared daily ledger; several bound requests may share one.
+function fakeLedger(limit: number) {
+  let reserved = 0;
+  const day = () => explorerPrivateLocalLedgerDay(Date.now());
+  const take = () => {
+    if (reserved >= limit) throw new Error("synthetic_allowance_used");
+    reserved += 1; return { day: day(), slot: reserved, limit };
+  };
+  const reserve = vi.fn(take);
+  return { reserve, take, used: () => reserved, available: () => reserved < limit,
+    usage: () => ({ day: day(), reserved, limit }), limit };
+}
+function fixture(options: { body?: string; ledger?: ReturnType<typeof fakeLedger>; restricted?: boolean } = {}) {
   const actor = { accountId: uuid(1), applicationSessionId: uuid(2) };
-  const command = { kind: "send" as const, operationId: uuid(3), expectedRevision: 0, body: "A simple synthetic reflection." };
+  const command = { kind: "send" as const, operationId: uuid(3), expectedRevision: 0, body: options.body ?? "A simple synthetic reflection." };
   const ids = deriveExplorerPrivateTurnIds(actor, uuid(4), command.operationId);
   const configuration = getExplorerPrivateConfigurationCandidate()!;
   const content = "Synthetic methodology for a bounded unit fixture.";
   const subject = bindMethodologySafetyScreenSubject({ methodologyContextPackVersionId: uuid(8), content });
-  const profile = { version: "explorer-private-local-run.v1" as const, runId: uuid(9),
+  const profile = { version: "explorer-private-local-run.v2" as const, runId: uuid(9),
     expiresAt: new Date(Date.now() + 60_000).toISOString(), appOrigin: "http://127.0.0.1:4186", supabaseOrigin: "http://127.0.0.1:55431",
     actorAccountId: actor.accountId, explorerId: uuid(5), guideId: uuid(6), packId: uuid(7), methodologyVersionId: uuid(8),
     methodologyContentSha256: subject.subjectSha256, methodologyAuthorizationVersion: MV1,
-    explorerMessageSha256: createHash("sha256").update(command.body).digest("hex").toUpperCase(),
     modelPolicyVersion: "synthetic-model", resourcePolicyVersion: "synthetic-resource",
     receipts: Object.fromEntries(["policy", "source", "resources", "renderer", "signal", "provider", "target"].map(key => [key, { file: key + ".json", sha256: SHA }])) as ExplorerPrivateLocalRun["profile"]["receipts"] };
-  let claimed = false;
-  const claim = vi.fn(() => { if (claimed) throw new Error("synthetic_already_claimed"); claimed = true; });
-  const run: ExplorerPrivateLocalRun = { profile, directory: "synthetic-unused-directory", modelName: "gpt-5.6-luna", adultResources: "Synthetic resource.",
+  const ledger = options.ledger ?? fakeLedger(5);
+  const reserve = ledger.reserve;
+  const run: ExplorerPrivateLocalRun = { profile, directory: "synthetic-unused-directory", modelName: "gpt-5.6-luna",
+    dailyConversationCallLimit: ledger.limit, adultResources: "Synthetic resource.",
     ageAppropriateResources: "Synthetic resource.", failureAssistance: { support: "Synthetic.", adultPolicy: "Synthetic.",
-      supportAndAdultPolicy: "Synthetic.", temporarilyUnavailable: "Synthetic." }, available: () => !claimed, claim };
-  const policy = { contractVersion: "explorer-conversation-safety.v1", known: true, version: 1, restrictedLevel: null, adultReflectionStopped: false };
+      supportAndAdultPolicy: "Synthetic.", temporarilyUnavailable: "Synthetic." },
+    available: ledger.available, usage: ledger.usage, reserve };
+  const policy = { contractVersion: "explorer-conversation-safety.v1", known: true, version: 1,
+    restrictedLevel: options.restricted ? 4 : null, adultReflectionStopped: false };
   const initial = { version: "explorer-conversation.v1" as const, conversationId: ids.conversationId,
     revision: 0, pendingTurn: false, providerState: "available" as const, messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] };
   const authority = { accountId: actor.accountId, applicationSessionId: actor.applicationSessionId, explorerId: profile.explorerId,
@@ -41,7 +56,8 @@ function fixture() {
   const serialized = JSON.stringify({ immediateExplorerMessage: { content: command.body } });
   const request = { contractVersion: "explorer-safety-request.v2" as const, invocationId: ids.invocationId, explorerId: profile.explorerId,
     sessionId: ids.conversationId, contextSnapshotId: ids.snapshotId, authorizedContext: serialized,
-    contextFingerprint: createHash("sha256").update(serialized).digest("hex").toUpperCase(), mode: "classification_and_reply" as const,
+    contextFingerprint: createHash("sha256").update(serialized).digest("hex").toUpperCase(),
+    mode: options.restricted ? "classification_only" as const : "classification_and_reply" as const,
     classificationPolicyVersion: profile.modelPolicyVersion, fallbackPolicyVersion: "synthetic-fallback", instructionVersion: "synthetic-instructions" };
   const evidence = { p_authorization_version: AV3, p_context_source_ids: [ids.messageId], p_intake_response_set_id: uuid(10),
     p_prompt_version: "synthetic-prompt", p_policy_version: "synthetic-policy", p_behavior_version: "synthetic-role",
@@ -62,23 +78,75 @@ function fixture() {
   const generate = vi.fn(async () => "synthetic-model-result");
   const credentialReady = vi.fn(() => true);
   const bound = withExplorerPrivateLocalDispatch({ run, authenticate, repository, methodologySource, buildContext, credentialReady, generate });
-  return { actor, args, request, row, selection, caller, profile, claim, authenticate, read, methodologySource, credentialReady, generate, bound };
+  return { actor, args, request, row, selection, caller, profile, reserve, ledger, authenticate, read, methodologySource, credentialReady, generate, bound };
 }
-async function prepared() { const f = fixture(); await f.bound.buildContext(f.args); return f; }
+async function prepared(options?: Parameters<typeof fixture>[0]) { const f = fixture(options); await f.bound.buildContext(f.args); return f; }
 describe("finite local dispatch authority", () => {
   it("forwards once after actual preflight ports; a duplicate attempt never reaches transport", async () => {
     const f = await prepared(); expect(await f.bound.provider.generate(f.request, f.caller.signal)).toBe("synthetic-model-result");
     await expect(f.bound.provider.generate(f.request, f.caller.signal)).rejects.toThrow();
-    expect(f.read).toHaveBeenCalledTimes(2); expect(f.claim).toHaveBeenCalledTimes(1); expect(f.generate).toHaveBeenCalledTimes(1);
+    expect(f.read).toHaveBeenCalledTimes(2); expect(f.reserve).toHaveBeenCalledTimes(1); expect(f.generate).toHaveBeenCalledTimes(1);
   });
-  it("refuses a missing or malformed key after the final authenticated read without claiming or generating", async () => {
+  it("forwards a different invented message: the text is no longer pinned to one approved body", async () => {
+    const f = await prepared({ body: "Another made-up test message about planning a week." });
+    expect(await f.bound.provider.generate(f.request, f.caller.signal)).toBe("synthetic-model-result");
+    expect(f.reserve).toHaveBeenCalledTimes(1);
+  });
+  it("refuses a missing or malformed key after the final authenticated read without reserving or generating", async () => {
     const f = await prepared(); f.credentialReady.mockImplementation(() => {
       expect(f.read).toHaveBeenCalledTimes(2);
       return false;
     });
     await expect(f.bound.provider.generate(f.request, f.caller.signal)).rejects.toThrow("explorer_private_local_dispatch_unavailable");
     expect(f.credentialReady).toHaveBeenCalledOnce();
-    expect(f.claim).not.toHaveBeenCalled(); expect(f.generate).not.toHaveBeenCalled();
+    expect(f.reserve).not.toHaveBeenCalled(); expect(f.generate).not.toHaveBeenCalled();
+  });
+  it("refuses with zero transport once today's allowance is used, after every other check", async () => {
+    const f = await prepared({ ledger: fakeLedger(0) });
+    await expect(f.bound.provider.generate(f.request, f.caller.signal)).rejects.toThrow();
+    expect(f.read).toHaveBeenCalledTimes(2); expect(f.credentialReady).toHaveBeenCalledOnce();
+    expect(f.reserve).toHaveBeenCalledOnce(); expect(f.generate).not.toHaveBeenCalled();
+  });
+  it("keeps a reserved place counted when cancellation lands after reserving, and never forwards", async () => {
+    const ledger = fakeLedger(1);
+    const f = await prepared({ ledger }); f.reserve.mockImplementationOnce(() => { const place = ledger.take(); f.caller.abort(); return place; });
+    await expect(f.bound.provider.generate(f.request, f.caller.signal)).rejects.toThrow();
+    expect(ledger.used()).toBe(1); expect(f.reserve).toHaveBeenCalledOnce(); expect(f.generate).not.toHaveBeenCalled();
+    // The place is gone for everyone: an independently bound request sees no capacity left.
+    const g = await prepared({ ledger });
+    await expect(g.bound.provider.generate(g.request, g.caller.signal)).rejects.toThrow("synthetic_allowance_used");
+    expect(g.generate).not.toHaveBeenCalled();
+  });
+  it("reserves at most once per bound request, even if a later call arrives with a fresh signal", async () => {
+    const f = await prepared(); const first = new AbortController();
+    f.reserve.mockImplementationOnce(() => { const place = f.ledger.take(); first.abort(); return place; });
+    await expect(f.bound.provider.generate(f.request, first.signal)).rejects.toThrow();
+    await expect(f.bound.provider.generate(f.request, new AbortController().signal)).rejects.toThrow();
+    expect(f.reserve).toHaveBeenCalledOnce(); expect(f.ledger.used()).toBe(1); expect(f.generate).not.toHaveBeenCalled();
+  });
+  it("never forwards against a day that ended after the place was reserved", async () => {
+    const f = await prepared(); f.reserve.mockImplementationOnce(() => ({ ...f.ledger.take(), day: "2000-01-01" }));
+    await expect(f.bound.provider.generate(f.request, f.caller.signal)).rejects.toThrow("explorer_private_local_dispatch_unavailable");
+    expect(f.ledger.used()).toBe(1); expect(f.generate).not.toHaveBeenCalled();
+  });
+  it("does not invoke the transport again after a failed or unknown provider outcome", async () => {
+    const f = await prepared(); f.generate.mockRejectedValueOnce(new Error("synthetic_unknown_outcome"));
+    await expect(f.bound.provider.generate(f.request, f.caller.signal)).rejects.toThrow("synthetic_unknown_outcome");
+    await expect(f.bound.provider.generate(f.request, f.caller.signal)).rejects.toThrow("explorer_private_local_dispatch_unavailable");
+    expect(f.generate).toHaveBeenCalledOnce(); expect(f.reserve).toHaveBeenCalledOnce(); expect(f.ledger.used()).toBe(1);
+  });
+  it("counts a safety-only (classification-only) send against the same allowance", async () => {
+    const f = await prepared({ restricted: true }); expect(f.request.mode).toBe("classification_only");
+    expect(await f.bound.provider.generate(f.request, f.caller.signal)).toBe("synthetic-model-result");
+    expect(f.reserve).toHaveBeenCalledOnce(); expect(f.ledger.used()).toBe(1);
+  });
+  it("lets two separately bound requests sharing a one-place ledger forward exactly once", async () => {
+    const ledger = fakeLedger(1);
+    const first = await prepared({ ledger }), second = await prepared({ ledger });
+    const outcomes = await Promise.allSettled([first.bound.provider.generate(first.request, first.caller.signal),
+      second.bound.provider.generate(second.request, second.caller.signal)]);
+    expect(outcomes.filter(x => x.status === "fulfilled")).toHaveLength(1);
+    expect(ledger.used()).toBe(1); expect(first.generate.mock.calls.length + second.generate.mock.calls.length).toBe(1);
   });
   it.each(["actor", "authority", "policy", "pending", "message", "methodology", "last-read"])("refuses %s drift with zero transport", async kind => {
     const f = await prepared();
@@ -90,13 +158,14 @@ describe("finite local dispatch authority", () => {
     if (kind === "methodology") f.methodologySource.read.mockResolvedValue({ ...f.selection, methodologyAuthorizationVersion: "MV1:" + "B".repeat(64) });
     if (kind === "last-read") f.read.mockResolvedValueOnce(f.row).mockResolvedValueOnce({ ...f.row, policy_state: { ...f.row.policy_state, version: 2 } });
     await expect(f.bound.provider.generate(f.request, f.caller.signal)).rejects.toThrow();
-    expect(f.claim).not.toHaveBeenCalled(); expect(f.generate).not.toHaveBeenCalled();
+    expect(f.reserve).not.toHaveBeenCalled(); expect(f.generate).not.toHaveBeenCalled();
   });
   it("refuses cancellation during awaited methodology and expiry before transport", async () => {
     const f = await prepared(); f.methodologySource.read.mockImplementation(async () => { f.caller.abort(); return f.selection; });
     await expect(f.bound.provider.generate(f.request, f.caller.signal)).rejects.toThrow(); expect(f.generate).not.toHaveBeenCalled();
+    expect(f.reserve).not.toHaveBeenCalled();
     const g = await prepared(); g.read.mockResolvedValue({ ...g.row, authority_context: { ...g.row.authority_context, applicationSessionExpiresAt: "2000-01-01T00:00:00.000Z" } });
-    await expect(g.bound.provider.generate(g.request, g.caller.signal)).rejects.toThrow(); expect(g.claim).not.toHaveBeenCalled();
+    await expect(g.bound.provider.generate(g.request, g.caller.signal)).rejects.toThrow(); expect(g.reserve).not.toHaveBeenCalled();
   });
   it("does not accept a caller-swapped prepared identity or run two concurrent transports", async () => {
     const f = await prepared();

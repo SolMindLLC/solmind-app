@@ -1,5 +1,4 @@
 import "server-only";
-import { createHash } from "node:crypto";
 import { parseExplorerConversationResult } from "../explorerConversationContract";
 import { parseExplorerPrivatePolicy } from "../virtual-guide/explorerPrivateConversationComposition";
 import { parseEffectiveMethodologySelection } from "../virtual-guide/effectiveMethodologyContext";
@@ -7,6 +6,7 @@ import { parseExplorerSafetyReplyRequest } from "../virtual-guide/explorerSafety
 import type { ExplorerPrivateConversationDependencies } from "../virtual-guide/explorerPrivateConversationComposition";
 import type { EffectiveMethodologySource } from "../virtual-guide/effectiveMethodologyContext";
 import type { ExplorerPrivateLocalRun } from "./explorerPrivateLocalRunProfile";
+import { explorerPrivateLocalLedgerDay } from "./explorerPrivateLocalCallLedger";
 
 type Dependencies = ExplorerPrivateConversationDependencies;
 type Build = NonNullable<Dependencies["buildContext"]>;
@@ -21,6 +21,8 @@ export function withExplorerPrivateLocalDispatch(input: Readonly<{
 }>): Readonly<{ buildContext: Build; provider: NonNullable<Dependencies["provider"]> }> {
   let captured: Readonly<{ args: Parameters<Build>[0]; result: Awaited<ReturnType<Build>> }> | null = null;
   let attempted = false;
+  // One reservation at most per bound request, whatever happens after it.
+  let reserved = false;
   const { profile } = input.run;
   const expectedScope = Object.freeze({ type: "guide" as const, id: profile.guideId });
   return Object.freeze({
@@ -28,8 +30,9 @@ export function withExplorerPrivateLocalDispatch(input: Readonly<{
       if (captured || args.actor.accountId !== profile.actorAccountId || args.signal?.aborted ||
         args.readiness.modelName !== input.run.modelName) fail();
       const result = await input.buildContext(args);
-      if (args.signal?.aborted || result.request.explorerId !== profile.explorerId ||
-        createHash("sha256").update(args.command.body, "utf8").digest("hex").toUpperCase() !== profile.explorerMessageSha256) fail();
+      // Message text is no longer pinned to one approved body: each send is
+      // counted against the shared daily test allowance instead.
+      if (args.signal?.aborted || result.request.explorerId !== profile.explorerId) fail();
       // Compare the contract parser's copied representation on both sides;
       // property insertion order is not prepared-turn identity.
       const copied = Object.freeze({ request: parseExplorerSafetyReplyRequest(result.request), evidence: result.evidence });
@@ -77,14 +80,19 @@ export function withExplorerPrivateLocalDispatch(input: Readonly<{
           JSON.stringify(finalRow.authority_context) !== JSON.stringify(row.authority_context) ||
           JSON.stringify(finalRow.policy_state) !== JSON.stringify(row.policy_state) ||
           JSON.stringify(finalRow.conversation_state) !== JSON.stringify(row.conversation_state)) fail();
-        // Check the key's format before consuming the one-shot claim.
+        // Check the key's format before reserving a place in the daily ledger.
         if (!input.credentialReady()) fail();
-        // Unknown transport outcomes after the claim never grant retry.
-        input.run.claim();
+        // The place stays counted whatever happens next; an unknown transport
+        // outcome never grants a retry or a released place.
+        if (reserved) fail();
+        reserved = true;
+        const reservation = input.run.reserve();
         if (!alive()) fail();
         attempted = true;
         const remaining = Math.floor(Math.min(sessionExpiresAt, Date.parse(profile.expiresAt)) - Date.now());
         if (remaining <= 0) fail();
+        // Never forward against a day that has already ended.
+        if (explorerPrivateLocalLedgerDay(Date.now()) !== reservation.day) fail();
         const expiry = AbortSignal.timeout(Math.min(remaining, 2_147_483_647));
         return input.generate(request, AbortSignal.any([signal, expiry]));
       },

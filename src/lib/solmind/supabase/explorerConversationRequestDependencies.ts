@@ -12,7 +12,7 @@ import { createExplorerPrivateConversationRepository } from "./explorerPrivateCo
 import type { ExplorerConversationDependencies } from "../virtual-guide/explorerConversationComposition";
 import type { ExplorerPrivateConversationDependencies } from "../virtual-guide/explorerPrivateConversationComposition";
 import { withExplorerPrivateRequestBudgets } from "../operations/explorerPrivateRequestBudgets";
-import { loadExplorerPrivateLocalRun } from "../operations/explorerPrivateLocalRunProfile";
+import { EXPLORER_PRIVATE_LOCAL_CALL_LEDGER_ROOT, loadExplorerPrivateLocalRun } from "../operations/explorerPrivateLocalRunProfile";
 import { withExplorerPrivateLocalDispatch } from "../operations/explorerPrivateLocalDispatch";
 import { createExplorerPrivateReviewedRenderer } from "../operations/explorerPrivateReviewedRenderer";
 import { createExplorerPrivateFileSignal } from "../operations/explorerPrivateOperationalSignal";
@@ -85,7 +85,7 @@ export function createExplorerPrivateLocalRequestDependencies(
   const { authenticate, client } = createRequestAuthentication(rawCookieHeader);
   const repository = createExplorerPrivateConversationRepository(client);
   const base = withExplorerPrivateRequestBudgets({ authenticate, repository });
-  const run = loadExplorerPrivateLocalRun(environment);
+  const run = loadExplorerPrivateLocalRun(environment, EXPLORER_PRIVATE_LOCAL_CALL_LEDGER_ROOT);
   if (!run) return base;
   try {
     const { profile } = run;
@@ -104,7 +104,7 @@ export function createExplorerPrivateLocalRequestDependencies(
         !/[\s\u0000-\u001f\u007f-\u009f]/u.test(key);
     };
     const generate: NonNullable<ExplorerPrivateConversationDependencies["provider"]>["generate"] = async (request, signal) => {
-      // Called only through the authority preflight and durable one-call claim.
+      // Called only through the authority preflight and a reserved daily-ledger place.
       // This exact credential source needs a later explicit provider grant.
       const apiKey = environment.OPENAI_API_KEY;
       if (!apiKey) throw new Error("explorer_private_local_dispatch_unavailable");

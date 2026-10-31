@@ -14,7 +14,8 @@ vi.mock("../supabaseAuthQueryClient", () => ({ createSupabaseAuthQueryClient: mo
 vi.mock("../serverAuthSourceAdapter", () => ({ createSupabaseAuthSource: mocks.source }));
 vi.mock("../explorerConversationRepository", () => ({ createExplorerConversationRepository: mocks.repository }));
 vi.mock("../explorerPrivateConversationRepository", () => ({ createExplorerPrivateConversationRepository: mocks.privateRepository }));
-vi.mock("../../operations/explorerPrivateLocalRunProfile", () => ({ loadExplorerPrivateLocalRun: mocks.profile }));
+vi.mock("../../operations/explorerPrivateLocalRunProfile", () => ({ loadExplorerPrivateLocalRun: mocks.profile,
+  EXPLORER_PRIVATE_LOCAL_CALL_LEDGER_ROOT: "C:\\synthetic-fixed-ledger-root" }));
 import { createExplorerPrivateLocalRequestDependencies, createExplorerPrivateConversationRequestDependencies, createExplorerConversationRequestDependencies, readExplorerConversationCookies } from "../explorerConversationRequestDependencies";
 import { getExplorerPrivateConfigurationCandidate } from "../../virtual-guide/explorerPrivateConfiguration";
 
@@ -59,23 +60,52 @@ describe("explicit private local HTTP composition", () => {
     const dependencies = createExplorerPrivateLocalRequestDependencies("solmind-session=synthetic", environment);
     expect(await dependencies.authenticate()).toEqual({ accountId: ACCOUNT, applicationSessionId: SESSION });
     expect(dependencies.provider).toBeUndefined(); expect(credential).not.toHaveBeenCalled();
+    // The shared ledger location is the fixed module constant, never an environment or profile value.
+    // Identity checks only: a deep comparison would read the guarded credential property.
+    expect(mocks.profile).toHaveBeenCalledOnce();
+    expect(mocks.profile.mock.calls[0][0]).toBe(environment);
+    expect(mocks.profile.mock.calls[0][1]).toBe("C:\\synthetic-fixed-ledger-root");
   });
-  it("constructs all real composition owners from synthetic trusted data without calling any port or credential", () => {
+  function syntheticRun(available: () => boolean) {
     const configuration = getExplorerPrivateConfigurationCandidate()!;
     const sha = "A".repeat(64);
     const receipts = Object.fromEntries(["policy", "source", "resources", "renderer", "signal", "provider", "target"].map(key => [key, { file: key + ".json", sha256: sha }]));
-    mocks.profile.mockReturnValue({ directory: process.cwd(), modelName: "gpt-5.6-luna", available: () => true, claim: vi.fn(),
+    return { directory: process.cwd(), modelName: "gpt-5.6-luna", dailyConversationCallLimit: 3, available,
+      usage: vi.fn(() => null), reserve: vi.fn(),
       adultResources: "Synthetic adult resource.", ageAppropriateResources: "Synthetic general resource.",
       failureAssistance: { support: "Synthetic support.", adultPolicy: "Synthetic boundary.", supportAndAdultPolicy: "Synthetic combined.", temporarilyUnavailable: "Synthetic uncertainty." },
       profile: { actorAccountId: ACCOUNT, explorerId: OTHER_ACCOUNT, guideId: OTHER_SESSION, packId: SESSION,
         methodologyVersionId: OTHER_ACCOUNT, methodologyContentSha256: configuration.methodologySubjectSha256,
         methodologyAuthorizationVersion: "MV1:" + sha, expiresAt: new Date(Date.now() + 60_000).toISOString(),
-        modelPolicyVersion: "synthetic-model", resourcePolicyVersion: "synthetic-resource", receipts } });
+        modelPolicyVersion: "synthetic-model", resourcePolicyVersion: "synthetic-resource", receipts } };
+  }
+  it("constructs all real composition owners from synthetic trusted data without calling any port or credential", () => {
+    const run = syntheticRun(() => true); mocks.profile.mockReturnValue(run);
     const credential = vi.fn(() => { throw new Error("must_not_read_credential"); });
     const dependencies = createExplorerPrivateLocalRequestDependencies(null, Object.defineProperty({}, "OPENAI_API_KEY", { get: credential }));
     for (const name of ["provider", "buildContext", "renderer", "operationalSignal", "resolveOperationalReadiness"] as const) expect(dependencies[name]).toBeDefined();
     for (const port of Object.values(privateRepository)) expect(port).not.toHaveBeenCalled();
-    expect(credential).not.toHaveBeenCalled();
+    expect(credential).not.toHaveBeenCalled(); expect(run.reserve).not.toHaveBeenCalled();
+  });
+  it("composes the reserving dispatch provider, never the unguarded transport handed to governed capabilities", async () => {
+    const run = syntheticRun(() => true); mocks.profile.mockReturnValue(run);
+    const credential = vi.fn(() => { throw new Error("must_not_read_credential"); });
+    const dependencies = createExplorerPrivateLocalRequestDependencies(null, Object.defineProperty({}, "OPENAI_API_KEY", { get: credential }));
+    // With no prepared turn the reserving provider refuses before any credential, reservation or network use;
+    // the unguarded transport would have read the credential first.
+    await expect(dependencies.provider!.generate({} as never, new AbortController().signal)).rejects.toThrow();
+    expect(credential).not.toHaveBeenCalled(); expect(run.reserve).not.toHaveBeenCalled();
+  });
+  it("reports no readiness once today's allowance is used or for a different actor, without reading or reserving", async () => {
+    const used = syntheticRun(() => false); mocks.profile.mockReturnValue(used);
+    const held = createExplorerPrivateLocalRequestDependencies(null, {});
+    const actor = { accountId: ACCOUNT, applicationSessionId: SESSION };
+    expect(await held.resolveOperationalReadiness!(actor, { outcome: "ok" } as never)).toBeNull();
+    const open = syntheticRun(() => true); mocks.profile.mockReturnValue(open);
+    const other = createExplorerPrivateLocalRequestDependencies(null, {});
+    expect(await other.resolveOperationalReadiness!({ ...actor, accountId: OTHER_ACCOUNT }, { outcome: "ok" } as never)).toBeNull();
+    for (const port of Object.values(privateRepository)) expect(port).not.toHaveBeenCalled();
+    expect(used.reserve).not.toHaveBeenCalled(); expect(open.reserve).not.toHaveBeenCalled();
   });
 });
 afterEach(() => { expect(globalThis.fetch).not.toHaveBeenCalled(); vi.restoreAllMocks(); });

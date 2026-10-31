@@ -411,8 +411,8 @@ Older default/private-factory statements below refer to that explicit factory;
 they do not describe the new local HTTP composition.
 
 `src/lib/solmind/operations/explorerPrivateLocalRunProfile.ts` owns strict pinned
-JSON/receipt loading and the persistent exclusive one-call claim. Absent, invalid
-or expired server-selected data stays held. The browser selects neither profile
+JSON/receipt loading and uses the shared daily test-allowance ledger described
+below. Absent, invalid or expired server-selected data stays held. The browser selects neither profile
 nor actor/target/authority. Receipt hashes and shaped approval fields bind trusted
 operator evidence; they do not independently establish actual target isolation,
 resource/source verification, screening or authenticated Admin/Guide decisions.
@@ -423,17 +423,72 @@ approval. No OpenAI credential is read by this loader.
 prepared identity, fresh authenticated v3/conversation/policy checks, current
 governed-methodology verification and a final authenticated reread after that
 await. Changed/unknown authority, cancellation or session/run expiry refuses
-forwarding. Check the key's format, then consume the durable claim, then forward;
-never delete/reset it after uncertain results or use a fresh profile to retry.
+forwarding. Check the key's format, then reserve one daily-ledger place, then
+forward; never delete, reset or release a place after uncertain results. A
+fresh profile shares the same ledger, so it adds no calls beyond the day's
+count, and nothing is retried automatically.
 Actual provider/credential and isolated-target grants remain separate.
 
 The approved policy record supplies the exact private US English/plain-text
-resource/failure strings. Keep the finite saved-turn/reload/pre-next-Send/stop/
-closeout operator audit distinct from mandatory dispatch authority/exclusion.
+resource/failure strings. Keep the operator audit at the start and end of each
+test session, with the daily ledger report, distinct from mandatory dispatch
+authority/exclusion.
 This is not scheduled integrity/Admin paging, an independent preHTTP snapshot
 scanner or an atomic database-to-HTTP lock. Genuine joined proof remains separate;
 dated synthetic/source proof retains its original scope. Actual results belong
 to solmind-docs/execution/08_SolMind_MVP0_Test_Plan_v1_0.md.
+
+### Daily private local test allowance - 2026-10-31
+
+Paul chose option A for rebuild step 3 on 2026-10-31 (decision queue 14:20:03,
+with the defaults recorded at 14:48:04): one test setup allows many sends,
+counted against his standing test allowance of up to 1,000 conversation calls a
+day on the local demo, safety assessments included (sprint handoff 2026-10-29
+22:08:10 and 2026-10-31 11:46:00, 11:50:02, 14:15:38). The profile is
+`explorer-private-local-run.v2`, without `explorerMessageSha256`. The grant is
+`solmind-private-explorer-provider-grant.v2` with `dailyConversationCallLimit`, a
+safe integer from 1 to `EXPLORER_PRIVATE_LOCAL_DAILY_CALL_CEILING` (1,000). A v1
+profile or grant, or a grant still carrying `maximumExplorerCalls` or
+`explorerMessageSha256`, is refused. Every other grant, target, policy, model,
+expiry, sign-in, identity and methodology check is unchanged, and the operator
+keeps the human grant. No v1 setup may be made or used again, and no app copy
+from before this change may serve a run, because its calls would bypass the
+ledger.
+
+`src/lib/solmind/operations/explorerPrivateLocalCallLedger.ts` owns the single
+ledger `EXPLORER_PRIVATE_LOCAL_CALL_LEDGER_ROOT`, a fixed local folder that never
+comes from a profile, environment selector, run folder or working directory, so
+a new setup, folder or run shares the day's count. It imports only `server-only`
+and Node built-ins.
+A place is one file `<day>.slot-NNNN.json` for the America/Chicago calendar day,
+holding only version, day, slot, time and run. Its record is written and synced
+in full under a unique `pending` name, then hard-linked to the slot name, which
+fails if the slot exists: each place has one winner across requests, processes
+and restarts, and a slot is never visible half-written. A place is reserved
+before the attempt, stays counted if the outcome is unknown, and is never
+deleted, reset or released; one bound request reserves at most once. Any entry
+named for the day that is not a complete valid slot record (damaged, partial, a
+folder or link, or an unexpected name) holds every run until it is resolved; an
+unfinished `pending` file never counts. If midnight passes during a reservation,
+that place stays counted on the old day and nothing is forwarded against it. The
+folder must already exist; the app never creates it, and a missing or unreadable
+ledger, or a ledger folder that is itself a link, keeps every run held.
+
+The day's total is the number of valid slot files for that America/Chicago day.
+`readExplorerPrivateLocalCallUsage` reports the current day only; for a finished
+day the operator's report helper counts that day's valid slot files. The
+operator reports the total to Paul with the passive dispatch observer's count of
+actual requests. Only the current day's
+names count, so earlier days' files may be archived; the folder itself must be
+left out of any `.validation` cleanup. Deleting today's files or moving the clock
+forward would give fresh places; nothing local prevents that, and the observer
+count is the cross-check. A reached count shows the existing unavailable state
+on the next readiness check; the reply to the last allowed send still reports
+available, so the following Send shows the existing unavailable message. Message
+text is no longer bound by code: the rule that test messages are invented, never
+a real person's words, rests on the operator. Product limits (the per-Explorer
+allowance, hard stops, notices, Admin alerts and database settings) are a later
+step and are not built here.
 
 ### Held private request and browser integration candidate - 2026-10-26
 

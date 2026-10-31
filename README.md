@@ -163,7 +163,7 @@ actual private state/commands HTTP routes use
 `createExplorerPrivateLocalRequestDependencies`: absent/invalid/expired pinned local
 run data stays held; an explicitly approved profile can compose governed
 readiness, reviewed resources/rendering, local signals and dispatch-bound
-single-call transport. Profile data is not approval and supplies no synthetic
+transport counted in the shared daily test-allowance ledger. Profile data is not approval and supplies no synthetic
 methodology or human decision. Current authority/exclusion and actual target,
 provider and human grants remain required. GET still performs no creation or
 evidence write and reauthenticates/rereads after awaited readiness before returning
@@ -520,7 +520,8 @@ src/
       auth/        server-side deny-by-default authorization and the request-auth boundary
       context/     Explorer-facing and AI-role context assembly helpers
       operations/
-        explorerPrivateLocalRunProfile.ts  pinned finite local data and durable one-call claim
+        explorerPrivateLocalCallLedger.ts  shared daily test-allowance ledger
+        explorerPrivateLocalRunProfile.ts  pinned finite local data counted in the shared daily ledger
         explorerPrivateLocalDispatch.ts  current authority and expiry before guarded forwarding
         explorerPrivateOperationalSignal.ts  explicitly selected local marker-only file sink
         explorerPrivateRequestBudgets.ts  finite local awaits for private request ports
