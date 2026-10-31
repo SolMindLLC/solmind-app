@@ -50,11 +50,24 @@ function Rail({ shell }: Readonly<{ shell: ScreenShellData }>) {
   );
 }
 
-function UtilityBar({ profile }: Readonly<{ profile: ScreenProfile }>) {
+// The connected screen's one working way back: the signed-in Explorer home.
+export const EXPLORER_HOME_PATH = "/explorer/home";
+
+function UtilityBar({ profile, connected }: Readonly<{ profile: ScreenProfile; connected: boolean }>) {
+  const profileLabel = profile.name ? `${profile.name}, ${profile.role} profile` : `${profile.role} profile`;
+
   return (
     <div className="border-b border-amber-200/10 bg-black/70">
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5 sm:px-6 lg:px-8">
         <SolMindLogo className="w-20 lg:hidden" />
+        {connected ? (
+          <a
+            className={joinClasses("rounded-md px-1 text-sm font-medium text-amber-200 underline underline-offset-4 hover:text-amber-100", FOCUS_RING)}
+            href={EXPLORER_HOME_PATH}
+          >
+            Explorer home
+          </a>
+        ) : null}
         <p className="hidden items-center gap-1 text-sm text-stone-400 lg:flex">
           <UnwiredButton className={joinClasses("rounded-md px-1 text-stone-300 hover:text-stone-100", FOCUS_RING)} noteId={noteId("top", "breadcrumb")}>
             Conversations
@@ -78,18 +91,18 @@ function UtilityBar({ profile }: Readonly<{ profile: ScreenProfile }>) {
               "flex items-center gap-2 rounded-full border border-amber-200/20 py-1 pl-1 pr-3 text-left hover:bg-amber-300/10",
               FOCUS_RING,
             )}
-            label={`${profile.name}, ${profile.role} profile`}
+            label={profileLabel}
             noteId={noteId("top", "profile")}
           >
             <span aria-hidden="true" className="grid h-8 w-8 place-items-center rounded-full border border-amber-300/60 bg-amber-300/10 text-amber-100">
               <IconBoot />
             </span>
             <span className="flex flex-col leading-tight">
-              <span className="text-sm font-medium text-stone-100">{profile.name}</span>
-              <span className="text-[11px] text-stone-400">{profile.role}</span>
+              {profile.name ? <span className="text-sm font-medium text-stone-100">{profile.name}</span> : null}
+              <span className={profile.name ? "text-[11px] text-stone-400" : "text-sm font-medium text-stone-100"}>{profile.role}</span>
             </span>
           </UnwiredButton>
-          <SampleTag />
+          {connected ? null : <SampleTag />}
         </div>
       </header>
       <div className="flex flex-wrap justify-end gap-2 px-3 pb-2.5 sm:px-6 lg:px-8">
@@ -101,7 +114,9 @@ function UtilityBar({ profile }: Readonly<{ profile: ScreenProfile }>) {
   );
 }
 
-function GuideBanner({ banner, guideName }: Readonly<{ banner: ScreenGuideBanner; guideName: string }>) {
+type GuideBannerProps = Readonly<{ banner: ScreenGuideBanner; guideName: string; connected: boolean }>;
+
+function GuideBanner({ banner, guideName, connected }: GuideBannerProps) {
   return (
     <aside
       aria-labelledby="conversation-preview-guide-banner"
@@ -117,7 +132,7 @@ function GuideBanner({ banner, guideName }: Readonly<{ banner: ScreenGuideBanner
               <p className="text-sm font-medium text-stone-100" id="conversation-preview-guide-banner">
                 {banner.title}
               </p>
-              <SampleTag />
+              {connected ? null : <SampleTag />}
             </div>
             <p className="text-xs leading-5 text-stone-400">{banner.body}</p>
           </div>
@@ -143,9 +158,20 @@ type ShellProps = Readonly<{
   onSkip: () => void;
   children: ReactNode;
   drawer: ReactNode;
+  // The connected /explorer/conversation screen shows real saved data: it has
+  // no preview band or "Sample" tags, and it adds the Explorer home link.
+  connected?: boolean;
 }>;
 
-export function ExplorerConversationScreenShell({ shell, spacesOpen, onToggleSpaces, onSkip, children, drawer }: ShellProps) {
+export function ExplorerConversationScreenShell({
+  shell,
+  spacesOpen,
+  onToggleSpaces,
+  onSkip,
+  children,
+  drawer,
+  connected = false,
+}: ShellProps) {
   return (
     <div className="relative isolate flex min-h-dvh w-full flex-col bg-[#050404] text-stone-100">
       <AmbientGlow />
@@ -154,18 +180,25 @@ export function ExplorerConversationScreenShell({ shell, spacesOpen, onToggleSpa
           "sr-only rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-stone-950 focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50",
           FOCUS_RING,
         )}
-        data-preview-control="layout"
+        data-preview-control={connected ? undefined : "layout"}
         onClick={onSkip}
         type="button"
       >
-        Skip to the conversation <span className="font-normal">({LAYOUT_ONLY_LABEL})</span>
+        {connected ? (
+          "Skip to the conversation"
+        ) : (
+          <>
+            Skip to the conversation <span className="font-normal">({LAYOUT_ONLY_LABEL})</span>
+          </>
+        )}
       </button>
-      <PreviewBand />
+      {connected ? null : <PreviewBand />}
       <div className="flex w-full flex-1">
         <Rail shell={shell} />
         <div className="relative flex min-w-0 flex-1 flex-col">
-          <UtilityBar profile={shell.profile} />
+          <UtilityBar connected={connected} profile={shell.profile} />
           <NarrowNavigation
+            connected={connected}
             guideName={shell.guideName}
             navigation={shell.navigation}
             onToggleSpaces={onToggleSpaces}
@@ -173,7 +206,7 @@ export function ExplorerConversationScreenShell({ shell, spacesOpen, onToggleSpa
             spacesOpen={spacesOpen}
           />
           <main className="flex min-h-0 flex-1 flex-col">{children}</main>
-          <GuideBanner banner={shell.guideBanner} guideName={shell.guideName} />
+          <GuideBanner banner={shell.guideBanner} connected={connected} guideName={shell.guideName} />
         </div>
       </div>
       {drawer}

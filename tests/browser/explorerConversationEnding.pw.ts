@@ -41,7 +41,7 @@ test("E01 unsaved Discovery returns home without creating an End command", async
   await page.route("**/explorer/conversation/commands", route => { commands += 1; return route.abort(); });
   await page.goto("/explorer/conversation");
   await expect(page.getByRole("link", { name: "Return to Explorer home", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Review End Session", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "End this conversation", exact: true })).toHaveCount(0);
   await page.getByRole("link", { name: "Return to Explorer home", exact: true }).click();
   await expect(page).toHaveURL(/\/explorer\/home$/); expect(commands).toBe(0);
 });
@@ -53,7 +53,7 @@ test("E02 deliberate End sends its saved selector once and returns home only aft
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(success(ended(command.operationId))) });
   });
   await page.goto("/explorer/conversation");
-  await page.getByRole("button", { name: "Review End Session", exact: true }).click();
+  await page.getByRole("button", { name: "End this conversation", exact: true }).click();
   await expect(page.getByRole("group", { name: "Review End Session", exact: true })).toBeVisible();
   expect(commands).toHaveLength(0);
   await page.getByRole("button", { name: "End Session and return home", exact: true }).click();
@@ -71,11 +71,11 @@ test("E03 an active-shaped acknowledgement stays uncertain and exact retry can c
       bodies.length === 1 ? active() : { ...ended(), ending: null })) });
   });
   await page.goto("/explorer/conversation");
-  await page.getByRole("button", { name: "Review End Session", exact: true }).click();
+  await page.getByRole("button", { name: "End this conversation", exact: true }).click();
   await page.getByRole("button", { name: "End Session and return home", exact: true }).click();
   await expect(page.getByRole("button", { name: "Retry the same request", exact: true })).toBeVisible();
   await expect(page).toHaveURL(/\/explorer\/conversation$/);
-  await expect(page.getByRole("button", { name: "Review End Session", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "End this conversation", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Retry the same request", exact: true }).click();
   await expect(page).toHaveURL(/\/explorer\/home$/);
   expect(bodies).toHaveLength(2); expect(bodies[1]).toBe(bodies[0]);
@@ -86,11 +86,11 @@ test("E04 pending turns and stale End review never dispatch an ending", async ({
   await mockCurrent(page, () => current);
   await page.route("**/explorer/conversation/commands", route => { writes += 1; return route.abort(); });
   await page.goto("/explorer/conversation");
-  await expect(page.getByRole("button", { name: "Review End Session", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "End this conversation", exact: true })).toBeDisabled();
   current = { ...active(), pendingTurn: false };
   await page.getByRole("button", { name: "Reload saved conversation", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Review End Session", exact: true })).toBeEnabled();
-  await page.getByRole("button", { name: "Review End Session", exact: true }).click();
+  await expect(page.getByRole("button", { name: "End this conversation", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "End this conversation", exact: true }).click();
   current = { ...current, revision: 6 };
   await page.getByRole("button", { name: "Reload saved conversation", exact: true }).click();
   await expect(page.getByText("Your saved conversation changed. Close this review and review End Session again.", { exact: true })).toBeVisible();
@@ -117,7 +117,7 @@ test("E05 ended review uses GET only and preserves messages, Route, source and R
   await page.getByText("Review saved source", { exact: true }).first().click();
   await expect(page.locator("blockquote").first()).toContainText("A synthetic saved message.");
   await expect(page.locator("form, textarea, input, select")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /^(Send message|Review Priority:|Attend to:|Review Reached:|Confirm arrangement)/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^(Send|Review Priority:|Attend to:|Review Reached:|Confirm arrangement)/ })).toHaveCount(0);
   await page.getByRole("button", { name: "Review ended conversation 2", exact: true }).click();
   await expect(page.getByText("No saved ending summary is available.", { exact: true })).toBeVisible();
   expect(gets).toEqual(["list", CONVERSATION, OTHER_CONVERSATION]); expect(writes).toBe(0);

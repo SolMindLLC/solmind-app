@@ -104,10 +104,20 @@ type NarrowNavigationProps = NavigationProps &
   Readonly<{
     spacesOpen: boolean;
     onToggleSpaces: () => void;
+    // On the connected screen the spaces switch is a real control, so it
+    // carries no "Layout only" tag or preview marker.
+    connected?: boolean;
   }>;
 
 // Jade's narrow icon strip replaces the S01R2 dropdown menu below 64rem.
-export function NarrowNavigation({ navigation, spaces, guideName, spacesOpen, onToggleSpaces }: NarrowNavigationProps) {
+export function NarrowNavigation({
+  navigation,
+  spaces,
+  guideName,
+  spacesOpen,
+  onToggleSpaces,
+  connected = false,
+}: NarrowNavigationProps) {
   return (
     <nav aria-label="Explorer workspace" className="border-b border-amber-200/10 bg-black/80 px-3 py-3 sm:px-6 lg:hidden">
       <ul className="grid grid-cols-4 gap-1.5">
@@ -138,14 +148,14 @@ export function NarrowNavigation({ navigation, spaces, guideName, spacesOpen, on
           aria-controls={SPACES_LIST_ID}
           aria-expanded={spacesOpen}
           className={joinClasses(SECONDARY_BUTTON, "px-3 py-1.5 text-xs")}
-          data-preview-control="layout"
+          data-preview-control={connected ? undefined : "layout"}
           onClick={onToggleSpaces}
           type="button"
         >
           <IconChat />
           {spacesOpen ? "Hide conversation spaces" : "Show conversation spaces"}
         </button>
-        <LayoutOnlyTag />
+        {connected ? null : <LayoutOnlyTag />}
       </div>
       <div className="mt-2" hidden={!spacesOpen} id={SPACES_LIST_ID}>
         {spacesOpen ? <ConversationSpaces guideName={guideName} scope="strip" spaces={spaces} /> : null}

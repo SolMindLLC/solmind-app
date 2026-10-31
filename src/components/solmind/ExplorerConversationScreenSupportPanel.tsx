@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, type ReactNode } from "react";
 
 import type { ScreenSupportData } from "@/lib/solmind/explorerConversationScreenDisplay";
 
@@ -23,6 +23,8 @@ const DRAWER_HEADING_ID = "conversation-preview-drawer-heading";
 const DRAWER_DIALOG_CLASS =
   "fixed inset-y-0 right-0 m-0 ml-auto h-dvh max-h-none w-full max-w-md overflow-hidden border-0 border-l border-amber-200/15 bg-[#080706] p-0 text-stone-100 backdrop:bg-black/70 open:flex open:flex-col";
 
+export type SupportScope = "panel" | "drawer";
+
 type LayoutProps = Readonly<{
   support: ScreenSupportData;
   compassView: CompassView;
@@ -31,23 +33,18 @@ type LayoutProps = Readonly<{
   onQuotesToggle: (open: boolean) => void;
 }>;
 
-type ContentProps = LayoutProps &
-  Readonly<{
-    scope: "panel" | "drawer";
-    headingId: string;
-    onClose?: () => void;
-  }>;
+type FrameProps = Readonly<{
+  scope: SupportScope;
+  headingId: string;
+  onClose?: () => void;
+  // The connected screen's Close button is a real control, so it carries no
+  // "Layout only" tag or preview marker.
+  connected: boolean;
+  children: ReactNode;
+}>;
 
-function SupportPanelContent({
-  support,
-  scope,
-  headingId,
-  onClose,
-  compassView,
-  onToggleCompassView,
-  quotesOpen,
-  onQuotesToggle,
-}: ContentProps) {
+// The panel heading, the drawer's Close button and the scrolling body.
+function SupportPanelFrame({ scope, headingId, onClose, connected, children }: FrameProps) {
   const isDrawer = scope === "drawer";
 
   return (
@@ -67,7 +64,7 @@ function SupportPanelContent({
           <div className="flex flex-col items-end gap-1.5">
             <button
               className={joinClasses(QUIET_BUTTON, "border border-stone-700")}
-              data-preview-control="layout"
+              data-preview-control={connected ? undefined : "layout"}
               onClick={onClose}
               type="button"
             >
@@ -75,29 +72,45 @@ function SupportPanelContent({
               Close
               <span className="sr-only"> Compass &amp; Waypoint</span>
             </button>
-            <LayoutOnlyTag />
+            {connected ? null : <LayoutOnlyTag />}
           </div>
         ) : null}
       </div>
-      <div className={isDrawer ? "min-h-0 flex-1 overflow-y-auto" : undefined}>
-        <CompassSection compass={support.compass} onToggleView={onToggleCompassView} scope={scope} view={compassView} />
-        <WaypointSection
-          explorerSpeakerLabel={support.explorerSpeakerLabel}
-          onQuotesToggle={onQuotesToggle}
-          quotesOpen={quotesOpen}
-          scope={scope}
-          waypoint={support.waypoint}
-        />
-        <FutureActionsSection compass={support.compass} guideName={support.guideName} scope={scope} />
-        <KeyInsightSection keyInsight={support.keyInsight} nextDirection={support.nextDirection} scope={scope} />
-      </div>
+      <div className={isDrawer ? "min-h-0 flex-1 overflow-y-auto" : undefined}>{children}</div>
     </div>
   );
 }
 
+// The preview's written sample sections.
+function PreviewSupportBody({
+  support,
+  scope,
+  compassView,
+  onToggleCompassView,
+  quotesOpen,
+  onQuotesToggle,
+}: LayoutProps & Readonly<{ scope: SupportScope }>) {
+  return (
+    <>
+      <CompassSection compass={support.compass} onToggleView={onToggleCompassView} scope={scope} view={compassView} />
+      <WaypointSection
+        explorerSpeakerLabel={support.explorerSpeakerLabel}
+        onQuotesToggle={onQuotesToggle}
+        quotesOpen={quotesOpen}
+        scope={scope}
+        waypoint={support.waypoint}
+      />
+      <FutureActionsSection compass={support.compass} guideName={support.guideName} scope={scope} />
+      <KeyInsightSection keyInsight={support.keyInsight} nextDirection={support.nextDirection} scope={scope} />
+    </>
+  );
+}
+
+type PanelShellProps = Readonly<{ visible: boolean; connected: boolean; children: ReactNode }>;
+
 // The sticky panel on wide screens (64rem and wider). It stays in the page
 // when hidden so the toggle's aria-controls always points at it.
-export function SupportPanel({ visible, ...layout }: LayoutProps & Readonly<{ visible: boolean }>) {
+function SupportPanelAside({ visible, connected, children }: PanelShellProps) {
   return (
     <aside
       aria-labelledby={PANEL_HEADING_ID}
@@ -107,8 +120,30 @@ export function SupportPanel({ visible, ...layout }: LayoutProps & Readonly<{ vi
       )}
       id={SUPPORT_PANEL_ID}
     >
-      <SupportPanelContent {...layout} headingId={PANEL_HEADING_ID} scope="panel" />
+      <SupportPanelFrame connected={connected} headingId={PANEL_HEADING_ID} scope="panel">
+        {children}
+      </SupportPanelFrame>
     </aside>
+  );
+}
+
+export function SupportPanel({ visible, ...layout }: LayoutProps & Readonly<{ visible: boolean }>) {
+  return (
+    <SupportPanelAside connected={false} visible={visible}>
+      <PreviewSupportBody {...layout} scope="panel" />
+    </SupportPanelAside>
+  );
+}
+
+// The connected screen's panel: the caller supplies the body for each scope.
+export function ConnectedSupportPanel({
+  visible,
+  renderBody,
+}: Readonly<{ visible: boolean; renderBody: (scope: SupportScope) => ReactNode }>) {
+  return (
+    <SupportPanelAside connected visible={visible}>
+      {renderBody("panel")}
+    </SupportPanelAside>
   );
 }
 
@@ -127,13 +162,11 @@ function focusAfterClose(saved: HTMLElement | null) {
   candidates.find(isRendered)?.focus();
 }
 
+type DrawerDialogProps = Readonly<{ open: boolean; onClose: () => void; connected: boolean; children: ReactNode }>;
+
 // The same content in a native modal drawer on narrow screens. Its content
 // renders only while open.
-export function SupportDrawer({
-  open,
-  onClose,
-  ...layout
-}: LayoutProps & Readonly<{ open: boolean; onClose: () => void }>) {
+function SupportDrawerDialog({ open, onClose, connected, children }: DrawerDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
 
@@ -170,8 +203,35 @@ export function SupportDrawer({
       ref={dialogRef}
     >
       {open ? (
-        <SupportPanelContent {...layout} headingId={DRAWER_HEADING_ID} onClose={onClose} scope="drawer" />
+        <SupportPanelFrame connected={connected} headingId={DRAWER_HEADING_ID} onClose={onClose} scope="drawer">
+          {children}
+        </SupportPanelFrame>
       ) : null}
     </dialog>
+  );
+}
+
+export function SupportDrawer({
+  open,
+  onClose,
+  ...layout
+}: LayoutProps & Readonly<{ open: boolean; onClose: () => void }>) {
+  return (
+    <SupportDrawerDialog connected={false} onClose={onClose} open={open}>
+      <PreviewSupportBody {...layout} scope="drawer" />
+    </SupportDrawerDialog>
+  );
+}
+
+// The connected screen's drawer: the caller supplies the body for each scope.
+export function ConnectedSupportDrawer({
+  open,
+  onClose,
+  renderBody,
+}: Readonly<{ open: boolean; onClose: () => void; renderBody: (scope: SupportScope) => ReactNode }>) {
+  return (
+    <SupportDrawerDialog connected onClose={onClose} open={open}>
+      {renderBody("drawer")}
+    </SupportDrawerDialog>
   );
 }

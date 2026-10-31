@@ -122,9 +122,19 @@ export const NOT_YET_IMPLEMENTED = freeze({
   stopSharing: note("You will be able to stop sharing at any time."),
 });
 
-// "<name>, your Guide": the Guide's name with their role.
+// The connected /explorer/conversation screen does not receive the Guide's
+// name, so it says "your Guide" wherever the preview shows a name.
+export const UNNAMED_GUIDE = `your ${GUIDE}`;
+
+// "<name>, your Guide": the Guide's name with their role ("your Guide" alone
+// when the name is not known).
 export function guideLabel(guideName: string): string {
-  return `${guideName}, your ${GUIDE}`;
+  return guideName === UNNAMED_GUIDE ? UNNAMED_GUIDE : `${guideName}, your ${GUIDE}`;
+}
+
+// The Guide's name, or "Your Guide", at the start of a sentence.
+function sentenceStart(guideName: string): string {
+  return guideName.charAt(0).toUpperCase() + guideName.slice(1);
 }
 
 // The notes that name the Guide. Like aiDisclosure, they take the name from
@@ -135,7 +145,7 @@ export function guideNotes(guideName: string) {
     shareConversation: note(
       `You will be able to share this whole conversation live with ${guideName}, until you stop.`,
     ),
-    guideInput: note(`${guideName}'s input on a Waypoint you shared will appear here, marked as theirs.`),
+    guideInput: note(`${sentenceStart(guideName)}'s input on a Waypoint you shared will appear here, marked as theirs.`),
     shareForming: note(`You will be able to share a forming Waypoint with ${guideName} to ask for input.`),
     shareReason: note(`You may add a short reason for ${guideName} when you share.`),
   });

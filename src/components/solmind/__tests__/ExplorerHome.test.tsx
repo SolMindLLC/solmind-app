@@ -202,7 +202,11 @@ describe("Explorer home design previews", () => {
     expect(html.includes("Conversation screen design review")).toBe(true);
     expect(html.includes("Design review only: sample content and working layout controls; conversation features are not connected.")).toBe(true);
     expect(html.includes("nothing on this screen works yet")).toBe(false);
-    expect(html.includes("These previews use a fixed local script.")).toBe(true);
+    // Paul approved this wording on 2026-10-31 at 01:36 ("yes to 1-4", item 4).
+    expect(html.includes("These previews use a fixed local script.")).toBe(false);
+    expect(html.includes(
+      "The older previews use a fixed local script. The conversation design review shows sample messages and cannot reply.",
+    )).toBe(true);
     expect(html.includes('href="/explorer/compass-comparison"') && html.includes('href="/explorer"')).toBe(true);
   });
   it("H17 a pending home disables the design review link like the other previews", () => {

@@ -132,8 +132,14 @@ speaker-label trial, revised 2026-10-30), and
 `src/components/solmind/ExplorerSpeakerIcon.tsx` draws their two small icons
 for both screens; setting `SPEAKER_LABEL_STYLE` in `explorerSpeakerStyle.ts`
 to `"original"` reverts both screens to the earlier gold labels.
-`/explorer/conversation` is unchanged; the S01R2 files change only in speaker
-labels and icons.
+The S01R2 files change only in speaker labels and icons. Rebuild step 2 puts
+the same layout on the connected `/explorer/conversation`:
+`src/components/solmind/ExplorerConversation.tsx` keeps every fetch, authority,
+retry, Send and End rule and passes read-only props to the presentation-only
+`src/components/solmind/ExplorerConversationConnectedScreen.tsx`;
+`src/lib/solmind/explorerConversationConnectedScreen.ts` owns its wording and
+shell data; and the existing Compass and Waypoint tools stay below the
+conversation until rebuild steps 4 and 5.
 Every functional control is focusable, `aria-disabled`, and described by its
 visible note; only layout-only controls act. Tests:
 `src/lib/solmind/__tests__/explorerConversationScreen.test.ts`,
@@ -144,7 +150,12 @@ visible note; only layout-only controls act. Tests:
 `tests/browser/explorerConversationPreview.pw.ts` and
 `tests/browser/explorerSpeakerStyle.pw.ts`, with shared browser helpers in
 `tests/browser/conversationPreviewHelpers.ts`. It adds no provider,
-persistence, authentication, route handler, storage, or real-user effect.
+persistence, authentication, route handler, storage, or real-user effect. The
+connected layout's tests are
+`src/components/solmind/__tests__/ExplorerConversationConnectedScreen.test.tsx`
+and `tests/browser/explorerConversationScreen.pw.ts`, alongside the existing
+`tests/browser/explorerConversation*.pw.ts`, `compassCategory.pw.ts`,
+`waypointClarification.pw.ts` and `waypointRelease.pw.ts` specs.
 
 The retained sign-in preview follows the same split; banked `/login`
 instead composes `src/components/solmind/LoginExperience.tsx` as described

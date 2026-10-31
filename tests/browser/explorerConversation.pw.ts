@@ -148,10 +148,10 @@ test("C02 send renders authoritative history and reloads from GET", async ({ pag
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(success(current)) });
   });
   await page.goto("/explorer/conversation");
-  await page.getByLabel("Your message", { exact: true }).fill("A synthetic Explorer question");
-  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await page.getByLabel("Continue the conversation", { exact: true }).fill("A synthetic Explorer question");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByRole("list", { name: "Saved conversation", exact: true })).toContainText("A synthetic transport reply");
-  await expect(page.getByLabel("Your message", { exact: true })).toHaveValue("");
+  await expect(page.getByLabel("Continue the conversation", { exact: true })).toHaveValue("");
   await page.getByRole("button", { name: "Reload saved conversation", exact: true }).click();
   await expect(page.getByRole("list", { name: "Saved conversation", exact: true })).toContainText("A synthetic Explorer question");
   await page.reload();
@@ -170,11 +170,11 @@ test("C03 uncertain response retains exact request bytes and operation identity"
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(success(savedState(command.body))) });
   });
   await page.goto("/explorer/conversation");
-  await page.getByLabel("Your message", { exact: true }).fill("Keep this exact operation");
-  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await page.getByLabel("Continue the conversation", { exact: true }).fill("Keep this exact operation");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByRole("button", { name: "Retry the same request", exact: true })).toBeVisible();
-  await expect(page.getByLabel("Your message", { exact: true })).toHaveValue("Keep this exact operation");
-  await expect(page.getByLabel("Your message", { exact: true })).toBeDisabled();
+  await expect(page.getByLabel("Continue the conversation", { exact: true })).toHaveValue("Keep this exact operation");
+  await expect(page.getByLabel("Continue the conversation", { exact: true })).toBeDisabled();
   await expect(page.getByRole("list", { name: "Saved conversation", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Retry the same request", exact: true }).click();
   await expect(page.getByRole("list", { name: "Saved conversation", exact: true })).toContainText("Keep this exact operation");
@@ -190,8 +190,8 @@ test("C04 malformed command success cannot render a reply or lose retry identity
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(privateResponse({ ok: true, state: { messages: [{ role: "virtualGuide", body: "Do not display this malformed reply" }] }, error: null })) });
   });
   await page.goto("/explorer/conversation");
-  await page.getByLabel("Your message", { exact: true }).fill("A bounded request");
-  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await page.getByLabel("Continue the conversation", { exact: true }).fill("A bounded request");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByRole("button", { name: "Retry the same request", exact: true })).toBeVisible();
   await expect(page.getByText("Do not display this malformed reply", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Retry the same request", exact: true }).click();
@@ -204,7 +204,7 @@ test("C05 denied read offers reentry and reveals no history or command controls"
   await page.goto("/explorer/conversation");
   await expect(page.getByRole("main").getByRole("alert")).toContainText("not available in your current session");
   await expect(page.getByRole("link", { name: "Sign in", exact: true })).toHaveAttribute("href", "/login/explorer");
-  await expect(page.getByLabel("Your message", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Continue the conversation", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("list", { name: "Saved conversation", exact: true })).toHaveCount(0);
 });
 
@@ -218,12 +218,12 @@ test("C06 stale command requires a read and never automatically resends", async 
     return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify(failure("refresh_required")) });
   });
   await page.goto("/explorer/conversation");
-  await page.getByLabel("Your message", { exact: true }).fill("An unsaved stale draft");
-  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await page.getByLabel("Continue the conversation", { exact: true }).fill("An unsaved stale draft");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByRole("main").getByRole("alert")).toContainText("Your conversation has changed");
   await page.getByRole("button", { name: "Reload saved conversation", exact: true }).click();
   await expect(page.getByRole("list", { name: "Saved conversation", exact: true })).toContainText("A synthetic Explorer question");
-  await expect(page.getByLabel("Your message", { exact: true })).toHaveValue("An unsaved stale draft");
+  await expect(page.getByLabel("Continue the conversation", { exact: true })).toHaveValue("An unsaved stale draft");
   expect(writes).toBe(1);
 });
 
@@ -233,8 +233,8 @@ test("C07 unavailable provider disables send while retaining saved history", asy
   await page.route("**/explorer/conversation/commands", route => { writes += 1; return route.abort(); });
   await page.goto("/explorer/conversation");
   await expect(page.getByRole("list", { name: "Saved conversation", exact: true })).toContainText("A synthetic Explorer question");
-  await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeDisabled();
-  await expect(page.getByLabel("Your message", { exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
+  await expect(page.getByLabel("Continue the conversation", { exact: true })).toBeDisabled();
   await expect(page.getByText(/unavailable\. You can review saved messages/)).toBeVisible();
   expect(writes).toBe(0);
 });
@@ -243,13 +243,13 @@ test("C08 provider unavailability after send claims neither saved message nor re
   await mockState(page, () => success(emptyState()));
   await page.route("**/explorer/conversation/commands", route => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify(failure("provider_unavailable")) }));
   await page.goto("/explorer/conversation");
-  await page.getByLabel("Your message", { exact: true }).fill("Do not invent success");
-  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await page.getByLabel("Continue the conversation", { exact: true }).fill("Do not invent success");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByRole("main").getByRole("alert")).toContainText("No new message or reply has been confirmed saved");
-  await expect(page.getByLabel("Your message", { exact: true })).toHaveValue("Do not invent success");
+  await expect(page.getByLabel("Continue the conversation", { exact: true })).toHaveValue("Do not invent success");
   await expect(page.getByRole("list", { name: "Saved conversation", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Retry the same request", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
 });
 
 test("C09 two immediate activations have one owned pending command", async ({ page }) => {
@@ -263,10 +263,10 @@ test("C09 two immediate activations have one owned pending command", async ({ pa
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(success(savedState("One command only"))) });
   });
   await page.goto("/explorer/conversation");
-  await page.getByLabel("Your message", { exact: true }).fill("One command only");
-  await page.getByRole("button", { name: "Send message", exact: true }).evaluate((button: HTMLButtonElement) => { button.click(); button.click(); });
+  await page.getByLabel("Continue the conversation", { exact: true }).fill("One command only");
+  await page.getByRole("button", { name: "Send", exact: true }).evaluate((button: HTMLButtonElement) => { button.click(); button.click(); });
   await expect.poll(() => writes).toBe(1);
-  await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
   release();
   await expect(page.getByRole("list", { name: "Saved conversation", exact: true })).toContainText("One command only");
   expect(writes).toBe(1);
@@ -277,7 +277,7 @@ test("C10 malformed initial state is refused rather than rendered", async ({ pag
   await page.goto("/explorer/conversation");
   await expect(page.getByRole("main").getByRole("alert")).toContainText("could not be loaded");
   await expect(page.getByText("unexpected-private-field", { exact: true })).toHaveCount(0);
-  await expect(page.getByLabel("Your message", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Continue the conversation", { exact: true })).toHaveCount(0);
 });
 
 test("C11 a pending saved turn blocks new send and formation but permits a read", async ({ page }) => {
@@ -289,7 +289,7 @@ test("C11 a pending saved turn blocks new send and formation but permits a read"
   await page.route("**/explorer/conversation/commands", route => { writes += 1; return route.abort(); });
   await page.goto("/explorer/conversation");
   await expect(page.getByText(/A saved message is still awaiting a confirmed result/)).toBeVisible();
-  await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
   await expect(page.getByRole("combobox").first()).toBeDisabled();
   await expect(page.getByText("A synthetic transport reply", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Reload saved conversation", exact: true })).toBeEnabled();
@@ -307,8 +307,8 @@ test("C12 saved-message capacity disables sending and keeps formation available"
   await page.route("**/explorer/conversation/commands", route => { writes += 1; return route.abort(); });
   await page.goto("/explorer/conversation");
   await expect(page.getByText(/This conversation has reached its saved-message limit/)).toBeVisible();
-  await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeDisabled();
-  await expect(page.getByLabel("Your message", { exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
+  await expect(page.getByLabel("Continue the conversation", { exact: true })).toBeDisabled();
   await expect(page.getByRole("region", { name: "Session Compass", exact: true }).getByRole("combobox", { name: "Saved conversation source", exact: true })).toBeEnabled();
   expect(writes).toBe(0);
 });
@@ -327,17 +327,17 @@ test("C13 transient first-Send assistance preserves the unsaved draft and stays 
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(success(current, assistance)) });
   });
   await page.goto("/explorer/conversation");
-  await page.getByLabel("Your message", { exact: true }).fill("Keep this unaccepted first-Send draft");
-  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await page.getByLabel("Continue the conversation", { exact: true }).fill("Keep this unaccepted first-Send draft");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByRole("main").getByRole("alert")).toContainText(assistance.body);
-  await expect(page.getByLabel("Your message", { exact: true })).toHaveValue("Keep this unaccepted first-Send draft");
+  await expect(page.getByLabel("Continue the conversation", { exact: true })).toHaveValue("Keep this unaccepted first-Send draft");
   await expect(page.getByText("There are no saved messages yet.", { exact: true })).toBeVisible();
   await expect(page.getByRole("list", { name: "Saved conversation", exact: true })).toHaveCount(0);
   await expect(page.getByText("Your saved conversation is up to date.", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Reload saved conversation", exact: true }).click();
   await expect.poll(() => reads).toBe(2);
   await expect(page.getByText(assistance.body, { exact: true })).toHaveCount(0);
-  await expect(page.getByLabel("Your message", { exact: true })).toHaveValue("Keep this unaccepted first-Send draft");
+  await expect(page.getByLabel("Continue the conversation", { exact: true })).toHaveValue("Keep this unaccepted first-Send draft");
   await expect(page.getByRole("list", { name: "Saved conversation", exact: true })).toHaveCount(0);
   expect(writes).toBe(1);
 });
@@ -354,10 +354,10 @@ test("C14 a denied reload clears stale assistance, saved private history and dra
   });
   await page.goto("/explorer/conversation");
   await expect(page.getByRole("list", { name: "Saved conversation", exact: true })).toContainText("A synthetic Explorer question");
-  await page.getByLabel("Your message", { exact: true }).fill("A private draft to clear after denial");
-  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await page.getByLabel("Continue the conversation", { exact: true }).fill("A private draft to clear after denial");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByRole("main").getByRole("alert")).toContainText(assistance.body);
-  await expect(page.getByLabel("Your message", { exact: true })).toHaveValue("A private draft to clear after denial");
+  await expect(page.getByLabel("Continue the conversation", { exact: true })).toHaveValue("A private draft to clear after denial");
   await page.getByRole("button", { name: "Reload saved conversation", exact: true }).click();
   await expect.poll(() => reads).toBe(2);
   await expect(page.getByRole("link", { name: "Sign in", exact: true })).toHaveAttribute("href", "/login/explorer");
@@ -365,6 +365,6 @@ test("C14 a denied reload clears stale assistance, saved private history and dra
   await expect(page.getByRole("list", { name: "Saved conversation", exact: true })).toHaveCount(0);
   await expect(page.getByText("A synthetic Explorer question", { exact: true })).toHaveCount(0);
   await expect(page.getByText("A synthetic transport reply", { exact: true })).toHaveCount(0);
-  await expect(page.getByLabel("Your message", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Continue the conversation", { exact: true })).toHaveCount(0);
   expect(writes).toBe(1);
 });

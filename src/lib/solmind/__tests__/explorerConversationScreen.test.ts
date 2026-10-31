@@ -90,10 +90,13 @@ describe("interim conversation screen wording", () => {
     expect(CONVERSATION_FOOTER).toBe(
       `The ${SOLMIND_TERMS.virtualGuide} supports reflection. It is not a therapist or crisis service.`,
     );
-    const liveSource = readFileSync(path.join(appRoot, "src", "components", "solmind", "ExplorerConversation.tsx"), "utf8");
-    expect(liveSource).toContain(
-      "The {SOLMIND_TERMS.virtualGuide} supports reflection. It is not a therapist or crisis service.",
+    // The connected /explorer/conversation screen renders this same approved
+    // sentence from CONVERSATION_FOOTER (its own test checks the rendered text).
+    const liveSource = readFileSync(
+      path.join(appRoot, "src", "components", "solmind", "ExplorerConversationConnectedScreen.tsx"),
+      "utf8",
     );
+    expect(liveSource).toContain("{CONVERSATION_FOOTER}");
   });
 
   it("CS05 layout-only controls are listed once each and share one tag", () => {

@@ -9,19 +9,14 @@ import {
 } from "@/lib/solmind/explorerConversationContract";
 import { parseExplorerPrivateConversationResponse, type ExplorerPrivateConversationResponse,
   type ExplorerPrivateAssistance } from "@/lib/solmind/explorerPrivateConversationResponse";
-import { SOLMIND_TERMS } from "@/lib/solmind/terms";
-import {
-  ExplorerConversationFormation,
-  type ExplorerConversationFormationIntent,
-} from "./ExplorerConversationFormation";
+import { ExplorerConversationConnectedScreen } from "./ExplorerConversationConnectedScreen";
+import type { ExplorerConversationFormationIntent } from "./ExplorerConversationFormation";
 
 const STATE_PATH = "/explorer/conversation/state";
 const COMMAND_PATH = "/explorer/conversation/commands";
 const RESPONSE_BUDGET_MS = 70_000;
 const RESULT_CHARACTER_LIMIT = 1_200_000;
 const REQUEST_BYTE_LIMIT = 16_384;
-const fieldClass = "w-full rounded-xl border border-slate-500 bg-white p-3 text-slate-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700";
-const buttonClass = "rounded-xl bg-teal-800 px-4 py-3 font-semibold text-white hover:bg-teal-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 disabled:cursor-not-allowed disabled:opacity-50";
 
 type CommandIntent = ExplorerConversationFormationIntent | Readonly<{ kind: "send"; body: string }> |
   Readonly<{ kind: "end_conversation"; conversationId: string }>;
@@ -275,83 +270,38 @@ export function ExplorerConversation() {
   const sendUnavailable = state?.providerState !== "available" || error === "provider_unavailable";
   const atMessageCapacity = state !== null && state.messages.length > EXPLORER_CONVERSATION_LIMITS.messages - 2;
   return (
-    <main className="mx-auto min-h-screen max-w-6xl bg-slate-50 px-4 py-8 text-slate-950 sm:px-6">
-      <a className="font-medium text-teal-800 underline focus-visible:outline-2 focus-visible:outline-offset-4" href="/explorer/home">Explorer home</a>
-      <header className="my-6 space-y-2">
-        <h1 ref={headingRef} tabIndex={-1} className="text-3xl font-semibold focus:outline-none">Your conversation</h1>
-        <p>Explore with the {SOLMIND_TERMS.virtualGuide}. Your conversation, Compass and Waypoints stay private; nothing is shared from this screen.</p>
-        <p className="text-sm text-slate-700">The {SOLMIND_TERMS.virtualGuide} supports reflection. It is not a therapist or crisis service.</p>
-      </header>
-      <p role="status" aria-live="polite" aria-atomic="true" className="min-h-6">{busy ? (state === null ? "Loading your saved conversation..." : "Checking your change...") : notice}</p>
-      {assistance !== null ? (
-        <div role="alert" className="my-4 space-y-2 rounded-xl border border-amber-500 bg-amber-50 p-4">
-          <p className="whitespace-pre-wrap">{assistance.body}</p>
-          <p>This assistance is temporary and is not a saved conversation reply.</p>
-        </div>
-      ) : null}
-      {error !== null && !uncertain ? (
-        <div role="alert" className="my-4 rounded-xl border border-amber-500 bg-amber-50 p-4">
-          <p>{errorCopy(error)}</p>
-          {error === "denied" ? <a className="mt-2 inline-block font-semibold text-teal-900 underline" href="/login/explorer">Sign in</a> : null}
-        </div>
-      ) : null}
-      {uncertain ? (
-        <div role="alert" className="my-4 space-y-3 rounded-xl border border-amber-500 bg-amber-50 p-4">
-          <p>We could not confirm your last change. Retry the same request before making another change. No new message, reply or saved change is being claimed.</p>
-          <button className={buttonClass} type="button" disabled={busy} onClick={() => { const pending = pendingRef.current; if (pending !== null) void dispatch(pending); }}>Retry the same request</button>
-        </div>
-      ) : null}
-      {!uncertain && error !== "denied" ? (
-        <button type="button" className="my-3 rounded-xl border border-teal-800 px-4 py-2 font-semibold text-teal-900 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50" disabled={busy} onClick={() => { void load(); }}>Reload saved conversation</button>
-      ) : null}
-      {state !== null ? (
-        <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-          <section aria-labelledby="conversation-heading" aria-busy={busy} className="min-w-0 rounded-2xl border border-slate-300 bg-white p-4 sm:p-6">
-            <h2 id="conversation-heading" className="text-xl font-semibold">Conversation</h2>
-            {state.pendingTurn ? <p role="status" className="my-4 rounded-xl bg-amber-50 p-4">A saved message is still awaiting a confirmed result. No reply is being claimed. Reload the saved conversation to check; another send will not be started.</p> : null}
-            {state.messages.length === 0 ? <p className="my-4 text-slate-700">There are no saved messages yet.</p> : (
-              <ol aria-label="Saved conversation" className="my-5 space-y-4">
-                {state.messages.map(message => (
-                  <li key={message.id} className="rounded-xl bg-slate-100 p-4">
-                    <p className="mb-2 font-semibold">{message.role === "explorer" ? "You" : SOLMIND_TERMS.virtualGuide}</p>
-                    <p className="whitespace-pre-wrap break-words">{message.body}</p>
-                    <time dateTime={message.createdAt} className="mt-2 block text-xs text-slate-600">{new Date(message.createdAt).toLocaleString("en-US")}</time>
-                  </li>
-                ))}
-              </ol>
-            )}
-            {!ended && sendUnavailable ? <p id="conversation-availability" className="my-4 rounded-xl bg-slate-100 p-4">The {SOLMIND_TERMS.virtualGuide} is unavailable. You can review saved messages and work with your saved Compass and Waypoints.</p> : null}
-            {!ended && atMessageCapacity ? <p id="conversation-capacity" className="my-4 rounded-xl bg-slate-100 p-4">This conversation has reached its saved-message limit. You can still review messages and work with your Compass and Waypoints.</p> : null}
-            {!ended ? <form onSubmit={send} className="mt-5 space-y-3">
-              <label className="block font-semibold" htmlFor="conversation-message">Your message</label>
-              <textarea id="conversation-message" ref={composerRef} className={fieldClass} rows={5} value={draft} maxLength={EXPLORER_CONVERSATION_LIMITS.messageCharacters} disabled={held || sendUnavailable || atMessageCapacity} aria-describedby={atMessageCapacity ? "conversation-capacity" : sendUnavailable ? "conversation-availability" : undefined} onChange={event => { setDraft(event.target.value); setDraftError(""); }} />
-              {draftError ? <p role="alert" className="text-amber-900">{draftError}</p> : null}
-              <button type="submit" className={buttonClass} disabled={held || sendUnavailable || atMessageCapacity}>Send message</button>
-            </form> : <p className="my-4 rounded-xl bg-slate-100 p-4">This saved conversation has ended. It is available for read-only review.</p>}
-          </section>
-          <ExplorerConversationFormation state={state} busy={held} readOnly={ended} onCommand={command} />
-        </div>
-      ) : null}
-      {state !== null ? <section aria-label="End Session" className="mt-6 rounded-2xl border border-slate-300 bg-white p-5">
-        {state.conversationId === null ? <>
-          <p>No saved conversation has been started. Returning home will not create or end one.</p>
-          <a className="mt-3 inline-block font-semibold text-teal-900 underline" href="/explorer/home">Return to Explorer home</a>
-        </> : ended ? <a className="font-semibold text-teal-900 underline" href="/explorer/conversations">Review ended conversations</a> : <>
-          <h2 className="text-xl font-semibold">End Session</h2>
-          <p className="mt-2 text-sm text-slate-700">End this saved conversation when you choose. Your messages, Compass, Route and Waypoints remain available for read-only review; ending does not sign you out.</p>
-          <button type="button" className={`${buttonClass} mt-3`} disabled={held} onClick={reviewEnd}>Review End Session</button>
-          {endReview !== null ? <div role="group" aria-label="Review End Session" className="mt-4 space-y-3 rounded-xl border border-amber-500 bg-amber-50 p-4">
-            <p>End this saved session and return to Explorer home? This closes this conversation; it does not mean your journey is over.</p>
-            <p>There are {state.messages.length} saved messages and {(state.route ?? []).length} recorded Route changes. A factual ending will be saved with the existing Route.</p>
-            {draft.length > 0 ? <p>Your unsaved message draft will not be saved.</p> : null}
-            {staleEndReview ? <p role="alert">Your saved conversation changed. Close this review and review End Session again.</p> : null}
-            <div className="flex flex-wrap gap-3">
-              <button type="button" className={buttonClass} disabled={endBlocked || staleEndReview} onClick={confirmEnd}>End Session and return home</button>
-              <button type="button" className={buttonClass} disabled={busy || uncertain} onClick={() => { setEndReview(null); setDraftError(""); }}>Keep this session open</button>
-            </div>
-          </div> : null}
-        </>}
-      </section> : null}
-    </main>
+    <ExplorerConversationConnectedScreen
+      actions={{
+        onReload: () => { void load(); },
+        onRetry: () => { const pending = pendingRef.current; if (pending !== null) void dispatch(pending); },
+        onDraftChange: (value: string) => { setDraft(value); setDraftError(""); },
+        onSend: send,
+        onReviewEnd: reviewEnd,
+        onConfirmEnd: confirmEnd,
+        onKeepOpen: () => { setEndReview(null); setDraftError(""); },
+        onCommand: command,
+      }}
+      composerRef={composerRef}
+      headingRef={headingRef}
+      view={{
+        state,
+        busy,
+        statusText: busy ? (state === null ? "Loading your saved conversation..." : "Checking your change...") : notice,
+        assistance,
+        errorMessage: error !== null && !uncertain ? errorCopy(error) : null,
+        signInRequired: error === "denied",
+        uncertain,
+        reloadAvailable: !uncertain && error !== "denied",
+        draft,
+        draftError,
+        endReviewOpen: endReview !== null,
+        staleEndReview,
+        ended,
+        endBlocked,
+        held,
+        sendUnavailable,
+        atMessageCapacity,
+      }}
+    />
   );
 }

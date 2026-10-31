@@ -47,7 +47,8 @@ export function ExplorerHomeNavigation({
           Design previews
         </summary>
         <p className="mt-3 text-sm">
-          These previews use a fixed local script. No AI or human Guide is
+          The older previews use a fixed local script. The conversation design
+          review shows sample messages and cannot reply. No AI or human Guide is
           connected. They are not a therapist or crisis service. Refresh clears
           the preview, and changes are not saved or shared.
         </p>

@@ -136,9 +136,27 @@ no-URL-state, no-timer, no-notification, and no-real-user boundary. Unwired
 controls stay focusable with `aria-disabled` and a visible note linked by
 `aria-describedby`; only controls marked "Layout only: works in this preview"
 act. The placeholder sentences are unapproved AI drafts.
-`/explorer/conversation` is unchanged; the S01R2 files change only in speaker
-labels and icons, which `SPEAKER_LABEL_STYLE` reverts. Removing this route
-later is a deletion that needs a named go-ahead.
+The S01R2 files change only in speaker labels and icons, which
+`SPEAKER_LABEL_STYLE` reverts. Removing this route later is a deletion that
+needs a named go-ahead.
+
+Rebuild step 2 (Paul's 2026-10-29 20:24 rebuild approval with the interim
+review first, and his 2026-10-31 01:01-01:03 go-ahead after that review) puts
+the same designed layout on the connected `/explorer/conversation` screen.
+`ExplorerConversation.tsx` keeps every fetch, decoding, authority-loss,
+pending-turn, uncertain-retry, Send and End rule unchanged and passes read-only
+view props and callbacks to the presentation-only
+`ExplorerConversationConnectedScreen.tsx`, which owns layout state only (panel,
+drawer, narrow conversation spaces). `explorerConversationConnectedScreen.ts`
+owns its fixed wording and shell data and imports no sample. The screen
+receives no Explorer or Guide name, so its Guide notes say "your Guide"
+(`UNNAMED_GUIDE`). The shared shell, navigation and support panel take a
+`connected` flag that drops the preview band and the "Sample" and "Layout only"
+tags. The real screen shows the approved live sentences, not the unapproved
+AI-companion draft. Parts not connected yet keep their "Not yet implemented:"
+notes. The existing `ExplorerConversationFormation.tsx` tools stay mounted below
+the conversation, labelled as the current tools, until rebuild steps 4 and 5
+form the Compass and Waypoints from the conversation.
 
 The first provider-dispatch increment for that later lane is the bounded S03B
 conversation contract under `src/lib/solmind/virtual-guide/`. Keep it

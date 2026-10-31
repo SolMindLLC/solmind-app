@@ -190,12 +190,26 @@ uses:
   own the "Not yet implemented:" sentences and the tagged sample content.
 
 Setting `SPEAKER_LABEL_STYLE` to `"original"` restores the earlier labels on
-both screens. `/explorer/conversation` is unchanged; the S01R2 files change
-only in speaker labels and icons.
+both screens. The S01R2 files change only in speaker labels and icons.
 
-It has no provider, persistence, auth, route handler, browser storage, URL
-state, timer, notification, or real-user effect. At a later cutover the
-existing connected `ExplorerConversation.tsx` stays the only fetch owner.
+The preview has no provider, persistence, auth, route handler, browser storage,
+URL state, timer, notification, or real-user effect.
+
+Rebuild step 2 puts the same layout on the connected `/explorer/conversation`
+screen, and `ExplorerConversation.tsx` stays its only fetch owner:
+
+- `ExplorerConversation.tsx` keeps fetch, decoding, authority loss, pending
+  turns, uncertain retry, Send and End unchanged, and passes read-only view
+  props and callbacks;
+- `ExplorerConversationConnectedScreen.tsx` is presentation only and owns
+  layout state only (panel, drawer, narrow conversation spaces);
+- `explorerConversationConnectedScreen.ts` owns its fixed wording and shell
+  data and imports no sample; its Guide notes say "your Guide"
+  (`UNNAMED_GUIDE`), because the screen receives no Guide name;
+- the shared shell, navigation and support panel take a `connected` flag that
+  drops the preview band and the "Sample" and "Layout only" tags; and
+- `ExplorerConversationFormation.tsx` stays mounted below the conversation as
+  the current Compass and Waypoint tools until rebuild steps 4 and 5.
 
 The retained sign-in preview keeps the same split: `SignInPreview.tsx` owns
 its client boundary, `SignInPreviewParts.tsx` owns presentation, and
