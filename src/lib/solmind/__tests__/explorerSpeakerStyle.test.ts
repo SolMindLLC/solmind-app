@@ -129,8 +129,8 @@ describe("speaker label style switch", () => {
     expect(shapes[0]).not.toBe(shapes[1]);
     // Each speaker gets its own drawing: the eclipse ring for the Virtual Guide, the profile for You.
     expect(icon("virtualGuide")).toContain('r="8" stroke="currentColor" stroke-width="2"');
-    expect(icon("virtualGuide")).not.toContain('d="M9.4 1.3C10.7 1.2');
-    expect(icon("explorer")).toContain('d="M9.4 1.3C10.7 1.2');
+    expect(icon("virtualGuide")).not.toContain('d="M6.72 1.66C6.87 1.66');
+    expect(icon("explorer")).toContain('d="M6.72 1.66C6.87 1.66');
     expect(icon("explorer")).not.toContain("<circle");
     const source = readFileSync(path.join(appRoot, "src/components/solmind/ExplorerSpeakerIcon.tsx"), "utf8");
     expect(source.split("\n").length).toBeLessThanOrEqual(120);

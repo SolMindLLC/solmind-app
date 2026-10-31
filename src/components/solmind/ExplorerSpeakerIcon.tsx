@@ -3,11 +3,12 @@ import { SPEAKER_LOGO_TEXT_CLASS, type Speaker } from "@/lib/solmind/explorerSpe
 // The two small speaker icons of the "logo" speaker-label style, shared by
 // /explorer/compass-comparison and /explorer/conversation-preview. They are
 // drawn for 24 and 36 CSS pixels (Paul, 2026-10-30): crops of the logo picture
-// did not look good when shrunken, and the first redrawn face read as a turkey.
-// Both take the speaker's colour from currentColor (SPEAKER_LOGO_TEXT_CLASS).
-// Soft glows and fades are stacked low-opacity shapes, so the SVG needs no ids
-// and many copies can share a page. Decorative: the visible label beside each
-// icon names the speaker.
+// did not look good when shrunken, so "You" is the logo's own face line drawn
+// thicker and the Virtual Guide is the logo's eclipse. Both take the speaker's
+// colour from currentColor (SPEAKER_LOGO_TEXT_CLASS). Soft glows and fades are
+// stacked low-opacity shapes, so the SVG needs no ids and many copies can
+// share a page. Decorative: the visible label beside each icon names the
+// speaker.
 
 const ICON_SIZE = { small: "h-6 w-6", large: "h-9 w-9" } as const;
 const BODY = "#0A0705";
@@ -30,8 +31,8 @@ export function SpeakerIcon({ speaker, size = "small" }: SpeakerIconProps) {
 
 // Virtual Guide: the logo's eclipse. A dark disc in an orange ring whose inner
 // edge is gold, brighter beside the flare. The flare at the upper right is a
-// white-hot point in a soft glow, with fine rays that fade from white through
-// gold to orange toward their tips.
+// small white point in a soft glow that fades out in steps, with fine rays
+// that fade toward their tips, like the logo's.
 function VirtualGuideShapes() {
   return (
     <>
@@ -40,41 +41,41 @@ function VirtualGuideShapes() {
       <circle cx="12" cy="12" fill="none" r="8" stroke="currentColor" strokeWidth="2" />
       <circle cx="12" cy="12" fill="none" r="7.5" stroke="#FDB64A" strokeWidth="1" />
       <path d="M14.57 4.95A7.5 7.5 0 0 1 19.05 9.43" fill="none" opacity=".7" stroke="#FFE7B0" strokeLinecap="round" strokeWidth="1" />
-      <g fill="none" stroke="none">
-        <circle cx="17.5" cy="6.5" fill="currentColor" opacity=".08" r="5" />
-        <circle cx="17.5" cy="6.5" fill="#FFB347" opacity=".12" r="3.4" />
-        <circle cx="17.5" cy="6.5" fill="#FFC861" opacity=".16" r="2.7" />
-        <circle cx="17.5" cy="6.5" fill="#FFD98A" opacity=".24" r="2.1" />
-        <circle cx="17.5" cy="6.5" fill="#FFE9B0" opacity=".38" r="1.75" />
-        <path d="M12.7 6.5L17.5 5.85L23.9 6.5L17.5 7.15ZM17.5 .1L18.15 6.5L17.5 11.3L16.85 6.5Z" fill="currentColor" opacity=".75" />
-        <path d="M13.7 6.5L17.5 5.78L23.4 6.5L17.5 7.22ZM17.5 .6L18.22 6.5L17.5 10.3L16.78 6.5Z" fill="#FFC861" opacity=".85" />
-        <path d="M13.7 6.5L17.5 5.7L22.2 6.5L17.5 7.3ZM17.5 1.8L18.3 6.5L17.5 10.3L16.7 6.5Z" fill="#FFF3D0" />
-        <g fill="none" transform="rotate(45 17.5 6.5)">
-          <path d="M13.7 6.5L17.5 6.1L21.3 6.5L17.5 6.9ZM17.5 2.7L17.9 6.5L17.5 10.3L17.1 6.5Z" fill="currentColor" opacity=".6" />
-          <path d="M14.7 6.5L17.5 6.02L20.3 6.5L17.5 6.98ZM17.5 3.7L17.98 6.5L17.5 9.3L17.02 6.5Z" fill="#FFD27A" opacity=".85" />
-        </g>
-        <circle cx="17.5" cy="6.5" fill="#FFF8E6" opacity=".7" r="1.65" />
-        <circle cx="17.5" cy="6.5" fill="#FFFFFF" r="1.25" />
+      <g fill="none" stroke="none" transform="translate(17.5 6.5)">
+        <circle fill="#F57602" opacity=".1" r="6.4" />
+        <circle fill="#FF8418" opacity=".13" r="5.7" />
+        <circle fill="#FF962A" opacity=".17" r="5" />
+        <circle fill="#FFA63C" opacity=".22" r="4.4" />
+        <circle fill="#FFB650" opacity=".27" r="3.8" />
+        <circle fill="#FFC86C" opacity=".32" r="3.2" />
+        <path d="M.04 .17L4.5-1-.04-.17ZM.08 .14L2.9-1.8-.08-.14ZM.14 .08L2-3.2-.14-.08ZM.17 .04L1-4.9-.17-.04ZM.15-.05L-1.2-3.4-.15 .05ZM.06-.15L-3-1.2-.06 .15ZM-.05-.15L-3.4 1.2 .05 .15ZM-.15-.06L-1.4 3.5 .15 .06ZM-.15 .06L1.2 3 .15-.06ZM-.06 .16L3.7 1.5 .06-.16Z" fill="#FFB547" opacity=".65" />
+        <path d="M.3-.01L-.1-6.4-.3 .01ZM.01 .3L6.3-.2-.01-.3ZM.18 .18L4.4-4.4-.18-.18ZM-.19-.18L-3.8 3.9 .19 .18ZM.01-.24L-5-.2-.01 .24ZM-.24 0L0 5.2 .24 0ZM.15-.16L-3.3-3.2-.15 .16ZM-.15 .16L3.2 3.1 .15-.16Z" fill="#FFC861" opacity=".85" />
+        <circle cx="-5.5" cy="5.5" fill={BODY} opacity=".7" r="6" />
+        <circle fill="#FFD98E" opacity=".27" r="2.65" />
+        <circle fill="#FFE8B6" opacity=".34" r="2.15" />
+        <circle fill="#FFF2D6" opacity=".45" r="1.75" />
+        <path d="M.3-.01L-.1-5.1-.3 .01ZM.01 .3L5-.2-.01-.3Z" fill="#FFF0D0" opacity=".65" />
+        <path d="M.18 .18L2.4-2.4-.18-.18ZM-.19-.18L-2.1 2.1 .19 .18Z" fill="#FFEAC0" opacity=".55" />
+        <circle fill="#FFF6E2" opacity=".6" r="1.5" />
+        <circle fill="#FFFFFF" r="1.15" />
       </g>
     </>
   );
 }
 
-// You: a person in profile looking up and to the right, like the face in the
-// logo: a raised chin, a calm mouth and a long throat. The back of the head
-// fades into the dark in stacked steps.
+// You: the logo's face line, looking up and to the right (crown, forehead,
+// nose, lips, chin and throat), traced from the logo picture and drawn thicker
+// so it holds up at this size. A pale core and a soft glow sit on its
+// upper-right side, as if lit by the flare, and both ends fade.
 function ExplorerShapes() {
   return (
     <>
-      <g fill="currentColor" opacity=".9" transform="translate(2 0)">
-        <path d="M9.4 1.3C6.4 1.3 3.6 4.6 3.7 11C3.8 17.4 5.6 16.8 5 19.2C4.4 21.6 2.4 22.2 1.6 23.8L11 23.8Z" fill="currentColor" opacity=".14" />
-        <path d="M9.4 1.3C6.71 1.31 4.18 4.67 4.28 10.92C4.38 17.16 6.14 16.75 5.63 19.11C5.11 21.48 3.23 22.22 2.52 23.8L11 23.8Z" fill="currentColor" opacity=".17" />
-        <path d="M9.4 1.3C6.99 1.32 4.72 4.73 4.82 10.84C4.92 16.94 6.66 16.7 6.22 19.04C5.79 21.37 4.02 22.23 3.38 23.8L11 23.8Z" fill="currentColor" opacity=".2" />
-        <path d="M9.4 1.3C7.3 1.33 5.3 4.8 5.4 10.75C5.5 16.7 7.2 16.65 6.85 18.95C6.5 21.25 4.85 22.25 4.3 23.8L11 23.8Z" fill="currentColor" opacity=".25" />
-        <path d="M9.4 1.3C7.61 1.33 5.88 4.87 5.98 10.67C6.08 16.46 7.74 16.6 7.48 18.86C7.21 21.13 5.68 22.27 5.22 23.8L11 23.8Z" fill="currentColor" opacity=".33" />
-        <path d="M9.4 1.3C7.89 1.34 6.42 4.93 6.52 10.59C6.62 16.24 8.26 16.55 8.07 18.79C7.89 21.02 6.47 22.28 6.08 23.8L11 23.8Z" fill="currentColor" opacity=".5" />
-        <path d="M9.4 1.3C10.7 1.2 11.7 1.9 12.4 2.9C12.8 3.5 13 4 13.25 4.4C13.45 4.75 13.65 5.05 14 5.25C14.8 5.65 16 5.95 16.8 6.55C17.05 6.9 16.7 7.35 16.3 7.65C16.6 8.1 16.95 8.8 16.95 9.5C16.95 10.1 16.85 10.5 17.05 11C17.4 11.7 17.8 12.3 17.75 13C17.7 13.7 17 14.2 16 14.8C14.6 15.7 13.4 17.6 13.25 20.8C14.5 21.5 16.6 22 17.2 23.8L7 23.8C7.3 22.3 8.6 20.9 8.7 18.7C8.8 16.5 7.2 16 7.1 10.5C7 5 8.2 1.35 9.4 1.3Z" fill="currentColor" />
-      </g>
+      <path d="M9.9 1.53C10.14 1.65 10.98 2.04 11.36 2.26C11.73 2.48 11.9 2.64 12.15 2.84C12.4 3.05 12.6 3.22 12.86 3.5C13.12 3.78 13.43 4.08 13.7 4.51C13.98 4.95 14.32 5.75 14.53 6.09C14.74 6.44 14.69 6.41 14.95 6.59C15.2 6.76 15.59 6.98 16.06 7.16C16.52 7.34 17.38 7.53 17.72 7.66C18.05 7.78 17.97 7.81 18.08 7.91C18.18 8.01 18.28 8.12 18.36 8.24C18.44 8.35 18.51 8.41 18.55 8.62C18.58 8.82 18.67 9.11 18.59 9.46C18.51 9.81 18 10.26 18.05 10.71C18.09 11.16 18.67 11.7 18.86 12.13C19.06 12.57 19.15 12.99 19.21 13.31C19.28 13.62 19.14 13.69 19.27 14.02C19.39 14.36 19.83 14.98 19.97 15.34C20.11 15.7 20.09 15.97 20.1 16.18C20.1 16.39 20.06 16.48 20.01 16.62C19.97 16.76 19.96 16.85 19.82 17.02C19.69 17.2 19.44 17.49 19.22 17.65C19.01 17.82 18.92 17.85 18.53 18.02C18.13 18.19 17.25 18.51 16.85 18.69C16.46 18.86 16.28 19.01 16.17 19.07" fill="none" opacity=".14" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" />
+      <path d="M9.18 1.65C9.33 1.7 9.78 1.85 10.07 1.97C10.35 2.09 10.63 2.23 10.9 2.39C11.17 2.55 11.43 2.73 11.68 2.92C11.93 3.1 12.1 3.23 12.39 3.53C12.68 3.83 13.11 4.25 13.42 4.71C13.72 5.17 14.02 5.92 14.24 6.28C14.46 6.63 14.57 6.7 14.73 6.85C14.88 6.99 14.97 7.03 15.17 7.14C15.37 7.25 15.54 7.35 15.94 7.49C16.34 7.62 17.21 7.8 17.58 7.95C17.95 8.11 18.03 8.27 18.15 8.4C18.27 8.52 18.28 8.53 18.31 8.7C18.33 8.86 18.38 9.09 18.3 9.39C18.21 9.69 17.86 10.27 17.77 10.53C17.69 10.78 17.66 10.67 17.77 10.92C17.88 11.17 18.28 11.74 18.43 12.01C18.58 12.28 18.58 12.31 18.65 12.54C18.73 12.76 18.82 13.09 18.87 13.36C18.92 13.62 18.81 13.77 18.94 14.12C19.08 14.47 19.53 15.18 19.67 15.46C19.81 15.74 19.77 15.63 19.78 15.8C19.79 15.98 19.78 16.35 19.74 16.52C19.71 16.7 19.69 16.71 19.58 16.85C19.46 16.99 19.52 17.12 19.04 17.37C18.56 17.63 17.21 18.14 16.7 18.37C16.19 18.61 16.16 18.66 15.97 18.79C15.77 18.91 15.61 19.07 15.54 19.12" fill="none" opacity=".5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" />
+      <path d="M4.65 1.97C4.9 1.93 5.63 1.75 6.12 1.7C6.62 1.65 7.17 1.65 7.62 1.68C8.07 1.71 8.37 1.76 8.8 1.88C9.23 2 9.76 2.18 10.21 2.39C10.66 2.61 11.09 2.87 11.49 3.17C11.88 3.47 12.25 3.83 12.58 4.2C12.91 4.56 13.29 5.05 13.48 5.39C13.68 5.72 13.67 6 13.77 6.23C13.86 6.46 13.92 6.6 14.03 6.76C14.15 6.91 14.12 6.96 14.46 7.16C14.81 7.36 15.51 7.77 16.08 7.95C16.65 8.13 17.52 8.17 17.87 8.24C18.22 8.32 18.1 8.33 18.18 8.39C18.27 8.46 18.34 8.55 18.37 8.65C18.4 8.75 18.4 8.88 18.38 8.99C18.35 9.11 18.44 9.08 18.22 9.34C18 9.6 17.19 10.29 17.05 10.54C16.91 10.78 17.25 10.59 17.38 10.78C17.51 10.98 17.64 11.42 17.81 11.72C17.99 12.02 18.33 12.28 18.44 12.61C18.56 12.94 18.45 13.42 18.49 13.68C18.53 13.95 18.69 14.04 18.69 14.18C18.69 14.32 18.49 14.42 18.49 14.52C18.48 14.62 18.48 14.62 18.66 14.79C18.84 14.95 19.36 15.34 19.54 15.51C19.71 15.68 19.67 15.72 19.71 15.83C19.75 15.94 19.77 16.06 19.77 16.17C19.77 16.28 19.81 16.37 19.71 16.51C19.62 16.65 19.73 16.75 19.2 17.01C18.67 17.26 17.11 17.8 16.54 18.04C15.96 18.28 15.96 18.34 15.75 18.47C15.54 18.6 15.45 18.66 15.27 18.83C15.1 19.01 14.84 19.32 14.69 19.52C14.55 19.72 14.52 19.76 14.4 20.04C14.28 20.31 14.12 20.73 13.98 21.16C13.85 21.59 13.65 22.37 13.58 22.61" fill="none" opacity=".35" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+      <path d="M5.53 1.78C5.78 1.76 6.58 1.66 7.02 1.65C7.47 1.65 7.82 1.69 8.22 1.76C8.61 1.82 9 1.92 9.38 2.05C9.75 2.18 10.09 2.31 10.48 2.53C10.87 2.74 11.34 3.04 11.72 3.36C12.1 3.68 12.48 4.08 12.78 4.42C13.07 4.76 13.32 5.08 13.48 5.39C13.65 5.69 13.67 6 13.77 6.23C13.86 6.46 13.92 6.6 14.03 6.76C14.15 6.91 14.12 6.96 14.46 7.16C14.81 7.36 15.51 7.77 16.08 7.95C16.65 8.13 17.52 8.17 17.87 8.24C18.22 8.32 18.1 8.33 18.18 8.39C18.27 8.46 18.34 8.55 18.37 8.65C18.4 8.75 18.4 8.88 18.38 8.99C18.35 9.11 18.44 9.08 18.22 9.34C18 9.6 17.19 10.29 17.05 10.54C16.91 10.78 17.25 10.59 17.38 10.78C17.51 10.98 17.64 11.42 17.81 11.72C17.99 12.02 18.33 12.28 18.44 12.61C18.56 12.94 18.45 13.42 18.49 13.68C18.53 13.95 18.69 14.04 18.69 14.18C18.69 14.32 18.49 14.42 18.49 14.52C18.48 14.62 18.48 14.62 18.66 14.79C18.84 14.95 19.36 15.34 19.54 15.51C19.71 15.68 19.67 15.72 19.71 15.83C19.75 15.94 19.77 16.06 19.77 16.17C19.77 16.28 19.76 16.41 19.71 16.51C19.67 16.61 19.64 16.68 19.5 16.79C19.36 16.9 19.37 16.96 18.87 17.17C18.38 17.38 17.1 17.79 16.54 18.04C15.97 18.29 15.75 18.47 15.5 18.64C15.26 18.81 15.22 18.86 15.06 19.05C14.9 19.23 14.72 19.42 14.54 19.77C14.36 20.12 14.08 20.93 13.98 21.16" fill="none" opacity=".6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+      <path d="M6.72 1.66C6.87 1.66 7.27 1.64 7.62 1.68C7.97 1.72 8.46 1.8 8.8 1.88C9.14 1.96 9.34 2.02 9.66 2.15C9.98 2.29 10.36 2.44 10.74 2.67C11.12 2.91 11.57 3.23 11.95 3.56C12.32 3.89 12.71 4.35 12.97 4.65C13.23 4.96 13.33 5.08 13.48 5.39C13.64 5.69 13.79 6.28 13.88 6.5C13.97 6.73 13.93 6.65 14.03 6.76C14.13 6.86 14.12 6.96 14.46 7.16C14.81 7.36 15.51 7.77 16.08 7.95C16.65 8.13 17.52 8.17 17.87 8.24C18.22 8.32 18.1 8.33 18.18 8.39C18.27 8.46 18.34 8.55 18.37 8.65C18.4 8.75 18.4 8.88 18.38 8.99C18.35 9.11 18.44 9.08 18.22 9.34C18 9.6 17.19 10.29 17.05 10.54C16.91 10.78 17.25 10.59 17.38 10.78C17.51 10.98 17.64 11.42 17.81 11.72C17.99 12.02 18.33 12.28 18.44 12.61C18.56 12.94 18.45 13.42 18.49 13.68C18.53 13.95 18.69 14.04 18.69 14.18C18.69 14.32 18.49 14.42 18.49 14.52C18.48 14.62 18.48 14.62 18.66 14.79C18.84 14.95 19.36 15.34 19.54 15.51C19.71 15.68 19.67 15.72 19.71 15.83C19.75 15.94 19.77 16.06 19.77 16.17C19.77 16.28 19.76 16.41 19.71 16.51C19.67 16.61 19.64 16.68 19.5 16.79C19.36 16.9 19.23 17.02 18.87 17.17C18.52 17.32 17.85 17.51 17.37 17.7C16.89 17.89 16.35 18.12 16 18.31C15.65 18.5 15.49 18.63 15.27 18.83C15.06 19.04 14.79 19.4 14.69 19.52" fill="none" opacity=".9" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+      <path d="M9.18 1.65C9.33 1.7 9.78 1.85 10.07 1.97C10.35 2.09 10.63 2.23 10.9 2.39C11.17 2.55 11.43 2.73 11.68 2.92C11.93 3.1 12.1 3.23 12.39 3.53C12.68 3.83 13.11 4.25 13.42 4.71C13.72 5.17 14.02 5.92 14.24 6.28C14.46 6.63 14.57 6.7 14.73 6.85C14.88 6.99 14.97 7.03 15.17 7.14C15.37 7.25 15.54 7.35 15.94 7.49C16.34 7.62 17.21 7.8 17.58 7.95C17.95 8.11 18.03 8.27 18.15 8.4C18.27 8.52 18.28 8.53 18.31 8.7C18.33 8.86 18.38 9.09 18.3 9.39C18.21 9.69 17.86 10.27 17.77 10.53C17.69 10.78 17.64 10.63 17.77 10.92C17.9 11.21 18.37 11.86 18.55 12.27C18.73 12.68 18.8 13.05 18.87 13.36C18.93 13.67 18.81 13.77 18.94 14.12C19.08 14.47 19.52 15.12 19.67 15.46C19.81 15.8 19.83 15.93 19.81 16.17C19.8 16.4 19.71 16.65 19.58 16.85C19.45 17.05 19.43 17.16 19.04 17.37C18.65 17.59 17.53 18.01 17.23 18.14" fill="none" opacity=".95" stroke="#E8F6FF" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1" />
     </>
   );
 }
