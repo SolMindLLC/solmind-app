@@ -405,6 +405,11 @@ public.solmind_settle_explorer_conversation_turn_v3
 public.solmind_mutate_explorer_conversation_v3
 ```
 
+Product-limits slice 2a (2026-11-01) replaces the observe step and the
+37-argument prepare step in place, with the same signatures, return shapes and
+grants, so they can return the closed outcome `paused` at a hard stop; see
+AGENTS.md, "Product hard stops in the database".
+
 The private successor retires direct service-role execution of
 `public.solmind_prepare_virtual_guide_predispatch`,
 `public.solmind_prepare_explorer_conversation_turn`,

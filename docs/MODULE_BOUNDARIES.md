@@ -1750,7 +1750,9 @@ Family F row in the same transaction as an actual change. The audit payload is
 closed and typed: no free-form caller reference or reason can enter the
 database. Same-value/current-version requests and exact already-applied retries
 are writeless; any request-field mismatch, stale version, unknown token, lock
-failure, or audit failure fails closed.
+failure, or audit failure fails closed. The family has since grown to six
+closed rows: the Suggested Waypoint send grace (2026-08-13) and the four product
+hard-stop settings (2026-11-01).
 
 The banked dormant DEF5-S3 issuance foundation keeps the database boundary narrow: `public.solmind_issue_verification_challenge` is a service-role-only, purpose-built `SECURITY DEFINER` operation over `identity.verification_challenge`, `identity.contact_method`, and the exact Family B `audit.audit_event` row. Its partial unique index independently limits each normalized-contact/purpose pair to one structurally open challenge. It does not authorize a route, delivery provider, invitation acceptance, session creation, self-signup, Guide assignment, or rate-limit implementation. The outer app/route layer must establish invitation or self-signup eligibility before calling it. The resend and lockout controls (AUTH-RLS-DEC-037) are implemented inside the same function by `supabase/migrations/20260929010000_verification_issuance_abuse_limits.sql` (login step 2, app `05884ed`); Explorer and connected Guide fixed send compositions reach it through login step 5's shared issuing caller, for a loopback trusted origin only; Admin remains inactive. Its stored comment still says no runtime caller or real-user path may use it until separately gated. Paul's go-ahead of 2026-10-04 for step 6's login writes, for local synthetic work only (no real users, no cloud; AUTH-RLS-DEF-011), is read as that gate; it is recorded in `../solmind-docs/execution/25_SolMind_MVP0_Auth_RLS_Login_Session_Cookie_Security_Contract_v0_1.md`, "Paul's Acceptance (2026-10-04)" and Section 1. Card 5 adds `supabase/migrations/20261027000000_verification_issuance_unused_code_limits.sql`: only `used_at IS NULL` rows count in the rolling hour and both lockout queries; unused superseded, expired and exhausted codes still count. All other function-body bytes and ownership/grants are preserved; the stored comment records that codes used to sign in do not count.
 
@@ -3154,9 +3156,88 @@ wires it, to the run's own availability (profile expiry and today's count); the
 budget wrapper passes it through unwrapped, and the explicit factory neither
 accepts nor passes it. Message
 text is no longer bound by code: the rule that test messages are invented, never
-a real person's words, rests on the operator. Product limits (the per-Explorer
-allowance, hard stops, notices, Admin alerts and database settings) are a later
-step and are not built here.
+a real person's words, rests on the operator. The product hard stops are in the
+database (next section); the ordinary allowance, the screen notices, Admin
+alerts and token recording are later steps and are not built here.
+
+### Product hard stops in the database - 2026-11-01
+
+Product-limits slice 2a puts Paul's two hard stops in the database (decision
+queue 2026-10-31 12:45:13 to 14:17:30 and 2026-11-01 00:32:35 to 01:07:27,
+12:00:53, 12:27:07 and 13:20:16 to 13:26:32): 500 AI calls per Explorer per
+America/Chicago day, and for everyone together 300 per active Explorer. The
+per-Explorer value is kept when the day first needs it; before the audited
+writer changes that setting, it keeps the current day's old value, so a change
+takes effect at the next midnight. The active Explorers are counted once, at
+the day's first counted Send, so the sending Explorer always counts. Change the
+limit settings one per transaction.
+`supabase/migrations/20261101010000_explorer_ai_use_hard_stops.sql` adds four
+keys to the closed `core.application_setting` family
+(`explorer_ai_use_individual_daily_call_limit`, 500 within 1 to 2,000;
+`explorer_ai_use_shared_daily_calls_per_active_explorer`, 300 within 1 to
+2,000; `explorer_ai_use_automatic_lifts_per_week`, 1 within 0 to 7; and
+`explorer_ai_use_automatic_lifts_per_month`, 2 within 0 to 30; only the audited
+writer's allowlist grows, the reader keeps its two keys), the protected
+`ai.explorer_ai_use_shared_day` and `ai.explorer_ai_use_stop`
+tables (RLS on, zero policies, no API role access, immutable except a stop's
+one-time lift and a day's one-time count) and the internal gate
+`ai.solmind_explorer_ai_use_gate_v1`.
+
+A Send counts once, when the 37-argument
+`public.solmind_prepare_explorer_conversation_turn_v3` commits its started
+operation; failed, unknown-outcome and stopped Sends stay counted, and exact
+replays never count. The observe step and an early check in prepare refuse a
+paused Send with the closed outcome `paused` before any observation, message
+or count is stored (a refusal may record the stop it reaches). One exception:
+when the only pause is a first stop of its day and the phrase check finds
+crisis or urgent signs (level 3 or 4) in the message, observe stores its
+observation first, which gives the account crisis status, and the automatic
+lift then applies. Observe and both checks in prepare take the four hard-stop
+settings, in key order, before they read the clock; the final check then takes
+one blocking transaction lock, reads the clock, counts the Send and records a
+stop it reaches. When a stop is reached, or a limit setting is lowered, between
+a Send's observe and prepare, prepare refuses at its early or final check after
+observe has stored the message's safety observation, as for a Send that turns
+stale; the message itself is never saved. Both steps were replaced in place
+with the same signatures, return shapes and grants.
+
+The individual stop pauses that Explorer until Paul's lift; a same-day lift
+gives a fresh individual allowance. An account is in crisis or urgent handling
+when any of its conversations is at restricted level 3 or 4. Such an account's
+first stop of a day is lifted automatically, once: it is recorded already
+lifted when the account is in crisis as it is reached, or lifted at the next
+Send when the crisis begins later. An account not in crisis has its first stop of
+a day lifted automatically while it has had fewer such lifts than the per-week
+setting in the last 7 Chicago days and than the per-month setting in the last
+30; Paul's lifts and crisis lifts do not count toward them, and a setting of 0
+turns them off. A second stop that day is treated as likely misuse and waits for
+Paul, across midnight. The shared stop pauses everyone and lifts at midnight.
+
+Four new service-role-only functions:
+`public.solmind_read_explorer_ai_use_pause_v1` (the notice kind for the
+signed-in Explorer: NULL, individual, shared or individual_and_shared; whether
+the current conversation is in crisis or urgent handling, for the crisis pause
+notice; and the adults-only flag; writes nothing; those flags are private facts
+for that Explorer's own screen),
+`public.solmind_lift_explorer_ai_use_pause_v1`
+(the Executor's lift, only on Paul's recorded word: role `system`, authority
+`paul_approved`, one content-free `explorer_ai_use_pause_lifted` audit row; a
+stop already lifted automatically returns `lifted_automatically`),
+`public.solmind_report_explorer_ai_use_v1` (the Question 8 facts plus the
+stop's number that day, whether the account was in crisis or urgent handling
+when it was reached, and when and how it was lifted: Paul's, a crisis lift or a
+weekly and monthly lift) and
+`public.solmind_report_explorer_ai_use_days_v1` (daily
+counts, so an unusual number of automatic lifts stands out). Paul decided that
+crisis status is not private, only what caused it, so Admins may see it at a
+limit;
+`solmind-docs/execution/05_SolMind_Privacy_And_Security_Baseline_v1_0.md`
+Section 11.4 records that exception, and the Explorer privacy disclosure must
+say so before real Explorers. Stop records never hold conversation words, a
+conversation reference, or safety or crisis counts. The app does not call these
+yet. Until the screen step (slice 2b), the repository treats `paused` as an
+unknown outcome, so a refused Send shows the existing temporary assistance.
+The migration is not applied to the Card 3 demo database before that step.
 
 ### Held private request/browser boundary
 

@@ -93,8 +93,8 @@ select is(
 
 select is(
   (select pg_catalog.count(*)::integer from core.application_setting),
-  2,
-  'the protected application-setting family remains exactly two closed rows'
+  6,
+  'the protected application-setting family remains exactly six closed rows'
 );
 select is(
   (

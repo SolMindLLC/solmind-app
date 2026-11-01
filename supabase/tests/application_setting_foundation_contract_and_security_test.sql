@@ -28,8 +28,8 @@ select is(
 );
 select is(
   (select pg_catalog.count(*)::integer from core.application_setting),
-  2,
-  'exactly two closed MVP0 setting rows exist'
+  6,
+  'exactly six closed MVP0 setting rows exist (four hard-stop settings added by product-limits slice 2a)'
 );
 select is(
   (
