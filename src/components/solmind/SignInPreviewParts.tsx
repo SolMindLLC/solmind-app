@@ -412,6 +412,12 @@ export type SignInPreviewViewProps = {
   verifyDisabled?: boolean;
   resendDisabled?: boolean;
   status?: ReactNode;
+  /** Connected Guide/Admin A3/A3A: no remembered-browser additions; omission preserves the preview. */
+  connectedPasswordSignIn?: boolean;
+  /** Connected A3/A3A identifier field type; omission keeps the preview's "text". */
+  identifierInputType?: "email" | "text";
+  /** Connected A3/A3A identifier length limit; omission keeps the preview's none. */
+  identifierMaxLength?: number;
   state: SignInPreviewState;
   emailDraft: string;
   codeDraft: string;
@@ -552,6 +558,7 @@ export function SignInPreviewView(props: SignInPreviewViewProps) {
                 maxLength={CODE_LENGTH}
                 onChange={(event) => props.onCodeDraftChange(event.target.value)}
                 placeholder={ENTER_CODE_COPY.codePlaceholder}
+                required={props.connectedPasswordSignIn || undefined}
                 style={screen === SIGN_IN_SCREENS.codeWrong ? { ...codeInputStyle, border: "1.5px solid #e08a74" } : codeInputStyle}
                 type="text"
                 value={props.codeDraft}
@@ -665,17 +672,23 @@ export function SignInPreviewView(props: SignInPreviewViewProps) {
  * and the button's wording change, and the tick box and its explanation are
  * hidden, because the browser is already remembered and the box would do
  * nothing, as Paul decided; the rest stays as it is.
+ * The connected Guide and Admin screens (connectedPasswordSignIn) show the
+ * same layout without the remembered-browser additions, which wait for their
+ * own later step, and disable the form while a request is pending.
  */
 function PasswordSignIn({ role, view }: { role: PasswordSignInRole; view: SignInPreviewViewProps }) {
   const { state } = view;
+  const connected = view.connectedPasswordSignIn === true;
+  const remembered = !connected && state.previewRemembered;
+  const fieldsDisabled = view.inputsDisabled || view.pending || undefined;
   return (
     <>
       <Heading>{PASSWORD_SIGN_IN_COPY.heading}</Heading>
       <RoleLine onChooseDifferentRole={view.onChooseDifferentRole} role={role} />
       <p style={{ margin: "10px 0 0", fontSize: 18, lineHeight: 1.5, color: AMBER, textAlign: "center" }}>
-        {state.previewRemembered ? PASSWORD_SIGN_IN_COPY.rememberedIntro : PASSWORD_SIGN_IN_COPY.intro}
+        {remembered ? PASSWORD_SIGN_IN_COPY.rememberedIntro : PASSWORD_SIGN_IN_COPY.intro}
       </p>
-      <form onSubmit={view.onSubmitPassword} style={{ ...columnStyle, display: "flex", flexDirection: "column", alignItems: "center" }}>
+      <form aria-busy={view.pending || undefined} onSubmit={view.onSubmitPassword} style={{ ...columnStyle, display: "flex", flexDirection: "column", alignItems: "center" }}>
         <div style={{ ...columnStyle, marginTop: 32, display: "flex", flexDirection: "column", gap: 10 }}>
           <label htmlFor="a3user" style={fieldLabelStyle}>
             {PASSWORD_SIGN_IN_IDENTIFIER_LABELS[role]}
@@ -683,12 +696,14 @@ function PasswordSignIn({ role, view }: { role: PasswordSignInRole; view: SignIn
           <input
             autoComplete="username"
             className={INPUT_FOCUS_CLASS}
+            disabled={fieldsDisabled}
             id="a3user"
+            maxLength={view.identifierMaxLength}
             onChange={(event) => view.onEmailDraftChange(event.target.value)}
             placeholder={EMAIL_PLACEHOLDER}
             required
             style={textInputStyle}
-            type="text"
+            type={view.identifierInputType ?? "text"}
             value={view.emailDraft}
           />
           <label htmlFor="a3pass" style={{ ...fieldLabelStyle, marginTop: 10 }}>
@@ -698,6 +713,7 @@ function PasswordSignIn({ role, view }: { role: PasswordSignInRole; view: SignIn
             <input
               autoComplete="current-password"
               className={INPUT_FOCUS_CLASS}
+              disabled={fieldsDisabled}
               id="a3pass"
               placeholder={PASSWORD_SIGN_IN_COPY.passwordPlaceholder}
               required
@@ -707,6 +723,8 @@ function PasswordSignIn({ role, view }: { role: PasswordSignInRole; view: SignIn
             <button
               aria-label={state.passwordShown ? PASSWORD_SIGN_IN_COPY.hidePasswordLabel : PASSWORD_SIGN_IN_COPY.showPasswordLabel}
               className={INPUT_FOCUS_CLASS}
+              aria-pressed={connected ? state.passwordShown : undefined}
+              disabled={fieldsDisabled}
               onClick={() => view.onPasswordShownChange(!state.passwordShown)}
               style={{ position: "absolute", right: 6, top: 5, width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", border: 0, borderRadius: 8, background: "transparent", color: MUTED, cursor: "pointer" }}
               type="button"
@@ -721,7 +739,7 @@ function PasswordSignIn({ role, view }: { role: PasswordSignInRole; view: SignIn
             {PASSWORD_SIGN_IN_COPY.forgotPasswordLabel}
           </button>
           {state.notice === "forgot" ? <Notice notice="forgot" onDismiss={view.onDismissNotice} /> : null}
-          {state.previewRemembered ? null : (
+          {remembered || connected ? null : (
             <>
               <label style={{ marginTop: 4, display: "flex", alignItems: "flex-start", gap: 12, fontSize: 15, lineHeight: 1.45, color: SOFT, cursor: "pointer" }}>
                 <input
@@ -741,8 +759,8 @@ function PasswordSignIn({ role, view }: { role: PasswordSignInRole; view: SignIn
             </>
           )}
         </div>
-        <button style={{ ...primaryStyle, marginTop: 24 }} type="submit">
-          {state.previewRemembered ? PASSWORD_SIGN_IN_COPY.rememberedSignInLabel : PASSWORD_SIGN_IN_COPY.sendCodeLabel}
+        <button disabled={view.pending || view.sendDisabled || undefined} style={{ ...primaryStyle, marginTop: 24 }} type="submit">
+          {remembered ? PASSWORD_SIGN_IN_COPY.rememberedSignInLabel : PASSWORD_SIGN_IN_COPY.sendCodeLabel}
           <ArrowRight stroke="#1a1208" />
         </button>
       </form>

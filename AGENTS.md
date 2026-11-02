@@ -876,8 +876,11 @@ M1, M2 and M3 (2026-09-29), and Guide A3/Admin A3A (2026-09-30).
 The banked Explorer layer keeps src/app/login/page.tsx and
 src/app/login/explorer/page.tsx thin. LoginExperience owns A1 and explicit
 Explorer wiring, with fixed Explorer re-entry. Connected Guide uses fixed
-/login/guide and separate GuideSignIn wiring. Connected Admin uses fixed
-/login/admin and separate AdminSignIn wiring. Standalone SignInPreview,
+/login/guide and GuideSignIn wiring; connected Admin uses fixed /login/admin
+and AdminSignIn wiring. Since 2026-11-02 both draw Paul's approved A3/A3A and
+A4 through the shared SignInPreviewView by way of PasswordRoleSignInView, as
+Explorer does; their bindings, controllers, transports, routes and homes are
+unchanged. Standalone SignInPreview,
 SignInPreviewParts and signInPreview callers retain their in-memory behavior. Source/check results alone do not establish banking; SL-070 in
 solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md
 and its linked checked receipt own current Guide publication/banking status.
@@ -904,8 +907,10 @@ without a code; and the screen stays. The tick box and the switch keep their
 state only in page
 memory, and nothing is remembered. The password field is uncontrolled, so
 what is typed in it never reaches the preview's state or markup, and it is
-never logged or put in the URL. These restrictions apply to the preview, not
-to the separately named connected role owners below.
+never logged or put in the URL. These restrictions apply to the preview, not to the separately named connected role owners below.
+The connected A3/A3A (`connectedPasswordSignIn`) keep the same layout without
+the remembered-browser box, its remembered wording and the preview band; the
+Forgot password, phone and help controls show only their not-set-up notes.
 
 The connected Explorer boundary uses `src/components/solmind/ExplorerSignIn.tsx`
 and its browser contract/transport/controller for exactly the send and verify
@@ -934,7 +939,16 @@ See `docs/MODULE_BOUNDARIES.md` for ownership and source/runtime evidence limits
 Keep fixed Guide page/POST entrypoints thin; browser transport/controller belong
 in src/lib/solmind and mounted UI in src/components/solmind/GuideSignIn.tsx.
 New forms keep one private flow ID across denied/uncertain resends; the actual HMAC code UUID stays server-only. Guide uses email only, unchanged typed password and a SolMind code. Send contains
-no password. Private drafts are cleared on cancellation/disposal; logs, URLs
+no password. The approved A4 has no password field, so PasswordRoleSignInView
+reads the password once from the uncontrolled A3 field at Send my code, empties
+the field, and holds it only in a private ref until verify (contract 25 Section
+5.3 keeps it only in page memory until the A4 submit), never in React state,
+props, markup, logs, URLs or storage; verify sends it only with a non-empty,
+required code. Because the approved A4 has no password field, it is also kept
+across Send a new code and an A4 refusal (the Executor's reading, for Paul to
+confirm), and cleared on a failed send, success, Use a different email, Choose
+a different role, an identifier edit, navigation, departure, unmount and
+pagehide. Private drafts are cleared on cancellation/disposal; logs, URLs
 and browser storage must contain no credentials, selectors or tokens.
 
 Server order is fixed-role eligible lookup, non-consuming exact challenge/
@@ -975,8 +989,8 @@ Keep src/app/login/admin/page.tsx and its two fixed POST Route Handlers thin.
 LoginExperience owns chooser/direct-entry wiring; AdminSignIn, its separate
 transport/controller and fixed /admin/home destination own the browser flow.
 Use approved email/username normalization, unchanged typed password and the
-same-account/contact ownership-before-password order. Send carries no password;
-read it only from the uncontrolled field for verify. Clear private drafts on
+same-account/contact ownership-before-password order. Send carries no password; it is read from the uncontrolled A3A field at Send my
+code and held privately until verify, exactly as for Guide. Clear private drafts on
 departure/disposal; credentials/selectors/tokens never enter logs, URLs, storage
 or home props. Refusals preserve existing cookies; bounded discard is not rollback.
 

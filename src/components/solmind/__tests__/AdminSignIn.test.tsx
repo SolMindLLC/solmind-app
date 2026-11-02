@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AdminSignIn, createAdminSignInViewBinding } from "../AdminSignIn";
+import { SOLMIND_ROLES } from "@/lib/solmind/roles";
+import { NEED_HELP_LABEL, PASSWORD_SIGN_IN_COPY, PHONE_OPTION_COPY, rememberBrowserLine } from "@/lib/solmind/signInPreview";
 
 const PASSWORD = " private view password ";
 const SELECTOR = "10000000-0000-0000-0000-000000000001";
@@ -28,7 +30,7 @@ beforeEach(() => { vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "pe
 afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup(); const noTimers = vi.getTimerCount() === 0; vi.useRealTimers(); check(noTimers); });
 
 describe("Admin view binding and static markup; no mounted browser claim", () => {
-  it("takes the latest password only on verify and clears transient drafts before one fixed navigation", async () => {
+  it("the unchanged binding takes the password it is given only on verify and clears transient drafts before one fixed navigation", async () => {
     const f = setup(); await enterCode(f); const pending = f.binding.verify(PASSWORD);
     check(JSON.parse(f.calls[1].init.body as string).password === PASSWORD && !JSON.stringify(f.binding.read()).includes(PASSWORD));
     f.calls[1].resolve(json({ outcome: "signed_in", destination: "/admin/home" })); await pending;
@@ -52,12 +54,16 @@ describe("Admin view binding and static markup; no mounted browser claim", () =>
     f.binding.suspend(); f.calls[1].resolve(json({ outcome: "signed_in", destination: "/admin/home" })); await pending;
     await f.binding.send(); check(!f.binding.read().ready && f.navigations.length === 0 && f.calls.length === 2);
   });
-  it("initial markup accepts the bounded Admin username and has a labelled uncontrolled password without deferred features", () => {
+  it("initial markup is the approved A3A through the shared view, accepting the bounded Admin username, with no remembered-browser box", () => {
     const html = renderToStaticMarkup(createElement(AdminSignIn, { fetcher: () => { throw new Error("network prohibited"); }, responseBudgetMilliseconds: 5000, onNavigate() {}, onDepart() {} }));
-    check(html.includes('id="admin-password"') && html.includes('type="password"') && html.includes('autoComplete="current-password"'));
-    check(!/id="admin-password"[^>]*\bvalue=/.test(html) && !html.includes("Remember") && !html.includes("Forgot your password") && !html.includes("phone number"));
-    check(html.includes("Signing in as the Admin") && html.includes("Email, or the Admin username"));
-    check(html.includes('id="admin-identifier" type="text" maxLength="512"') && !html.includes('type="email"'));
+    const password = /<input[^>]*id="a3pass"[^>]*>/.exec(html)?.[0] ?? "";
+    const identifier = /<input[^>]*id="a3user"[^>]*>/.exec(html)?.[0] ?? "";
+    check(password.includes('type="password"') && password.includes('autoComplete="current-password"') && !/\bvalue=/.test(password));
+    check(identifier.includes('maxLength="512"') && identifier.includes('type="text"') && !html.includes('type="email"'));
+    check(html.includes("Signing in as the Admin") && html.includes("Email, or the Admin username") && html.includes(PASSWORD_SIGN_IN_COPY.sendCodeLabel));
+    check(html.includes(PASSWORD_SIGN_IN_COPY.forgotPasswordLabel) && html.includes(PHONE_OPTION_COPY.label) && html.includes(NEED_HELP_LABEL));
+    check(!html.includes('type="checkbox"') && !html.includes(PASSWORD_SIGN_IN_COPY.rememberSafetyLine) && !html.includes(rememberBrowserLine(SOLMIND_ROLES.ADMIN)));
+    check(!html.includes("Preview controls") && !html.includes("Example screen"));
   });
   it("a new subscription after invalidation starts a fresh private lifetime and ignores an old answer", async () => {
     const f = setup(); await enterCode(f); const pending = f.binding.verify(PASSWORD);

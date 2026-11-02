@@ -2493,7 +2493,9 @@ explicit provisional timing to request-scoped dependencies and projects Next
 mutable cookie records to plain name/value entries. Preserve the strict HTTP
 reader; no auth/configuration IO at module load. LoginExperience mounts
 GuideSignIn separately; Admin has its separate connection below and standalone
-preview callers remain effect-free.
+preview callers remain effect-free. Since 2026-11-02 GuideSignIn and AdminSignIn
+draw the approved A3/A3A and A4 through PasswordRoleSignInView and the shared
+SignInPreviewView.
 
 The password-role bodies/core/route/HTTP/dependencies retain raw password text
 and fixed role/login/home. Send prepares its spare acknowledgment before lookup;
@@ -2520,8 +2522,9 @@ redemption, provider/account confirmation and session checks.
 
 Browser-safe passwordRoleSignInBrowserContract.ts, guideSignInBrowserTransport.ts
 and guideSignInFlowController.ts own Guide requests/results and private attempt
-state; src/components/solmind/GuideSignIn.tsx mounts it. Clear drafts on
-cancellation/disposal; no secrets/selectors in URLs, logs or browser storage.
+state; src/components/solmind/GuideSignIn.tsx mounts it through
+src/components/solmind/PasswordRoleSignInView.tsx. Clear drafts, including the
+privately held password, on cancellation/disposal; no secrets/selectors in URLs, logs or browser storage.
 Only current accepted success permits fixed /guide/home navigation; stale
 completions and request-selected destinations have no authority.
 
@@ -2599,9 +2602,12 @@ builders/parsers with fixed Admin POST paths, same-origin credentials, no-store,
 redirect rejection, bounded streamed JSON and explicit cancellation/budget.
 src/lib/solmind/adminSignInFlowController.ts privately owns the current opaque
 selector/generation and rejects stale, cancelled or disposed continuations.
-src/components/solmind/AdminSignIn.tsx keeps password only in an uncontrolled
-field/current verify request; send never reads it. Identifier changes/resend clear
-password/code drafts; departure, disposal and pagehide retire the active attempt.
+src/components/solmind/AdminSignIn.tsx (through PasswordRoleSignInView) reads the password once from the uncontrolled A3A field at Send my code, empties
+the field, and holds it only in a private ref until the verify request, which
+needs a non-empty, required code; send never carries it. Identifier changes
+clear password and code drafts; resend clears the code draft and keeps the held password, because the approved A4
+has no password field (the Executor's reading of contract 25 Section 5.3, for
+Paul to confirm); departure, disposal and pagehide retire the active attempt.
 Only current accepted success allows fixed /admin/home navigation. No credential,
 selector, token or private server detail enters logs, URLs, storage or home props;
 password values are not serialized into React state/markup.

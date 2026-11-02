@@ -998,4 +998,37 @@ describe("optional dormant Explorer presentation without changing preview defaul
     const resend = (html.match(/<button[^>]*>[\s\S]*?<\/button>/g) ?? []).find(item => item.endsWith(`${ENTER_CODE_COPY.resendLabel}</button>`));
     expect(resend !== undefined && !resend.includes("disabled"), "explicit resend remains usable").toBe(true);
   });
+  it("UIV05 the preview's A3 and A3A markup is unchanged by the inactive connected props", () => {
+    for (const { role } of PASSWORD_ROLES) {
+      for (const state of [onPasswordScreen(role), { ...onPasswordScreen(role), previewRemembered: true }, { ...onPasswordScreen(role), rememberTicked: true, passwordShown: true }]) {
+        const unchanged = render(state, "", "riley@example.com");
+        expect(render(state, "", "riley@example.com", { connectedPasswordSignIn: false, pending: false, inputsDisabled: false, sendDisabled: false }) === unchanged, "unchanged preview markup").toBe(true);
+      }
+    }
+  });
+  it("UIV06 connected A3 and A3A drop the remembered-browser additions and disable the form while pending", () => {
+    for (const { role, roleLine } of PASSWORD_ROLES) {
+      const remembered = { ...onPasswordScreen(role), previewRemembered: true };
+      const html = render(remembered, "", "", { connectedPasswordSignIn: true, hidePreviewAdditions: true });
+      expect(html.includes(escaped(PASSWORD_SIGN_IN_COPY.intro)) && !html.includes(escaped(PASSWORD_SIGN_IN_COPY.rememberedIntro)), "normal intro").toBe(true);
+      expect(html.includes(escaped(PASSWORD_SIGN_IN_COPY.sendCodeLabel)) && !html.includes(escaped(PASSWORD_SIGN_IN_COPY.rememberedSignInLabel)), "send-code button").toBe(true);
+      expect(!html.includes('type="checkbox"') && !html.includes(escaped(PASSWORD_SIGN_IN_COPY.rememberSafetyLine)) && !html.includes(escaped(rememberBrowserLine(role))), "no remembered-browser box").toBe(true);
+      expect((html.match(/<input/g) ?? []).length === 2 && html.includes(roleLine), "identifier and password only").toBe(true);
+      expect(html.includes('aria-pressed="false"') && !/<form aria-busy/.test(html), "eye state, idle form").toBe(true);
+      const busy = render(onPasswordScreen(role), "", "", { connectedPasswordSignIn: true, hidePreviewAdditions: true, pending: true });
+      expect(/<form aria-busy="true"/.test(busy), "busy semantics").toBe(true);
+      for (const id of ["a3user", "a3pass"]) {
+        expect(new RegExp(`<input[^>]*disabled=""[^>]*id="${id}"`).test(busy), `${id} disabled`).toBe(true);
+      }
+      expect(/<button[^>]*disabled=""[^>]*type="submit"[^>]*>Send my code/.test(busy), "send disabled").toBe(true);
+      const depart = (busy.match(/<button[^>]*>[\s\S]*?<\/button>/g) ?? []).find(item => item.endsWith("Choose a different role</button>"));
+      expect(depart !== undefined && !depart.includes("disabled"), "departure remains usable").toBe(true);
+    }
+  });
+  it("UIV07 connected identifier type and length come only from the owner", () => {
+    const guide = render(onPasswordScreen(SOLMIND_ROLES.GUIDE), "", "", { connectedPasswordSignIn: true, identifierInputType: "email" });
+    expect(/<input[^>]*id="a3user"[^>]*type="email"/.test(guide) && !/<input[^>]*id="a3user"[^>]*maxLength/.test(guide), "Guide email field").toBe(true);
+    const admin = render(onPasswordScreen(SOLMIND_ROLES.ADMIN), "", "", { connectedPasswordSignIn: true, identifierInputType: "text", identifierMaxLength: 512 });
+    expect(/<input[^>]*id="a3user"[^>]*maxLength="512"[^>]*type="text"/.test(admin), "Admin bounded text field").toBe(true);
+  });
 });
