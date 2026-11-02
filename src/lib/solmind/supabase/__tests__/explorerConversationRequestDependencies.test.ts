@@ -32,7 +32,7 @@ const serviceClient = Object.freeze({ synthetic: "service-role-client" });
 const authRpc = Object.freeze({ synthetic: "auth-rpc" });
 const authQuery = Object.freeze({ synthetic: "auth-query" });
 const repository = Object.freeze({ read: vi.fn(), prepare: vi.fn(), complete: vi.fn(), mutate: vi.fn() });
-const privateRepository = Object.freeze({ read: vi.fn(), ensure: vi.fn(), observe: vi.fn(), prepare: vi.fn(), settle: vi.fn(), mutate: vi.fn() });
+const privateRepository = Object.freeze({ read: vi.fn(), ensure: vi.fn(), observe: vi.fn(), prepare: vi.fn(), settle: vi.fn(), pause: vi.fn(), mutate: vi.fn() });
 function records(verified = principal, accountId = ACCOUNT): DeriveTrustedServerAuthContextInput {
   return {
     authenticatedUser: verified,
@@ -237,7 +237,7 @@ describe("private v3 authenticated request factory", () => {
   it("reuses genuine request-auth composition while supplying no operational defaults", async () => {
     const dependencies = createExplorerPrivateConversationRequestDependencies("synthetic=opaque");
     expect(Object.keys(dependencies).sort()).toEqual(["authenticate", "repository"]);
-    expect(Object.keys(dependencies.repository).sort()).toEqual(["ensure", "mutate", "observe", "prepare", "read", "settle"]);
+    expect(Object.keys(dependencies.repository).sort()).toEqual(["ensure", "mutate", "observe", "pause", "prepare", "read", "settle"]);
     expect(mocks.privateRepository).toHaveBeenCalledExactlyOnceWith(serviceClient);
     expect(mocks.repository).not.toHaveBeenCalled();
     expect(await dependencies.authenticate()).toEqual({ accountId: ACCOUNT, applicationSessionId: SESSION });
@@ -251,7 +251,7 @@ describe("private v3 authenticated request factory", () => {
   it("does not let runtime extra properties replace actor or persistence authority", async () => {
     const extra = { authenticate: vi.fn(), repository: { synthetic: "foreign" } };
     const dependencies = createExplorerPrivateConversationRequestDependencies(null, extra as never);
-    expect(Object.keys(dependencies.repository).sort()).toEqual(["ensure", "mutate", "observe", "prepare", "read", "settle"]);
+    expect(Object.keys(dependencies.repository).sort()).toEqual(["ensure", "mutate", "observe", "pause", "prepare", "read", "settle"]);
     expect(await dependencies.authenticate()).toEqual({ accountId: ACCOUNT, applicationSessionId: SESSION });
     expect(extra.authenticate).not.toHaveBeenCalled();
   });

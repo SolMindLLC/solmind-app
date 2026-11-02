@@ -90,6 +90,8 @@ export function ExplorerConversation() {
         replaceState(result.state);
         setError(null);
         setUncertain(false);
+        // A screen-open read carries only the hard-stop pause notice.
+        setAssistance(output?.assistance?.kind === "paused" ? output.assistance : null);
         if (!initial) setNotice("The saved conversation is up to date.");
       } else {
         replaceState(null);

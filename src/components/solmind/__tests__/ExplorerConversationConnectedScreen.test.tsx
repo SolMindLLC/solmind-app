@@ -229,6 +229,19 @@ describe("connected Explorer conversation screen", () => {
     expect(unavailable).toContain("The SolMind Virtual Guide is unavailable.");
   });
 
+  it("CC15 a hard-stop pause notice is an alert with the server's text, without the temporary-assistance sentence, and Send stays usable", () => {
+    const body = "Synthetic pause notice.\n\nThe message in the box has not been sent or saved.";
+    const paused = render(view({ assistance: { kind: "paused", body, persisted: false }, draft: "Synthetic typed message." }));
+    const alert = /<div[^>]*role="alert"[^>]*>([\s\S]*?)<\/div>/.exec(paused)?.[1] ?? "";
+    expect(unescapeHtml(alert.replace(/<[^>]+>/g, ""))).toBe(body);
+    expect(paused).not.toContain("This assistance is temporary and is not a saved conversation reply.");
+    const send = /<button\b[^>]*type="submit"[^>]*>/.exec(paused)?.[0] ?? "";
+    expect(/\sdisabled=""/.test(send)).toBe(false);
+    expect(paused).not.toContain("The SolMind Virtual Guide is unavailable.");
+    const support = render(view({ assistance: { kind: "support", body: "Synthetic support.", persisted: false } }));
+    expect(support).toContain("This assistance is temporary and is not a saved conversation reply.");
+  });
+
   it("CC06 without a loaded state it shows only the heading, notices and placeholders", () => {
     const html = render(view({ state: null, busy: true, statusText: "Loading your saved conversation...", reloadAvailable: false }));
     expect(html).toContain("Loading your saved conversation...");

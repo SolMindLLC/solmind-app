@@ -71,7 +71,7 @@ function fixture(options: { body?: string; ledger?: ReturnType<typeof fakeLedger
   const buildContext = vi.fn<Build>(async () => ({ request, evidence }));
   const authenticate = vi.fn(async () => actor);
   const read = vi.fn(async () => row);
-  const repository = { read, ensure: vi.fn(), observe: vi.fn(), prepare: vi.fn(), settle: vi.fn() };
+  const repository = { read, ensure: vi.fn(), observe: vi.fn(), prepare: vi.fn(), settle: vi.fn(), pause: vi.fn() };
   const selection = { packId: profile.packId, scopeType: "guide" as const, scopeId: profile.guideId, versionId: profile.methodologyVersionId,
     versionNumber: 1, contentMarkdown: content, contentSha256: subject.subjectSha256, methodologyAuthorizationVersion: MV1 };
   const methodologySource = { read: vi.fn(async () => selection) };

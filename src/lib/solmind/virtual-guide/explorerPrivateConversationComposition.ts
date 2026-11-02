@@ -69,12 +69,20 @@ export type ExplorerPrivateConversationReviewResult = NonNullable<ReturnType<typ
 export type ExplorerPrivateRpcRow = Readonly<{ outcome: string; ended_conversations?: unknown; conversation_state?: unknown; authority_context?: unknown;
   policy_state?: unknown; dispatch_permitted?: boolean; saved_reply?: boolean }>;
 export type ExplorerPrivateReadRow = ExplorerPrivateRpcRow & Readonly<{ conversation_state: unknown }>;
+export type ExplorerPrivatePauseNoticeKind = "individual" | "shared" | "individual_and_shared";
+// crisis and adults_only are private facts for the Explorer's own screen: never log them or pass them to signals.
+export type ExplorerPrivatePauseRow = Readonly<{ outcome: string; notice_kind?: ExplorerPrivatePauseNoticeKind | null; crisis?: boolean; adults_only?: boolean }>;
+// What the reviewed renderer needs to write a pause notice: the pause, the trusted crisis parts to lead with
+// (decision queue 2026-11-01 00:39:51 and 13:26:32), the adults-only part, and whether a typed message was refused.
+export type ExplorerPrivatePauseNotice = Readonly<{ kind: ExplorerPrivatePauseNoticeKind; crisis: "crisis" | "urgent" | null;
+  adultsOnly: boolean; refused: boolean }>;
 export type ExplorerPrivateConversationRepository = Readonly<{
   read: (actor: ExplorerConversationActor, operation?: Readonly<{ operationId: string; fingerprint: string }>) => Promise<ExplorerPrivateReadRow>;
   ensure: (parameters: ExplorerPrivateEnsureParameters) => Promise<ExplorerPrivateRpcRow>;
   observe: (parameters: ExplorerPrivateObserveParameters) => Promise<ExplorerPrivateRpcRow>;
   prepare: (parameters: ExplorerPrivatePrepareParameters) => Promise<ExplorerPrivateRpcRow>;
   settle: (parameters: ExplorerPrivateSettleParameters) => Promise<ExplorerPrivateRpcRow>;
+  pause: (actor: ExplorerConversationActor) => Promise<ExplorerPrivatePauseRow>;
   mutate?: (parameters: ExplorerPrivateMutateParameters) => Promise<ExplorerPrivateRpcRow>;
   arrange?: (parameters: ExplorerPrivateArrangeParameters) => Promise<ExplorerPrivateRpcRow>;
   category?: (parameters: ExplorerPrivateCategoryParameters) => Promise<ExplorerPrivateRpcRow>;
@@ -104,11 +112,13 @@ export type ExplorerPrivateConversationDependencies = Readonly<{
     failureAssistance: Readonly<{ support: string; adultPolicy: string; supportAndAdultPolicy: string; temporarilyUnavailable: string }>;
     render: (plan: ExplorerSafetyReplyPlan, readiness: ExplorerPrivateOperationalReadiness, signal: AbortSignal) => Promise<Readonly<{
       kind: Exclude<ExplorerPrivateReplyKind, "ordinary" | "none">; body: string;
-      trustedResponseVersion: string; resourcePolicyVersion: string }>> }>;
+      trustedResponseVersion: string; resourcePolicyVersion: string }>>;
+    pauseNotice: (notice: ExplorerPrivatePauseNotice, readiness: ExplorerPrivateOperationalReadiness) => string }>;
   operationalSignal?: Readonly<{ verificationReceiptSha256: string;
     emit: (marker: ExplorerPrivateSignalMarker, signal: AbortSignal) => Promise<void> }>;
   // Optional synchronous check made where a Send would otherwise report the Virtual Guide available
-  // after the readiness check (a saved reply, or a later exact replay): is there room for another
+  // after the readiness check (a saved reply, a later exact replay, or a Send refused because sending
+  // is paused, checked after that refusal's fresh read): is there room for another
   // Send now? Anything but true reports it unavailable. It can only turn "available" into
   // "unavailable", never the reverse; when absent, the earlier "available" result is unchanged.
   sendCapacityAvailable?: () => boolean;
@@ -247,17 +257,63 @@ function verifiedReadiness(value: ExplorerPrivateOperationalReadiness | null, de
     !/^MV1:[0-9A-F]{64}$/.test(value.methodology.authorizationVersion) ||
     dependencies.renderer.verificationReceiptSha256 !== value.rendererVerificationReceiptSha256 ||
     dependencies.operationalSignal.verificationReceiptSha256 !== value.signalVerificationReceiptSha256 ||
-    typeof dependencies.renderer.render !== "function" || typeof dependencies.operationalSignal.emit !== "function" ||
+    typeof dependencies.renderer.render !== "function" || typeof dependencies.renderer.pauseNotice !== "function" ||
+    typeof dependencies.operationalSignal.emit !== "function" ||
     !Object.values(dependencies.renderer.failureAssistance).every(bodyValid) ||
     Object.keys(dependencies.renderer.failureAssistance).sort().join("|") !== "adultPolicy|support|supportAndAdultPolicy|temporarilyUnavailable") return null;
   return Object.freeze({ ...value, configuration, modelName, methodology: Object.freeze({ ...value.methodology }) });
 }
 async function freshState(dependencies: ExplorerPrivateConversationDependencies, actor: ExplorerConversationActor): Promise<ExplorerConversationResult> {
+  return (await freshRead(dependencies, actor)).result;
+}
+// A fresh authenticated read that also keeps its row, for a caller that needs the row's server-only policy or an
+// exact replay of the same operation. The row is null whenever the result is not a successful read.
+async function freshRead(dependencies: ExplorerPrivateConversationDependencies, actor: ExplorerConversationActor,
+  operation?: Readonly<{ operationId: string; fingerprint: string }>): Promise<Readonly<{ result: ExplorerConversationResult; row: ExplorerPrivateReadRow | null }>> {
   try {
     const freshActor = await dependencies.authenticate();
-    if (!actorValid(freshActor) || freshActor.accountId !== actor.accountId || freshActor.applicationSessionId !== actor.applicationSessionId) return failed("denied").result;
-    return stateResult(await dependencies.repository.read(freshActor));
-  } catch { return failed().result; }
+    if (!actorValid(freshActor) || freshActor.accountId !== actor.accountId || freshActor.applicationSessionId !== actor.applicationSessionId) {
+      return Object.freeze({ result: failed("denied").result, row: null });
+    }
+    const row = await dependencies.repository.read(freshActor, operation);
+    const result = stateResult(row);
+    return Object.freeze({ result, row: result.ok ? row : null });
+  } catch { return Object.freeze({ result: failed().result, row: null }); }
+}
+type FailureAssistance = NonNullable<ExplorerPrivateConversationDependencies["renderer"]>["failureAssistance"];
+// Static temporary assistance for a refused or failed Send: support when the safety facts are critical.
+function failureAssistanceFor(safety: ReturnType<typeof combineExplorerSafety>, messages: FailureAssistance): ExplorerPrivateAssistance {
+  const critical = safety.restrictedLevel !== null || safety.adultReflectionStopped;
+  const body = safety.adultReflectionStopped ? (safety.restrictedLevel !== null ? messages.supportAndAdultPolicy : messages.adultPolicy)
+    : critical ? messages.support : messages.temporarilyUnavailable;
+  return Object.freeze({
+    kind: critical ? safety.adultReflectionStopped && safety.restrictedLevel === null ? "adult_policy" : "support" : "temporarily_unavailable",
+    body, persisted: false });
+}
+// The pause notice for the Explorer's own screen, or null when there is no pause or the renderer cannot write it.
+// Its safety facts come from the returned conversation's own policy (the final fresh read), falling back to the
+// pause read's flags only when that policy is unknown, plus this refused message's phrase check. Crisis or urgent
+// handling, or level 3 or 4, chooses the trusted parts (existing reply mapping: level 4 the crisis parts, level 3
+// the urgent parts). Adults-only where the Explorer may be under 18 (decision queue 2026-11-01 01:07:27).
+// When the final read's policy is unknown, the facts are the policy known before it (earlier) together with the pause
+// read's flags. The pause read returns no conversation reference, so both are kept even if the conversation may have
+// changed between the reads: that errs toward the supportive wording.
+function pauseAssistance(dependencies: ExplorerPrivateConversationDependencies, readiness: ExplorerPrivateOperationalReadiness,
+  row: ExplorerPrivatePauseRow, policy: ExplorerConversationPolicy, earlier: ExplorerConversationPolicy,
+  observation: ExplorerFallbackObservation | null, refused: boolean): ExplorerPrivateAssistance | null {
+  try {
+    if (row.notice_kind === null || row.notice_kind === undefined || !dependencies.renderer) return null;
+    const before = earlier.status === "known" ? { level: earlier.restrictedLevel ?? 0, adultsOnly: earlier.adultReflectionStopped }
+      : { level: 0, adultsOnly: false };
+    const stored = policy.status === "known" ? { level: policy.restrictedLevel ?? 0, adultsOnly: policy.adultReflectionStopped }
+      : { level: Math.max(before.level, row.crisis === true ? 3 : 0), adultsOnly: before.adultsOnly || row.adults_only === true };
+    const message = observation?.status === "available" ? observation.classification : null;
+    const level = Math.max(stored.level, message !== null && message.level >= 3 ? message.level : 0);
+    const adultsOnly = stored.adultsOnly || message?.minorIndicated === true;
+    const body = dependencies.renderer.pauseNotice(Object.freeze({ kind: row.notice_kind,
+      crisis: level >= 4 ? "crisis" : level >= 3 ? "urgent" : null, adultsOnly, refused }), readiness);
+    return bodyValid(body) ? Object.freeze({ kind: "paused", body, persisted: false }) : null;
+  } catch { return null; }
 }
 export async function readExplorerPrivateConversation(dependencies: ExplorerPrivateConversationDependencies): Promise<ExplorerPrivateConversationResult> {
   try { const actor = await dependencies.authenticate(); if (!actorValid(actor)) return failed("denied");
@@ -267,14 +323,30 @@ export async function readExplorerPrivateConversation(dependencies: ExplorerPriv
     if (dependencies.resolveOperationalReadiness === undefined) return Object.freeze({ result: state, assistance: null });
     // A GET never ensures an anchor or writes evidence. Readiness is a fresh
     // server capability, not a browser flag or the inert candidate getter.
-    let available = false;
-    try { available = verifiedReadiness(await dependencies.resolveOperationalReadiness(actor, row), dependencies) !== null; }
+    let readiness: ExplorerPrivateOperationalReadiness | null = null;
+    try { readiness = verifiedReadiness(await dependencies.resolveOperationalReadiness(actor, row), dependencies); }
     catch { /* Saved history remains readable while operational inputs are held. */ }
+    const available = readiness !== null;
+    // The hard-stop pause, read before the fresh read below so that read stays the last wait.
+    let pause: ExplorerPrivatePauseRow | null = null;
+    if (readiness !== null) {
+      try {
+        const read = await dependencies.repository.pause(actor);
+        if (read.outcome === "denied") return failed("denied");
+        if (read.outcome === "ok") pause = read;
+      } catch { /* Saved history remains readable without the notice; a Send checks the pause again. */ }
+    }
     // Readiness may await external governance/storage. Never release the old
     // private projection after that wait without fresh identity and authority.
-    const current = await freshState(dependencies, actor);
+    const fresh = await freshRead(dependencies, actor);
+    const current = fresh.result;
+    // Written after the final read, from the returned conversation's own policy, so the notice cannot contradict it.
+    const notice = readiness !== null && pause !== null && fresh.row !== null
+      ? pauseAssistance(dependencies, readiness, pause, parseExplorerPrivatePolicy(fresh.row.policy_state),
+        parseExplorerPrivatePolicy(row.policy_state), null, false) : null;
     return Object.freeze({ result: current.ok ? Object.freeze({ ...current,
-      state: Object.freeze({ ...current.state, providerState: available ? "available" : "unavailable" }) }) : current, assistance: null });
+      state: Object.freeze({ ...current.state, providerState: available ? "available" : "unavailable" }) }) : current,
+      assistance: current.ok ? notice : null });
   } catch { return failed(); }
 }
 function reviewFailure(error: "denied" | "unavailable" = "unavailable"): ExplorerPrivateConversationReviewResult {
@@ -396,8 +468,8 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
     if (!dependencies.resolveOperationalReadiness) return failed("provider_unavailable");
     const readiness = verifiedReadiness(await dependencies.resolveOperationalReadiness(actor, readRow), dependencies);
     if (!readiness || input.signal?.aborted) return failed("provider_unavailable");
-    // Checked wherever this Send would otherwise report available (a saved reply or a later exact
-    // replay), so the reply to the last allowed Send already reports the Virtual Guide unavailable.
+    // Checked wherever this Send would otherwise report available (a saved reply, a later exact
+    // replay, or a paused refusal), so the reply to the last allowed Send already reports the Virtual Guide unavailable.
     const capacity = (): boolean => {
       if (dependencies.sendCapacityAvailable === undefined) return true;
       try { return dependencies.sendCapacityAvailable() === true; } catch { return false; }
@@ -408,6 +480,69 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
     const methodology: MethodologyParameters = { p_methodology_context_pack_id: readiness.methodology.packId,
       p_methodology_context_pack_version_id: readiness.methodology.versionId, p_methodology_content_sha256: readiness.methodology.contentSha256,
       p_methodology_authorization_version: readiness.methodology.authorizationVersion };
+    // A refusal because sending is paused: the message's words are never saved and nothing is counted, so the
+    // browser keeps the typed message. The value-free marker follows transient(): conversation policy and this
+    // message only, never the pause flags. The fresh read carries this operation, so a duplicate of this Send that
+    // committed meanwhile is reported as its exact replay, never as "not sent or saved". If that read shows newly
+    // critical facts, the marker is sent then and the read is repeated, so a fresh read is always the last wait
+    // before the projection. Availability is checked after the last read; Send stays usable while paused.
+    // Accepted: in the duplicate race a critical duplicate can raise the marker for an operation then returned as
+    // its replay, because the marker comes before the final read.
+    const ready = readiness;
+    const sendOperation = Object.freeze({ operationId: command.operationId, fingerprint });
+    async function pausedResult(row: ExplorerPrivatePauseRow, known: ExplorerConversationPolicy,
+      observation: ExplorerFallbackObservation): Promise<ExplorerPrivateConversationResult> {
+      const critical = (facts: ReturnType<typeof combineExplorerSafety>) => facts.restrictedLevel !== null || facts.adultReflectionStopped;
+      async function mark(): Promise<void> {
+        try { await ownedCapability((signal) => emitSignal("preparation_unavailable", signal), 1000); }
+        catch { /* The notice is not suppressed by signal failure or a hung signal port. */ }
+      }
+      // Every policy fact a read has shown is kept (retained policy), so a later read that fails or has an unknown
+      // policy cannot lose it. The pause flags never enter these facts; they only help write the notice.
+      let retained = known;
+      const safetyNow = () => combineExplorerSafety({ policy: retained, fallback: observation, model: null });
+      let signalled = critical(safetyNow());
+      if (signalled) await mark();
+      let fresh = await freshRead(dependencies, actor, sendOperation);
+      if (input.signal?.aborted) return failed();
+      if (fresh.row !== null && fresh.row.outcome !== "exact_replay") {
+        retained = retainKnownPolicy(retained, parseExplorerPrivatePolicy(fresh.row.policy_state));
+        if (!signalled && critical(safetyNow())) {
+          signalled = true;
+          await mark();
+          fresh = await freshRead(dependencies, actor, sendOperation);
+          if (input.signal?.aborted) return failed();
+          if (fresh.row !== null && fresh.row.outcome !== "exact_replay") {
+            retained = retainKnownPolicy(retained, parseExplorerPrivatePolicy(fresh.row.policy_state));
+          }
+        }
+      }
+      // A lost or failed fresh read keeps the static assistance, as transient() does.
+      if (fresh.row === null) return Object.freeze({ result: fresh.result, assistance: failureAssistanceFor(safetyNow(), failureAssistance) });
+      const current = stateResult(fresh.row, capacity());
+      if (fresh.row.outcome === "exact_replay") return Object.freeze({ result: current, assistance: null });
+      // The notice follows the last read's own known policy; when it is unknown, the retained policy together with the
+      // pause flags. If the renderer cannot write it, the static assistance uses the retained policy facts and the
+      // phrase check (never the pause flags).
+      const notice = pauseAssistance(dependencies, ready, row, parseExplorerPrivatePolicy(fresh.row.policy_state), retained, observation, true);
+      return Object.freeze({ result: current, assistance: notice ?? failureAssistanceFor(safetyNow(), failureAssistance) });
+    }
+    // The phrase check runs before the pause is read: a crisis or urgent message (level 3 or 4) can unlock a
+    // first-stop pause (decision queue 2026-11-01 13:24:41), and it chooses the supportive crisis wording of a
+    // refusal (13:26:32). The pause read cannot tell a first stop from a second, so for an individual-only
+    // pause such a message goes on to observe, which decides; every other reported pause is refused before
+    // ensure, so that refusal creates no conversation. The read is advisory: if it fails, the Send goes on to
+    // ensure, observe and prepare, which enforce the stops, as before the screen step (a first Send can then
+    // leave an empty conversation when observe or prepare refuses it).
+    const phrase = detectExplorerFallback(command.body, readiness.configuration.fallback);
+    let pauseRow: ExplorerPrivatePauseRow | null = null;
+    try { pauseRow = await dependencies.repository.pause(actor); } catch { /* observe and prepare still enforce the stops */ }
+    if (pauseRow?.outcome === "denied") return failed("denied");
+    if (pauseRow?.outcome === "ok" && pauseRow.notice_kind !== null && pauseRow.notice_kind !== undefined &&
+        !(pauseRow.notice_kind === "individual" && phrase.status === "available" && phrase.classification.level >= 3)) {
+      return await pausedResult(pauseRow, policy, phrase);
+    }
+    if (input.signal?.aborted) return failed();
     const ensuredRow = await dependencies.repository.ensure({ ...base(actor), ...methodology,
       p_candidate_conversation_id: scoped(actor, "new", command.operationId, "conversation"),
       p_expected_revision: command.expectedRevision, p_configuration_fingerprint: readiness.configurationFingerprint });
@@ -428,18 +563,25 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
       }
       const current = await freshState(dependencies, actor);
       if (input.signal?.aborted) return failed();
-      const messages = failureAssistance;
-      const body = safety.adultReflectionStopped ? (safety.restrictedLevel !== null ? messages.supportAndAdultPolicy : messages.adultPolicy)
-        : critical ? messages.support : messages.temporarilyUnavailable;
       // No generated candidate, saved-record claim or private state without a
       // separate fresh authenticated read. Static assistance remains transient.
       void persistence;
-      return Object.freeze({ result: current, assistance: Object.freeze({
-        kind: critical ? safety.adultReflectionStopped && safety.restrictedLevel === null ? "adult_policy" : "support" : "temporarily_unavailable",
-        body, persisted: false }) });
+      return Object.freeze({ result: current, assistance: failureAssistanceFor(safety, failureAssistance) });
+    }
+    // Observe or prepare refused the Send as paused: keep the policy it returned, so a failure from here still has
+    // the critical facts, then read the pause again for its current kind. A failed re-read rejects into the
+    // caller's catch; a denied one, another outcome, or a pause that has already ended gets transient() directly.
+    // Either way the Send ends as it did before the screen step: the temporary assistance, its marker when the
+    // facts are critical, and transient()'s own fresh read (which reports a lost sign-in as denied).
+    async function pausedAfterCheck(policyState: unknown): Promise<ExplorerPrivateConversationResult> {
+      policy = parseExplorerPrivatePolicy(policyState);
+      rememberedPolicy = retainKnownPolicy(rememberedPolicy, policy);
+      const row = await dependencies.repository.pause(actor);
+      if (row.outcome !== "ok" || row.notice_kind === null || row.notice_kind === undefined) return await transient("preparation_unavailable");
+      return await pausedResult(row, rememberedPolicy, fallback);
     }
     try {
-      fallback = detectExplorerFallback(command.body, readiness.configuration.fallback);
+      fallback = phrase;
       if (fallback.status !== "available" || input.signal?.aborted) return transient("preparation_unavailable");
       const observationParameters: ExplorerPrivateObserveParameters = { ...base(actor), p_conversation_id: ids.conversationId,
         p_operation_id: command.operationId, p_logical_operation_id: ids.logicalOperationId, p_expected_revision: command.expectedRevision,
@@ -452,6 +594,7 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
         const replay = await dependencies.repository.read(actor, { operationId: command.operationId, fingerprint });
         return replay.outcome === "exact_replay" ? Object.freeze({ result: stateResult(replay, capacity()), assistance: null }) : transient("preparation_unavailable");
       }
+      if (observed.outcome === "paused") return await pausedAfterCheck(observed.policy_state);
       if (observed.outcome !== "ok") return transient("preparation_unavailable");
       policy = parseExplorerPrivatePolicy(observed.policy_state);
       rememberedPolicy = retainKnownPolicy(rememberedPolicy, policy);
@@ -483,6 +626,7 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
         p_trusted_response_version: readiness.configuration.trustedResponses.version, p_resource_policy_version: readiness.resourcePolicyVersion,
         p_expected_safety_version: policy.safetyVersion, p_model_name: readiness.modelName });
       if (prepared.outcome === "exact_replay") return Object.freeze({ result: stateResult(prepared, capacity()), assistance: null });
+      if (prepared.outcome === "paused") return await pausedAfterCheck(prepared.policy_state);
       if (prepared.outcome !== "ok" || prepared.dispatch_permitted !== true) return transient("preparation_unavailable");
       const currentPolicy = parseExplorerPrivatePolicy(prepared.policy_state);
       const preparedState = stateResult(prepared, true);

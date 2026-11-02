@@ -3,7 +3,7 @@ import { withExplorerPrivateRequestBudgets } from "./explorerPrivateRequestBudge
 import { getExplorerPrivateConfigurationCandidate } from "../virtual-guide/explorerPrivateConfiguration";
 import type {
   ExplorerPrivateConversationDependencies, ExplorerPrivateConversationRepository,
-  ExplorerPrivateOperationalReadiness, ExplorerPrivateReadRow,
+  ExplorerPrivateOperationalReadiness, ExplorerPrivateReadRow, ExplorerPrivatePauseRow,
   ExplorerPrivateEnsureParameters, ExplorerPrivateObserveParameters,
   ExplorerPrivatePrepareParameters, ExplorerPrivateSettleParameters, ExplorerPrivateMutateParameters, ExplorerPrivateArrangeParameters, ExplorerPrivateEndParameters, ExplorerPrivateReviewParameters,
 } from "../virtual-guide/explorerPrivateConversationComposition";
@@ -20,6 +20,7 @@ const STATE = Object.freeze({ version: "explorer-conversation.v1" as const, conv
   revision: 1, pendingTurn: false, providerState: "unavailable" as const,
   messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] });
 const ROW: ExplorerPrivateReadRow = Object.freeze({ outcome: "ok", conversation_state: STATE });
+const PAUSE_ROW: ExplorerPrivatePauseRow = Object.freeze({ outcome: "ok", notice_kind: null, crisis: false, adults_only: false });
 const ACTOR_PARAMETERS = { p_actor_user_account_id: ID, p_user_session_id: SESSION };
 const METHODOLOGY = { p_methodology_context_pack_id: ID, p_methodology_context_pack_version_id: ID,
   p_methodology_content_sha256: SHA, p_methodology_authorization_version: "MV1:" + SHA };
@@ -93,6 +94,7 @@ function fixture() {
     observe: vi.fn<ExplorerPrivateConversationRepository["observe"]>(async () => ROW),
     prepare: vi.fn<ExplorerPrivateConversationRepository["prepare"]>(async () => ROW),
     settle: vi.fn<ExplorerPrivateConversationRepository["settle"]>(async () => ROW),
+    pause: vi.fn<ExplorerPrivateConversationRepository["pause"]>(async () => PAUSE_ROW),
     mutate: vi.fn<NonNullable<ExplorerPrivateConversationRepository["mutate"]>>(async () => ROW),
     arrange: vi.fn<NonNullable<ExplorerPrivateConversationRepository["arrange"]>>(async () => ROW),
     end: vi.fn<NonNullable<ExplorerPrivateConversationRepository["end"]>>(async () => ROW),
@@ -109,6 +111,7 @@ function repositoryCalls(dependencies: ExplorerPrivateConversationDependencies) 
     observe: () => dependencies.repository.observe(OBSERVE),
     prepare: () => dependencies.repository.prepare(PREPARE),
     settle: () => dependencies.repository.settle(SETTLE),
+    pause: () => dependencies.repository.pause(ACTOR),
     mutate: () => dependencies.repository.mutate!(MUTATE),
     arrange: () => dependencies.repository.arrange!(ARRANGE),
     end: () => dependencies.repository.end!(END),
@@ -116,7 +119,7 @@ function repositoryCalls(dependencies: ExplorerPrivateConversationDependencies) 
   };
 }
 const EXPECTED_ARGUMENTS = { read: [ACTOR, OPERATION], ensure: [ENSURE], observe: [OBSERVE],
-  prepare: [PREPARE], settle: [SETTLE], mutate: [MUTATE], arrange: [ARRANGE], end: [END], review: [REVIEW] };
+  prepare: [PREPARE], settle: [SETTLE], pause: [ACTOR], mutate: [MUTATE], arrange: [ARRANGE], end: [END], review: [REVIEW] };
 
 beforeEach(() => { vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] }); });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -125,10 +128,10 @@ describe("private request port budgets with explicit synthetic dependencies", ()
   it("preserves held optional absence and ordinary actor/row identity without fabricating capabilities", async () => {
     const f = fixture();
     const repository = { read: f.repository.read, ensure: f.repository.ensure, observe: f.repository.observe,
-      prepare: f.repository.prepare, settle: f.repository.settle };
+      prepare: f.repository.prepare, settle: f.repository.settle, pause: f.repository.pause };
     const wrapped = withExplorerPrivateRequestBudgets({ authenticate: f.authenticate, repository });
     expect(Object.keys(wrapped).sort()).toEqual(["authenticate", "repository"]);
-    expect(Object.keys(wrapped.repository).sort()).toEqual(["ensure", "observe", "prepare", "read", "settle"]);
+    expect(Object.keys(wrapped.repository).sort()).toEqual(["ensure", "observe", "pause", "prepare", "read", "settle"]);
     expect(Object.isFrozen(wrapped)).toBe(true); expect(Object.isFrozen(wrapped.repository)).toBe(true);
     expect(wrapped.repository).not.toHaveProperty("arrange");
     expect(wrapped.repository).not.toHaveProperty("end"); expect(wrapped.repository).not.toHaveProperty("review");
@@ -139,7 +142,7 @@ describe("private request port budgets with explicit synthetic dependencies", ()
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it.each(["read", "ensure", "observe", "prepare", "settle", "mutate", "arrange", "end", "review"] as const)(
+  it.each(["read", "ensure", "observe", "prepare", "settle", "pause", "mutate", "arrange", "end", "review"] as const)(
     "bounds a stalled %s once with exact arguments and ignores a late success", async method => {
       const f = fixture(); const held = deferred<ExplorerPrivateReadRow>();
       f.repository[method].mockImplementation(() => held.promise);
@@ -221,6 +224,7 @@ describe("private request port budgets with explicit synthetic dependencies", ()
         supportAndAdultPolicy: "Synthetic support and adult policy.", temporarilyUnavailable: "Synthetic unavailable." },
       render: vi.fn(async () => ({ kind: "urgent" as const, body: "Synthetic reviewed response.",
         trustedResponseVersion: "synthetic-trusted.v1", resourcePolicyVersion: "synthetic-resources.v1" })),
+      pauseNotice: vi.fn(() => "Synthetic pause notice."),
     };
     const operationalSignal = { verificationReceiptSha256: SHA, emit: vi.fn(async () => undefined) };
     const wrapped = withExplorerPrivateRequestBudgets({ ...f.dependencies, resolveOperationalReadiness: resolve,
@@ -248,7 +252,7 @@ describe("private request port budgets with explicit synthetic dependencies", ()
 it("propagates the supplied arrangement capability and exact arguments without reaching any other port", async () => {
   const f = fixture();
   const wrapped = withExplorerPrivateRequestBudgets(f.dependencies);
-  expect(Object.keys(wrapped.repository).sort()).toEqual(["arrange", "end", "ensure", "mutate", "observe", "prepare", "read", "review", "settle"]);
+  expect(Object.keys(wrapped.repository).sort()).toEqual(["arrange", "end", "ensure", "mutate", "observe", "pause", "prepare", "read", "review", "settle"]);
   expect(await wrapped.repository.arrange!(ARRANGE)).toBe(ROW);
   expect(f.repository.arrange).toHaveBeenCalledExactlyOnceWith(ARRANGE);
   expect(f.repository.arrange.mock.calls[0][0]).toBe(ARRANGE);

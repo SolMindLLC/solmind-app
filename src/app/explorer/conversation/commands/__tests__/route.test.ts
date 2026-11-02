@@ -113,3 +113,15 @@ it("projects bounded transient assistance separately and rejects leaked engine f
   mocks.command.mockResolvedValue({ result, assistance, policy_state: { private: "must not leak" } });
   expect(await invoke()).toEqual(unavailable);
 });
+
+it("projects a server-written hard-stop pause notice intact and still rejects leaked pause flags", async () => {
+  const state = { version: "explorer-conversation.v1", conversationId: null, revision: 0, providerState: "available", pendingTurn: false,
+    messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] };
+  const result = { ok: true, state, error: null };
+  const assistance = { kind: "paused", body: "Synthetic pause notice.\n\nThe message in the box has not been sent or saved.", persisted: false };
+  mocks.command.mockResolvedValue({ result, assistance });
+  const response = await POST(request());
+  expect(await response.json()).toEqual({ version: "explorer-private-conversation-response.v1", result, assistance });
+  mocks.command.mockResolvedValue({ result, assistance: { ...assistance, crisis: true } });
+  expect(await invoke()).toEqual(unavailable);
+});

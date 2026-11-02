@@ -40,9 +40,9 @@ function fixture(row: unknown) {
   return { repository, rpc, abortSignal };
 }
 describe("Closed private Explorer RPC repository (synthetic client)", () => {
-  it("exposes twelve closed ports including category formation, End and ended review, without generic access", () => {
+  it("exposes thirteen closed ports including category formation, End, ended review and the pause read, without generic access", () => {
     const f = fixture(null);
-    expect(Object.keys(f.repository).sort()).toEqual(["arrange", "category", "end", "ensure", "mutate", "observe", "prepare", "read", "release", "review", "settle", "waypointRevision"]);
+    expect(Object.keys(f.repository).sort()).toEqual(["arrange", "category", "end", "ensure", "mutate", "observe", "pause", "prepare", "read", "release", "review", "settle", "waypointRevision"]);
     expect(Object.isFrozen(f.repository)).toBe(true);
   });
   it("read derives exact actor fields and paired operation selectors", async () => {
@@ -323,4 +323,53 @@ describe("closed clarification successor SDK",()=>{
    const f=fixture(null);await expect(f.repository.waypointRevision!({...input(),p_answers:answers} as unknown as Parameters<NonNullable<typeof f.repository.waypointRevision>>[0])).rejects.toThrow();expect(f.rpc).not.toHaveBeenCalled();
   }expect(trap).not.toHaveBeenCalled();
  });
+});
+
+describe("hard-stop pause outcomes and the pause read (product-limits slice 2b)", () => {
+  const ACTOR_INPUT = { accountId: UUID, applicationSessionId: UUID };
+  it("accepts the closed paused outcome from observe and both prepare checks, and nowhere else", async () => {
+    const o = fixture({ outcome: "paused", policy_state: null });
+    expect(await o.repository.observe(observe())).toEqual({ outcome: "paused", policy_state: null });
+    const p = fixture({ outcome: "paused", conversation_state: null, dispatch_permitted: false, policy_state: null });
+    expect(await p.repository.prepare(prepare())).toMatchObject({ outcome: "paused", dispatch_permitted: false });
+    const e = fixture({ outcome: "paused", conversation_state: null, authority_context: null, policy_state: null });
+    await expect(e.repository.ensure(ensure())).rejects.toThrowError("explorer_private_repository_unavailable");
+    const s = fixture({ outcome: "paused", conversation_state: null, policy_state: null, saved_reply: false });
+    await expect(s.repository.settle(settle())).rejects.toThrowError("explorer_private_repository_unavailable");
+    const r = fixture({ outcome: "paused", conversation_state: null, authority_context: null, policy_state: null });
+    await expect(r.repository.read(ACTOR_INPUT)).rejects.toThrowError("explorer_private_repository_unavailable");
+  });
+  it.each([
+    { outcome: "ok", notice_kind: null, crisis: false, adults_only: false },
+    { outcome: "ok", notice_kind: "individual", crisis: true, adults_only: false },
+    { outcome: "ok", notice_kind: "shared", crisis: false, adults_only: true },
+    { outcome: "ok", notice_kind: "individual_and_shared", crisis: true, adults_only: true },
+  ])("reads the pause with exactly the actor pair: %j", async (row) => {
+    const f = fixture(row);
+    expect(await f.repository.pause(ACTOR_INPUT)).toEqual(row);
+    expect(f.rpc).toHaveBeenCalledExactlyOnceWith("solmind_read_explorer_ai_use_pause_v1", ACTOR);
+    expect(f.abortSignal.mock.calls[0][0]).toBeInstanceOf(AbortSignal);
+  });
+  it.each([
+    { outcome: "ok", notice_kind: "generated", crisis: false, adults_only: false },
+    { outcome: "ok", notice_kind: "shared", crisis: "false", adults_only: false },
+    { outcome: "ok", notice_kind: "shared", crisis: false, adults_only: 0 },
+    { outcome: "ok", notice_kind: null, crisis: true, adults_only: false },
+    { outcome: "ok", notice_kind: null, crisis: false, adults_only: true },
+    { outcome: "paused", notice_kind: "shared", crisis: false, adults_only: false },
+    { outcome: "ok", notice_kind: "shared", crisis: false },
+    { outcome: "ok", notice_kind: "shared", crisis: false, adults_only: false, counts: 3 },
+  ])("rejects a malformed or widened pause row: %j", async (row) => {
+    const f = fixture(row);
+    await expect(f.repository.pause(ACTOR_INPUT)).rejects.toThrowError("explorer_private_repository_unavailable");
+  });
+  it("maps the pause read's denial and keeps its unavailable error and unknown acknowledgement opaque, with one attempt", async () => {
+    const denied = fixture(null); denied.abortSignal.mockResolvedValue({ data: [], error: { code: "P0001", message: "solmind_explorer_private_denied" } });
+    expect(await denied.repository.pause(ACTOR_INPUT)).toEqual({ outcome: "denied" });
+    const unavailable = fixture(null); unavailable.abortSignal.mockResolvedValue({ data: [], error: { code: "P0001", message: "solmind_explorer_private_unavailable" } });
+    await expect(unavailable.repository.pause(ACTOR_INPUT)).rejects.toThrowError("explorer_private_repository_unavailable");
+    const lost = fixture(null); lost.abortSignal.mockRejectedValue(new Error("private database detail"));
+    await expect(lost.repository.pause(ACTOR_INPUT)).rejects.toThrowError("explorer_private_repository_unavailable");
+    expect(lost.rpc).toHaveBeenCalledOnce();
+  });
 });

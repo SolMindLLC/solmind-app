@@ -14,6 +14,13 @@ describe("private conversation browser response", () => {
     expect(Object.isFrozen(parsed)).toBe(true);
     expect(Object.isFrozen(parsed?.assistance)).toBe(true);
   });
+  it("admits the server-written hard-stop pause notice as one more closed assistance kind, frozen", () => {
+    const paused = { kind: "paused", body: "Synthetic pause notice.\n\nSynthetic help text.", persisted: false };
+    const parsed = parseExplorerPrivateConversationResponse({ ...response(), assistance: paused });
+    expect(parsed?.assistance).toEqual(paused); expect(Object.isFrozen(parsed?.assistance)).toBe(true);
+    expect(parseExplorerPrivateConversationResponse({ ...response(), assistance: { ...paused, notice_kind: "shared" } })).toBeNull();
+    expect(parseExplorerPrivateConversationResponse({ ...response(), assistance: { ...paused, crisis: true } })).toBeNull();
+  });
   it("admits static assistance after authority loss without private state", () => {
     const denied = { ok: false, state: null, error: "denied" };
     expect(parseExplorerPrivateConversationResponse({ ...response(), result: denied })?.result).toEqual(denied);

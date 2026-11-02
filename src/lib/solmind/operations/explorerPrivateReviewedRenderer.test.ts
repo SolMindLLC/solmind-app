@@ -90,9 +90,57 @@ describe("explicit private reviewed renderer with synthetic resources", () => {
   it("keeps an immutable assistance copy and supplies no notification/adoption capability", () => {
     const f = fixture(); f.input.failureAssistance.support = "Changed outside the renderer.";
     expect(f.renderer.failureAssistance.support).toBe("Synthetic support.");
-    expect(Object.keys(f.renderer).sort()).toEqual(["failureAssistance", "render", "verificationReceiptSha256"]);
+    expect(Object.keys(f.renderer).sort()).toEqual(["failureAssistance", "pauseNotice", "render", "verificationReceiptSha256"]);
     expect(Object.isFrozen(f.renderer)).toBe(true); expect(Object.isFrozen(f.renderer.failureAssistance)).toBe(true);
     expect(() => createExplorerPrivateReviewedRenderer({ ...f.input, adultResources: "" })).toThrow(FAILURE);
     expect(() => createExplorerPrivateReviewedRenderer({ ...f.input, ageAppropriateResources: "\ud800" })).toThrow(FAILURE);
+  });
+});
+
+describe("hard-stop pause notices (product-limits slice 2b)", () => {
+  const INDIVIDUAL = "Sending to the Virtual Guide is paused because this account has reached its daily limit for AI use. " +
+    "Sending can start again once a SolMind Admin lifts the pause. Your saved messages remain available.";
+  const SHARED = "SolMind has reached its shared daily limit for AI use, so sending to the Virtual Guide is paused. " +
+    "You can try again after midnight, Chicago time. Your saved messages remain available.";
+  const BOTH = "Sending to the Virtual Guide is paused because this account has reached its daily limit for AI use " +
+    "and SolMind has reached its shared daily limit. Sending can start again only after both pauses have ended: SolMind's " +
+    "shared pause ends at midnight, Chicago time, and this account's pause must also be lifted. A SolMind Admin can lift " +
+    "this account's pause. Your saved messages remain available.";
+  const REFUSED = "The message in the box has not been sent or saved.";
+  it("writes each ordinary notice with its true restart condition, the refused line only on a refused Send, and the help text last", () => {
+    const f = fixture();
+    expect(f.renderer.pauseNotice({ kind: "individual", crisis: null, adultsOnly: false, refused: true }, f.readiness))
+      .toBe([INDIVIDUAL, REFUSED, "If you need help right now:\n" + ADULT].join("\n\n"));
+    expect(f.renderer.pauseNotice({ kind: "shared", crisis: null, adultsOnly: false, refused: false }, f.readiness))
+      .toBe([SHARED, "If you need help right now:\n" + ADULT].join("\n\n"));
+    expect(f.renderer.pauseNotice({ kind: "individual_and_shared", crisis: null, adultsOnly: false, refused: true }, f.readiness))
+      .toBe([BOTH, REFUSED, "If you need help right now:\n" + ADULT].join("\n\n"));
+  });
+  it("adds the adults-only part with the age-appropriate help text", () => {
+    const f = fixture(); const trusted = f.configuration.trustedResponses;
+    expect(f.renderer.pauseNotice({ kind: "shared", crisis: null, adultsOnly: true, refused: true }, f.readiness))
+      .toBe([SHARED, REFUSED, trusted.adultOnly, "If you need help right now:\n" + YOUTH].join("\n\n"));
+  });
+  it("leads a crisis notice with the trusted parts in reply order, then the pause and its restart condition", () => {
+    const f = fixture(); const trusted = f.configuration.trustedResponses;
+    expect(f.renderer.pauseNotice({ kind: "individual", crisis: "crisis", adultsOnly: false, refused: true }, f.readiness))
+      .toBe([trusted.crisis.acknowledgment, trusted.crisis.limits, ADULT, trusted.crisis.humanConnection, INDIVIDUAL, REFUSED].join("\n\n"));
+    expect(f.renderer.pauseNotice({ kind: "shared", crisis: "urgent", adultsOnly: true, refused: false }, f.readiness))
+      .toBe([trusted.urgent.acknowledgment, trusted.urgent.limits, YOUTH, trusted.urgent.humanConnection, trusted.adultOnly, SHARED].join("\n\n"));
+  });
+  it("refuses a malformed notice or a mismatched readiness binding", () => {
+    const f = fixture();
+    for (const notice of [{ kind: "generated", crisis: null, adultsOnly: false, refused: false },
+      { kind: "shared", crisis: "minor", adultsOnly: false, refused: false }, { kind: "shared", crisis: null, adultsOnly: "no", refused: false },
+      { kind: "shared", crisis: null, adultsOnly: false, refused: false, body: "smuggled" }, { kind: "shared", crisis: null, adultsOnly: false }]) {
+      expect(() => f.renderer.pauseNotice(notice as never, f.readiness)).toThrowError(FAILURE);
+    }
+    // A getter could answer differently on each read; only plain data properties are accepted, read once.
+    let reads = 0;
+    const getter = { kind: "shared", crisis: null, refused: false, get adultsOnly() { reads += 1; return reads > 1; } };
+    expect(() => f.renderer.pauseNotice(getter as never, f.readiness)).toThrowError(FAILURE);
+    const valid = { kind: "shared", crisis: null, adultsOnly: false, refused: false } as const;
+    expect(() => f.renderer.pauseNotice(valid, { ...f.readiness, resourcePolicyVersion: "other.v1" })).toThrowError(FAILURE);
+    expect(() => f.renderer.pauseNotice(valid, { ...f.readiness, rendererVerificationReceiptSha256: "B".repeat(64) })).toThrowError(FAILURE);
   });
 });

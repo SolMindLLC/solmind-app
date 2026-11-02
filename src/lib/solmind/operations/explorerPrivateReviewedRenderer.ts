@@ -1,10 +1,40 @@
 import "server-only";
 import { explorerSafetyUnicodeValid } from "../virtual-guide/explorerSafetyReplyContract";
-import type { ExplorerPrivateConversationDependencies, ExplorerPrivateOperationalReadiness } from "../virtual-guide/explorerPrivateConversationComposition";
+import type { ExplorerPrivateConversationDependencies, ExplorerPrivateOperationalReadiness, ExplorerPrivatePauseNotice } from "../virtual-guide/explorerPrivateConversationComposition";
 import type { ExplorerSafetyReplyPlan } from "../virtual-guide/explorerConversationSafety";
 
 type Renderer = NonNullable<ExplorerPrivateConversationDependencies["renderer"]>;
 const FAILURE = "explorer_private_renderer_unavailable";
+// Hard-stop pause notices (decision queue 2026-11-01 01:07:27), each giving the true restart condition (13:26:32):
+// the individual stop waits for an Admin's lift, the shared stop ends at midnight, Chicago time, and with both,
+// sending resumes only once both are over.
+const PAUSE_TEXT: Readonly<Record<ExplorerPrivatePauseNotice["kind"], string>> = Object.freeze({
+  individual: "Sending to the Virtual Guide is paused because this account has reached its daily limit for AI use. " +
+    "Sending can start again once a SolMind Admin lifts the pause. Your saved messages remain available.",
+  shared: "SolMind has reached its shared daily limit for AI use, so sending to the Virtual Guide is paused. " +
+    "You can try again after midnight, Chicago time. Your saved messages remain available.",
+  individual_and_shared: "Sending to the Virtual Guide is paused because this account has reached its daily limit for AI use " +
+    "and SolMind has reached its shared daily limit. Sending can start again only after both pauses have ended: SolMind's " +
+    "shared pause ends at midnight, Chicago time, and this account's pause must also be lifted. A SolMind Admin can lift " +
+    "this account's pause. Your saved messages remain available.",
+});
+const PAUSE_REFUSED = "The message in the box has not been sent or saved.";
+const PAUSE_HELP = "If you need help right now:";
+// A data copy of the notice, read once from plain data properties (no getters), or null when it is malformed.
+function pauseNoticeCopy(notice: unknown): ExplorerPrivatePauseNotice | null {
+  if (notice === null || typeof notice !== "object" || Array.isArray(notice) ||
+    ![Object.prototype, null].includes(Object.getPrototypeOf(notice))) return null;
+  if (Reflect.ownKeys(notice).length !== 4 || Object.keys(notice).sort().join("|") !== "adultsOnly|crisis|kind|refused") return null;
+  const copy: Record<string, unknown> = {};
+  for (const key of ["kind", "crisis", "adultsOnly", "refused"]) {
+    const descriptor = Object.getOwnPropertyDescriptor(notice, key);
+    if (!descriptor || !("value" in descriptor)) return null;
+    copy[key] = descriptor.value;
+  }
+  if (typeof copy.kind !== "string" || !Object.hasOwn(PAUSE_TEXT, copy.kind) || ![null, "crisis", "urgent"].includes(copy.crisis as string | null) ||
+    typeof copy.adultsOnly !== "boolean" || typeof copy.refused !== "boolean") return null;
+  return Object.freeze(copy) as ExplorerPrivatePauseNotice;
+}
 function body(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= 8192 && explorerSafetyUnicodeValid(value) &&
     !/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/u.test(value);
@@ -49,6 +79,25 @@ export function createExplorerPrivateReviewedRenderer(input: Readonly<{
       const rendered = [...before, ...(requirement === null ? [] : [requirement === "reviewed_adult" ? resources.adult : resources.age]), ...after].join("\n\n");
       if (!body(rendered) || signal.aborted) throw new Error(FAILURE);
       return Object.freeze({ kind, body: rendered, trustedResponseVersion: trusted.version, resourcePolicyVersion });
+    },
+    // The pause notice for the Explorer's own screen. A crisis notice leads with the trusted crisis parts in the
+    // reply order (acknowledgment, limits, help resources, human contact), then the adults-only paragraph where it
+    // applies, then the pause (00:39:51); the ordinary notice ends with the help resources. Adults-only uses the
+    // age-appropriate resources.
+    pauseNotice(input: ExplorerPrivatePauseNotice, readiness: ExplorerPrivateOperationalReadiness): string {
+      const notice = pauseNoticeCopy(input);
+      if (notice === null || readiness.resourcePolicyVersion !== resourcePolicyVersion ||
+        readiness.rendererVerificationReceiptSha256 !== verificationReceiptSha256) throw new Error(FAILURE);
+      const trusted = readiness.configuration.trustedResponses;
+      const help = notice.adultsOnly ? resources.age : resources.adult;
+      const pause = [PAUSE_TEXT[notice.kind], ...(notice.refused ? [PAUSE_REFUSED] : [])];
+      const parts = notice.crisis === null
+        ? [...pause, ...(notice.adultsOnly ? [trusted.adultOnly] : []), `${PAUSE_HELP}\n${help}`]
+        : [trusted[notice.crisis].acknowledgment, trusted[notice.crisis].limits, help, trusted[notice.crisis].humanConnection,
+          ...(notice.adultsOnly ? [trusted.adultOnly] : []), ...pause];
+      const rendered = parts.join("\n\n");
+      if (!parts.every(body) || !body(rendered)) throw new Error(FAILURE);
+      return rendered;
     },
   });
 }

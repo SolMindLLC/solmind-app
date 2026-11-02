@@ -4,7 +4,8 @@ import { getExplorerPrivateConfigurationCandidate } from "./explorerPrivateConfi
 import { EXPLORER_SAFETY_REQUEST_VERSION } from "./explorerSafetyReplyContract";
 import { adaptPrivateGovernedExplorerContextBuilder, readExplorerPrivateConversation, readEndedExplorerConversations, commandExplorerPrivateConversation, deriveExplorerPrivateTurnIds, parseExplorerPrivatePolicy,
   type ExplorerPrivateConversationDependencies, type ExplorerPrivateOperationalReadiness, type ExplorerPrivateRpcRow, type ExplorerPrivateReadRow,
-  type ExplorerPrivateEnsureParameters, type ExplorerPrivatePrepareParameters, type ExplorerPrivateSettleParameters, type ExplorerPrivateArrangeParameters, type ExplorerPrivateEndParameters, type ExplorerPrivateReviewParameters } from "./explorerPrivateConversationComposition";
+  type ExplorerPrivateEnsureParameters, type ExplorerPrivatePrepareParameters, type ExplorerPrivateSettleParameters, type ExplorerPrivateArrangeParameters, type ExplorerPrivateEndParameters, type ExplorerPrivateReviewParameters,
+  type ExplorerPrivatePauseRow, type ExplorerPrivatePauseNotice } from "./explorerPrivateConversationComposition";
 import type { ExplorerConversationState, ExplorerConversationCommand } from "../explorerConversationContract";
 import type { ExplorerSafetyReplyPlan } from "./explorerConversationSafety";
 import { explorerConversationCommandFingerprint, type ExplorerConversationDependencies } from "./explorerConversationComposition";
@@ -52,11 +53,14 @@ function fixture() {
   const review = vi.fn(async (_parameters: ExplorerPrivateReviewParameters): Promise<ExplorerPrivateRpcRow> => {
     void _parameters; order.push("review"); return { outcome: "ok", ended_conversations: [], conversation_state: null };
   });
+  let pauseRow: ExplorerPrivatePauseRow = { outcome: "ok", notice_kind: null, crisis: false, adults_only: false };
+  const pause = vi.fn(async (): Promise<ExplorerPrivatePauseRow> => { order.push("pause"); return pauseRow; });
+  const pauseNotice = vi.fn((notice: ExplorerPrivatePauseNotice) => `Synthetic pause notice ${notice.kind} ${notice.crisis ?? "ordinary"} adults=${notice.adultsOnly} refused=${notice.refused}.`);
   const generate = vi.fn(async () => { order.push("model"); return RAW; });
   const signal = vi.fn(async () => { order.push("signal"); });
   const resolve = vi.fn(async () => { order.push("configuration"); return readiness; });
   const dependencies: ExplorerPrivateConversationDependencies = {
-    authenticate: vi.fn(async () => ACTOR), repository: { read, ensure, observe, prepare, settle, mutate, arrange, end, review },
+    authenticate: vi.fn(async () => ACTOR), repository: { read, ensure, observe, prepare, settle, pause, mutate, arrange, end, review },
     resolveOperationalReadiness: resolve, provider: { generate }, operationalSignal: { verificationReceiptSha256: SHA, emit: signal },
     renderer: { verificationReceiptSha256: SHA,
       // Explicit synthetic test bodies/receipts, never operational acceptance.
@@ -65,7 +69,8 @@ function fixture() {
         supportAndAdultPolicy: "Synthetic support plus adult-policy failure assistance. No saved reply is claimed.",
         temporarilyUnavailable: "Synthetic unavailable assistance. Reload to inspect saved state." },
       render: vi.fn(async (plan: ExplorerSafetyReplyPlan, ready: ExplorerPrivateOperationalReadiness) => ({ kind: plan.kind === "restricted_followup" ? "restricted" as const : plan.kind as "urgent" | "crisis" | "adult_only",
-        body: "Synthetic reviewed support rendering.", trustedResponseVersion: ready.configuration.trustedResponses.version, resourcePolicyVersion: ready.resourcePolicyVersion })) },
+        body: "Synthetic reviewed support rendering.", trustedResponseVersion: ready.configuration.trustedResponses.version, resourcePolicyVersion: ready.resourcePolicyVersion })),
+      pauseNotice },
     buildContext: vi.fn(async (input: Parameters<NonNullable<ExplorerPrivateConversationDependencies["buildContext"]>>[0]) => {
       order.push("context"); const authorizedContext = JSON.stringify({ contractVersion: "wi007-v0.1+onboarding-fields-v2",
         globalPolicy: { version: configuration.globalPolicy.version, text: configuration.globalPolicy.text.replace(/\r\n?/g, "\n").trim() },
@@ -82,8 +87,9 @@ function fixture() {
           p_role_version: configuration.roleVersion, p_instruction_version: configuration.instructionVersion } };
     }),
   };
-  return { dependencies, read, ensure, observe, prepare, settle, mutate, arrange, end, review, generate, signal, resolve, order, readiness,
-    getPrepared: () => prepared, setCurrent: (value: ExplorerConversationState) => { current = value; }, setPolicy: (value: Record<string, unknown>) => { policy = value; } };
+  return { dependencies, read, ensure, observe, prepare, settle, pause, pauseNotice, mutate, arrange, end, review, generate, signal, resolve, order, readiness,
+    getPrepared: () => prepared, setCurrent: (value: ExplorerConversationState) => { current = value; }, setPolicy: (value: Record<string, unknown>) => { policy = value; },
+    setPause: (value: ExplorerPrivatePauseRow) => { pauseRow = value; } };
 }
 function send(body = "Synthetic ordinary message.") { return { kind: "send", operationId: ID.operation, expectedRevision: 0, body }; }
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -91,7 +97,7 @@ describe("Held private Explorer controller: explicit synthetic ports only", () =
   it("owns the actual ensure identity, fresh AV3 read, one model observation and one terminal", async () => {
     const f = fixture(); const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
     expect(output.result.ok).toBe(true); expect(output.assistance).toBeNull(); expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
-    expect(f.order).toEqual(["read", "configuration", "ensure", "observe", "read", "context", "prepare", "model", "settle"]);
+    expect(f.order).toEqual(["read", "configuration", "pause", "ensure", "observe", "read", "context", "prepare", "model", "settle"]);
     const ids = deriveExplorerPrivateTurnIds(ACTOR, ID.conversation, ID.operation);
     expect(f.getPrepared()?.p_conversation_id).toBe(ID.conversation); expect(f.getPrepared()?.p_invocation_id).toBe(ids.invocationId);
     expect(f.getPrepared()?.p_request_mode).toBe("classification_and_reply");
@@ -688,5 +694,451 @@ describe("Send capacity after a saved Send result", () => {
     expect(uncertain.assistance?.persisted).toBe(false);
     expect(uncertain.result.ok && uncertain.result.state.providerState).toBe("unavailable");
     expect(firstCheck).not.toHaveBeenCalled(); expect(settleCheck).not.toHaveBeenCalled();
+  });
+});
+
+describe("hard-stop pause notices (product-limits slice 2b, synthetic ports)", () => {
+  const INDIVIDUAL: ExplorerPrivatePauseRow = { outcome: "ok", notice_kind: "individual", crisis: false, adults_only: false };
+  const SHARED: ExplorerPrivatePauseRow = { outcome: "ok", notice_kind: "shared", crisis: false, adults_only: false };
+  const BOTH: ExplorerPrivatePauseRow = { outcome: "ok", notice_kind: "individual_and_shared", crisis: false, adults_only: false };
+  const CLEAR: ExplorerPrivatePauseRow = { outcome: "ok", notice_kind: null, crisis: false, adults_only: false };
+  function noTurn(f: ReturnType<typeof fixture>) {
+    for (const port of [f.ensure, f.observe, f.prepare, f.settle, f.generate]) expect(port).not.toHaveBeenCalled();
+  }
+  it("refuses an ordinary message under an individual pause before ensure, keeping Send available and saving nothing", async () => {
+    const f = fixture(); f.setPause(INDIVIDUAL);
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.order).toEqual(["read", "configuration", "pause", "read"]); noTurn(f);
+    expect(output.result).toMatchObject({ ok: true, state: { conversationId: null, providerState: "available", messages: [] } });
+    expect(output.assistance).toEqual({ kind: "paused", body: "Synthetic pause notice individual ordinary adults=false refused=true.", persisted: false });
+    expect(f.pauseNotice).toHaveBeenCalledExactlyOnceWith({ kind: "individual", crisis: null, adultsOnly: false, refused: true }, f.readiness);
+    expect(f.pause).toHaveBeenCalledExactlyOnceWith(ACTOR); expect(f.signal).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["shared", SHARED, "I want to kill myself", "crisis"],
+    ["shared", SHARED, "I am being abused", "urgent"],
+    ["individual_and_shared", BOTH, "I am in immediate danger", "crisis"],
+    ["individual_and_shared", BOTH, "wish i wouldn't wake up", "urgent"],
+  ] as const)("refuses a crisis message under a %s pause before ensure with supportive wording", async (kind, row, body, crisis) => {
+    const f = fixture(); f.setPause(row);
+    const output = await commandExplorerPrivateConversation({ command: send(body), dependencies: f.dependencies });
+    noTurn(f); expect(output.result).toMatchObject({ ok: true, state: { providerState: "available" } });
+    expect(f.pauseNotice).toHaveBeenCalledExactlyOnceWith({ kind, crisis, adultsOnly: false, refused: true }, f.readiness);
+    expect(output.assistance?.kind).toBe("paused");
+    // The same value-free marker as the temporary assistance, from this message's phrase check only.
+    expect(f.signal).toHaveBeenCalledExactlyOnceWith("preparation_unavailable", expect.any(AbortSignal));
+  });
+  it("lets a crisis message under an individual-only pause reach observe, and continues when observe admits it", async () => {
+    const f = fixture(); f.setPause(INDIVIDUAL);
+    const output = await commandExplorerPrivateConversation({ command: send("I want to kill myself"), dependencies: f.dependencies });
+    expect(f.order.slice(0, 5)).toEqual(["read", "configuration", "pause", "ensure", "observe"]);
+    expect(f.observe).toHaveBeenCalledWith(expect.objectContaining({ p_fallback_level: 4 })); expect(f.prepare).toHaveBeenCalledOnce();
+    expect(f.pause).toHaveBeenCalledOnce(); expect(f.pauseNotice).not.toHaveBeenCalled(); expect(output.result.ok).toBe(true);
+  });
+  it("shows the current pause when observe refuses a crisis message at a second stop", async () => {
+    const f = fixture(); f.setPause(INDIVIDUAL); f.observe.mockResolvedValue({ outcome: "paused", policy_state: { ...POLICY, restrictedLevel: 4, version: 1 } });
+    const output = await commandExplorerPrivateConversation({ command: send("I want to kill myself"), dependencies: f.dependencies });
+    expect(f.pause).toHaveBeenCalledTimes(2); expect(f.prepare).not.toHaveBeenCalled(); expect(f.generate).not.toHaveBeenCalled();
+    expect(f.pauseNotice).toHaveBeenCalledExactlyOnceWith({ kind: "individual", crisis: "crisis", adultsOnly: false, refused: true }, f.readiness);
+    expect(output.result).toMatchObject({ ok: true, state: { conversationId: ID.conversation, providerState: "available", messages: [] } });
+    expect(output.assistance?.kind).toBe("paused");
+  });
+  it("shows the current pause when prepare refuses, with no model call or settlement", async () => {
+    const f = fixture(); f.prepare.mockImplementation(async () => { f.setPause(SHARED); return { outcome: "paused", conversation_state: null, dispatch_permitted: false, policy_state: POLICY }; });
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.pause).toHaveBeenCalledTimes(2); expect(f.generate).not.toHaveBeenCalled(); expect(f.settle).not.toHaveBeenCalled();
+    expect(f.pauseNotice).toHaveBeenCalledExactlyOnceWith({ kind: "shared", crisis: null, adultsOnly: false, refused: true }, f.readiness);
+    expect(output.assistance?.kind).toBe("paused"); expect(f.signal).not.toHaveBeenCalled();
+  });
+  it("falls back to the temporary assistance when the pause has already ended after a paused refusal", async () => {
+    const f = fixture(); f.prepare.mockResolvedValue({ outcome: "paused", conversation_state: null, dispatch_permitted: false, policy_state: POLICY });
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.pause).toHaveBeenCalledTimes(2); expect(f.pauseNotice).not.toHaveBeenCalled();
+    expect(output.assistance).toMatchObject({ kind: "temporarily_unavailable", persisted: false });
+  });
+  it("denies on a denied pause read before ensure", async () => {
+    const denied = fixture(); denied.setPause({ outcome: "denied" });
+    expect(await commandExplorerPrivateConversation({ command: send(), dependencies: denied.dependencies })).toEqual(
+      { result: { ok: false, state: null, error: "denied" }, assistance: null });
+    noTurn(denied);
+  });
+  it("lets the database checks decide when the first pause read fails, as before the screen step", async () => {
+    const ordinary = fixture(); ordinary.pause.mockRejectedValue(new Error("private pause detail"));
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: ordinary.dependencies });
+    expect(ordinary.order).toEqual(["read", "configuration", "ensure", "observe", "read", "context", "prepare", "model", "settle"]);
+    expect(ordinary.pause).toHaveBeenCalledOnce();
+    expect(output.result.ok).toBe(true); expect(JSON.stringify(output)).not.toContain("private pause detail");
+    // A level-4 message whose observe is refused, with the re-read failing too: the temporary support and its marker.
+    const crisis = fixture(); crisis.pause.mockRejectedValue(new Error("private pause detail"));
+    crisis.observe.mockResolvedValue({ outcome: "paused", policy_state: POLICY });
+    const refused = await commandExplorerPrivateConversation({ command: send("I want to kill myself"), dependencies: crisis.dependencies });
+    expect(crisis.pause).toHaveBeenCalledTimes(2); expect(crisis.prepare).not.toHaveBeenCalled(); expect(crisis.generate).not.toHaveBeenCalled();
+    expect(refused.assistance).toMatchObject({ kind: "support", persisted: false });
+    expect(crisis.signal).toHaveBeenCalledExactlyOnceWith("preparation_unavailable", expect.any(AbortSignal));
+  });
+  it.each(["observe", "prepare"] as const)("keeps the closed result and the marker when the pause re-read after %s fails", async (step) => {
+    const f = fixture(); const restricted = { ...POLICY, restrictedLevel: 4, version: 1 };
+    if (step === "observe") f.observe.mockResolvedValue({ outcome: "paused", policy_state: restricted });
+    else f.prepare.mockResolvedValue({ outcome: "paused", conversation_state: null, dispatch_permitted: false, policy_state: restricted });
+    f.pause.mockResolvedValueOnce({ outcome: "ok", notice_kind: null, crisis: false, adults_only: false })
+      .mockRejectedValueOnce(new Error("private pause detail"));
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(output.result.ok).toBe(true); expect(output.assistance).toMatchObject({ kind: "support", persisted: false });
+    expect(f.signal).toHaveBeenCalledExactlyOnceWith("preparation_unavailable", expect.any(AbortSignal));
+    expect(f.generate).not.toHaveBeenCalled(); expect(f.settle).not.toHaveBeenCalled();
+    expect(JSON.stringify(output)).not.toContain("private pause detail");
+  });
+  it("reports a duplicate of this Send that committed meanwhile as its exact replay, with no refusal notice", async () => {
+    const f = fixture(); f.setPause(SHARED); const saved = { ...state(ID.conversation), revision: 2 };
+    f.read.mockImplementationOnce(async () => ({ outcome: "ok", conversation_state: state(null), authority_context: { explorerId: ID.explorer,
+      authorizationVersion: "AV3:" + SHA }, policy_state: POLICY }))
+      .mockImplementationOnce(async () => ({ outcome: "exact_replay", conversation_state: saved, policy_state: POLICY }));
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.read).toHaveBeenNthCalledWith(2, ACTOR, { operationId: ID.operation, fingerprint: expect.any(String) });
+    expect(output.assistance).toBeNull(); expect(f.pauseNotice).not.toHaveBeenCalled();
+    expect(output.result).toMatchObject({ ok: true, state: { conversationId: ID.conversation, revision: 2, providerState: "available" } }); noTurn(f);
+  });
+  it("checks the test allowance after the refusal's fresh read", async () => {
+    const f = fixture(); f.setPause(INDIVIDUAL); let used = false; let reads = 0;
+    const read = f.read.getMockImplementation()!;
+    f.read.mockImplementation(async (...args) => { reads += 1; if (reads === 2) used = true; return read(...args); });
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: { ...f.dependencies, sendCapacityAvailable: () => !used } });
+    expect(output.result).toMatchObject({ ok: true, state: { providerState: "unavailable" } }); expect(output.assistance?.kind).toBe("paused");
+  });
+  it("uses the adults-only part and the conversation's crisis state, and never passes the pause flags to the signal", async () => {
+    const minor = fixture(); minor.setPause(SHARED);
+    await commandExplorerPrivateConversation({ command: send("I am a minor"), dependencies: minor.dependencies });
+    expect(minor.pauseNotice).toHaveBeenCalledExactlyOnceWith({ kind: "shared", crisis: null, adultsOnly: true, refused: true }, minor.readiness);
+    const stored = fixture(); stored.setPolicy({ ...POLICY, restrictedLevel: 3, adultReflectionStopped: true, version: 1 });
+    stored.setPause({ outcome: "ok", notice_kind: "individual", crisis: true, adults_only: true });
+    await commandExplorerPrivateConversation({ command: send(), dependencies: stored.dependencies });
+    expect(stored.pauseNotice).toHaveBeenCalledExactlyOnceWith({ kind: "individual", crisis: "urgent", adultsOnly: true, refused: true }, stored.readiness);
+    expect(stored.signal).toHaveBeenCalledExactlyOnceWith("preparation_unavailable", expect.any(AbortSignal));
+    // Clear policy and an ordinary message: the pause read's own flags never raise the operational signal, and the
+    // returned conversation's known policy decides the notice.
+    const flags = fixture(); flags.setPause({ outcome: "ok", notice_kind: "individual", crisis: true, adults_only: true });
+    await commandExplorerPrivateConversation({ command: send(), dependencies: flags.dependencies });
+    expect(flags.signal).not.toHaveBeenCalled();
+    expect(flags.pauseNotice).toHaveBeenCalledExactlyOnceWith({ kind: "individual", crisis: null, adultsOnly: false, refused: true }, flags.readiness);
+    // With no known policy on the returned read, the pause read's flags choose the parts.
+    const unknown = fixture(); unknown.setPolicy({}); unknown.setPause({ outcome: "ok", notice_kind: "shared", crisis: true, adults_only: true });
+    await commandExplorerPrivateConversation({ command: send(), dependencies: unknown.dependencies });
+    expect(unknown.pauseNotice).toHaveBeenCalledExactlyOnceWith({ kind: "shared", crisis: "urgent", adultsOnly: true, refused: true }, unknown.readiness);
+    expect(unknown.signal).not.toHaveBeenCalled();
+    const urgent = fixture(); urgent.setPolicy({ ...POLICY, restrictedLevel: 4, version: 1 }); urgent.setPause({ outcome: "ok", notice_kind: "shared", crisis: true, adults_only: false });
+    await commandExplorerPrivateConversation({ command: send(), dependencies: urgent.dependencies });
+    expect(urgent.pauseNotice).toHaveBeenCalledExactlyOnceWith({ kind: "shared", crisis: "crisis", adultsOnly: false, refused: true }, urgent.readiness);
+    expect(urgent.signal).toHaveBeenCalledExactlyOnceWith("preparation_unavailable", expect.any(AbortSignal));
+  });
+  it("reports Send unavailable on a refusal when the test allowance is used up, and keeps the notice", async () => {
+    const f = fixture(); f.setPause(INDIVIDUAL);
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: { ...f.dependencies, sendCapacityAvailable: () => false } });
+    expect(output.result).toMatchObject({ ok: true, state: { providerState: "unavailable" } }); expect(output.assistance?.kind).toBe("paused");
+  });
+  it("uses the static failure assistance when the renderer cannot write the notice", async () => {
+    const f = fixture(); f.setPause(SHARED); f.pauseNotice.mockImplementation(() => { throw new Error("renderer detail"); });
+    const ordinary = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(ordinary.assistance).toMatchObject({ kind: "temporarily_unavailable" });
+    const crisis = await commandExplorerPrivateConversation({ command: send("I want to kill myself"), dependencies: f.dependencies });
+    expect(crisis.assistance).toMatchObject({ kind: "support" }); noTurn(f);
+  });
+  it("holds readiness when the renderer has no pause notice, and never reads the pause for replay", async () => {
+    const f = fixture(); const { pauseNotice, ...renderer } = f.dependencies.renderer!; void pauseNotice;
+    const held = await commandExplorerPrivateConversation({ command: send(), dependencies: { ...f.dependencies,
+      renderer: renderer as unknown as NonNullable<ExplorerPrivateConversationDependencies["renderer"]> } });
+    expect(held.result).toMatchObject({ ok: false, error: "provider_unavailable" }); expect(f.pause).not.toHaveBeenCalled();
+    const replay = fixture(); replay.read.mockResolvedValue({ outcome: "exact_replay", conversation_state: state(ID.conversation), policy_state: null });
+    await commandExplorerPrivateConversation({ command: send(), dependencies: replay.dependencies }); expect(replay.pause).not.toHaveBeenCalled();
+  });
+  it("shows the notice when the screen opens, without the unsent-message part, and keeps history readable when the read fails", async () => {
+    const f = fixture(); f.setPause(BOTH);
+    const output = await readExplorerPrivateConversation(f.dependencies);
+    expect(f.order).toEqual(["read", "configuration", "pause", "read"]);
+    expect(output.result).toMatchObject({ ok: true, state: { providerState: "available" } });
+    expect(output.assistance).toEqual({ kind: "paused", body: "Synthetic pause notice individual_and_shared ordinary adults=false refused=false.", persisted: false });
+    for (const port of [f.ensure, f.observe, f.prepare, f.settle, f.generate, f.signal]) expect(port).not.toHaveBeenCalled();
+    const clear = fixture(); clear.setPause(CLEAR);
+    expect((await readExplorerPrivateConversation(clear.dependencies)).assistance).toBeNull();
+    const broken = fixture(); broken.pause.mockRejectedValue(new Error("private pause detail"));
+    const readable = await readExplorerPrivateConversation(broken.dependencies);
+    expect(readable.result).toMatchObject({ ok: true, state: { providerState: "available" } }); expect(readable.assistance).toBeNull();
+    const denied = fixture(); denied.setPause({ outcome: "denied" });
+    expect((await readExplorerPrivateConversation(denied.dependencies)).result).toMatchObject({ ok: false, error: "denied" });
+    const held = fixture();
+    await readExplorerPrivateConversation({ ...held.dependencies, resolveOperationalReadiness: undefined }); expect(held.pause).not.toHaveBeenCalled();
+  });
+  it("writes the screen-open notice from the final read's own policy, so it cannot contradict the returned conversation", async () => {
+    const f = fixture(); f.setPause(SHARED);
+    // Crisis and adult handling established between the pause read and the final read.
+    f.pause.mockImplementation(async () => { f.order.push("pause"); f.setPolicy({ ...POLICY, restrictedLevel: 4, adultReflectionStopped: true, version: 2 }); return SHARED; });
+    await readExplorerPrivateConversation(f.dependencies);
+    expect(f.pauseNotice).toHaveBeenCalledExactlyOnceWith({ kind: "shared", crisis: "crisis", adultsOnly: true, refused: false }, f.readiness);
+    // A known policy on the final read decides the notice; the pause flags are not used then.
+    const changed = fixture(); changed.setPause({ outcome: "ok", notice_kind: "shared", crisis: true, adults_only: true });
+    await readExplorerPrivateConversation(changed.dependencies);
+    expect(changed.pauseNotice).toHaveBeenCalledExactlyOnceWith({ kind: "shared", crisis: null, adultsOnly: false, refused: false }, changed.readiness);
+  });
+});
+
+describe("hard-stop pause notices: review round 1 cases (REV209a, REV209b)", () => {
+  const INDIVIDUAL: ExplorerPrivatePauseRow = { outcome: "ok", notice_kind: "individual", crisis: false, adults_only: false };
+  const SHARED: ExplorerPrivatePauseRow = { outcome: "ok", notice_kind: "shared", crisis: false, adults_only: false };
+  const MARKER = ["preparation_unavailable", expect.any(AbortSignal)] as const;
+  it("lets a level-3 message under an individual-only pause reach observe as well", async () => {
+    const f = fixture(); f.setPause(INDIVIDUAL);
+    await commandExplorerPrivateConversation({ command: send("I am being abused"), dependencies: f.dependencies });
+    expect(f.observe).toHaveBeenCalledWith(expect.objectContaining({ p_fallback_level: 3 })); expect(f.pauseNotice).not.toHaveBeenCalled();
+  });
+  it("emits the marker once when observe refuses a crisis message at a second stop", async () => {
+    const f = fixture(); f.setPause(INDIVIDUAL); f.observe.mockResolvedValue({ outcome: "paused", policy_state: { ...POLICY, restrictedLevel: 4, version: 1 } });
+    await commandExplorerPrivateConversation({ command: send("I want to kill myself"), dependencies: f.dependencies });
+    expect(f.signal).toHaveBeenCalledExactlyOnceWith(...MARKER);
+  });
+  it.each([["denied", { outcome: "denied" }], ["operation_conflict", { outcome: "operation_conflict" }]] as const)(
+    "ends a %s pause re-read after observe as the temporary support with its marker", async (_name, reread) => {
+      const f = fixture(); f.setPause(INDIVIDUAL);
+      f.observe.mockResolvedValue({ outcome: "paused", policy_state: { ...POLICY, restrictedLevel: 4, version: 1 } });
+      f.pause.mockResolvedValueOnce(INDIVIDUAL).mockResolvedValueOnce(reread);
+      const output = await commandExplorerPrivateConversation({ command: send("I want to kill myself"), dependencies: f.dependencies });
+      expect(output.assistance).toMatchObject({ kind: "support", persisted: false }); expect(f.pauseNotice).not.toHaveBeenCalled();
+      expect(f.signal).toHaveBeenCalledExactlyOnceWith(...MARKER); expect(f.prepare).not.toHaveBeenCalled();
+    });
+  it("keeps the static assistance when the refusal's fresh read loses the sign-in or fails", async () => {
+    const lost = fixture(); lost.setPause(SHARED);
+    const authenticate = vi.fn().mockResolvedValueOnce(ACTOR).mockResolvedValue(null);
+    const denied = await commandExplorerPrivateConversation({ command: send("I want to kill myself"), dependencies: { ...lost.dependencies, authenticate } });
+    expect(denied).toMatchObject({ result: { ok: false, error: "denied" }, assistance: { kind: "support", persisted: false } });
+    expect(lost.pauseNotice).not.toHaveBeenCalled();
+    const broken = fixture(); broken.setPause(SHARED); const read = broken.read.getMockImplementation()!; let reads = 0;
+    broken.read.mockImplementation(async (...args) => { reads += 1; if (reads === 2) throw new Error("private read detail"); return read(...args); });
+    const failedRead = await commandExplorerPrivateConversation({ command: send(), dependencies: broken.dependencies });
+    expect(failedRead).toMatchObject({ result: { ok: false, error: "unavailable" }, assistance: { kind: "temporarily_unavailable" } });
+    expect(JSON.stringify(failedRead)).not.toContain("private read detail");
+  });
+  it("stops an aborted Send after the pause read, before ensure, with or without a pause", async () => {
+    for (const row of [{ outcome: "ok", notice_kind: null, crisis: false, adults_only: false }, SHARED] as const) {
+      const f = fixture(); const controller = new AbortController();
+      f.pause.mockImplementation(async () => { controller.abort(); return row; });
+      const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies, signal: controller.signal });
+      expect(output).toEqual({ result: { ok: false, state: null, error: "unavailable" }, assistance: null });
+      expect(f.ensure).not.toHaveBeenCalled(); expect(f.generate).not.toHaveBeenCalled();
+    }
+  });
+  it("writes the screen-open crisis and adults-only parts, and raises no signal", async () => {
+    const flags = fixture(); flags.setPolicy({}); flags.setPause({ outcome: "ok", notice_kind: "individual", crisis: true, adults_only: true });
+    await readExplorerPrivateConversation(flags.dependencies);
+    expect(flags.pauseNotice).toHaveBeenCalledExactlyOnceWith({ kind: "individual", crisis: "urgent", adultsOnly: true, refused: false }, flags.readiness);
+    const urgent = fixture(); urgent.setPolicy({ ...POLICY, restrictedLevel: 4, version: 1 }); urgent.setPause(SHARED);
+    await readExplorerPrivateConversation(urgent.dependencies);
+    expect(urgent.pauseNotice).toHaveBeenCalledExactlyOnceWith({ kind: "shared", crisis: "crisis", adultsOnly: false, refused: false }, urgent.readiness);
+    expect(flags.signal).not.toHaveBeenCalled(); expect(urgent.signal).not.toHaveBeenCalled();
+  });
+});
+
+describe("hard-stop pause notices: fix review cases (REV209d)", () => {
+  it("uses the pause flags when the refusal's final read has no known policy, even after a known clear first read", async () => {
+    const f = fixture();
+    f.pause.mockImplementation(async () => { f.setPolicy({}); return { outcome: "ok", notice_kind: "shared", crisis: true, adults_only: true }; });
+    await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.pauseNotice).toHaveBeenCalledExactlyOnceWith({ kind: "shared", crisis: "urgent", adultsOnly: true, refused: true }, f.readiness);
+  });
+  it("keeps facts the final read added in the static assistance when the renderer fails", async () => {
+    const f = fixture(); f.pauseNotice.mockImplementation(() => { throw new Error("renderer detail"); });
+    f.pause.mockImplementation(async () => {
+      f.setPolicy({ ...POLICY, restrictedLevel: 4, adultReflectionStopped: true, version: 2 });
+      return { outcome: "ok", notice_kind: "shared", crisis: false, adults_only: false };
+    });
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(output.assistance).toEqual({ kind: "support", body: "Synthetic support plus adult-policy failure assistance. No saved reply is claimed.", persisted: false });
+    // Facts learned at the final read send the marker once, and the read is repeated so it stays the last wait.
+    expect(f.signal).toHaveBeenCalledExactlyOnceWith("preparation_unavailable", expect.any(AbortSignal));
+    expect(f.read).toHaveBeenCalledTimes(3);
+    expect(f.order.indexOf("signal")).toBeLessThan(f.order.lastIndexOf("read"));
+  });
+});
+
+describe("hard-stop pause notices: remaining post-check cases (REV209d server-3)", () => {
+  const SHARED: ExplorerPrivatePauseRow = { outcome: "ok", notice_kind: "shared", crisis: false, adults_only: false };
+  it.each([["denied", { outcome: "denied" }], ["operation_conflict", { outcome: "operation_conflict" }]] as const)(
+    "ends a %s pause re-read after prepare as the temporary support with its marker", async (_name, reread) => {
+      const f = fixture();
+      f.prepare.mockResolvedValue({ outcome: "paused", conversation_state: null, dispatch_permitted: false, policy_state: { ...POLICY, restrictedLevel: 4, version: 1 } });
+      f.pause.mockResolvedValueOnce({ outcome: "ok", notice_kind: null, crisis: false, adults_only: false }).mockResolvedValueOnce(reread);
+      const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+      expect(output.assistance).toMatchObject({ kind: "support", persisted: false }); expect(f.pauseNotice).not.toHaveBeenCalled();
+      expect(f.signal).toHaveBeenCalledExactlyOnceWith("preparation_unavailable", expect.any(AbortSignal));
+      expect(f.generate).not.toHaveBeenCalled(); expect(f.settle).not.toHaveBeenCalled();
+    });
+  it("keeps the static assistance when the fresh read after a post-check refusal fails", async () => {
+    const f = fixture();
+    f.observe.mockResolvedValue({ outcome: "paused", policy_state: { ...POLICY, restrictedLevel: 4, version: 1 } });
+    f.pause.mockResolvedValueOnce({ outcome: "ok", notice_kind: "individual", crisis: false, adults_only: false }).mockResolvedValueOnce(SHARED);
+    const read = f.read.getMockImplementation()!; let reads = 0;
+    f.read.mockImplementation(async (...args) => { reads += 1; if (reads === 2) throw new Error("private read detail"); return read(...args); });
+    const output = await commandExplorerPrivateConversation({ command: send("I want to kill myself"), dependencies: f.dependencies });
+    expect(output).toMatchObject({ result: { ok: false, error: "unavailable" }, assistance: { kind: "support", persisted: false } });
+    expect(f.signal).toHaveBeenCalledExactlyOnceWith("preparation_unavailable", expect.any(AbortSignal));
+    expect(f.prepare).not.toHaveBeenCalled(); expect(JSON.stringify(output)).not.toContain("private read detail");
+  });
+});
+
+describe("hard-stop pause notices: which read's facts choose the notice (REV209c)", () => {
+  const SHARED: ExplorerPrivatePauseRow = { outcome: "ok", notice_kind: "shared", crisis: false, adults_only: false };
+  it("takes a refusal's facts from its final read, not the first read, before ensure", async () => {
+    const f = fixture();
+    f.pause.mockImplementation(async () => { f.setPolicy({ ...POLICY, restrictedLevel: 4, adultReflectionStopped: true, version: 2 }); return SHARED; });
+    await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.pauseNotice).toHaveBeenCalledExactlyOnceWith({ kind: "shared", crisis: "crisis", adultsOnly: true, refused: true }, f.readiness);
+  });
+  it("takes a post-check refusal's facts from its final read, not observe's policy", async () => {
+    const f = fixture(); f.observe.mockResolvedValue({ outcome: "paused", policy_state: { ...POLICY, restrictedLevel: 3, version: 1 } });
+    f.pause.mockResolvedValueOnce({ outcome: "ok", notice_kind: null, crisis: false, adults_only: false })
+      .mockImplementationOnce(async () => { f.setPolicy({ ...POLICY, restrictedLevel: 4, version: 2 }); return SHARED; });
+    await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.pauseNotice).toHaveBeenCalledExactlyOnceWith({ kind: "shared", crisis: "crisis", adultsOnly: false, refused: true }, f.readiness);
+  });
+  it("keeps the pause read's flags when the final read's policy is unknown, even if the conversation changed (errs toward support)", async () => {
+    const f = fixture();
+    f.pause.mockImplementation(async () => {
+      f.setCurrent(state(ID.conversation)); f.setPolicy({});
+      return { outcome: "ok", notice_kind: "shared", crisis: true, adults_only: true };
+    });
+    await readExplorerPrivateConversation(f.dependencies);
+    expect(f.pauseNotice).toHaveBeenCalledExactlyOnceWith({ kind: "shared", crisis: "urgent", adultsOnly: true, refused: false }, f.readiness);
+  });
+  it("sends the marker once and reads again when a refusal's final read first shows critical facts", async () => {
+    const f = fixture();
+    f.pause.mockImplementation(async () => { f.order.push("pause"); f.setPolicy({ ...POLICY, restrictedLevel: 4, version: 2 });
+      return { outcome: "ok", notice_kind: "shared", crisis: false, adults_only: false }; });
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.order).toEqual(["read", "configuration", "pause", "read", "signal", "read"]);
+    expect(f.signal).toHaveBeenCalledExactlyOnceWith("preparation_unavailable", expect.any(AbortSignal));
+    expect(output.assistance?.kind).toBe("paused");
+    expect(f.pauseNotice).toHaveBeenCalledExactlyOnceWith({ kind: "shared", crisis: "crisis", adultsOnly: false, refused: true }, f.readiness);
+  });
+  it("does not repeat the marker when the facts were already critical before the final read", async () => {
+    const f = fixture(); f.setPolicy({ ...POLICY, restrictedLevel: 4, version: 1 });
+    f.setPause({ outcome: "ok", notice_kind: "shared", crisis: true, adults_only: false });
+    await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.order).toEqual(["read", "configuration", "pause", "signal", "read"]);
+  });
+});
+
+describe("hard-stop pause notices: an unknown final policy keeps the earlier known facts (REV209e regression-1)", () => {
+  const SHARED: ExplorerPrivatePauseRow = { outcome: "ok", notice_kind: "shared", crisis: false, adults_only: false };
+  it("keeps a level-4 policy known before the final read when that read's policy is unknown", async () => {
+    const f = fixture();
+    f.prepare.mockResolvedValue({ outcome: "paused", conversation_state: null, dispatch_permitted: false, policy_state: { ...POLICY, restrictedLevel: 4, version: 1 } });
+    f.pause.mockResolvedValueOnce({ outcome: "ok", notice_kind: null, crisis: false, adults_only: false })
+      .mockImplementationOnce(async () => { f.setPolicy({}); return { outcome: "ok", notice_kind: "shared", crisis: true, adults_only: false }; });
+    await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.pauseNotice).toHaveBeenCalledExactlyOnceWith({ kind: "shared", crisis: "crisis", adultsOnly: false, refused: true }, f.readiness);
+  });
+  it("keeps the first read's known facts on screen open when the final read's policy is unknown", async () => {
+    const f = fixture(); f.setPolicy({ ...POLICY, restrictedLevel: 4, adultReflectionStopped: true, version: 1 });
+    f.pause.mockImplementation(async () => { f.setPolicy({}); return SHARED; });
+    await readExplorerPrivateConversation(f.dependencies);
+    expect(f.pauseNotice).toHaveBeenCalledExactlyOnceWith({ kind: "shared", crisis: "crisis", adultsOnly: true, refused: false }, f.readiness);
+  });
+});
+
+describe("hard-stop pause notices: the repeated read after a newly critical refusal read (REV209h)", () => {
+  const SHARED: ExplorerPrivatePauseRow = { outcome: "ok", notice_kind: "shared", crisis: false, adults_only: false };
+  const CRITICAL = { ...POLICY, restrictedLevel: 4, adultReflectionStopped: true, version: 2 };
+  // Reads: 1 the first read, 2 the refusal read (first shows the critical facts), 3 the repeated read.
+  function sequence(third: (read: (...args: never[]) => Promise<ExplorerPrivateReadRow>, args: never[]) => Promise<ExplorerPrivateReadRow>) {
+    const f = fixture(); const read = f.read.getMockImplementation()!; let reads = 0;
+    f.pause.mockImplementation(async () => { f.order.push("pause"); f.setPolicy(CRITICAL); return SHARED; });
+    f.read.mockImplementation(async (...args) => { reads += 1; return reads === 3 ? third(read as never, args as never[]) : read(...args); });
+    return f;
+  }
+  it("keeps the facts the refusal read showed when the repeated read fails", async () => {
+    const f = sequence(async () => { throw new Error("private read detail"); });
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(output).toEqual({ result: { ok: false, state: null, error: "unavailable" }, assistance: { kind: "support",
+      body: "Synthetic support plus adult-policy failure assistance. No saved reply is claimed.", persisted: false } });
+    expect(f.signal).toHaveBeenCalledOnce();
+    expect(f.read).toHaveBeenNthCalledWith(3, ACTOR, { operationId: ID.operation, fingerprint: expect.any(String) });
+  });
+  it("keeps the facts the refusal read showed when the repeated read's policy is unknown", async () => {
+    const f = sequence(async (read, args) => ({ ...(await read(...args)), policy_state: {} }));
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.pauseNotice).toHaveBeenCalledExactlyOnceWith({ kind: "shared", crisis: "crisis", adultsOnly: true, refused: true }, f.readiness);
+    expect(output.assistance?.kind).toBe("paused");
+  });
+  it("reports a duplicate that committed during the marker as its replay, without a notice", async () => {
+    const f = sequence(async () => ({ outcome: "exact_replay", conversation_state: { ...state(ID.conversation), revision: 2 }, policy_state: CRITICAL }));
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(output.assistance).toBeNull(); expect(f.pauseNotice).not.toHaveBeenCalled();
+    expect(output.result).toMatchObject({ ok: true, state: { revision: 2 } });
+  });
+  it("still makes the repeated read, with one marker attempt, when the signal port fails", async () => {
+    const f = sequence(async (read, args) => read(...args)); f.signal.mockRejectedValue(new Error("signal detail"));
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.signal).toHaveBeenCalledOnce(); expect(f.read).toHaveBeenCalledTimes(3); expect(output.assistance?.kind).toBe("paused");
+  });
+  it("checks the test allowance after the repeated read, and returns nothing private after cancellation", async () => {
+    let used = false;
+    const f = sequence(async (read, args) => { used = true; return read(...args); });
+    const late = await commandExplorerPrivateConversation({ command: send(), dependencies: { ...f.dependencies, sendCapacityAvailable: () => !used } });
+    expect(late.result).toMatchObject({ ok: true, state: { providerState: "unavailable" } });
+    const g = fixture(); const controller = new AbortController();
+    g.pause.mockImplementation(async () => { g.setPolicy(CRITICAL); return SHARED; });
+    g.signal.mockImplementation(async () => { controller.abort(); });
+    const aborted = await commandExplorerPrivateConversation({ command: send(), dependencies: g.dependencies, signal: controller.signal });
+    expect(aborted).toEqual({ result: { ok: false, state: null, error: "unavailable" }, assistance: null });
+  });
+});
+
+describe("hard-stop pause notices: remaining repeated-read cases (REV209g)", () => {
+  const SHARED: ExplorerPrivatePauseRow = { outcome: "ok", notice_kind: "shared", crisis: false, adults_only: false };
+  const CRITICAL = { ...POLICY, restrictedLevel: 4, adultReflectionStopped: true, version: 2 };
+  it("raises no marker when the refusal's first read is already the exact replay, even with critical facts", async () => {
+    const f = fixture(); f.setPause(SHARED); const read = f.read.getMockImplementation()!; let reads = 0;
+    f.read.mockImplementation(async (...args) => { reads += 1;
+      return reads === 2 ? { outcome: "exact_replay", conversation_state: { ...state(ID.conversation), revision: 2 }, policy_state: CRITICAL } : read(...args); });
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.signal).not.toHaveBeenCalled(); expect(f.read).toHaveBeenCalledTimes(2); expect(output.assistance).toBeNull();
+  });
+  it("repeats the read after a post-check refusal whose final read first shows critical facts", async () => {
+    const f = fixture(); f.observe.mockResolvedValue({ outcome: "paused", policy_state: POLICY });
+    f.pause.mockResolvedValueOnce({ outcome: "ok", notice_kind: null, crisis: false, adults_only: false })
+      .mockImplementationOnce(async () => { f.setPolicy(CRITICAL); return SHARED; });
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.signal).toHaveBeenCalledOnce();
+    expect(f.order.slice(-3)).toEqual(["read", "signal", "read"]);
+    expect(f.pauseNotice).toHaveBeenCalledExactlyOnceWith({ kind: "shared", crisis: "crisis", adultsOnly: true, refused: true }, f.readiness);
+    expect(output.assistance?.kind).toBe("paused"); expect(f.prepare).not.toHaveBeenCalled();
+  });
+});
+
+describe("hard-stop pause notices: the repeated read's denial, marker timeout and cancellation (REV209i)", () => {
+  const SHARED: ExplorerPrivatePauseRow = { outcome: "ok", notice_kind: "shared", crisis: false, adults_only: false };
+  const CRITICAL = { ...POLICY, restrictedLevel: 4, adultReflectionStopped: true, version: 2 };
+  const COMBINED = { kind: "support", body: "Synthetic support plus adult-policy failure assistance. No saved reply is claimed.", persisted: false };
+  it("keeps the retained facts when the repeated read loses the sign-in", async () => {
+    const f = fixture(); f.pause.mockImplementation(async () => { f.setPolicy(CRITICAL); return SHARED; });
+    const authenticate = vi.fn().mockResolvedValueOnce(ACTOR).mockResolvedValueOnce(ACTOR).mockResolvedValue(null);
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: { ...f.dependencies, authenticate } });
+    expect(output).toEqual({ result: { ok: false, state: null, error: "denied" }, assistance: COMBINED });
+    expect(authenticate).toHaveBeenCalledTimes(3); expect(f.signal).toHaveBeenCalledOnce();
+  });
+  it("makes the repeated selector read after a marker that times out, with one attempt", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    const f = fixture(); f.pause.mockImplementation(async () => { f.setPolicy(CRITICAL); return SHARED; });
+    f.signal.mockImplementation(() => new Promise<void>(() => undefined));
+    const pending = commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    await vi.advanceTimersByTimeAsync(1000);
+    const output = await pending;
+    expect(f.signal).toHaveBeenCalledOnce(); expect(f.read).toHaveBeenCalledTimes(3);
+    expect(f.read).toHaveBeenNthCalledWith(3, ACTOR, { operationId: ID.operation, fingerprint: expect.any(String) });
+    expect(output.assistance?.kind).toBe("paused");
+  });
+  it("returns nothing private when cancelled during the repeated read", async () => {
+    const f = fixture(); const controller = new AbortController(); const read = f.read.getMockImplementation()!; let reads = 0;
+    f.pause.mockImplementation(async () => { f.setPolicy(CRITICAL); return SHARED; });
+    f.read.mockImplementation(async (...args) => { reads += 1; if (reads === 3) controller.abort(); return read(...args); });
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies, signal: controller.signal });
+    expect(output).toEqual({ result: { ok: false, state: null, error: "unavailable" }, assistance: null }); expect(reads).toBe(3);
   });
 });

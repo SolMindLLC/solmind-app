@@ -23,7 +23,7 @@ const savedState = (body = "A synthetic Explorer question"): ExplorerConversatio
   ],
 });
 type SyntheticAssistance = Readonly<{
-  kind: "support" | "adult_policy" | "temporarily_unavailable";
+  kind: "support" | "adult_policy" | "temporarily_unavailable" | "paused";
   body: string;
   persisted: false;
 }>;
@@ -366,5 +366,67 @@ test("C14 a denied reload clears stale assistance, saved private history and dra
   await expect(page.getByText("A synthetic Explorer question", { exact: true })).toHaveCount(0);
   await expect(page.getByText("A synthetic transport reply", { exact: true })).toHaveCount(0);
   await expect(page.getByLabel("Continue the conversation", { exact: true })).toHaveCount(0);
+  expect(writes).toBe(1);
+});
+
+test("P01 a hard-stop pause notice shows when the screen opens and on a refused Send, keeping the draft and Send usable", async ({ page }) => {
+  const current = emptyState();
+  let reads = 0;
+  let writes = 0;
+  const opened: SyntheticAssistance = { kind: "paused", body: "Synthetic pause notice shown when the screen opens.", persisted: false };
+  const refused: SyntheticAssistance = { kind: "paused",
+    body: "Synthetic pause notice.\n\nThe message in the box has not been sent or saved.", persisted: false };
+  await mockState(page, () => { reads += 1; return success(current, opened); });
+  await page.route("**/explorer/conversation/commands", route => {
+    writes += 1;
+    // A refusal before any conversation exists: the endpoint fixture returns the same empty state.
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(success(current, refused)) });
+  });
+  await page.goto("/explorer/conversation");
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(opened.body);
+  await expect(page.getByText("This assistance is temporary and is not a saved conversation reply.", { exact: true })).toHaveCount(0);
+  const field = page.getByLabel("Continue the conversation", { exact: true });
+  await expect(field).toBeEnabled();
+  await field.fill("Keep this refused synthetic message");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByRole("main").getByRole("alert")).toContainText("The message in the box has not been sent or saved.");
+  await expect(field).toHaveValue("Keep this refused synthetic message");
+  await expect(page.getByText("There are no saved messages yet.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Your saved conversation is up to date.", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
+  await expect(page.getByText("The SolMind Virtual Guide is unavailable.", { exact: false })).toHaveCount(0);
+  expect(reads).toBe(1);
+  expect(writes).toBe(1);
+});
+
+test("P02 a screen-open read shows only a pause notice, never other assistance", async ({ page }) => {
+  const support: SyntheticAssistance = { kind: "support", body: "Synthetic support that a screen-open read must not show.", persisted: false };
+  await mockState(page, () => success(savedState(), support));
+  await page.goto("/explorer/conversation");
+  await expect(page.getByRole("list", { name: "Saved conversation", exact: true })).toContainText("A synthetic Explorer question");
+  await expect(page.getByText(support.body, { exact: true })).toHaveCount(0);
+});
+
+test("P03 a pause refusal after the conversation was created keeps the draft and Send usable", async ({ page }) => {
+  let current = emptyState();
+  let writes = 0;
+  const refused: SyntheticAssistance = { kind: "paused",
+    body: "Synthetic crisis pause notice.\n\nThe message in the box has not been sent or saved.", persisted: false };
+  await mockState(page, () => success(current));
+  await page.route("**/explorer/conversation/commands", route => {
+    writes += 1;
+    // Endpoint fixture: the refusal came after ensure, so an empty conversation now exists.
+    current = { ...emptyState(), conversationId: CONVERSATION };
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(success(current, refused)) });
+  });
+  await page.goto("/explorer/conversation");
+  const field = page.getByLabel("Continue the conversation", { exact: true });
+  await field.fill("Keep this refused synthetic crisis message");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByRole("main").getByRole("alert")).toContainText("The message in the box has not been sent or saved.");
+  await expect(field).toHaveValue("Keep this refused synthetic crisis message");
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
+  await expect(page.getByText("There are no saved messages yet.", { exact: true })).toBeVisible();
+  await expect(page.getByText("This assistance is temporary and is not a saved conversation reply.", { exact: true })).toHaveCount(0);
   expect(writes).toBe(1);
 });

@@ -577,18 +577,87 @@ limit;
 `solmind-docs/execution/05_SolMind_Privacy_And_Security_Baseline_v1_0.md`
 Section 11.4 records that exception, and the Explorer privacy disclosure must
 say so before real Explorers. Stop records never hold conversation words, a
-conversation reference, or safety or crisis counts. The app does not call these
-yet. Until the screen step (slice 2b), the repository treats `paused` as an
-unknown outcome, so a refused Send shows the existing temporary assistance.
-The migration is not applied to the Card 3 demo database before that step.
+conversation reference, or safety or crisis counts. The screen step (slice 2b,
+next section) is the app's only caller, of the pause read and of the `paused`
+outcome. The migration reaches the Card 3 demo database only after that step
+is banked.
+
+### Hard-stop pause notices on the screen - 2026-11-01
+
+Product-limits slice 2b shows Paul's pause notices on the connected
+conversation screen (decision queue 2026-11-01 00:39:51, 01:07:27, 12:27:07,
+13:24:41 and 13:26:32). The repository's thirteenth port, `pause`, calls
+`public.solmind_read_explorer_ai_use_pause_v1` with only the actor pair and
+accepts only `ok` with a closed `notice_kind` and two booleans that can be true
+only with a pause; observe and prepare accept the closed outcome `paused`. The
+port is required in the repository type, and the budget wrapper bounds it at
+10 seconds like the other required ports.
+
+On Send the controller runs the phrase check and reads the pause after
+readiness and before ensure. A pause that read reports is refused there, so
+that refusal creates no conversation, except for an individual-only pause
+with a level 3 or 4 message, which goes on to observe: observe stores the
+observation and the automatic lift applies, or refuses at a second stop. A
+denied pause read denies. The read is advisory: if it fails, the Send goes on
+to ensure, observe and prepare, which enforce the stops, as before (so a first
+Send can then leave an empty conversation when observe or prepare refuses it).
+Against a
+database without the slice 2a migration the read always fails and Sends run
+without the stops, as before that migration; apply the migration together
+with this step. When observe or prepare refuses with `paused`, the controller
+keeps the policy it returned and reads the pause again; a failed, denied or
+other re-read, or a pause that has ended by then, gets the existing temporary
+assistance and, when the facts are critical, its marker (Send then shows
+unavailable until a reload).
+
+A refusal emits the marker when the conversation policy or the message is
+critical, then makes a fresh authenticated read with this operation's
+selector, so a duplicate of the Send that committed meanwhile shows as its
+exact replay without a refusal notice (in that rare race a critical duplicate
+can raise the marker for an operation returned as its replay; accepted, so
+that a read stays the last wait). If that read first shows critical facts,
+the marker is sent then and the read is repeated with the same selector (an
+exact replay there is returned as the replay). When the last read is not an
+exact replay, the result carries `paused` assistance, so the browser keeps the
+typed message and Send stays usable (the crisis unlock stays reachable), with
+the provider state following the test allowance checked after the last read. A lost or failed fresh read, or a notice
+the renderer cannot write, keeps the existing static assistance, chosen from
+every policy fact any read has shown and the phrase check, never the pause
+read's flags. A screen-open read reads the pause before its final fresh
+read and writes the notice afterward, without the refused-message line; a
+failed pause read there shows no notice. The notice's crisis and adults-only
+parts follow the final read's own known policy; when that policy is unknown,
+the policy known before it together with the pause read's flags (both kept
+even if the conversation may have changed, since the pause read returns no
+conversation reference: this errs toward the supportive wording); and the
+refused message's phrase check.
+
+`createExplorerPrivateReviewedRenderer` writes the notice with
+`pauseNotice`, bound to the same resource policy and receipt as `render`, and
+readiness is held when a renderer lacks it. The ordinary notice is the pause
+sentence with its true restart condition (the individual stop: an Admin's
+lift; the shared stop: midnight, Chicago time; both: both pauses ended), the
+refused-message line on a refused Send, the adults-only paragraph where the
+Explorer may be under 18 (the stored conversation state, or a refused message
+whose phrase check suggests it), then the help text. A crisis notice, for a
+conversation in crisis or urgent handling or a refused level 3 or 4 message,
+leads with the trusted acknowledgment, limits, help text and human-contact
+parts in reply order (level 4 the crisis parts, level 3 the urgent parts),
+then the adults-only paragraph where it applies, then the pause. The marker
+is the existing value-free one, never chosen from the pause read's flags, which
+are never logged or passed to signals. The crisis parts are the
+app's draft text and the help text is the demo's approved record: before real
+Explorers, the crisis wording needs Paul's approval and the help resources
+must be verified. A Compass or Waypoint command clears the notice from the
+screen while the pause continues; a reload or the next Send shows it again.
 
 ### Held private request and browser integration candidate - 2026-10-26
 
 `src/lib/solmind/explorerPrivateConversationResponse.ts` is browser-safe and owns
 the strict `explorer-private-conversation-response.v1` envelope with exactly
 `version`, `result` and `assistance`. It reuses the existing closed result parser;
-assistance is null or a bounded support/adult_policy/temporarily_unavailable body
-with `persisted:false`. Keep actor, private policy/evidence and configuration
+assistance is null or a bounded support/adult_policy/temporarily_unavailable/paused
+body with `persisted:false` (`paused` is the server-written hard-stop notice). Keep actor, private policy/evidence and configuration
 server-side. The private controller imports only the erased assistance type.
 
 `src/lib/solmind/supabase/explorerConversationRequestDependencies.ts` retains

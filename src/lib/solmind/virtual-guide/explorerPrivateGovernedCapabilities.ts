@@ -40,7 +40,8 @@ export function createExplorerPrivateGovernedCapabilities(input: Readonly<{
     ![modelPolicyVersion, resourcePolicyVersion].every(value => typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/.test(value))) throw new Error(FAILURE);
   const provider = Object.freeze({ generate: input.provider.generate });
   const renderer = Object.freeze({ verificationReceiptSha256: rendererVerificationReceiptSha256,
-    failureAssistance: Object.freeze({ ...input.renderer.failureAssistance }), render: input.renderer.render });
+    failureAssistance: Object.freeze({ ...input.renderer.failureAssistance }), render: input.renderer.render,
+    pauseNotice: input.renderer.pauseNotice });
   const operationalSignal = Object.freeze({ verificationReceiptSha256: signalVerificationReceiptSha256, emit: input.operationalSignal.emit });
   const methodologySource = Object.freeze({ read: input.methodologySource.read });
   const configurationFingerprint = createHash("sha256").update(JSON.stringify({ configuration, packId, expectedScope,

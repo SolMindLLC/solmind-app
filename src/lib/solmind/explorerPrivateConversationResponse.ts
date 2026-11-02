@@ -2,8 +2,11 @@
 import { parseExplorerConversationResult, type ExplorerConversationResult } from "./explorerConversationContract";
 
 export const EXPLORER_PRIVATE_RESPONSE_VERSION = "explorer-private-conversation-response.v1" as const;
+// "paused" is the hard-stop pause notice: the server writes the whole body, so no pause or safety fact
+// reaches the browser except as the Explorer's own notice text.
+export const EXPLORER_PRIVATE_ASSISTANCE_KINDS = Object.freeze(["support", "adult_policy", "temporarily_unavailable", "paused"] as const);
 export type ExplorerPrivateAssistance = Readonly<{
-  kind: "support" | "adult_policy" | "temporarily_unavailable";
+  kind: typeof EXPLORER_PRIVATE_ASSISTANCE_KINDS[number];
   body: string;
   persisted: false;
 }>;
@@ -40,7 +43,7 @@ export function parseExplorerPrivateConversationResponse(value: unknown): Explor
   // generated candidate is admitted by this separate transient projection.
   if (!object(value.assistance) ||
     !exact(value.assistance, ["kind", "body", "persisted"]) || value.assistance.persisted !== false ||
-    !["support", "adult_policy", "temporarily_unavailable"].includes(value.assistance.kind as string) || !body(value.assistance.body)) return null;
+    !(EXPLORER_PRIVATE_ASSISTANCE_KINDS as readonly unknown[]).includes(value.assistance.kind) || !body(value.assistance.body)) return null;
   return Object.freeze({ version: EXPLORER_PRIVATE_RESPONSE_VERSION, result,
     assistance: Object.freeze({ kind: value.assistance.kind as ExplorerPrivateAssistance["kind"], body: value.assistance.body, persisted: false }) });
 }

@@ -2,7 +2,7 @@ import "server-only";
 import { types } from "node:util";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { EXPLORER_COMPASS_ANCHORS, EXPLORER_CONVERSATION_LIMITS, parseExplorerWaypointClarificationAnswers } from "../explorerConversationContract";
-import type { ExplorerPrivateConversationRepository, ExplorerPrivateRpcRow } from "../virtual-guide/explorerPrivateConversationComposition";
+import type { ExplorerPrivateConversationRepository, ExplorerPrivatePauseRow, ExplorerPrivateRpcRow } from "../virtual-guide/explorerPrivateConversationComposition";
 
 const ACTOR = ["p_actor_user_account_id", "p_user_session_id"] as const;
 const METHODOLOGY = ["p_methodology_context_pack_id", "p_methodology_context_pack_version_id", "p_methodology_content_sha256", "p_methodology_authorization_version"] as const;
@@ -39,17 +39,22 @@ const PORTS = Object.freeze({
     "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint"], columns: ["outcome", "conversation_state"] }),
   review: Object.freeze({ name: "solmind_read_ended_explorer_conversations_v1", parameters: [...ACTOR, "p_conversation_id"],
     columns: ["outcome", "ended_conversations", "conversation_state"] }),
+  // The hard-stop pause for the signed-in Explorer's screen; writes nothing.
+  pause: Object.freeze({ name: "solmind_read_explorer_ai_use_pause_v1", parameters: [...ACTOR],
+    columns: ["outcome", "notice_kind", "crisis", "adults_only"] }),
 });
+const NOTICE_KINDS: readonly unknown[] = Object.freeze([null, "individual", "shared", "individual_and_shared"]);
 const FAILURE = "explorer_private_repository_unavailable";
 const OUTCOMES: Readonly<Record<keyof typeof PORTS, readonly string[]>> = Object.freeze({
   read: ["ok", "exact_replay"], ensure: ["created", "reused", "held", "stale_revision"],
-  observe: ["ok", "exact_replay", "stale_revision"], prepare: ["ok", "exact_replay", "stale_revision", "stale_policy", "blocked", "unavailable"],
+  observe: ["ok", "exact_replay", "stale_revision", "paused"],
+  prepare: ["ok", "exact_replay", "stale_revision", "stale_policy", "blocked", "unavailable", "paused"],
   settle: ["ok", "withheld", "exact_replay"], mutate: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   arrange: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   category: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   waypointRevision: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   release: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
-  end: ["ok", "exact_replay", "already_ended", "stale_revision", "unavailable"], review: ["ok"],
+  end: ["ok", "exact_replay", "already_ended", "stale_revision", "unavailable"], review: ["ok"], pause: ["ok"],
 });
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !types.isProxy(value) && !Array.isArray(value) &&
@@ -127,8 +132,8 @@ function parameters(input: object, expected: readonly string[]): Readonly<Record
   return Object.freeze(copied);
 }
 
-// The returned object exposes twelve exact ports, including deliberate
-// formation, ending and owned ended review. There is no generic select/RPC/credential capability.
+// The returned object exposes thirteen exact ports, including deliberate
+// formation, ending, owned ended review and the hard-stop pause read. There is no generic select/RPC/credential capability.
 export function createExplorerPrivateConversationRepository(client: SupabaseClient): ExplorerPrivateConversationRepository {
   async function call(port: keyof typeof PORTS, input: object): Promise<ExplorerPrivateRpcRow> {
     try {
@@ -145,7 +150,10 @@ export function createExplorerPrivateConversationRepository(client: SupabaseClie
       if (Object.keys(row).length !== spec.columns.length || !spec.columns.every((column) => Object.hasOwn(row, column)) ||
         typeof row.outcome !== "string" || !OUTCOMES[port].includes(row.outcome) ||
         (Object.hasOwn(row, "dispatch_permitted") && typeof row.dispatch_permitted !== "boolean") ||
-        (Object.hasOwn(row, "saved_reply") && typeof row.saved_reply !== "boolean")) throw new Error(FAILURE);
+        (Object.hasOwn(row, "saved_reply") && typeof row.saved_reply !== "boolean") ||
+        // A pause row names a closed kind, and its two flags are booleans that can be true only with a pause.
+        (port === "pause" && (!NOTICE_KINDS.includes(row.notice_kind) || typeof row.crisis !== "boolean" ||
+          typeof row.adults_only !== "boolean" || (row.notice_kind === null && (row.crisis || row.adults_only))))) throw new Error(FAILURE);
       return Object.freeze({ ...row }) as ExplorerPrivateRpcRow;
     } catch { throw new Error(FAILURE); }
   }
@@ -158,5 +166,6 @@ export function createExplorerPrivateConversationRepository(client: SupabaseClie
     ensure: (input) => call("ensure", input), observe: (input) => call("observe", input), prepare: (input) => call("prepare", input),
     settle: (input) => call("settle", input), mutate: (input) => call("mutate", input),
     arrange: (input) => call("arrange", input), category: (input) => call("category", input), release: (input) => call("release", input), waypointRevision: (input) => call("waypointRevision", input), end: (input) => call("end", input), review: (input) => call("review", input),
+    pause: async (actor) => await call("pause", { p_actor_user_account_id: actor.accountId, p_user_session_id: actor.applicationSessionId }) as ExplorerPrivatePauseRow,
   });
 }

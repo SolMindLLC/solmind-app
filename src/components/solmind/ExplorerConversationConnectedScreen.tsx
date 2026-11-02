@@ -240,7 +240,10 @@ function ConversationNotices({ view, actions }: NoticesProps) {
       {view.assistance !== null ? (
         <div className={ALERT_CLASS} role="alert">
           <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{view.assistance.body}</p>
-          <p>This assistance is temporary and is not a saved conversation reply.</p>
+          {/* A pause notice already says what was not sent or saved. */}
+          {view.assistance.kind === "paused" ? null : (
+            <p>This assistance is temporary and is not a saved conversation reply.</p>
+          )}
         </div>
       ) : null}
       {view.errorMessage !== null ? (

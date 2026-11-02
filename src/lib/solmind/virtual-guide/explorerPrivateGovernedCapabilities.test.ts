@@ -42,13 +42,14 @@ function fixture() {
   const row: ExplorerPrivateReadRow = { outcome: "ok", conversation_state: STATE, authority_context: authority };
   const read = vi.fn(async () => row);
   const write = vi.fn(async () => { throw new Error("unexpected_synthetic_mutation"); });
-  const repository = { read, ensure: write, observe: write, prepare: write, settle: write, mutate: write };
+  const repository = { read, ensure: write, observe: write, prepare: write, settle: write, pause: write, mutate: write };
   const provider = { generate: vi.fn(async () => "Synthetic never-requested model response.") };
   const renderer: NonNullable<ExplorerPrivateConversationDependencies["renderer"]> = {
     verificationReceiptSha256: "B".repeat(64), failureAssistance: { support: "Synthetic support.", adultPolicy: "Synthetic adult boundary.",
       supportAndAdultPolicy: "Synthetic support and boundary.", temporarilyUnavailable: "Synthetic unavailable." },
     render: vi.fn(async () => ({ kind: "urgent" as const, body: "Synthetic trusted rendering.",
       trustedResponseVersion: configuration.trustedResponses.version, resourcePolicyVersion: "synthetic-resources.v1" })),
+    pauseNotice: vi.fn(() => "Synthetic pause notice."),
   };
   const operationalSignal = { verificationReceiptSha256: "C".repeat(64), emit: vi.fn(async () => undefined) };
   const input = { repository, methodologySource: source, packId: PACK, expectedScope: EXPECTED_SCOPE, configuration,
@@ -72,6 +73,8 @@ describe("explicit private governed capability composition with synthetic proven
     expect(ready?.configurationFingerprint).toMatch(/^[0-9A-F]{64}$/);
     expect(f.source.read).toHaveBeenCalledExactlyOnceWith({ actor: ACTOR, packId: PACK, expectedScope: EXPECTED_SCOPE });
     expect(f.capabilities.provider.generate).toBe(f.provider.generate); expect(f.capabilities.renderer.render).toBe(f.renderer.render);
+    expect(f.capabilities.renderer.pauseNotice).toBe(f.renderer.pauseNotice);
+    expect(Object.keys(f.capabilities.renderer).sort()).toEqual(["failureAssistance", "pauseNotice", "render", "verificationReceiptSha256"]);
     expect(f.capabilities.operationalSignal.emit).toBe(f.operationalSignal.emit);
     expect(f.read).not.toHaveBeenCalled(); expect(f.write).not.toHaveBeenCalled(); expect(f.provider.generate).not.toHaveBeenCalled();
   });

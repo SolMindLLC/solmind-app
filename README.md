@@ -408,7 +408,10 @@ public.solmind_mutate_explorer_conversation_v3
 Product-limits slice 2a (2026-11-01) replaces the observe step and the
 37-argument prepare step in place, with the same signatures, return shapes and
 grants, so they can return the closed outcome `paused` at a hard stop; see
-AGENTS.md, "Product hard stops in the database".
+AGENTS.md, "Product hard stops in the database". Slice 2b adds the private
+repository's pause read of `public.solmind_read_explorer_ai_use_pause_v1` and
+shows the pause notices on the conversation screen; see AGENTS.md, "Hard-stop
+pause notices on the screen".
 
 The private successor retires direct service-role execution of
 `public.solmind_prepare_virtual_guide_predispatch`,

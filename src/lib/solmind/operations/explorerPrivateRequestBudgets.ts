@@ -36,6 +36,7 @@ export function withExplorerPrivateRequestBudgets(dependencies: ExplorerPrivateC
     observe: (...args: Parameters<typeof source.observe>) => bounded(() => source.observe(...args), 10_000),
     prepare: (...args: Parameters<typeof source.prepare>) => bounded(() => source.prepare(...args), 10_000),
     settle: (...args: Parameters<typeof source.settle>) => bounded(() => source.settle(...args), 10_000),
+    pause: (...args: Parameters<typeof source.pause>) => bounded(() => source.pause(...args), 10_000),
     ...(source.mutate === undefined ? {} : { mutate: (input: Parameters<NonNullable<typeof source.mutate>>[0]) => bounded(() => source.mutate!(input), 10_000) }),
     ...(source.arrange === undefined ? {} : { arrange: (input: Parameters<NonNullable<typeof source.arrange>>[0]) => bounded(() => source.arrange!(input), 10_000) }),
     ...(source.category === undefined ? {} : { category: (input: Parameters<NonNullable<typeof source.category>>[0]) => bounded(() => source.category!(input), 10_000) }),
