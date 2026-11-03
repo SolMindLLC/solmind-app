@@ -100,7 +100,8 @@ describe("fixed Guide home server access", () => {
 
   it("adds one exact Guide rule and leaves prototype destinations unchanged", () => {
     expect(GUIDE_HOME_ROUTE).toBe("/guide/home");
-    expect(SOLMIND_ROUTE_ACCESS_RULES.length).toBe(6);
+    // Five fixed Admin-only rules were added for the minimal Admin screens (decision queue 2026-11-03 11:56:14).
+    expect(SOLMIND_ROUTE_ACCESS_RULES.length).toBe(11);
     expect(SOLMIND_ROUTE_ACCESS_RULES.slice(0, 3).map((rule) => rule.route)).toEqual(["/admin", "/guide", "/explorer"]);
     expect(SOLMIND_ROLE_HOME_ROUTES.guide).toBe("/guide");
     expect(canSolMindRoleAccessRoute(SOLMIND_ROLES.GUIDE, GUIDE_HOME_ROUTE)).toBe(true);

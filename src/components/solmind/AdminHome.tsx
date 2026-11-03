@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import type { AdminWorkspaceView } from "@/lib/solmind/adminWorkspaceContract";
 import { createLogoutBrowserRequest, type LogoutBrowserFetch } from "@/lib/solmind/logoutBrowserRequest";
 import {
   createExplorerExpiryClock, LOGOUT_RESPONSE_BUDGET_MS,
-  SESSION_WARNING, SIGN_OUT_UNCERTAINTY, SIGNED_OUT_PRIVACY, type ExplorerExpiry,
+  SIGN_OUT_UNCERTAINTY, SIGNED_OUT_PRIVACY, type ExplorerExpiry,
 } from "@/lib/solmind/explorerLoginJourney";
+import { AdminWorkspacePage } from "./AdminWorkspacePages";
 
 const ADMIN_REENTRY_PATH = "/login/admin" as const;
 
@@ -142,7 +144,11 @@ const browserPorts: HomePorts = {
   },
 };
 
-export function AdminHome({ session }: Readonly<{ session: ExplorerExpiry }>) {
+// Every minimal Admin page (decision queue 2026-11-03 11:56:14) mounts this one
+// binding: the finite clock, sign-out, and the pagehide/pageshow reload. Only
+// the server's plain display data (view), the pending and warning flags and the
+// sign-out action reach the presentation in AdminWorkspacePages.tsx.
+export function AdminHome({ session, view }: Readonly<{ session: ExplorerExpiry; view: AdminWorkspaceView }>) {
   const { expiresAt, observedAt } = session;
   const binding = useMemo(() => createAdminHomeViewBinding({ expiresAt, observedAt }, browserPorts), [expiresAt, observedAt]);
   useLayoutEffect(() => () => binding.invalidateView(), [binding]);
@@ -161,13 +167,5 @@ export function AdminHome({ session }: Readonly<{ session: ExplorerExpiry }>) {
     };
   }, [binding]);
   if (state.screen !== "home") return <AdminSessionOutcome outcome={state.screen} />;
-  return <main style={{ maxWidth: 560, margin: "64px auto", padding: 24 }}>
-    <h1>Admin home</h1>
-    <p>You are signed in as the Admin.</p>
-    <p>This page confirms your Admin sign-in and lets you sign out.</p>
-    {state.warning ? <p role="status">{SESSION_WARNING}</p> : null}
-    <button type="button" disabled={state.pending} onClick={() => { void binding.signOut(); }}>
-      {state.pending ? "Signing out..." : "Sign out"}
-    </button>
-  </main>;
+  return <AdminWorkspacePage onSignOut={() => { void binding.signOut(); }} pending={state.pending} view={view} warning={state.warning} />;
 }

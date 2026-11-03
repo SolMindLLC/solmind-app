@@ -6,11 +6,13 @@ vi.mock("next/headers", () => ({ headers: async () => {
   if (seams.throwHeaders) throw new Error("fixture_private_error");
   return { get: (name: string) => name === "cookie" ? seams.header : null };
 } }));
-vi.mock("@/lib/solmind/auth/adminHomeAccess", () => ({ resolveAdminHomeAccess: seams.access }));
+vi.mock("@/lib/solmind/auth/adminWorkspaceAccess", () => ({ resolveAdminDashboardAccess: seams.access }));
 import AdminHomePage, { dynamic, runtime } from "../page";
 import { AdminHome, AdminSessionOutcome } from "../../../../components/solmind/AdminHome";
 
-const allowed = { allowed: true as const, expiresAt: "2026-10-23T17:00:00.000Z", observedAt: "2026-10-23T16:05:00.000Z" };
+// Since 2026-11-03 the home is the minimal Admin Dashboard: its plain display data rides with the times.
+const view = { page: "dashboard" as const, overview: { guides: 1, explorers: 2, explorersSignedInLast7Days: 1, accountsPausedNow: 0 } };
+const allowed = { allowed: true as const, expiresAt: "2026-10-23T17:00:00.000Z", observedAt: "2026-10-23T16:05:00.000Z", view };
 beforeEach(() => {
   seams.header = null; seams.throwHeaders = false; seams.access.mockReset();
   seams.access.mockResolvedValue({ allowed: false, reason: "route_access_denied" });
@@ -26,13 +28,15 @@ afterEach(() => {
 // Direct invocation of the page composition with mocked request/auth seams;
 // this does not render an async React Server Component or prove real access.
 describe("Admin protected page raw-header composition", () => {
-  it("P01 request rendering is explicit and home receives only the two nonsecret session fields", async () => {
+  it("P01 request rendering is explicit and home receives only the two nonsecret session fields and the view", async () => {
     seams.access.mockResolvedValue({ ...allowed, actorUserAccountId: "fixture-internal-actor", sessionId: "fixture-internal-session" });
     const result = await AdminHomePage();
     expect(dynamic === "force-dynamic" && runtime === "nodejs").toBe(true);
-    expect(result.type === AdminHome && Object.keys(result.props).join() === "session").toBe(true);
+    expect(result.type === AdminHome && Object.keys(result.props).sort().join() === "session,view").toBe(true);
     expect(Object.keys(result.props.session).sort()).toEqual(["expiresAt", "observedAt"]);
     expect(result.props.session.expiresAt === allowed.expiresAt && result.props.session.observedAt === allowed.observedAt).toBe(true);
+    expect(result.props.view).toBe(view);
+    expect(JSON.stringify(result.props).includes("fixture-internal")).toBe(false);
   });
   it("P02 no cookie still goes through opaque denial without creating home", async () => {
     const result = await AdminHomePage();

@@ -33,7 +33,14 @@
 
 import "server-only";
 
-import { ADMIN_HOME_ROUTE } from "../routeAccess";
+import {
+  ADMIN_AI_USE_ROUTE,
+  ADMIN_CHANGE_SETTING_ROUTE,
+  ADMIN_HOME_ROUTE,
+  ADMIN_LIFT_PAUSE_ROUTE,
+  ADMIN_PEOPLE_ROUTE,
+  ADMIN_SETTINGS_ROUTE,
+} from "../routeAccess";
 
 import { type SolMindRequestAuthPrincipalSource } from "./requestAuthPrincipalSource";
 import { createInMemoryAuthSource, type SolMindAuthSource } from "./authSource";
@@ -114,4 +121,41 @@ export async function resolveAdminHomeRouteAccess(
     },
     { selectors: { requestedRoute: ADMIN_HOME_ROUTE } },
   );
+}
+
+// The minimal functional Admin screens (decision queue 2026-11-03 11:56:14):
+// one fixed resolver per new path, as for the home. Each binds its own rule; a
+// missing or changed rule denies that path. The caller cannot supply a route.
+type AdminRouteAccessArgs = Parameters<typeof resolveAdminRouteAccess>[0];
+
+function resolveFixedAdminRoute(args: AdminRouteAccessArgs, requestedRoute: string): Promise<AuthorizeRouteAccessResult> {
+  return composeRequestAuthContext(
+    {
+      principalSource: args.principalSource,
+      authSource: args.authSource ?? createDeferredAdminAuthSource(),
+      onServiceRoleRead: args.onServiceRoleRead,
+      onAuthResolutionFailure: args.onAuthResolutionFailure,
+    },
+    { selectors: { requestedRoute } },
+  );
+}
+
+export async function resolveAdminPeopleRouteAccess(args: AdminRouteAccessArgs): Promise<AuthorizeRouteAccessResult> {
+  return resolveFixedAdminRoute(args, ADMIN_PEOPLE_ROUTE);
+}
+
+export async function resolveAdminAiUseRouteAccess(args: AdminRouteAccessArgs): Promise<AuthorizeRouteAccessResult> {
+  return resolveFixedAdminRoute(args, ADMIN_AI_USE_ROUTE);
+}
+
+export async function resolveAdminSettingsRouteAccess(args: AdminRouteAccessArgs): Promise<AuthorizeRouteAccessResult> {
+  return resolveFixedAdminRoute(args, ADMIN_SETTINGS_ROUTE);
+}
+
+export async function resolveAdminLiftPauseRouteAccess(args: AdminRouteAccessArgs): Promise<AuthorizeRouteAccessResult> {
+  return resolveFixedAdminRoute(args, ADMIN_LIFT_PAUSE_ROUTE);
+}
+
+export async function resolveAdminChangeSettingRouteAccess(args: AdminRouteAccessArgs): Promise<AuthorizeRouteAccessResult> {
+  return resolveFixedAdminRoute(args, ADMIN_CHANGE_SETTING_ROUTE);
 }

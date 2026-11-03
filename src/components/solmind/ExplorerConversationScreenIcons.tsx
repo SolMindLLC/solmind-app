@@ -201,11 +201,24 @@ export function IconPerson(props: IconProps) {
   return <Svg {...props}><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8" /></Svg>;
 }
 
+// The minimal Admin screens (decision queue 2026-11-03 11:56:14): a shield for
+// the Admin's profile chip (no name reaches an Admin page) and a gauge for AI
+// use and pauses.
+export function IconShield(props: IconProps) {
+  return <Svg {...props}><path d="M12 3 5 6v5c0 4.4 3 8.3 7 9.5 4-1.2 7-5.1 7-9.5V6l-7-3Z" /></Svg>;
+}
+
+export function IconGauge(props: IconProps) {
+  return <Svg {...props}><path d="M5 18a8 8 0 1 1 14 0" /><path d="m12 14 3.5-4" /><circle cx="12" cy="14" r="1" /></Svg>;
+}
+
 type IconComponent = (props: IconProps) => ReactNode;
 
 // The workspace menu icon for each menu entry id: the September 23 house,
 // speech bubble, map pin and gear for the Explorer, and the Guide dashboard
-// mockup's icons for the Guide (the users icon for Explorers).
+// mockup's icons for the Guide (the users icon for Explorers). The Admin menu
+// reuses the dashboard icon, the users icon (Guides and Explorers) and the gear
+// (Settings), and adds the gauge (AI use and pauses).
 export const MENU_ICONS: Readonly<Partial<Record<string, IconComponent>>> = Object.freeze({
   overview: IconOverview,
   conversations: IconChat,
@@ -216,11 +229,14 @@ export const MENU_ICONS: Readonly<Partial<Record<string, IconComponent>>> = Obje
   guideAssistant: IconMessageSquare,
   appointments: IconCalendar,
   archive: IconArchive,
+  people: IconUsers,
+  aiUse: IconGauge,
 });
 
 // The profile chip's icon by ScreenProfile.icon; the hiking boot otherwise.
 export const PROFILE_ICONS: Readonly<Partial<Record<string, IconComponent>>> = Object.freeze({
   guide: IconPerson,
+  admin: IconShield,
 });
 
 export function IconSpark(props: IconProps) {

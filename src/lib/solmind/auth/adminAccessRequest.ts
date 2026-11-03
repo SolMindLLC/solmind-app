@@ -354,6 +354,28 @@ export type AdminHomeRequestResult =
   | Readonly<{ allowed: true; expiresAt: string; observedAt: string }>
   | Readonly<{ allowed: false }>;
 
+// The final display-time expiry check shared by the home and the Admin
+// workspace guard: after both required writes, the session must still be
+// unexpired on a finite clock. Returns the observation time, or null to deny.
+function observeUnexpiredAdminSession(
+  deps: AdminAccessRequestDependencies,
+  expiresAt: string,
+): string | null {
+  try {
+    const observed = (deps.now ?? (() => new Date()))();
+    const observedMs = observed.getTime();
+    const expiresMs = Date.parse(expiresAt);
+    if (!Number.isFinite(observedMs) || !Number.isFinite(expiresMs) || expiresMs <= observedMs) {
+      return null;
+    }
+    return observed.toISOString();
+  } catch {
+    // This is a projection/clock failure, not a new authentication resolution
+    // failure. Do not invent a third audit row or duplicate the completed read.
+    return null;
+  }
+}
+
 // Resolve once through the existing audited Admin chain, against the fixed home
 // rule. Both required writes finish before the final display-time expiry check.
 export async function resolveAdminHomeForRequest(
@@ -361,17 +383,33 @@ export async function resolveAdminHomeForRequest(
 ): Promise<AdminHomeRequestResult> {
   const result = await resolveAuditedAdminSessionForRequest(deps, resolveAdminHomeRouteAccess);
   if (!result.allowed) return Object.freeze({ allowed: false });
-  try {
-    const observed = (deps.now ?? (() => new Date()))();
-    const observedMs = observed.getTime();
-    const expiresMs = Date.parse(result.expiresAt);
-    if (!Number.isFinite(observedMs) || !Number.isFinite(expiresMs) || expiresMs <= observedMs) {
-      return Object.freeze({ allowed: false });
-    }
-    return Object.freeze({ allowed: true, expiresAt: result.expiresAt, observedAt: observed.toISOString() });
-  } catch {
-    // This is a projection/clock failure, not a new authentication resolution
-    // failure. Do not invent a third audit row or duplicate the completed read.
-    return Object.freeze({ allowed: false });
-  }
+  const observedAt = observeUnexpiredAdminSession(deps, result.expiresAt);
+  if (observedAt === null) return Object.freeze({ allowed: false });
+  return Object.freeze({ allowed: true, expiresAt: result.expiresAt, observedAt });
+}
+
+export type AdminWorkspaceRequestResult =
+  | Readonly<{ allowed: true; actorUserAccountId: string; expiresAt: string; observedAt: string }>
+  | Readonly<{ allowed: false }>;
+
+// The minimal functional Admin screens (decision queue 2026-11-03 11:56:14):
+// the same audited chain once, against one fixed Admin rule chosen by the
+// server-only caller (a resolver from adminRouteAccess.ts, never a string),
+// then the shared expiry check. The actor stays server-side: callers pass it
+// only to the closed Admin database functions as p_actor_user_account_id.
+// The two existing projections above are unchanged.
+export async function resolveAdminWorkspaceForRequest(
+  deps: AdminAccessRequestDependencies,
+  resolveRoute: typeof resolveAdminRouteAccess,
+): Promise<AdminWorkspaceRequestResult> {
+  const result = await resolveAuditedAdminSessionForRequest(deps, resolveRoute);
+  if (!result.allowed) return Object.freeze({ allowed: false });
+  const observedAt = observeUnexpiredAdminSession(deps, result.expiresAt);
+  if (observedAt === null) return Object.freeze({ allowed: false });
+  return Object.freeze({
+    allowed: true,
+    actorUserAccountId: result.actorUserAccountId,
+    expiresAt: result.expiresAt,
+    observedAt,
+  });
 }

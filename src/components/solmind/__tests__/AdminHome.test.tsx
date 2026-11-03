@@ -18,12 +18,13 @@ function setup(reply: () => Promise<Response>) {
   const close = binding.subscribe(() => undefined);
   return { binding, calls, timers, close, advance(milliseconds: number) { wall += milliseconds; binding.recheck(); } };
 }
+const view = { page: "dashboard" as const, overview: { guides: 2, explorers: 3, explorersSignedInLast7Days: 1, accountsPausedNow: 0 } };
 describe("Admin home with shared expiry and logout boundaries", () => {
-  it("renders only Admin confirmation with no private session projection or request", () => {
-    const html = renderToStaticMarkup(createElement(AdminHome, { session }));
+  it("renders the Admin Dashboard with no private session projection or request", () => {
+    const html = renderToStaticMarkup(createElement(AdminHome, { session, view }));
     // Nothing renders "Explorer home" any more (2026-11-02), so the cross-role check looks for the Explorer
-    // and Guide workspace menus instead.
-    check(html.includes("Admin home") && html.includes("Sign out"));
+    // and Guide workspace menus instead. Since 2026-11-03 the home is the minimal Admin Dashboard.
+    check(html.includes('aria-label="Admin workspace"') && html.includes("Dashboard") && html.includes("Sign out"));
     check(!html.includes('aria-label="Explorer workspace"') && !html.includes('aria-label="Guide workspace"'));
     check(!html.includes(session.expiresAt) && !html.includes(session.observedAt));
   });

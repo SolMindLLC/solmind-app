@@ -791,10 +791,25 @@ Home must use the fixed /admin/home server-only audited chain once, not a bare
 Guide guard. Require guarded-read persistence first, allow-decision persistence
 second, then final expiry/clock validation. Preserve the public /admin/access
 { allowed } shape and existing server actor contract; pass only expiry/observation
-times to AdminHome. Keep duplicate raw cookies visible to validation, shared
+times to AdminHome (amended 2026-11-03: and the minimal Admin screens' plain
+display data, below). Keep duplicate raw cookies visible to validation, shared
 logout uncertainty honest and re-entry fixed to Admin. GET does not renew, clear
 cookies or sign out; the Admin home allow still requires its audit writes.
 The /admin prototype grants no new dashboard, private-data or provisioning power.
+
+Minimal functional Admin screens (amended 2026-11-03; decision queue 2026-11-03
+11:52:57, 11:56:14 and 12:19:09): Dashboard, Guides and Explorers, AI use and
+pauses, and Settings, plus the Lift pause and setting-change POSTs, are allowed
+as docs/MODULE_BOUNDARIES.md describes them. Each path keeps its own fixed
+Admin-only rule and resolver; guard and read run in the same request through
+adminWorkspaceAccess.ts; the actor stays on the server; activity is by sign-ins
+only, and apart from the recorded hard-stop facts Paul approved as Admin review
+flags (2026-11-01 01:00:16: day, time reached, that day's total calls, the
+limit; 2026-11-01 12:27:07: crisis or urgent status at the stop), no Admin page
+shows conversation content, message dates or message counts; the two writes
+reuse the existing lift and setting writer unchanged, with one fixed authority
+reference and no account id (amended 2026-11-03 after review REV219), and
+"paused now" is the AI-use gate's own read-mode decision.
 
 Admin configuration is explicit/provisional; see docs/MODULE_BOUNDARIES.md.
 Obtain Admin's own genuine positive journey, audit/failure/role/session evidence
@@ -807,7 +822,8 @@ current complete-slice execution ledger and its checked receipt as status owner.
 Preserve original accounts/private passwords. First-Admin setup, password reset,
 SMS, remembered browser/activity renewal, broader Admin workflows, new SQL/schema/
 grants/dependencies, provider activation, cloud/production/deployment, real users
-and cleanup movement retain their separate scope/authority.
+and cleanup movement retain their separate scope/authority (amended 2026-11-03:
+except the minimal Admin screens above and their four read functions).
 
 ### Admin-specific local evidence and acceptance - 2026-10-23
 

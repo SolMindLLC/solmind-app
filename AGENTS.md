@@ -708,7 +708,9 @@ Section 11.4 records that exception, and the Explorer privacy disclosure must
 say so before real Explorers. Stop records never hold conversation words, a
 conversation reference, or safety or crisis counts. The screen step (slice 2b,
 next section) is the app's only caller, of the pause read and of the `paused`
-outcome. The migration reaches the Card 3 demo database only after that step
+outcome. Since 2026-11-03 the minimal Admin screens (Connected Admin boundary,
+below) also call the lift, on the Admin's Lift pause press, still recorded as
+Paul's lift. The migration reaches the Card 3 demo database only after that step
 is banked.
 
 ### Hard-stop pause notices on the screen - 2026-11-01
@@ -1180,14 +1182,73 @@ departure/disposal; credentials/selectors/tokens never enter logs, URLs, storage
 or home props. Refusals preserve existing cookies; bounded discard is not rollback.
 
 The fixed /admin/home rule uses adminHomeAccess and resolveAdminHomeForRequest,
-not a bare Guide guard or the public access probe. The server-only audited chain
+not a bare Guide guard or the public access probe (since 2026-11-03 the home
+page goes through adminWorkspaceAccess and resolveAdminWorkspaceForRequest with
+the same fixed home resolver, below; adminHomeAccess keeps no page caller). The
+server-only audited chain
 runs once. On a would-be allow, guarded-read write first and allow-decision write
 second must both persist, then a final expiry/clock check must pass. Do not add a duplicate read or third audit event.
 Preserve resolveAdminAccessForRequest's exact { allowed } result and
 resolveAdminActorForRequest's existing server-only actor projection. Only
-expiresAt/observedAt reach AdminHome; preserve raw duplicate cookie names/values.
+expiresAt/observedAt reach AdminHome, and since 2026-11-03 the page's plain
+display data (view, below); preserve raw duplicate cookie names/values.
 Reuse shared /logout, finite reminders, honest uncertainty and /login/admin
-re-entry. /admin stays a prototype; this home adds no dashboard/provisioning power.
+re-entry. /admin stays a prototype; this home adds no provisioning power and,
+since 2026-11-03, no dashboard power beyond the minimal Admin screens below.
+
+Minimal functional Admin screens (PRJ01_R-WS03-WI014; Paul's decisions, decision
+queue 2026-11-03 11:23:03, 11:52:57, 11:56:14 and 12:19:09): only what testing
+needs, and they may be thrown away for a better design. The Admin menu
+(`src/lib/solmind/adminWorkspaceFrame.ts`, the banked `WorkspaceFrame.tsx`) has
+Dashboard (`/admin/home`), Guides and Explorers (`/admin/people`), AI use and
+pauses (`/admin/ai-use`) and Settings (`/admin/settings`), all full-document
+links, with no placeholders. The Admin pages also show the banked frame's bell
+and profile chip ("Admin"), each with "Not connected yet" (Paul's decision,
+decision queue 2026-11-02 22:19:17). Each page and each POST (`/admin/ai-use/lift`,
+`/admin/settings/change`) has its own fixed Admin-only rule in `routeAccess.ts`
+and its own fixed resolver in `adminRouteAccess.ts`.
+`src/lib/solmind/auth/adminWorkspaceAccess.ts` runs
+`resolveAdminWorkspaceForRequest` (the same audited chain once, then the shared
+expiry check) and only then the closed reads in
+`src/lib/solmind/supabase/adminWorkspaceRpcExecutor.ts` with the server-derived
+actor, in the same request. The actor stays on the server; the pages receive the
+session times and plain display data, with every time formatted on the server in
+Chicago time. A read that fails after an allowed check shows the page saying the
+information could not be loaded. The POSTs follow the Guide command order (no
+query, trusted origin, `readSameOriginJsonWriteRequest`, exact-key body, raw
+cookies, guard, one call, value-free outcome, no-store); the browser makes one
+operation id per press, shows the outcome in plain words and reloads the page.
+Every Admin page keeps AdminHome's binding (finite clock, sign-out, pagehide/
+pageshow reload). Activity is by sign-ins only; apart from the recorded
+hard-stop facts Paul approved as Admin review flags (2026-11-01 01:00:16: day,
+time reached, that day's total calls, the limit; 2026-11-01 12:27:07: crisis or
+urgent status at the stop), no Admin page shows conversation content, message
+dates or message counts. The four reads in
+`supabase/migrations/20261103120000_admin_minimal_reads.sql` recheck an active
+Admin. Their "paused now" is the AI-use gate's own decision (amended 2026-11-03
+after review REV219): they call `ai.solmind_explorer_ai_use_gate_v1` in read
+mode, which writes nothing, for every account with a non-deleted Explorer
+profile. The Dashboard count and the AI use and pauses list cover the Explorers
+it pauses by their own limit, including a pause no stop row records (after a
+limit is lowered), which the list shows as "Not recorded yet" with no Lift
+pause: a Send is normally refused at the pause read before any stop is
+recorded, so that pause ends at midnight, Chicago time, or when the limit is
+raised above that Explorer's calls today, as the page says (corrected
+2026-11-03 after review REV219b); Guides and Explorers shows
+"Yes" (own limit), "Yes, shared pause" (only today's shared pause) or "No";
+"Explorers active in the last 7 days" counts only accounts with a non-deleted
+Explorer profile. The lift and the setting change reuse
+`public.solmind_lift_explorer_ai_use_pause_v1` and
+`public.solmind_set_application_setting_integer` unchanged, with one fixed
+authority reference, `ADMIN_SCREENS_AUTHORITY_REFERENCE_ID` in the executor,
+naming Paul's decision queue entry 2026-11-03 11:56:14 as amended at 12:19:09
+(amended 2026-11-03 after review REV219: the Admin's account id is no longer
+sent, since the audit contract's reference is a non-descriptive id of an
+approved checkpoint); both still audit as a system change on Paul's word, which
+Paul accepted for these throwaway screens. A Lift pause on a pause already
+lifted another way answers "This pause had already been lifted. Nothing was
+changed." (outcome `lifted_elsewhere`, amended 2026-11-03). Nothing about AI
+costs is built (a future sprint).
 
 Admin timing configuration is explicit and provisional; see
 src/lib/solmind/supabase/adminSignInHttpPorts.ts and docs/MODULE_BOUNDARIES.md.
@@ -1195,7 +1256,8 @@ Guide's dated proof/private-local risk acceptance does not accept Admin risk.
 Source checks alone establish no runtime/timing/assurance/publication/banking
 result; current complete-slice evidence and its checked receipt remain required.
 First-Admin setup, SMS, reset, remembered browser/renewal, broader Admin work,
-new SQL/schema/grants/dependencies and provider activation stay separate.
+new SQL/schema/grants/dependencies and provider activation stay separate
+(2026-11-03: except the minimal Admin screens' four read functions above).
 
 ## Secrets Boundary
 

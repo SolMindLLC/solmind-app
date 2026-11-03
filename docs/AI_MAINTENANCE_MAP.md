@@ -45,6 +45,9 @@ User-facing routes:
   path; source/check results alone do not establish publication/banking
 - /login/admin, its two POSTs and /admin/home - connected Admin password/code
   source path, with an audited fixed-home guard; see Connected Admin ownership below
+- `/admin/home` (Dashboard), `/admin/people`, `/admin/ai-use` and
+  `/admin/settings` - the minimal functional Admin screens (2026-11-03), each
+  guarded and read on the server; see Minimal functional Admin screens below
 - `/admin` - Admin dashboard preview
 - `/guide` - human Guide dashboard preview
 - `/guide/waypoint-suggestions` - authenticated, read-only Human Guide
@@ -77,6 +80,8 @@ hosted data, or a real-user path.
 Server route handlers:
 
 - `/admin/access` - opaque server-side Admin access probe returning only `{ allowed }`
+- `/admin/ai-use/lift` and `/admin/settings/change` - same-origin Admin POSTs
+  of the minimal Admin screens (2026-11-03): Lift pause and one setting change
 - `/guide/waypoint-suggestions/relationships` - read-only authenticated
   Suggested Waypoint Guide-entry selector consumed by the production entry page
 - `/guide/waypoint-suggestions/[relationshipId]/suggestions` - authenticated,
@@ -985,9 +990,9 @@ Guide's dated evidence/private-local approval retains its own scope.
 | src/app/login/admin/page.tsx; src/components/solmind/LoginExperience.tsx | Fixed Admin re-entry and chooser branch; separate AdminSignIn client ports and accepted fixed-home navigation; no request-selected role/home |
 | src/app/login/admin/send/route.ts; src/app/login/admin/verify/route.ts; src/lib/solmind/supabase/adminSignInHttpPorts.ts | Thin fixed POSTs over existing shared handlers/dependencies; same-origin local email; explicit provisional timing, no module-load auth/config IO; plain name/value projection for strict cookie reads |
 | src/components/solmind/AdminSignIn.tsx; src/lib/solmind/adminSignInBrowserTransport.ts; src/lib/solmind/adminSignInFlowController.ts | Approved email/username input, private current attempt and selector, no password on send, password read at Send my code and held privately until verify (PasswordRoleSignInView), bounded explicit browser wait, stale/cancel/disposal protection |
-| src/app/admin/home/page.tsx; src/components/solmind/AdminHome.tsx | Dynamic raw-cookie-preserving page and times-only client projection; finite advisory clock, refresh/server revalidation, shared logout and fixed Admin re-entry; no dashboard/provisioning powers |
-| src/lib/solmind/auth/adminHomeAccess.ts; src/lib/solmind/auth/adminAccessRequest.ts; src/lib/solmind/auth/adminRouteAccess.ts | Fixed /admin/home authorization through one audited chain; guarded-read then allow-decision writes must both persist before final expiry check; preserve exact public probe and legacy server actor projections |
-| src/lib/solmind/routeAccess.ts; src/lib/solmind/auth/adminLoginIdentifierNormalizer.ts | Fixed Admin home rule and existing approved username/email normalizer; no first-Admin setup or stored-name migration |
+| src/app/admin/home/page.tsx; src/components/solmind/AdminHome.tsx | Dynamic raw-cookie-preserving page and times-only client projection; finite advisory clock, refresh/server revalidation, shared logout and fixed Admin re-entry; no dashboard/provisioning powers (2026-11-03: now the minimal Admin Dashboard with plain display data, below) |
+| src/lib/solmind/auth/adminHomeAccess.ts; src/lib/solmind/auth/adminAccessRequest.ts; src/lib/solmind/auth/adminRouteAccess.ts | Fixed /admin/home authorization through one audited chain; guarded-read then allow-decision writes must both persist before final expiry check; preserve exact public probe and legacy server actor projections (2026-11-03: adminHomeAccess keeps no page caller; the home page uses adminWorkspaceAccess) |
+| src/lib/solmind/routeAccess.ts; src/lib/solmind/auth/adminLoginIdentifierNormalizer.ts | Fixed Admin home rule and existing approved username/email normalizer; no first-Admin setup or stored-name migration (2026-11-03: also the five fixed Admin-only rules of the minimal Admin screens, below) |
 
 ADMIN_SIGN_IN_CONFIGURATION explicitly starts at floor 1,500 ms; lookup,
 ownership and confirmation 3,000 ms each; provider 5,000 ms; session 18,000 ms.
@@ -999,10 +1004,27 @@ Guide measurements and its October 21 approval cannot accept Admin residual risk
 Keep /admin and standalone preview behavior separate. The public /admin/access
 probe still returns exactly { allowed }; existing internal actor callers still
 receive only their original actor result. Only expiresAt/observedAt cross the home
-client boundary. Preserve accounts/private passwords, audit failure posture and
+client boundary (2026-11-03: with the minimal Admin screens' plain display data). Preserve accounts/private passwords, audit failure posture and
 all separately gated provisioning/provider/cloud/real-user/cleanup boundaries.
 See docs/MODULE_BOUNDARIES.md for the detailed chain; co-located Admin tests and
 tests/browser/adminConnectedLogin.pw.ts are proof owners, not proof by existence.
+
+### Minimal functional Admin screens - 2026-11-03
+
+PRJ01_R-WS03-WI014 (decision queue 2026-11-03 11:52:57, 11:56:14 and 12:19:09):
+only what testing needs; they may be thrown away. The rules are in
+docs/MODULE_BOUNDARIES.md (Minimal functional Admin screens - 2026-11-03).
+
+| Owner | Responsibility |
+| --- | --- |
+| src/app/admin/home/page.tsx; src/app/admin/people/page.tsx; src/app/admin/ai-use/page.tsx; src/app/admin/settings/page.tsx | Dashboard, Guides and Explorers, AI use and pauses, Settings: dynamic raw-cookie pages that guard and read in one request and pass only session times and plain display data |
+| src/app/admin/ai-use/lift/route.ts; src/app/admin/settings/change/route.ts | Lift pause and setting change POSTs in the Guide command order; value-free outcomes, no-store |
+| src/lib/solmind/auth/adminWorkspaceAccess.ts; src/lib/solmind/auth/adminAccessRequest.ts (resolveAdminWorkspaceForRequest); src/lib/solmind/auth/adminRouteAccess.ts (five fixed resolvers) | Server-only guard-then-read and guard-then-write composition; the actor stays on the server |
+| src/lib/solmind/supabase/adminWorkspaceRpcExecutor.ts | Closed executor: four Admin reads and the two existing writers, exact rows, value-free failures; both writers get the one fixed ADMIN_SCREENS_AUTHORITY_REFERENCE_ID, never an account id, and an already-lifted pause answers lifted_elsewhere (2026-11-03, review REV219) |
+| src/lib/solmind/adminWorkspaceContract.ts; src/lib/solmind/adminWorkspaceTime.ts; src/lib/solmind/adminWorkspaceWording.ts; src/lib/solmind/adminWorkspaceFrame.ts; src/lib/solmind/adminWorkspaceBrowserRequest.ts | Browser-safe shapes and body parsers, Chicago-time strings, fixed wording, the Admin menu frames and the browser POST |
+| src/components/solmind/AdminHome.tsx; src/components/solmind/AdminWorkspacePages.tsx; src/components/solmind/AdminDashboardHome.tsx; src/components/solmind/AdminWorkspaceActions.tsx; src/components/solmind/ExplorerConversationScreenIcons.tsx (Admin icons) | One session binding on every Admin page; the four pages in the WorkspaceFrame; the Lift pause button and setting form |
+| supabase/migrations/20261103120000_admin_minimal_reads.sql; supabase/tests/admin_minimal_reads_test.sql | Four service-role-only Admin reads with the active-Admin recheck, "paused now" from the AI-use gate's own read-mode decision (2026-11-03, review REV219), and their pgTAP proof |
+| src/lib/solmind/auth/__tests__/adminAccessRequest.workspace.test.ts; src/lib/solmind/auth/__tests__/adminWorkspaceAccess.test.ts; src/lib/solmind/supabase/__tests__/adminWorkspaceRpcExecutor.test.ts; src/lib/solmind/__tests__/adminWorkspaceContract.test.ts; src/components/solmind/__tests__/AdminWorkspacePages.test.tsx; src/app/admin/__tests__/workspacePages.test.tsx; src/app/admin/ai-use/lift/__tests__/route.test.ts; src/app/admin/settings/change/__tests__/route.test.ts | Unit proof owners, not proof by existence |
 
 ### Admin-specific local evidence and acceptance - 2026-10-23
 
