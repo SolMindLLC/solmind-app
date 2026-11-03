@@ -228,8 +228,8 @@ screen, and `ExplorerConversation.tsx` stays its only fetch owner:
   opens below 64rem (the icon strip and spaces toggle are gone). On the
   signed-in screen built entries are plain full-document links (a plain click
   on the current page's entry keeps the page and a typed message), and every
-  control not built yet shows a grey "Not connected yet" line (or carries it
-  in its accessible name when it shows only an icon) and one sentence
+  control not built yet shows a grey "Not connected yet" line (the bell
+  beside its icon, named "Notifications Not connected yet") and one sentence
   directly under it on request instead of a "Not yet implemented:" note;
   notes that describe an area stay shown in an area marked "Not connected
   yet"; only the review version keeps its blue notes. The sentences are the

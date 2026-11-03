@@ -1,13 +1,31 @@
-// PREPARED, NOT RUN. These mocked responses prove mounted client behavior only;
-// the destination marker deliberately does not prove protected-home access.
-// Execution requires the separately reviewed local browser/server method.
+// These cases run in the standard browser suite on both projects, with synthetic
+// mocked replies. The mocked responses prove mounted client behavior only; the
+// destination marker deliberately does not prove protected-home access.
 import { expect, test } from "@playwright/test";
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
 
+// Since 705f9a1 (2026-10-29, the private sign-in flow) the page sends its own
+// private flow ID, {identifier, flowId}, accepts only an acknowledgment that
+// echoes that same flowId, and verifies with {identifier, flowId, code}.
+const FLOW_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const NIL_FLOW_ID = "00000000-0000-0000-0000-000000000000";
+
+// The request's own flow ID when it is a canonical lowercase UUID other than the nil UUID, else null.
+function requestFlowId(postData: string | null): string | null {
+  try {
+    const body: unknown = JSON.parse(postData ?? "null");
+    const value = typeof body === "object" && body !== null ? (body as Record<string, unknown>).flowId : undefined;
+    return typeof value === "string" && FLOW_ID.test(value) && value !== NIL_FLOW_ID ? value : null;
+  } catch { return null; }
+}
+const flowAck = (flowId: string) => JSON.stringify({ acknowledgment: "verification_code_requested", flowId });
+
 test("Explorer connected entry uses fixed requests and fresh destination", async ({ page, baseURL }) => {
   if (!baseURL) throw new Error("missing_test_origin");
   const origin = new URL(baseURL).origin;
+  const identifier = "candidate@example.invalid";
+  const flow = { id: null as string | null };
   let sendShape = false;
   let verifyShape = false;
   await page.route("**/*", async route => {
@@ -15,13 +33,15 @@ test("Explorer connected entry uses fixed requests and fresh destination", async
     const url = new URL(request.url());
     if (url.origin !== origin) return route.abort();
     if (url.pathname === "/login/explorer/send") {
-      const body: unknown = request.postDataJSON();
-      sendShape = request.method() === "POST" && JSON.stringify(Object.keys(body as object)) === '["identifier"]';
-      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ acknowledgment: "verification_code_requested", challengeId: "00000000-0000-0000-0000-000000000000" }) });
+      const flowId = requestFlowId(request.postData());
+      flow.id = flowId;
+      sendShape = request.method() === "POST" && url.search === "" && flowId !== null &&
+        request.postData() === JSON.stringify({ identifier, flowId });
+      return route.fulfill({ status: 200, contentType: "application/json", body: flowAck(flowId ?? "") });
     }
     if (url.pathname === "/login/explorer/verify") {
-      const body: unknown = request.postDataJSON();
-      verifyShape = request.method() === "POST" && JSON.stringify(Object.keys(body as object).sort()) === '["challengeId","code","identifier"]';
+      verifyShape = request.method() === "POST" && url.search === "" && flow.id !== null &&
+        request.postData() === JSON.stringify({ identifier, flowId: flow.id, code: "123456" });
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ outcome: "signed_in", destination: "/explorer/home" }) });
     }
     if (url.pathname === "/explorer/home") return route.fulfill({ status: 200, contentType: "text/html", body: "<h1>Fixed navigation observed; authorization not tested</h1>" });
@@ -33,7 +53,7 @@ test("Explorer connected entry uses fixed requests and fresh destination", async
   await page.getByRole("button", { name: /I'm an Explorer/ }).click();
   await expect(page.getByText("Help is not set up yet.", { exact: true })).not.toBeVisible();
   await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
-  await page.getByLabel("Email", { exact: true }).fill("candidate@example.invalid");
+  await page.getByLabel("Email", { exact: true }).fill(identifier);
   await page.getByRole("button", { name: "Send my code", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Check your email", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Check your email", exact: true })).toBeFocused();
@@ -61,21 +81,18 @@ test("Connected Admin selection and departure return to chooser without requests
   expect(effects).toBe(0);
 });
 
-// M1-M3 are prepared source only, NOT RUN. All replies below are synthetic.
+// M1-M3 run in the same suite. All replies below are synthetic.
 // Request cancellation proves local invalidation, never remote rollback.
 type LoginRoute = import("@playwright/test").Route;
 type LoginPage = import("@playwright/test").Page;
 type LoginLocator = import("@playwright/test").Locator;
-const FIRST_SELECTOR = "10000000-0000-0000-0000-000000000001";
-const REPLACEMENT_SELECTOR = "20000000-0000-0000-0000-000000000002";
 const SYNTHETIC_CODE = "123456";
-const ackBody = (challengeId: string) => JSON.stringify({ acknowledgment: "verification_code_requested", challengeId });
 const refusedBody = JSON.stringify({ outcome: "code_not_accepted" });
 const signedInBody = JSON.stringify({ outcome: "signed_in", destination: "/explorer/home" });
 
 // These wrappers narrow outward assertion/action failures only. Playwright can
-// retain filled values in step metadata; a reviewed filtered reporter/config and
-// intentional failing controls remain required before any mounted execution.
+// retain filled values in step metadata, so this file keeps trace, screenshot
+// and video off and uses synthetic values only.
 async function checkMounted(read: () => Promise<boolean>, label: string) {
   await expect.poll(async () => {
     try { return await read(); } catch { return false; }
@@ -100,7 +117,9 @@ async function boundedRoute<T>(operation: Promise<T>): Promise<T> {
   } finally { if (timer !== undefined) clearTimeout(timer); }
 }
 
-function heldLoginReply(body: string) {
+// The reply body is built only on release: a send acknowledgment must echo the
+// page's own flow ID, which exists only once the page has sent it.
+function heldLoginReply(bodyFor: () => string) {
   let giveRoute!: (route: LoginRoute) => void;
   const received = new Promise<LoginRoute>(resolve => { giveRoute = resolve; });
   let giveCommand!: (command: "fulfill" | "abort") => void;
@@ -119,7 +138,7 @@ function heldLoginReply(body: string) {
       const choice = await command;
       try {
         if (choice === "abort") await route.abort("aborted");
-        else await route.fulfill({ status: 200, contentType: "application/json", body });
+        else await route.fulfill({ status: 200, contentType: "application/json", body: bodyFor() });
         giveResult(choice === "abort" ? "aborted" : "fulfilled");
       } catch {
         // A browser-aborted obsolete request may no longer be fulfillable.
@@ -175,15 +194,21 @@ test("M1 held send is invalidated by an email edit before the replacement attemp
   const origin = new URL(baseURL).origin;
   const original = "first-mounted@example.invalid";
   const replacement = "replacement-mounted@example.invalid";
-  const held = heldLoginReply(ackBody(FIRST_SELECTOR));
+  // The page's own flow ID of each send, in order.
+  const flows: (string | null)[] = [];
+  // Released only after the email edit: a correct echo of the first flow, so
+  // only the edit's invalidation can keep the page off the code screen.
+  const held = heldLoginReply(() => flowAck(flows[0] ?? ""));
   let sends = 0; let blocked = 0; let shapes = true;
   await page.route("**/*", async route => {
     const kind = routeKind(route, origin);
     if (kind === "send") {
       sends += 1;
-      shapes &&= requestBodyIs(route, { identifier: sends === 1 ? original : replacement });
+      const flowId = requestFlowId(route.request().postData());
+      flows.push(flowId);
+      shapes &&= flowId !== null && requestBodyIs(route, { identifier: sends === 1 ? original : replacement, flowId });
       if (sends === 1) return held.handle(route);
-      if (sends === 2) return jsonReply(route, ackBody(REPLACEMENT_SELECTOR));
+      if (sends === 2) return jsonReply(route, flowAck(flowId ?? ""));
     } else if (kind === "asset") return route.continue();
     blocked += 1; return route.abort();
   });
@@ -210,28 +235,36 @@ test("M1 held send is invalidated by an email edit before the replacement attemp
     await actMounted(() => send.click(), "mounted_action_04");
     await checkMounted(async () => (page.getByRole("heading", { name: "Check your email", exact: true })).evaluate(node => node === (node.getRootNode() as Document | ShadowRoot).activeElement && node.ownerDocument.hasFocus()), "mounted_check_06");
     expect(sends === 2 && shapes && blocked === 0, "only the two exact send attempts occurred").toBe(true);
+    expect(flows.length === 2 && flows[0] !== null && flows[1] !== null && flows[1] !== flows[0], "the email edit starts a new private flow").toBe(true);
     await checkMounted(async () => (page).url() === `${origin}/login/explorer`, "mounted_check_07");
   } finally { await held.cleanup(page); }
 });
 
-test("M2 opaque refusal and failed resend require a fresh replacement selector", async ({ page, baseURL }) => {
+// Since 705f9a1 (Paul's Card 9 item 17; unit tests F11 and U10) one private
+// flow survives every resend, so after a failed resend the next verify uses
+// the same flow.
+test("M2 opaque refusal and a failed resend keep the same private flow for the next verify", async ({ page, baseURL }) => {
   test.setTimeout(30_000);
   if (!baseURL) throw new Error("missing_test_origin");
   const origin = new URL(baseURL).origin;
   const identifier = "resend-mounted@example.invalid";
-  const held = heldLoginReply(ackBody(REPLACEMENT_SELECTOR));
+  // The flow ID of the first send; every later send and verify must carry it.
+  const flow = { id: null as string | null };
+  const held = heldLoginReply(() => flowAck(flow.id ?? ""));
   let sends = 0; let verifies = 0; let blocked = 0; let shapes = true;
   await page.route("**/*", async route => {
     const kind = routeKind(route, origin);
     if (kind === "send") {
-      sends += 1; shapes &&= requestBodyIs(route, { identifier });
-      if (sends === 1) return jsonReply(route, ackBody(FIRST_SELECTOR));
+      sends += 1;
+      if (sends === 1) flow.id = requestFlowId(route.request().postData());
+      shapes &&= flow.id !== null && requestBodyIs(route, { identifier, flowId: flow.id });
+      if (sends === 1) return jsonReply(route, flowAck(flow.id ?? ""));
       if (sends === 2) return held.handle(route);
-      if (sends === 3) return jsonReply(route, ackBody(REPLACEMENT_SELECTOR));
+      if (sends === 3) return jsonReply(route, flowAck(flow.id ?? ""));
     } else if (kind === "verify") {
       verifies += 1;
-      shapes &&= requestBodyIs(route, { identifier, challengeId: verifies === 1 ? FIRST_SELECTOR : REPLACEMENT_SELECTOR, code: SYNTHETIC_CODE });
-      if (verifies <= 2) return jsonReply(route, refusedBody);
+      shapes &&= flow.id !== null && requestBodyIs(route, { identifier, flowId: flow.id, code: SYNTHETIC_CODE });
+      if (verifies <= 3) return jsonReply(route, refusedBody);
     } else if (kind === "asset") return route.continue();
     blocked += 1; return route.abort();
   });
@@ -247,7 +280,9 @@ test("M2 opaque refusal and failed resend require a fresh replacement selector",
     await checkMounted(async () => mountedTextIs(page.getByRole("status"), "We couldn\u2019t sign you in with that code. You can try the code from your latest SolMind email, or request a new one."), "mounted_check_08");
     await checkMounted(async () => (page.getByRole("heading", { name: "Check your email", exact: true })).isVisible(), "mounted_check_09");
     expect(await inputIs(code, SYNTHETIC_CODE), "opaque refusal does not replace the draft").toBe(true);
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    // Scoped to the page's own content: Next.js adds its route announcer, an empty
+    // role="alert" in a shadow root outside <main>, to every page.
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     await actMounted(() => resend.click(), "mounted_action_08");
     await held.received();
     expect(await inputIs(code, ""), "resend immediately clears the old draft").toBe(true);
@@ -255,17 +290,22 @@ test("M2 opaque refusal and failed resend require a fresh replacement selector",
     await checkMounted(async () => (await (page.locator("form")).getAttribute("aria-busy")) === "true", "mounted_check_13");
     expect(await held.abort() === "aborted", "the held resend fails deliberately").toBe(true);
     await checkMounted(async () => mountedTextIs(page.getByRole("status"), "We couldn't confirm sign-in. Please try signing in again."), "mounted_check_14");
-    await checkMounted(async () => (verify).isDisabled(), "mounted_check_15"); await checkMounted(async () => (resend).isEnabled(), "mounted_check_16");
+    // The failed resend keeps the same private flow, so the code field and Verify stay usable.
+    await checkMounted(async () => (await (verify).isEnabled()) && (await (code).isEnabled()), "mounted_check_15"); await checkMounted(async () => (resend).isEnabled(), "mounted_check_16");
     await fillSynthetic(code, SYNTHETIC_CODE);
     await actMounted(() => code.press("Enter"), "mounted_action_09");
-    expect(verifies === 1, "lost resend cannot verify with the discarded selector").toBe(true);
+    await checkMounted(async () => verifies === 2, "mounted_check_31");
+    expect(shapes, "the verify after the failed resend carries the same private flow").toBe(true);
+    await checkMounted(async () => mountedTextIs(page.getByRole("status"), "We couldn\u2019t sign you in with that code. You can try the code from your latest SolMind email, or request a new one."), "mounted_check_32");
     await actMounted(() => resend.click(), "mounted_action_10");
+    // The new-code request settled: its acknowledgment echoed the same flow and the status region is gone.
+    await checkMounted(async () => sends === 3 && (await page.getByRole("status").count()) === 0, "mounted_check_33");
     await checkMounted(async () => (verify).isEnabled(), "mounted_check_17");
-    expect(await inputIs(code, ""), "replacement resend clears the draft again").toBe(true);
+    expect(await inputIs(code, ""), "the new-code request clears the draft again").toBe(true);
     await fillSynthetic(code, SYNTHETIC_CODE);
     await actMounted(() => verify.click(), "mounted_action_11");
     await checkMounted(async () => mountedTextIs(page.getByRole("status"), "We couldn\u2019t sign you in with that code. You can try the code from your latest SolMind email, or request a new one."), "mounted_check_18");
-    expect(sends === 3 && verifies === 2 && shapes && blocked === 0, "fresh verify uses the replacement selector only").toBe(true);
+    expect(sends === 3 && verifies === 3 && shapes && blocked === 0, "every send and verify used the one private flow").toBe(true);
     await checkMounted(async () => (page).url() === `${origin}/login/explorer`, "mounted_check_19");
   } finally { await held.cleanup(page); }
 });
@@ -275,15 +315,19 @@ test("M3 leaving a held verify invalidates its response and remounts an empty vi
   if (!baseURL) throw new Error("missing_test_origin");
   const origin = new URL(baseURL).origin;
   const identifier = "departure-mounted@example.invalid";
-  const held = heldLoginReply(signedInBody);
+  const held = heldLoginReply(() => signedInBody);
+  // The flow ID of the one send; the verify must carry it.
+  const flow = { id: null as string | null };
   let sends = 0; let verifies = 0; let blocked = 0; let shapes = true;
   await page.route("**/*", async route => {
     const kind = routeKind(route, origin);
     if (kind === "send") {
-      sends += 1; shapes &&= requestBodyIs(route, { identifier });
-      if (sends === 1) return jsonReply(route, ackBody(FIRST_SELECTOR));
+      sends += 1;
+      if (sends === 1) flow.id = requestFlowId(route.request().postData());
+      shapes &&= flow.id !== null && requestBodyIs(route, { identifier, flowId: flow.id });
+      if (sends === 1) return jsonReply(route, flowAck(flow.id ?? ""));
     } else if (kind === "verify") {
-      verifies += 1; shapes &&= requestBodyIs(route, { identifier, challengeId: FIRST_SELECTOR, code: SYNTHETIC_CODE });
+      verifies += 1; shapes &&= flow.id !== null && requestBodyIs(route, { identifier, flowId: flow.id, code: SYNTHETIC_CODE });
       if (verifies === 1) return held.handle(route);
     } else if (kind === "asset") return route.continue();
     blocked += 1; return route.abort();

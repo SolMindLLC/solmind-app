@@ -163,6 +163,17 @@ describe("interim Explorer conversation screen", () => {
     expect(/prototype/i.test(html)).toBe(false);
   });
 
+  it("SP12 the review bell stays an icon-only round button named Notifications, with its blue note", () => {
+    const bell = /<button\b([^>]*\saria-describedby="nyi-top-notifications"[^>]*)>([\s\S]*?)<\/button>/.exec(html);
+    expect(bell).not.toBeNull();
+    expect(attribute(bell?.[1] ?? "", "aria-label")).toBe("Notifications");
+    expect(attribute(bell?.[1] ?? "", "aria-disabled")).toBe("true");
+    expect(attribute(bell?.[1] ?? "", "data-preview-control")).toBe("unwired");
+    expect(attribute(bell?.[1] ?? "", "class")).toContain("grid h-10 w-10 place-items-center rounded-full border border-amber-200/20");
+    expect(bell?.[2]).toMatch(/^<svg aria-hidden="true"[^>]*>[\s\S]*?<\/svg>$/);
+    expect(noteTextById(html, "nyi-top-notifications")).toBe(NOT_YET_IMPLEMENTED.notifications);
+  });
+
   it("SP05 has unique ids, no links, no form action and no disabled controls", () => {
     const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]);
     expect(new Set(ids).size).toBe(ids.length);

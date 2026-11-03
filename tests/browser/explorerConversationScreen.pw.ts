@@ -67,6 +67,65 @@ function notConnected(scope: Page | Locator, name: string) {
   return scope.getByRole("button", { name: new RegExp(`^${name}\\s*Not connected yet$`) });
 }
 
+// Paul's 2026-11-02 decision ("Same as menu entries"): the bell shows the grey
+// "Not connected yet" line, visibly. The build spec for that change adds: the
+// line beside its icon, the name "Notifications Not connected yet" with the
+// line said once, and no taller than the profile chip, so on wide screens the
+// top bar keeps the chip's height.
+async function expectBellShowsLine(page: Page, wide: boolean) {
+  const bell = notConnected(page, "Notifications");
+  await expect(bell).toHaveCount(1);
+  await expect(bell).toBeVisible();
+  await expect(bell).not.toHaveAttribute("aria-label", /.*/);
+  // The space between the two parts is in the text, not only in the layout.
+  await expect(bell).toHaveAccessibleName("Notifications Not connected yet");
+  const line = bell.getByText("Not connected yet", { exact: true });
+  await expect(line).toBeVisible();
+  const chip = page.getByRole("button", { name: /^Explorer profile\s*Not connected yet$/ });
+  // The same small grey line as the profile chip's.
+  const look = (element: Element) => {
+    const style = getComputedStyle(element);
+    return [style.color, style.fontSize, style.fontWeight].join(" ");
+  };
+  expect(await line.evaluate(look)).toBe(await chip.getByText("Not connected yet", { exact: true }).evaluate(look));
+  const [bellBox, iconBox, lineBox, chipBox] = await Promise.all(
+    [bell, bell.locator("svg"), line, chip].map(async (locator) => {
+      const box = await locator.boundingBox();
+      if (box === null) throw new Error("bell_part_not_laid_out");
+      return box;
+    }),
+  );
+  // Beside the icon, in the same row.
+  expect(lineBox.x).toBeGreaterThanOrEqual(iconBox.x + iconBox.width);
+  const lineMiddle = lineBox.y + lineBox.height / 2;
+  expect(lineMiddle).toBeGreaterThan(iconBox.y);
+  expect(lineMiddle).toBeLessThan(iconBox.y + iconBox.height);
+  // Wholly inside the bell.
+  expect(lineBox.x + lineBox.width).toBeLessThanOrEqual(bellBox.x + bellBox.width);
+  expect(lineBox.y).toBeGreaterThanOrEqual(bellBox.y);
+  expect(lineBox.y + lineBox.height).toBeLessThanOrEqual(bellBox.y + bellBox.height);
+  expect(bellBox.height).toBeLessThanOrEqual(chipBox.height);
+  if (wide) {
+    // The top bar's row is no taller than the profile chip.
+    const header = page.locator("header").filter({ has: bell });
+    const row = await header.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const edges = ["paddingTop", "paddingBottom", "borderTopWidth", "borderBottomWidth"] as const;
+      return element.getBoundingClientRect().height - edges.reduce((sum, edge) => sum + parseFloat(style[edge]), 0);
+    });
+    expect(row).toBeLessThanOrEqual(chipBox.height + 0.5);
+  }
+  // Tapping it shows its sentence below it, in the row under the top bar, without sideways scroll.
+  const sentence = page.locator('[id="nyi-top-notifications"]');
+  await bell.click();
+  await expect(sentence).toBeVisible();
+  const sentenceBox = await sentence.boundingBox();
+  expect(sentenceBox === null ? -1 : sentenceBox.y).toBeGreaterThanOrEqual(bellBox.y + bellBox.height);
+  await expectNoSidewaysScroll(page);
+  await bell.click();
+  await expect(sentence).toBeHidden();
+}
+
 test("wide: the designed layout shows the saved conversation without preview extras", async ({ page }) => {
   test.skip((page.viewportSize()?.width ?? 0) < 1024, "wide layout only");
   const commands = await open(page, savedState());
@@ -109,8 +168,8 @@ test("wide: the designed layout shows the saved conversation without preview ext
   await expectExplains(page, body, notConnected(page, "Finish & Review"), withoutReviewPrefix(NOT_YET_IMPLEMENTED.finishReview));
   await expectExplains(page, body, notConnected(page, "Share whole conversation"),
     withoutReviewPrefix(guideNotes(UNNAMED_GUIDE).shareConversation));
-  await expectExplains(page, body, page.getByRole("button", { name: "Notifications (not connected yet)", exact: true }),
-    withoutReviewPrefix(NOT_YET_IMPLEMENTED.notifications));
+  await expectBellShowsLine(page, true);
+  await expectExplains(page, body, notConnected(page, "Notifications"), withoutReviewPrefix(NOT_YET_IMPLEMENTED.notifications));
   // As on September 23, the profile chip's name is its visible role and grey line, with "profile" for screen readers.
   await expectExplains(page, body, page.getByRole("button", { name: /^Explorer profile\s*Not connected yet$/ }),
     withoutReviewPrefix(NOT_YET_IMPLEMENTED.profile));
@@ -177,6 +236,8 @@ test("narrow: the Menu button opens the workspace menu, Escape closes it, and no
   await expectNoSeriousAxeViolations(page);
   await page.screenshot({ path: capture("connected-narrow-top-viewport") });
   await captureFullPage(page, "connected-narrow-full", "top");
+  await expectBellShowsLine(page, false);
+  await expectExplains(page, page.locator("body"), notConnected(page, "Notifications"), withoutReviewPrefix(NOT_YET_IMPLEMENTED.notifications));
 
   // Paul's 2026-11-02 option A: the September 23 Menu button replaces the icon strip.
   await expect(page.getByRole("navigation", { name: "Explorer workspace", exact: true })).toBeHidden();

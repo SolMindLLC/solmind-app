@@ -106,16 +106,33 @@ export function UtilityBar({ profile, connected, menuOpen, onMenuOpenChange, bre
           </p>
         )}
         <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-          <UnwiredButton
-            className={joinClasses(
-              "grid h-10 w-10 place-items-center rounded-full border border-amber-200/20 text-amber-200 hover:bg-amber-300/10",
-              FOCUS_RING,
-            )}
-            label="Notifications"
-            noteId={noteId("top", "notifications")}
-          >
-            <IconBell className="h-5 w-5" />
-          </UnwiredButton>
+          {connected ? (
+            // Like the menu entries, the bell shows the grey line beside its
+            // icon, with "Notifications" for screen readers: "Notifications Not
+            // connected yet". It stays no taller than the profile chip.
+            <NotConnectedButton
+              className={joinClasses(
+                "flex h-10 items-center gap-2 rounded-full border border-amber-200/20 pl-2.5 pr-3 text-amber-200 hover:bg-amber-300/10",
+                FOCUS_RING,
+              )}
+              explanationId={noteId("top", "notifications")}
+            >
+              <IconBell className="h-5 w-5" />
+              <span className="sr-only">Notifications </span>
+              <NotConnectedLine />
+            </NotConnectedButton>
+          ) : (
+            <UnwiredButton
+              className={joinClasses(
+                "grid h-10 w-10 place-items-center rounded-full border border-amber-200/20 text-amber-200 hover:bg-amber-300/10",
+                FOCUS_RING,
+              )}
+              label="Notifications"
+              noteId={noteId("top", "notifications")}
+            >
+              <IconBell className="h-5 w-5" />
+            </UnwiredButton>
+          )}
           {connected ? (
             // As on September 23, the visible role and grey line are the name,
             // with "profile" for screen readers: "Explorer profile Not connected yet".

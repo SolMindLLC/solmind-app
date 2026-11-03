@@ -202,13 +202,14 @@ modifier key or another mouse button behaves as a normal link. Every control
 that is not built yet (menu entries, the bell, the profile button, the Guide
 banner button, and the header, composer and end controls) is a button with
 `aria-expanded` and `aria-controls`, shows the September 23 grey "Not
-connected yet" line (or carries it in its accessible name when it shows only
-an icon) and, when activated, shows one sentence directly under it, hidden
-again on the next activation; the bell's and the profile's sentences show in
-the row under the top bar. As on September 23, the profile chip's name is its
-visible role and grey line with "profile" for screen readers ("Explorer
-profile Not connected yet"). Paul chose this knowingly as an exception to the
-rule that a control without a destination is a defect.
+connected yet" line and, when activated, shows one sentence directly under
+it, hidden again on the next activation; the bell's and the profile's
+sentences show in the row under the top bar. As on September 23, the profile
+chip's name is its visible role and grey line with "profile" for screen
+readers ("Explorer profile Not connected yet"). The bell shows its grey line
+beside its icon, with "Notifications" for screen readers ("Notifications Not
+connected yet"). Paul chose this knowingly as an exception to the rule that a
+control without a destination is a defect.
 `ExplorerConversationScreenNotYetImplemented.tsx` implements it once through
 `NotConnectedProvider`, which the connected screen places. Notes that describe
 an area rather than a control (the Compass, forming point, needle, Waypoint

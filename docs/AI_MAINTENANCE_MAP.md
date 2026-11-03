@@ -156,8 +156,8 @@ files `explorerConversationConnectedScreen.ts`, `explorerWorkspaceFrame.ts`,
 `guideDashboardHome.ts`. On the signed-in screen built
 entries are plain full-document links (a plain click on the current page's
 entry keeps the page and a typed message), and every control not built yet
-shows a grey "Not connected yet" line (or carries it in its accessible name
-when it shows only an icon) and, when activated, one sentence
+shows a grey "Not connected yet" line (the bell beside its icon, named
+"Notifications Not connected yet") and, when activated, one sentence
 directly under it (`NotConnectedProvider` in
 `ExplorerConversationScreenNotYetImplemented.tsx`) instead of a "Not yet
 implemented:" note; notes that describe an area stay shown in an area marked

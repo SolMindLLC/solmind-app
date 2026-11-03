@@ -152,8 +152,10 @@ type UnwiredButtonProps = Readonly<{
 }>;
 
 // Stays focusable (aria-disabled, never disabled) and does nothing when used.
-// On the signed-in screen it shows its sentence instead; an icon-only or
-// relabelled control carries "(not connected yet)" in its accessible name.
+// On the signed-in screens it shows the grey "Not connected yet" line and its
+// sentence instead. A control given a label would carry "(not connected yet)"
+// in its accessible name without the visible line; no signed-in control uses
+// that form (the bell draws its own line), and the frame tests refuse it.
 export function UnwiredButton({
   noteId: describedBy,
   className,

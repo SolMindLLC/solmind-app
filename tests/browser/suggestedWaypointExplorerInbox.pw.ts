@@ -81,6 +81,11 @@ test.describe("authenticated Explorer Suggested Waypoint inbox", () => {
     // (solmind-docs/canonical/06_SolMind_ScreenInventory_Phase0_v1_0.md, 2026-11-03).
     await expect(page.getByText("◉ SolMind Virtual Guide", { exact: true })).toBeVisible();
     await expect(page.locator("body")).not.toContainText(/\bMary\b/);
+    // The workspace frame's bell shows the grey "Not connected yet" line, like the menu entries (Paul's
+    // decision, decision queue 2026-11-02 22:19:17 CST), here beside its icon.
+    const bell = page.getByRole("button", { name: /^Notifications\s*Not connected yet$/ });
+    await expect(bell).toBeVisible();
+    await expect(bell.getByText("Not connected yet", { exact: true })).toBeVisible();
 
     const row = page.getByRole("link", { name: /Protect one evening each week for recovery/ });
     await row.focus();

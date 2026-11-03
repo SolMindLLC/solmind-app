@@ -110,7 +110,13 @@ describe("Explorer workspace frame", () => {
         const named = inner.includes(WORKSPACE_NOT_CONNECTED_LABEL) || attributes.includes(`(${WORKSPACE_NOT_CONNECTED_LABEL.toLowerCase()})`);
         expect(named, `${page} ${id}`).toBe(true);
       }
-      expect(html, page).toContain(`aria-label="Notifications (${WORKSPACE_NOT_CONNECTED_LABEL.toLowerCase()})"`);
+      // The bell shows the grey line beside its icon, named "Notifications Not connected yet" like the menu entries.
+      const bell = /<button aria-controls="nyi-top-notifications" aria-expanded="false" class="[^"]*"[^>]*>([\s\S]*?)<\/button>/.exec(html);
+      expect(bell, page).not.toBeNull();
+      expect(bell?.[1], page).toMatch(
+        new RegExp(`</svg><span class="sr-only">Notifications </span><span class="[^"]*text-stone-400">${WORKSPACE_NOT_CONNECTED_LABEL}</span>$`),
+      );
+      expect(html, page).not.toContain(`(${WORKSPACE_NOT_CONNECTED_LABEL.toLowerCase()})`);
       expect(html, page).toContain('Explorer<span class="sr-only"> profile</span>');
       expect(/Mary|Avery|Jordan|Steve/.test(html), page).toBe(false);
       // The pages' browser tests find their status region with getByRole("status") in strict mode, so the

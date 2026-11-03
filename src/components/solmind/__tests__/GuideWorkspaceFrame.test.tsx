@@ -86,6 +86,13 @@ describe("Guide workspace frame", () => {
     for (const entry of GUIDE_MENU.slice(1)) {
       expect(html, entry.id).toContain(`hidden="" id="not-connected-rail-${entry.id}">${(entry.explanation ?? "").replaceAll("'", "&#x27;")}</p>`);
     }
+    // The bell shows the grey line beside its icon, as on the Explorer pages.
+    const bell = buttons.find(([, id]) => id === "nyi-top-notifications");
+    expect(bell).toBeDefined();
+    expect(bell?.[2]).not.toContain("aria-label");
+    // No control on a signed-in Guide page uses the hidden-label form.
+    expect(html).not.toContain(`(${WORKSPACE_NOT_CONNECTED_LABEL.toLowerCase()})`);
+    expect(bell?.[3]).toMatch(new RegExp(`</svg><span class="sr-only">Notifications </span><span class="[^"]*text-stone-400">${WORKSPACE_NOT_CONNECTED_LABEL}</span>$`));
   });
 
   it("GF04 the Waypoint Suggestions page sits in the frame with its back link, panel and content", () => {

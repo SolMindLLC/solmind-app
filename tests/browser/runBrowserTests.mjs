@@ -38,11 +38,11 @@ const isPortListening = () =>
     socket.once("timeout", () => finish(false));
   });
 
-const runNode = (arguments_) =>
+const runNode = (arguments_, env = process.env) =>
   new Promise((resolve, reject) => {
     const child = spawn(process.execPath, arguments_, {
       cwd: repositoryRoot,
-      env: process.env,
+      env,
       stdio: "inherit",
       windowsHide: true,
     });
@@ -106,12 +106,15 @@ const buildCode = await runNode([nextCli, "build"]);
 if (buildCode !== 0) {
   process.exitCode = buildCode;
 } else {
+  // The server is given the address it actually serves as its trusted origin,
+  // as the demo is; a value already in the process environment beats any env
+  // file Next.js would load.
   const server = spawn(
     process.execPath,
     [nextCli, "start", "--hostname", host, "--port", String(port)],
     {
       cwd: repositoryRoot,
-      env: process.env,
+      env: { ...process.env, SOLMIND_TRUSTED_APP_ORIGIN: baseURL },
       stdio: "inherit",
       windowsHide: true,
     },
@@ -120,7 +123,11 @@ if (buildCode !== 0) {
   let browserTestCode = 1;
   try {
     await waitForReady(server);
-    browserTestCode = await runNode([playwrightCli, "test"]);
+    // Playwright gets the same port, so the tests never depend on the caller's shell.
+    browserTestCode = await runNode([playwrightCli, "test"], {
+      ...process.env,
+      SOLMIND_BROWSER_TEST_PORT: String(port),
+    });
   } finally {
     await stopOwnedServer(server);
   }

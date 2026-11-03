@@ -343,8 +343,26 @@ describe("connected Explorer conversation screen", () => {
     expect(chip?.[2]).toContain('<span class="sr-only"> profile</span>');
     expect(chip?.[2]).toContain(GREY_LABEL);
     expect(textOf(chip?.[2] ?? "").trim()).toBe("Explorer profile Not connected yet");
-    // The bell shows only an icon, so it carries the label in its name.
-    expect(html).toContain('aria-label="Notifications (not connected yet)"');
+  });
+
+  it("CC20 the bell shows the grey line beside its icon, with Notifications for screen readers", () => {
+    const html = render();
+    const bell = /<button\b([^>]*\saria-controls="nyi-top-notifications"[^>]*)>([\s\S]*?)<\/button>/.exec(html);
+    expect(bell).not.toBeNull();
+    // Like the menu entries and the profile chip, the visible grey line is part of its name, once.
+    expect(attribute(bell?.[1] ?? "", "aria-label")).toBeNull();
+    expect(attribute(bell?.[1] ?? "", "aria-expanded")).toBe("false");
+    expect(attribute(bell?.[1] ?? "", "type")).toBe("button");
+    expect(bell?.[2]).toMatch(new RegExp(`^<svg aria-hidden="true"[^>]*>[\\s\\S]*?</svg><span class="sr-only">Notifications </span>${GREY_LABEL.replaceAll("[", "\\[").replaceAll("]", "\\]")}$`));
+    expect(textOf(bell?.[2] ?? "").trim()).toBe("Notifications Not connected yet");
+    expect(html).not.toContain("(not connected yet)");
+    // The bell keeps its earlier height (h-10), border, colours and hover; the grey line sits beside the icon.
+    // tests/browser/explorerConversationScreen.pw.ts measures it against the profile chip.
+    const bellClass = attribute(bell?.[1] ?? "", "class") ?? "";
+    expect(bellClass).toContain("flex h-10 items-center gap-2 rounded-full border border-amber-200/20");
+    expect(bellClass).toContain("text-amber-200 hover:bg-amber-300/10");
+    // Its sentence stays hidden in the row under the top bar until the bell is used.
+    expect(html).toMatch(/<p class="text-xs leading-5 text-stone-300 pb-2\.5" hidden="" id="nyi-top-notifications">/);
   });
 
   it("CC16 the menu goes where Paul decided; the rest says it is not connected yet", () => {
