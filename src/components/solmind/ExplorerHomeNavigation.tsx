@@ -1,98 +1,73 @@
+import { FOCUS_RING, joinClasses } from "./ExplorerConversationScreenNotYetImplemented";
+
 type ExplorerHomeNavigationProps = Readonly<{
   navigationDisabled?: boolean;
 }>;
 
-const destinationClassName =
-  "block rounded-xl border border-slate-300 bg-white p-4 text-slate-900 " +
-  "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-teal-700";
+const destinationClassName = joinClasses(
+  "block rounded-xl border border-amber-200/15 bg-white/[0.03] p-4 text-stone-100",
+  FOCUS_RING,
+);
 
-/** Presentation only. Each destination retains its own access and data boundary. */
+/** Presentation only: the Explorer home's collapsed "Design previews". Each
+ * preview retains its own boundaries. The Explorer workspace destinations are
+ * in the Explorer workspace menu and the Overview cards (Paul's 2026-11-02
+ * decisions), so the earlier "Your Explorer workspace" list is gone. While a
+ * sign-out is pending each link shows in its non-link form. */
 export function ExplorerHomeNavigation({
   navigationDisabled = false,
 }: ExplorerHomeNavigationProps) {
   return (
-    <section aria-labelledby="explorer-workspace-heading" className="my-6">
-      <h2 id="explorer-workspace-heading" className="mb-3 text-xl font-semibold">
-        Your Explorer workspace
-      </h2>
-      <nav aria-label="Explorer workspace" aria-busy={navigationDisabled || undefined}>
-        {navigationDisabled ? (
-          <span aria-disabled="true" className={`${destinationClassName} mb-3 opacity-60`}>Conversation and Compass</span>
-        ) : (
-          <a href="/explorer/conversation" className={`${destinationClassName} mb-3 hover:border-teal-700`}>Conversation and Compass</a>
-        )}
-        {navigationDisabled ? (
-          <span aria-disabled="true" className={`${destinationClassName} mb-3 opacity-60`}>Review ended conversations</span>
-        ) : (
-          <a href="/explorer/conversations" className={`${destinationClassName} mb-3 hover:border-teal-700`}>Review ended conversations</a>
-        )}
-        {navigationDisabled ? (
-          <span aria-disabled="true" className={`${destinationClassName} opacity-60`}>
-            Waypoint Suggestions
-          </span>
-        ) : (
-          // eslint-disable-next-line @next/next/no-html-link-for-pages -- Full document navigation retires this authenticated view and requests fresh server access.
-          <a href="/explorer/waypoints" className={`${destinationClassName} hover:border-teal-700`}>
-            Waypoint Suggestions
-          </a>
-        )}
-        <p className="mt-2 text-sm">
-          Review suggestions from your Guide. Marking a suggestion as read stays
-          private; acknowledging receipt tells your Guide.
-        </p>
+    <details className="max-w-3xl rounded-3xl border border-amber-200/15 bg-[#0c0a08]/90 p-5 text-stone-100">
+      <summary className={joinClasses("cursor-pointer rounded-md font-semibold text-stone-100", FOCUS_RING)}>
+        Design previews
+      </summary>
+      <p className="mt-3 text-sm leading-6 text-stone-300">
+        The older previews use a fixed local script. The conversation design
+        review shows sample messages and cannot reply. No AI or human Guide is
+        connected. They are not a therapist or crisis service. Refresh clears
+        the preview, and changes are not saved or shared.
+      </p>
+      <nav aria-label="Explorer design previews" aria-busy={navigationDisabled || undefined}>
+        <ul className="mt-3 space-y-3">
+          <li>
+            {navigationDisabled ? (
+              <span aria-disabled="true" className={`${destinationClassName} opacity-60`}>
+                Conversation and Compass preview
+              </span>
+            ) : (
+              <a href="/explorer/compass-comparison" className={`${destinationClassName} hover:border-amber-300/60`}>
+                Conversation and Compass preview
+              </a>
+            )}
+          </li>
+          <li>
+            {navigationDisabled ? (
+              <span aria-disabled="true" className={`${destinationClassName} opacity-60`}>
+                Onboarding and sharing preview
+              </span>
+            ) : (
+              <a href="/explorer" className={`${destinationClassName} hover:border-amber-300/60`}>
+                Onboarding and sharing preview
+              </a>
+            )}
+          </li>
+          <li>
+            {navigationDisabled ? (
+              <span aria-disabled="true" className={`${destinationClassName} opacity-60`}>
+                Conversation screen design review
+              </span>
+            ) : (
+              <a href="/explorer/conversation-preview" className={`${destinationClassName} hover:border-amber-300/60`}>
+                Conversation screen design review
+              </a>
+            )}
+            <p className="mt-1 text-sm text-stone-300">
+              Design review only: sample content and working layout controls; conversation features are not connected.
+            </p>
+          </li>
+        </ul>
       </nav>
-
-      <details className="mt-6 rounded-xl border border-slate-300 bg-slate-50 p-4 text-slate-900">
-        <summary className="cursor-pointer font-semibold focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-teal-700">
-          Design previews
-        </summary>
-        <p className="mt-3 text-sm">
-          The older previews use a fixed local script. The conversation design
-          review shows sample messages and cannot reply. No AI or human Guide is
-          connected. They are not a therapist or crisis service. Refresh clears
-          the preview, and changes are not saved or shared.
-        </p>
-        <nav aria-label="Explorer design previews" aria-busy={navigationDisabled || undefined}>
-          <ul className="mt-3 space-y-3">
-            <li>
-              {navigationDisabled ? (
-                <span aria-disabled="true" className={`${destinationClassName} opacity-60`}>
-                  Conversation and Compass preview
-                </span>
-              ) : (
-                <a href="/explorer/compass-comparison" className={`${destinationClassName} hover:border-teal-700`}>
-                  Conversation and Compass preview
-                </a>
-              )}
-            </li>
-            <li>
-              {navigationDisabled ? (
-                <span aria-disabled="true" className={`${destinationClassName} opacity-60`}>
-                  Onboarding and sharing preview
-                </span>
-              ) : (
-                <a href="/explorer" className={`${destinationClassName} hover:border-teal-700`}>
-                  Onboarding and sharing preview
-                </a>
-              )}
-            </li>
-            <li>
-              {navigationDisabled ? (
-                <span aria-disabled="true" className={`${destinationClassName} opacity-60`}>
-                  Conversation screen design review
-                </span>
-              ) : (
-                <a href="/explorer/conversation-preview" className={`${destinationClassName} hover:border-teal-700`}>
-                  Conversation screen design review
-                </a>
-              )}
-              <p className="mt-1 text-sm">
-                Design review only: sample content and working layout controls; conversation features are not connected.
-              </p>
-            </li>
-          </ul>
-        </nav>
-      </details>
-    </section>
+    </details>
   );
 }

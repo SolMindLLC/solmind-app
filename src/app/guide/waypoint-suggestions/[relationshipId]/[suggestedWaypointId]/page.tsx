@@ -1,10 +1,7 @@
 import { notFound } from "next/navigation";
 
-import { BackLink } from "@/components/solmind/BackLink";
 import { GuideSuggestedWaypointDetail } from "@/components/solmind/GuideSuggestedWaypointDetail";
-import { PageShell } from "@/components/solmind/PageShell";
-import { Panel } from "@/components/solmind/Panel";
-import { SectionLabel } from "@/components/solmind/SectionLabel";
+import { GuideWaypointSuggestionsPage } from "@/components/solmind/GuideWaypointSuggestionsPage";
 import { isSuggestedWaypointId } from "@/lib/solmind/suggestedWaypointGuideListBrowserContract";
 import { isSuggestedWaypointRelationshipId } from "@/lib/solmind/suggestedWaypointRelationshipBrowserContract";
 
@@ -14,6 +11,8 @@ type GuideSuggestionDetailPageProps = Readonly<{
   >;
 }>;
 
+// In the Guide workspace frame (Paul's 2026-11-02 decisions); the back link,
+// the detail read and its commands are unchanged.
 export default async function GuideSuggestionDetailPage({
   params,
 }: GuideSuggestionDetailPageProps) {
@@ -26,29 +25,16 @@ export default async function GuideSuggestionDetailPage({
   }
 
   return (
-    <PageShell maxWidth="5xl">
-      <BackLink
-        href={`/guide/waypoint-suggestions/${relationshipId}?focus=${encodeURIComponent(suggestedWaypointId)}`}
-      >
-        Back to Waypoint Suggestions
-      </BackLink>
-
-      <Panel className="mt-10">
-        <SectionLabel>Guide workspace</SectionLabel>
-        <h1 className="mt-4 text-4xl font-semibold">Suggestion detail</h1>
-        <p className="mt-3 max-w-3xl text-slate-300">
-          Review the exact current Guide-visible content and lifecycle state.
-          This page does not expose Explorer-private activity. A complete
-          Guide-only draft can be edited, saved, reviewed, and scheduled; a
-          pending suggestion can be pulled back during its available window.
-          Blank-draft compose, delete, correction, and withdrawal remain
-          separately gated.
-        </p>
-        <GuideSuggestedWaypointDetail
-          relationshipId={relationshipId}
-          suggestedWaypointId={suggestedWaypointId}
-        />
-      </Panel>
-    </PageShell>
+    <GuideWaypointSuggestionsPage
+      backHref={`/guide/waypoint-suggestions/${relationshipId}?focus=${encodeURIComponent(suggestedWaypointId)}`}
+      backLabel="Back to Waypoint Suggestions"
+      heading="Suggestion detail"
+      intro="Review the exact current Guide-visible content and lifecycle state. This page does not expose Explorer-private activity. A complete Guide-only draft can be edited, saved, reviewed, and scheduled; a pending suggestion can be pulled back during its available window. Blank-draft compose, delete, correction, and withdrawal remain separately gated."
+    >
+      <GuideSuggestedWaypointDetail
+        relationshipId={relationshipId}
+        suggestedWaypointId={suggestedWaypointId}
+      />
+    </GuideWaypointSuggestionsPage>
   );
 }

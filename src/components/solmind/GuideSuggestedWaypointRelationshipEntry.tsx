@@ -20,6 +20,13 @@ import {
   type SuggestedWaypointRelationshipPageSize,
 } from "@/lib/solmind/suggestedWaypointRelationshipBrowserContract";
 import { SUGGESTED_WAYPOINT_REFRESH_REQUIRED } from "@/lib/solmind/suggestedWaypointPaginationSharedContract";
+import { FOCUS_RING, SECONDARY_BUTTON, joinClasses } from "./ExplorerConversationScreenNotYetImplemented";
+
+// The dark and amber look of the signed-in workspace (Paul's 2026-11-02
+// decisions); every read, state, live region, focus rule and text is unchanged.
+const CARD_CLASS = "rounded-2xl border border-amber-200/15 bg-black/40 p-6";
+const ACTION_BUTTON = joinClasses(SECONDARY_BUTTON, "disabled:cursor-not-allowed disabled:opacity-40");
+const SELECT_CLASS = joinClasses("rounded-lg border border-amber-200/25 bg-[#0c0a08] px-3 py-2 text-stone-100", FOCUS_RING);
 
 type RequestState = Readonly<{
   cursor: string | null;
@@ -224,20 +231,20 @@ export function GuideSuggestedWaypointRelationshipEntry() {
 
   return (
     <div className="mt-8">
-      <p className="text-sm text-slate-300" role="status" aria-live="polite">
+      <p className="text-sm text-stone-300" role="status" aria-live="polite">
         {notice}
       </p>
 
       {viewState === "loading" && page === null && (
-        <div className="mt-6 rounded-2xl border border-slate-700 bg-slate-950 p-6">
+        <div className={joinClasses("mt-6 text-stone-200", CARD_CLASS)}>
           <p>Loading your Explorer relationships...</p>
         </div>
       )}
 
       {viewState === "denied" && (
-        <div className="mt-6 rounded-2xl border border-amber-700/70 bg-amber-950/30 p-6">
-          <h2 className="text-xl font-semibold">Suggested Waypoints unavailable</h2>
-          <p className="mt-2 text-slate-300">
+        <div className="mt-6 rounded-2xl border border-amber-400/70 bg-amber-950/60 p-6 text-amber-50">
+          <h2 className="font-serif text-xl">Suggested Waypoints unavailable</h2>
+          <p className="mt-2 text-sm leading-6">
             This Guide workspace cannot open Suggested Waypoints. Return to the
             Guide dashboard or sign in with the appropriate Guide account.
           </p>
@@ -245,14 +252,14 @@ export function GuideSuggestedWaypointRelationshipEntry() {
       )}
 
       {viewState === "failed" && page === null && (
-        <div className="mt-6 rounded-2xl border border-rose-700/70 bg-rose-950/30 p-6">
-          <h2 className="text-xl font-semibold">Could not load Explorers</h2>
-          <p className="mt-2 text-slate-300">
+        <div className="mt-6 rounded-2xl border border-rose-400/60 bg-rose-950/50 p-6 text-rose-50">
+          <h2 className="font-serif text-xl">Could not load Explorers</h2>
+          <p className="mt-2 text-sm leading-6">
             Nothing was changed. Try loading the list again.
           </p>
           <button
             type="button"
-            className="mt-4 rounded-xl border border-cyan-400 px-4 py-2 font-semibold text-cyan-200 hover:bg-cyan-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
+            className={joinClasses("mt-4", ACTION_BUTTON)}
             onClick={retry}
           >
             Try again
@@ -264,19 +271,19 @@ export function GuideSuggestedWaypointRelationshipEntry() {
         <section className="mt-6" aria-labelledby="relationship-list-title" aria-busy={pending}>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h2 id="relationship-list-title" className="text-2xl font-semibold">
+              <h2 id="relationship-list-title" className="font-serif text-2xl text-stone-50">
                 Explorers
               </h2>
-              <p className="mt-1 text-sm text-slate-400">
+              <p className="mt-1 text-sm text-stone-400">
                 Choose an Explorer to open that relationship&apos;s Suggested Waypoint workspace.
               </p>
             </div>
 
             {pageSizes.length > 1 && (
-              <label className="flex items-center gap-2 text-sm text-slate-300">
+              <label className="flex items-center gap-2 text-sm text-stone-300">
                 Show
                 <select
-                  className="rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-slate-100"
+                  className={SELECT_CLASS}
                   value={request.pageSize}
                   onChange={changePageSize}
                   disabled={pending}
@@ -293,9 +300,9 @@ export function GuideSuggestedWaypointRelationshipEntry() {
           </div>
 
           {page.items.length === 0 ? (
-            <div className="mt-5 rounded-2xl border border-slate-700 bg-slate-950 p-6">
-              <h3 className="font-semibold">No Explorers available</h3>
-              <p className="mt-2 text-sm text-slate-400">
+            <div className={joinClasses("mt-5", CARD_CLASS)}>
+              <h3 className="font-semibold text-stone-100">No Explorers available</h3>
+              <p className="mt-2 text-sm text-stone-400">
                 No active Guide relationship is currently available to this
                 Suggested Waypoint feature.
               </p>
@@ -313,17 +320,20 @@ export function GuideSuggestedWaypointRelationshipEntry() {
                       }
                     }}
                     href={`/guide/waypoint-suggestions/${item.guide_explorer_relationship_id}`}
-                    className="group flex min-h-20 items-center justify-between gap-4 rounded-2xl border border-slate-700 bg-slate-950 px-5 py-4 transition hover:border-cyan-400 hover:bg-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
+                    className={joinClasses(
+                      "group flex min-h-20 items-center justify-between gap-4 rounded-2xl border border-amber-200/15 bg-black/40 px-5 py-4 transition hover:border-amber-300/60 hover:bg-amber-300/10",
+                      FOCUS_RING,
+                    )}
                   >
                     <span>
-                      <span className="block text-lg font-semibold text-slate-100">
+                      <span className="block text-lg font-semibold text-stone-100">
                         {item.explorer_display_name}
                       </span>
-                      <span className="mt-1 block text-sm text-slate-400">
+                      <span className="mt-1 block text-sm text-stone-400">
                         Suggested Waypoints
                       </span>
                     </span>
-                    <span className="font-semibold text-cyan-300 group-hover:text-cyan-200">
+                    <span className="font-semibold text-amber-200 group-hover:text-amber-100">
                       Open
                     </span>
                   </Link>
@@ -333,14 +343,14 @@ export function GuideSuggestedWaypointRelationshipEntry() {
           )}
 
           {page.total_count > 0 && (
-            <div className="mt-5 flex flex-col gap-3 border-t border-slate-800 pt-5 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-slate-400">
+            <div className="mt-5 flex flex-col gap-3 border-t border-amber-200/10 pt-5 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-stone-400">
                 Showing {pageStart}-{pageEnd} of {page.total_count}
               </p>
               <div className="flex gap-3">
                 <button
                   type="button"
-                  className="rounded-xl border border-slate-600 px-4 py-2 font-semibold disabled:cursor-not-allowed disabled:opacity-40"
+                  className={ACTION_BUTTON}
                   onClick={goBack}
                   disabled={pending || request.cursorHistory.length === 0}
                 >
@@ -348,7 +358,7 @@ export function GuideSuggestedWaypointRelationshipEntry() {
                 </button>
                 <button
                   type="button"
-                  className="rounded-xl border border-cyan-400 px-4 py-2 font-semibold text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"
+                  className={ACTION_BUTTON}
                   onClick={goForward}
                   disabled={pending || page.next_cursor === null}
                 >

@@ -214,11 +214,16 @@ screen, and `ExplorerConversation.tsx` stays its only fetch owner:
   22:19:17 CST) has two presentation-data files:
   `src/lib/solmind/workspaceNavigation.ts`, the labels leaf (labels, the grey
   "Not connected yet" label, the prefix helper and the entry types), imports
-  only `explorerConversationScreen.ts` and is imported by the menu and
-  not-yet-implemented parts and by `workspaceMenus.ts`; `src/lib/solmind/workspaceMenus.ts`, the
+  only `explorerConversationScreen.ts` and is imported by the
+  conversation-screen shell and not-yet-implemented parts
+  (`ExplorerConversationScreenShell.tsx`,
+  `ExplorerConversationScreenNotYetImplemented.tsx`), by `workspaceMenus.ts`
+  and by `explorerWorkspaceFrame.ts`; `src/lib/solmind/workspaceMenus.ts`, the
   signed-in menu data with its destinations (Overview from `routeAccess.ts`),
-  is imported only by `explorerConversationConnectedScreen.ts`, which maps
-  it; the review sample keeps its own menu data. Both screens draw the
+  is imported only by the signed-in lib files `explorerConversationConnectedScreen.ts`,
+  `explorerWorkspaceFrame.ts`, `explorerOverviewHome.ts`, `guideWorkspaceFrame.ts`
+  and `guideDashboardHome.ts`, which map it (it also holds the Guide menu);
+  the review sample keeps its own menu data. Both screens draw the
   September 23 list in the rail and in the panel a labelled "Menu" button
   opens below 64rem (the icon strip and spaces toggle are gone). On the
   signed-in screen built entries are plain full-document links (a plain click
@@ -231,6 +236,45 @@ screen, and `ExplorerConversation.tsx` stays its only fetch owner:
   review drafts reused pending Paul's wording review; and
 - `ExplorerConversationFormation.tsx` stays mounted below the conversation as
   the current Compass and Waypoint tools until rebuild steps 4 and 5.
+
+The Explorer workspace frame (Paul's 2026-11-02 decisions, decision queue
+14:07:48 and 22:19:17 CST) puts the same look and menu on the other signed-in
+Explorer pages:
+
+- `src/components/solmind/WorkspaceFrame.tsx` is the role-neutral,
+  presentation-only client frame (rail, top bar with Menu button and plain
+  breadcrumb, phone panel, one `<main>`). It reuses the exported conversation
+  parts (`Rail`, `UtilityBar` and `AmbientGlow` from the shell, `MenuPanel`,
+  the `MENU_ICONS` icons and `NotConnectedProvider`), owns layout state only,
+  and takes `WorkspaceFrameData` (typed in `explorerConversationScreenDisplay.ts`)
+  with the menu entries, names, breadcrumb root and profile role;
+- `src/components/solmind/ExplorerWorkspaceFrame.tsx` is the thin Explorer
+  client wrapper and `src/lib/solmind/explorerWorkspaceFrame.ts` its frozen
+  data (each page's section current; the spaces only under Conversations);
+- `src/components/solmind/ExplorerOverviewHome.tsx` presents Overview inside it
+  and `src/lib/solmind/explorerOverviewHome.ts` owns its wording; and
+- `ExplorerConversationReview.tsx`, `ExplorerSuggestedWaypointInbox.tsx` and
+  the Waypoint detail page render inside the frame and keep their reads,
+  commands and rules.
+
+The same frame carries the August Guide menu on the signed-in Guide pages
+(same decisions; no route created or renamed):
+
+- `src/components/solmind/GuideWorkspaceFrame.tsx` is the thin Guide client
+  wrapper and `src/lib/solmind/guideWorkspaceFrame.ts` its frozen data
+  (Dashboard current on `/guide/home`, no entry current on the Waypoint
+  Suggestions pages, whose breadcrumb names the page; the profile chip's
+  person icon by id in `PROFILE_ICONS`); the Guide menu, names and draft
+  sentences are in `workspaceMenus.ts`;
+- `src/components/solmind/GuideDashboardHome.tsx` presents the Dashboard and
+  `src/lib/solmind/guideDashboardHome.ts` owns its wording; `GuideHome.tsx`
+  passes it only the pending and warning flags and the sign-out action;
+- `src/components/solmind/WorkspaceHomeParts.tsx` holds the header, card,
+  card link, not-connected card button, session warning and Sign out shared
+  by Overview and the Dashboard; and
+- `src/components/solmind/GuideWaypointSuggestionsPage.tsx` puts the three
+  Guide Waypoint Suggestions pages in the frame; their Guide Suggested
+  Waypoint components keep their reads, commands and rules.
 
 The retained sign-in preview keeps the same split: `SignInPreview.tsx` owns
 its client boundary, `SignInPreviewParts.tsx` owns presentation, and
@@ -255,7 +299,9 @@ Explorer uses separate login step 6 owners.
 - `ExplorerSuggestedWaypointWorkspace.tsx` owns only fixture-local view state
   for the Explorer inbox, detail, private comparison, acknowledgement, and
   exact-response review surface.
-- `SuggestedWaypointStatusPill.tsx` is a presentational status component.
+- `SuggestedWaypointStatusPill.tsx` is a presentational status component; its
+  optional dark surface serves the Explorer and Guide pages in the workspace
+  frame, and the fixture surfaces keep the light pills.
 - `suggestedWaypointFixtures.ts` constructs the synthetic delivered state by
   calling the pure domain rather than duplicating lifecycle rules in React.
 - `GuideSuggestedWaypointWorkspace.tsx` owns only fixture-local Guide list,
@@ -264,7 +310,8 @@ Explorer uses separate login step 6 owners.
 - `guideSuggestedWaypointFixtures.ts` constructs Guide-only draft, pending,
   open, and acknowledged examples through the pure domain. It must not emulate
   passive Explorer telemetry or import Explorer-private fixture observations.
-- `ExplorerSuggestedWaypointInbox.tsx` owns authenticated read presentation.
+- `ExplorerSuggestedWaypointInbox.tsx` owns authenticated read presentation,
+  inside the Explorer workspace frame since 2026-11-02 (no own sidebar).
   `ExplorerSuggestedWaypointDetail.tsx` also owns explicit Mark as read and
   Acknowledge receipt interaction and recovery over the separately owned
   command client and route. Opening the detail remains write-free. Their
@@ -272,7 +319,8 @@ Explorer uses separate login step 6 owners.
   engagement fields, then reject Guide-only or inferred data.
 - `GuideSuggestedWaypointRelationshipEntry.tsx` and
   `GuideSuggestedWaypointRelationshipList.tsx` own authenticated Guide read
-  presentation only. `GuideSuggestedWaypointDetail.tsx` remains relationship-
+  presentation only, inside the Guide workspace frame since 2026-11-02 (dark
+  pills). `GuideSuggestedWaypointDetail.tsx` remains relationship-
   scoped and additionally owns complete-draft edit/save/review/schedule and
   pending-version Pull Back interaction over the separately owned client and
   Route Handler.
@@ -562,6 +610,10 @@ The `/guide` route is the human Guide dashboard.
 Do not call this route the SolMind Guide Assistant dashboard. The SolMind Guide Assistant is the AI assistant that supports the human Guide.
 
 Guide dashboard data must remain scoped to assigned Explorers only once persistence exists.
+
+The signed-in Guide Dashboard on `/guide/home` and the Guide workspace menu
+(2026-11-02) are separate from this `/guide` prototype; see "The same frame
+carries the August Guide menu" under Explorer S01 components above.
 
 The S01 non-live Guide result is not `/guide` and is not an operational
 dashboard. It is a local proof that only submitted onboarding answers and an
@@ -2553,17 +2605,22 @@ Dynamic src/app/guide/home/page.tsx preserves bounded raw-cookie framing,
 duplicate names and exact values. src/lib/solmind/auth/guideHomeAccess.ts uses
 current token-only principal and SolMind session/role/binding checks, with fresh
 expiry recheck. Only expiry/observation times reach
-src/components/solmind/GuideHome.tsx. Reuse finite clock/shared logout, Guide
+src/components/solmind/GuideHome.tsx; since 2026-11-02 its presentation, the
+Dashboard (GuideDashboardHome.tsx), receives only the pending and warning flags
+and the sign-out action. Reuse finite clock/shared logout, Guide
 re-entry, confirmed-only signed-out state, honest uncertainty and fresh server
 check after cached-page restoration. No GET cleanup, retry, renewal or client
 credential clearing.
 
-src/components/solmind/ExplorerHomeNavigation.tsx is presentation only:
-Conversation and Compass entry, authenticated inbox link and collapsed
-fixed-script previews. Each destination retains its own authorization and data
+src/components/solmind/ExplorerHomeNavigation.tsx is presentation only: since
+2026-11-02 it holds only the collapsed fixed-script "Design previews" on
+Overview; the Explorer workspace destinations moved to the Explorer workspace
+menu and the Overview cards (`WorkspaceFrame.tsx`, `ExplorerOverviewHome.tsx`).
+Each destination retains its own authorization and data
 boundary; the previews remain unconnected. Navigation grants no persistence,
 AI/human Guide/provider or session authority. ExplorerHome retains its
-session/logout lifecycle. The Design previews fold also links the interim
+session/logout lifecycle and passes its presentation only the pending and
+warning flags and the sign-out action. The Design previews fold also links the interim
 `/explorer/conversation-preview` design review with its own "Design review
 only" line; the fold's older fixed-script sentence is unchanged.
 

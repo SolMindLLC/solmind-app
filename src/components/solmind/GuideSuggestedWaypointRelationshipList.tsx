@@ -21,7 +21,14 @@ import {
 } from "@/lib/solmind/suggestedWaypointGuideListBrowserContract";
 import { formatSuggestedWaypointDate } from "@/lib/solmind/suggestedWaypointDisplayDate";
 import { SUGGESTED_WAYPOINT_REFRESH_REQUIRED } from "@/lib/solmind/suggestedWaypointPaginationSharedContract";
+import { FOCUS_RING, SECONDARY_BUTTON, joinClasses } from "./ExplorerConversationScreenNotYetImplemented";
 import { SuggestedWaypointStatusPill } from "./SuggestedWaypointStatusPill";
+
+// The dark and amber look of the signed-in workspace (Paul's 2026-11-02
+// decisions); every read, state, live region, focus rule and text is unchanged.
+const CARD_CLASS = "rounded-2xl border border-amber-200/15 bg-black/40 p-6";
+const ACTION_BUTTON = joinClasses(SECONDARY_BUTTON, "disabled:cursor-not-allowed disabled:opacity-40");
+const SELECT_CLASS = joinClasses("rounded-lg border border-amber-200/25 bg-[#0c0a08] px-3 py-2 text-stone-100", FOCUS_RING);
 
 type RequestState = Readonly<{
   cursor: string | null;
@@ -41,16 +48,16 @@ function StatusPills({ item }: { item: SuggestedWaypointGuideListItem }) {
   if (item.authoring_mode === "draft") {
     return (
       <>
-        <SuggestedWaypointStatusPill tone="private">✎ Draft</SuggestedWaypointStatusPill>
-        <SuggestedWaypointStatusPill tone="private">🔒 Guide-only</SuggestedWaypointStatusPill>
+        <SuggestedWaypointStatusPill surface="dark" tone="private">✎ Draft</SuggestedWaypointStatusPill>
+        <SuggestedWaypointStatusPill surface="dark" tone="private">🔒 Guide-only</SuggestedWaypointStatusPill>
       </>
     );
   }
   if (item.authoring_mode === "pending") {
     return (
       <>
-        <SuggestedWaypointStatusPill tone="attention">⌛ Pending send</SuggestedWaypointStatusPill>
-        <SuggestedWaypointStatusPill tone={item.pull_back_available ? "attention" : "neutral"}>
+        <SuggestedWaypointStatusPill surface="dark" tone="attention">⌛ Pending send</SuggestedWaypointStatusPill>
+        <SuggestedWaypointStatusPill surface="dark" tone={item.pull_back_available ? "attention" : "neutral"}>
           {item.pull_back_available ? "↩ Pull Back available" : "○ Pull Back period ended"}
         </SuggestedWaypointStatusPill>
       </>
@@ -58,11 +65,11 @@ function StatusPills({ item }: { item: SuggestedWaypointGuideListItem }) {
   }
   return (
     <>
-      <SuggestedWaypointStatusPill tone="positive">✉ Open suggestion</SuggestedWaypointStatusPill>
+      <SuggestedWaypointStatusPill surface="dark" tone="positive">✉ Open suggestion</SuggestedWaypointStatusPill>
       {item.acknowledged_at === null ? (
-        <SuggestedWaypointStatusPill tone="neutral">○ No response</SuggestedWaypointStatusPill>
+        <SuggestedWaypointStatusPill surface="dark" tone="neutral">○ No response</SuggestedWaypointStatusPill>
       ) : (
-        <SuggestedWaypointStatusPill tone="positive">
+        <SuggestedWaypointStatusPill surface="dark" tone="positive">
           ☑ Receipt acknowledged {formatSuggestedWaypointDate(item.acknowledged_at)}
         </SuggestedWaypointStatusPill>
       )}
@@ -255,20 +262,20 @@ export function GuideSuggestedWaypointRelationshipList({
 
   return (
     <div className="mt-8">
-      <p className="text-sm text-slate-300" role="status" aria-live="polite">
+      <p className="text-sm text-stone-300" role="status" aria-live="polite">
         {notice}
       </p>
 
       {viewState === "loading" && page === null && (
-        <div className="mt-6 rounded-2xl border border-slate-700 bg-slate-950 p-6">
+        <div className={joinClasses("mt-6 text-stone-200", CARD_CLASS)}>
           <p>Loading Suggested Waypoints...</p>
         </div>
       )}
 
       {viewState === "denied" && (
-        <div className="mt-6 rounded-2xl border border-amber-700/70 bg-amber-950/30 p-6">
-          <h2 className="text-xl font-semibold">Suggested Waypoints unavailable</h2>
-          <p className="mt-2 text-slate-300">
+        <div className="mt-6 rounded-2xl border border-amber-400/70 bg-amber-950/60 p-6 text-amber-50">
+          <h2 className="font-serif text-xl">Suggested Waypoints unavailable</h2>
+          <p className="mt-2 text-sm leading-6">
             This Guide workspace can no longer open this Explorer relationship.
             Return to the Explorer relationship list.
           </p>
@@ -276,12 +283,12 @@ export function GuideSuggestedWaypointRelationshipList({
       )}
 
       {viewState === "failed" && page === null && (
-        <div className="mt-6 rounded-2xl border border-rose-700/70 bg-rose-950/30 p-6">
-          <h2 className="text-xl font-semibold">Could not load suggestions</h2>
-          <p className="mt-2 text-slate-300">Nothing was changed. Try loading the list again.</p>
+        <div className="mt-6 rounded-2xl border border-rose-400/60 bg-rose-950/50 p-6 text-rose-50">
+          <h2 className="font-serif text-xl">Could not load suggestions</h2>
+          <p className="mt-2 text-sm leading-6">Nothing was changed. Try loading the list again.</p>
           <button
             type="button"
-            className="mt-4 rounded-xl border border-cyan-400 px-4 py-2 font-semibold text-cyan-200 hover:bg-cyan-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
+            className={joinClasses("mt-4", ACTION_BUTTON)}
             onClick={() => void load(request)}
           >
             Try again
@@ -293,18 +300,18 @@ export function GuideSuggestedWaypointRelationshipList({
         <section aria-labelledby="guide-suggestion-list-title" aria-busy={pending}>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h2 id="guide-suggestion-list-title" className="text-2xl font-semibold">
+              <h2 id="guide-suggestion-list-title" className="font-serif text-2xl text-stone-50">
                 Waypoint Suggestions
               </h2>
-              <p className="mt-1 text-sm text-slate-400">
+              <p className="mt-1 text-sm text-stone-400">
                 Drafts, pending sends, and open suggestions for this Explorer.
               </p>
             </div>
             {pageSizes.length > 1 && (
-              <label className="flex items-center gap-2 text-sm text-slate-300">
+              <label className="flex items-center gap-2 text-sm text-stone-300">
                 Show
                 <select
-                  className="rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-slate-100"
+                  className={SELECT_CLASS}
                   value={request.pageSize}
                   onChange={changePageSize}
                   disabled={pending}
@@ -319,9 +326,9 @@ export function GuideSuggestedWaypointRelationshipList({
           </div>
 
           {page.items.length === 0 ? (
-            <div className="mt-5 rounded-2xl border border-slate-700 bg-slate-950 p-6">
-              <h3 className="font-semibold">No suggestions yet</h3>
-              <p className="mt-2 text-sm text-slate-400">
+            <div className={joinClasses("mt-5", CARD_CLASS)}>
+              <h3 className="font-semibold text-stone-100">No suggestions yet</h3>
+              <p className="mt-2 text-sm text-stone-400">
                 This relationship has no Guide-visible Suggested Waypoints.
                 Composition remains a separately bounded next step.
               </p>
@@ -339,14 +346,17 @@ export function GuideSuggestedWaypointRelationshipList({
                       }
                     }}
                     href={`/guide/waypoint-suggestions/${relationshipId}/${item.suggested_waypoint_id}`}
-                    className="group block rounded-2xl border border-slate-700 bg-slate-950 px-5 py-4 transition hover:border-cyan-400 hover:bg-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-300"
+                    className={joinClasses(
+                      "group block rounded-2xl border border-amber-200/15 bg-black/40 px-5 py-4 transition hover:border-amber-300/60 hover:bg-amber-300/10",
+                      FOCUS_RING,
+                    )}
                   >
                     <span className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                       <span>
-                        <span className="block text-lg font-semibold text-slate-100">
+                        <span className="block text-lg font-semibold text-stone-100">
                           {item.destination_preview}
                         </span>
-                        <span className="mt-1 block text-sm text-slate-400">
+                        <span className="mt-1 block text-sm text-stone-400">
                           {item.authoring_mode === "delivered" && item.delivered_at !== null
                             ? `Sent ${formatSuggestedWaypointDate(item.delivered_at)}`
                             : item.authoring_mode === "pending" && item.pending_deadline_at !== null
@@ -358,7 +368,7 @@ export function GuideSuggestedWaypointRelationshipList({
                         <StatusPills item={item} />
                       </span>
                     </span>
-                    <span className="mt-3 block text-sm font-semibold text-cyan-300 group-hover:text-cyan-200">
+                    <span className="mt-3 block text-sm font-semibold text-amber-200 group-hover:text-amber-100">
                       Open suggestion
                     </span>
                   </Link>
@@ -368,14 +378,14 @@ export function GuideSuggestedWaypointRelationshipList({
           )}
 
           {page.total_count > 0 && (
-            <div className="mt-5 flex flex-col gap-3 border-t border-slate-800 pt-5 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-slate-400">
+            <div className="mt-5 flex flex-col gap-3 border-t border-amber-200/10 pt-5 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-stone-400">
                 Showing {pageStart}-{pageEnd} of {page.total_count}
               </p>
               <div className="flex gap-3">
                 <button
                   type="button"
-                  className="rounded-xl border border-slate-600 px-4 py-2 font-semibold disabled:cursor-not-allowed disabled:opacity-40"
+                  className={ACTION_BUTTON}
                   onClick={goBack}
                   disabled={pending || request.cursorHistory.length === 0}
                 >
@@ -383,7 +393,7 @@ export function GuideSuggestedWaypointRelationshipList({
                 </button>
                 <button
                   type="button"
-                  className="rounded-xl border border-cyan-400 px-4 py-2 font-semibold text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"
+                  className={ACTION_BUTTON}
                   onClick={goForward}
                   disabled={pending || page.next_cursor === null}
                 >

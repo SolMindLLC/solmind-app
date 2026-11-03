@@ -7,8 +7,11 @@
 // parts can use it without reaching any route or access module.
 //
 // The signed-in menu data with its destinations is in workspaceMenus.ts,
-// which only explorerConversationConnectedScreen.ts imports. A Guide menu can
-// be added there later in the same shape.
+// which only the signed-in lib files import (explorerConversationConnectedScreen.ts,
+// explorerWorkspaceFrame.ts, explorerOverviewHome.ts, guideWorkspaceFrame.ts
+// and guideDashboardHome.ts). The Guide menu's names live there too, with its
+// entries: only signed-in Guide pages use them, and they take the role words
+// from terms.ts, which this leaf does not import.
 
 import { NOT_YET_IMPLEMENTED_PREFIX } from "./explorerConversationScreen";
 
@@ -36,9 +39,12 @@ export type WorkspaceEntry<Id extends string> =
 export type ExplorerMenuId = "overview" | "conversations" | "waypoints" | "settings";
 export type ExplorerSpaceId = "virtualGuide" | "guide" | "newConversation";
 
-// The navigation names and the list heading, as on September 23.
+// The navigation names and the list heading, as on September 23, and the name
+// of the list of conversation spaces under Conversations. The rail name is
+// also the breadcrumb root on the Explorer workspace pages.
 export const EXPLORER_MENU_LABELS = freeze({
   rail: "Explorer workspace",
   phone: "Explorer workspace menu",
   heading: "Workspace",
+  spaces: "Conversation spaces",
 });

@@ -159,6 +159,70 @@ export function IconClose(props: IconProps) {
   return <Svg {...props}><path d="M6 6l12 12M18 6 6 18" /></Svg>;
 }
 
+// The Guide menu's icons, copied from the Guide dashboard mockup
+// (MockupParts.tsx): four rectangles, a square speech bubble, a calendar and
+// an archive box.
+export function IconDashboard(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect height="9" rx="1.5" width="7" x="3" y="3" />
+      <rect height="5" rx="1.5" width="7" x="14" y="3" />
+      <rect height="9" rx="1.5" width="7" x="14" y="12" />
+      <rect height="5" rx="1.5" width="7" x="3" y="16" />
+    </Svg>
+  );
+}
+
+export function IconMessageSquare(props: IconProps) {
+  return <Svg {...props}><path d="M4 5h16v11H9l-5 4V5Z" /></Svg>;
+}
+
+export function IconCalendar(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect height="16" rx="2" width="18" x="3" y="5" />
+      <path d="M3 10h18M8 3v4M16 3v4" />
+    </Svg>
+  );
+}
+
+export function IconArchive(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect height="4" rx="1" width="18" x="3" y="4" />
+      <path d="M5 8v11h14V8M10 12h4" />
+    </Svg>
+  );
+}
+
+// One person, for the Guide's profile chip: no name reaches a signed-in Guide
+// page, so the chip cannot show the mockup's initial.
+export function IconPerson(props: IconProps) {
+  return <Svg {...props}><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8" /></Svg>;
+}
+
+type IconComponent = (props: IconProps) => ReactNode;
+
+// The workspace menu icon for each menu entry id: the September 23 house,
+// speech bubble, map pin and gear for the Explorer, and the Guide dashboard
+// mockup's icons for the Guide (the users icon for Explorers).
+export const MENU_ICONS: Readonly<Partial<Record<string, IconComponent>>> = Object.freeze({
+  overview: IconOverview,
+  conversations: IconChat,
+  waypoints: IconMapPin,
+  settings: IconGear,
+  dashboard: IconDashboard,
+  explorers: IconUsers,
+  guideAssistant: IconMessageSquare,
+  appointments: IconCalendar,
+  archive: IconArchive,
+});
+
+// The profile chip's icon by ScreenProfile.icon; the hiking boot otherwise.
+export const PROFILE_ICONS: Readonly<Partial<Record<string, IconComponent>>> = Object.freeze({
+  guide: IconPerson,
+});
+
 export function IconSpark(props: IconProps) {
   return (
     <Svg {...props}>

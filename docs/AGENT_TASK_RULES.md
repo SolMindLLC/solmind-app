@@ -233,8 +233,10 @@ the wide rail and in the panel a labelled "Menu" button opens below 64rem; the
 icon strip and its spaces toggle are gone. The labels leaf
 `src/lib/solmind/workspaceNavigation.ts` imports only
 `explorerConversationScreen.ts`; the signed-in menu data and destinations are
-in `src/lib/solmind/workspaceMenus.ts`, imported only by
-`explorerConversationConnectedScreen.ts`, so the review route never reaches
+in `src/lib/solmind/workspaceMenus.ts`, imported only by the signed-in lib
+files (`explorerConversationConnectedScreen.ts`, `explorerWorkspaceFrame.ts`,
+`explorerOverviewHome.ts`, `guideWorkspaceFrame.ts` and
+`guideDashboardHome.ts`), so the review route never reaches
 `routeAccess.ts`. On the signed-in `/explorer/conversation` screen, built
 entries are plain full-document links (a plain click on the entry for the
 current page keeps the page and a typed message, closes the phone menu and
@@ -250,6 +252,55 @@ appears there. Only the review version keeps the blue notes. The "Return to
 Explorer home" link shows when no saved conversation has been started; an
 ended conversation links to "Review ended conversations", and confirming End
 goes home by itself.
+
+Explorer workspace frame and Overview (same decisions): the other signed-in
+Explorer pages (`/explorer/home`, `/explorer/conversations`,
+`/explorer/waypoints` and `/explorer/waypoints/[id]`) sit in the role-neutral,
+presentation-only `WorkspaceFrame.tsx`, through the thin Explorer wrapper
+`ExplorerWorkspaceFrame.tsx` and its data in `explorerWorkspaceFrame.ts`. The
+frame reuses the conversation screen's rail, top bar, Menu button, panel and
+"Not connected yet" parts and owns layout state only; keep it at or under 300
+lines, ASCII, and free of Explorer and Guide data (the menu entries, names,
+breadcrumb root and profile role come in as data), so the Guide menu reuses
+it (below). Any change to the shared conversation-screen parts must leave both
+conversation screens' markup unchanged. Overview (`ExplorerOverviewHome.tsx`, wording in
+`explorerOverviewHome.ts`) shows the Option A home mockup's cards without
+names or counts; `ExplorerHome.tsx` keeps every binding, timer, page-event,
+sign-out and outcome rule and passes only the pending and warning flags and
+the sign-out action. While a sign-out is pending every link on the page shows
+in its non-link form. The conversation list and the Waypoint inbox and detail
+change only in look and navigation: keep every read, command, state, live
+region, focus rule and text (except that on 2026-11-03 the inbox's and
+detail's fixed sample name "Mary" became the canonical unnamed "SolMind
+Virtual Guide" with the mini mark, `SOLMIND_TERMS.virtualGuide`;
+`solmind-docs/canonical/06_SolMind_ScreenInventory_Phase0_v1_0.md`, and an
+open review on the conversation list no longer widens the page on phones),
+and use the dark pills
+(`SuggestedWaypointStatusPill` takes an optional dark surface; the fixture
+review surfaces keep the light pills).
+
+Guide workspace menu and Dashboard (same decisions): the signed-in Guide pages
+(`/guide/home` and the three `/guide/waypoint-suggestions` pages) sit in the
+same `WorkspaceFrame.tsx` with the August Guide menu (Dashboard to
+`GUIDE_HOME_ROUTE`; Explorers, "Chat with your Guide Assistant", Appointments
+and Archive not connected yet), through `GuideWorkspaceFrame.tsx` and its data
+in `guideWorkspaceFrame.ts`; the menu and its draft sentences are in
+`workspaceMenus.ts`. Create or rename no route. Never show a sample name such
+as "Steve" on a signed-in Guide screen; the SolMind Guide Assistant always
+reads as AI (the Dashboard card carries the "AI" badge), and never label
+anything the "Guide Assistant dashboard". `GuideHome.tsx` keeps every
+session and sign-out rule and passes only the pending and warning flags and
+the sign-out action to `GuideDashboardHome.tsx` (wording in
+`guideDashboardHome.ts`; shared home parts in `WorkspaceHomeParts.tsx`), which
+shows the four mockup cards without names, counts or times. The Guide Waypoint
+pages change only in look and navigation (`GuideWaypointSuggestionsPage.tsx`,
+no entry current) and keep every read, command, focus rule, live region and
+text; only the "Back to Guide dashboard" target moved to `/guide/home`, as a
+full-document link (`backFullDocument` on the entry page only), so the server
+checks access again instead of a client-side move restoring the Dashboard from
+the router cache after a sign-out. Leave
+the fixture page `/guide/explorers/avery/waypoint-suggestions`, `/guide` and
+`/admin/home` alone.
 
 ### Virtual Guide S03B conversation contract
 
@@ -477,7 +528,8 @@ Explorer prototype. Fixture-local UI may demonstrate unread/read, receipt
 acknowledgement, exact response, and private comparison, but it must not call
 persistence, providers, server actions, `fetch`, cookies, browser storage,
 notifications, or real Guide records. The `/explorer/waypoints` route now
-belongs to the separately reviewed authenticated S03 inbox/detail read layer.
+belongs to the separately reviewed authenticated S03 inbox/detail read layer,
+drawn since 2026-11-02 in the Explorer workspace frame (Waypoints current).
 
 Every visible prototype control must navigate, mutate only fixture-local state,
 or display the intended production destination. Test structural omission of
@@ -694,7 +746,9 @@ solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md
 and its linked checked receipt; source/check results alone do not establish
 banking. Admin has its separate connected source boundary; /guide remains a
 prototype. The Guide increment adds no SMS, reset,
-provisioning, renewal or provider conversation.
+provisioning, renewal or provider conversation. The signed-in Guide pages'
+workspace menu and the Dashboard on /guide/home follow "Guide workspace menu
+and Dashboard" under the Explorer S01 Task Contract above.
 
 Use fixed server role/purpose/home, no password on send, unchanged password and
 non-consuming same-account/contact challenge ownership before password. Wrong

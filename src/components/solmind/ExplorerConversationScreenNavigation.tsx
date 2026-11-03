@@ -1,22 +1,25 @@
-import type { KeyboardEvent, MouseEvent } from "react";
+import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
 
-import type { ScreenConversationSpace, ScreenNavigationItem } from "@/lib/solmind/explorerConversationScreenDisplay";
-import { EXPLORER_MENU_LABELS } from "@/lib/solmind/workspaceNavigation";
+import type {
+  ScreenConversationSpace, ScreenNavigationItem, WorkspaceMenuLabels,
+} from "@/lib/solmind/explorerConversationScreenDisplay";
 
 import { CONVERSATION_HEADING_ID } from "./ExplorerConversationScreenHeader";
-import { IconChat, IconClose, IconGear, IconMapPin, IconMenu, IconOverview } from "./ExplorerConversationScreenIcons";
+import { IconClose, IconMenu, MENU_ICONS } from "./ExplorerConversationScreenIcons";
 import {
   FOCUS_RING, LayoutOnlyTag, NotConnectedButton, NotConnectedExplanation, NotConnectedLine, NotYetImplementedNote,
   UnwiredButton, joinClasses, noteId,
 } from "./ExplorerConversationScreenNotYetImplemented";
 
-// The Explorer workspace menu: the September 23 list Paul accepted (his
-// 2026-11-02 option A), in the wide-screen rail and, below 64rem, in the panel
-// the top bar's Menu button opens. The class strings are copied from
-// ExplorerCompassComparisonParts.tsx.
+// The workspace menu: the September 23 list Paul accepted (his 2026-11-02
+// option A), in the wide-screen rail and, below 64rem, in the panel the top
+// bar's Menu button opens. The class strings are copied from
+// ExplorerCompassComparisonParts.tsx. The list takes its entries and names as
+// props, so the workspace frame (WorkspaceFrame.tsx) reuses it unchanged for
+// the Explorer menu and the August Guide menu.
 //
 // Review version: every entry is unwired and its "Not yet implemented:" note
-// sits under it. Signed-in screen: a built entry is a plain full-document link
+// sits under it. Signed-in screens: a built entry is a plain full-document link
 // (as in ExplorerHomeNavigation.tsx, full document navigation retires this
 // authenticated view and requests fresh server access); an entry that is not
 // connected yet shows a grey "Not connected yet" line and, when activated, one
@@ -35,6 +38,9 @@ const SPACE = "flex w-full flex-col rounded-lg px-3 py-2 text-left text-sm trans
 const SPACE_CURRENT = "bg-amber-300/10 text-amber-100";
 const SPACE_OTHER = "text-stone-300 hover:bg-white/[0.03] hover:text-stone-100";
 const EXPLANATION_SPACING = "mt-1 px-3";
+// While a sign-out is pending, a link shows in this non-link form, as on the
+// Explorer home (ExplorerHomeNavigation.tsx).
+const LINK_DISABLED = "opacity-60";
 
 function explanationId(scope: MenuScope, id: string): string {
   return `not-connected-${scope}-${id}`;
@@ -42,45 +48,60 @@ function explanationId(scope: MenuScope, id: string): string {
 
 type MenuOpenChange = (open: boolean) => void;
 
+// How the page's own entry and its links behave. pageHeadingId is the heading
+// a plain click on the page's own entry focuses (the conversation heading by
+// default); linksDisabled turns every link into its non-link form.
+type LinkBehaviour = Readonly<{ pageHeadingId?: string; linksDisabled?: boolean; onMenuOpenChange?: MenuOpenChange }>;
+
 // The entry for the page the Explorer is on stays a link, but a plain click on
 // it does not reload the page (which would lose a typed message): it closes
-// the phone menu and moves focus to the conversation heading. A click with a
-// modifier key or another mouse button behaves as a normal link.
-function stayOnThisPage(event: MouseEvent<HTMLAnchorElement>, onMenuOpenChange?: MenuOpenChange) {
+// the phone menu and moves focus to the page heading. A click with a modifier
+// key or another mouse button behaves as a normal link.
+function stayOnThisPage(event: MouseEvent<HTMLAnchorElement>, behaviour: LinkBehaviour) {
   if (event.defaultPrevented || event.button !== 0) return;
   if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
   event.preventDefault();
   // No scroll is worked out while the open panel still sits above the heading;
   // once the panel closes, the heading moves up into view.
-  document.getElementById(CONVERSATION_HEADING_ID)?.focus({ preventScroll: true });
-  onMenuOpenChange?.(false);
+  document.getElementById(behaviour.pageHeadingId ?? CONVERSATION_HEADING_ID)?.focus({ preventScroll: true });
+  behaviour.onMenuOpenChange?.(false);
 }
 
-function NavigationIcon({ id }: Readonly<{ id: ScreenNavigationItem["id"] }>) {
-  const className = "mt-0.5 h-5 w-5";
+type EntryLinkProps = Readonly<{ href: string; page: boolean; className: string; children: ReactNode; behaviour: LinkBehaviour }>;
 
-  switch (id) {
-    case "overview":
-      return <IconOverview className={className} />;
-    case "conversations":
-      return <IconChat className={className} />;
-    case "waypoints":
-      return <IconMapPin className={className} />;
-    case "settings":
-      return <IconGear className={className} />;
+function EntryLink({ href, page, className, children, behaviour }: EntryLinkProps) {
+  if (behaviour.linksDisabled) {
+    return <span aria-disabled="true" className={joinClasses(className, LINK_DISABLED)}>{children}</span>;
   }
+
+  return (
+    <a
+      aria-current={page ? "page" : undefined}
+      className={className}
+      href={href}
+      onClick={page ? (event) => stayOnThisPage(event, behaviour) : undefined}
+    >
+      {children}
+    </a>
+  );
+}
+
+function NavigationIcon({ id }: Readonly<{ id: string }>) {
+  const Icon = MENU_ICONS[id];
+  return Icon === undefined ? null : <Icon className="mt-0.5 h-5 w-5" />;
 }
 
 type SpacesProps = Readonly<{
   scope: MenuScope;
   spaces: readonly ScreenConversationSpace[];
+  label: string;
   guideName: string;
-  onMenuOpenChange?: MenuOpenChange;
+  behaviour: LinkBehaviour;
 }>;
 
-function ConversationSpaces({ scope, spaces, guideName, onMenuOpenChange }: SpacesProps) {
+function ConversationSpaces({ scope, spaces, label: listLabel, guideName, behaviour }: SpacesProps) {
   return (
-    <ul aria-label="Conversation spaces" className="ml-6 mt-1 grid gap-1 border-l border-amber-200/15 pl-3">
+    <ul aria-label={listLabel} className="ml-6 mt-1 grid gap-1 border-l border-amber-200/15 pl-3">
       {spaces.map((space) => {
         const className = joinClasses(SPACE, space.current ? SPACE_CURRENT : SPACE_OTHER, FOCUS_RING);
         const label = <span className="font-medium">{space.label}</span>;
@@ -102,15 +123,10 @@ function ConversationSpaces({ scope, spaces, guideName, onMenuOpenChange }: Spac
         if (space.href !== null) {
           return (
             <li key={space.id}>
-              <a
-                aria-current={space.current ? "page" : undefined}
-                className={className}
-                href={space.href}
-                onClick={space.current ? (event) => stayOnThisPage(event, onMenuOpenChange) : undefined}
-              >
+              <EntryLink behaviour={behaviour} className={className} href={space.href} page={space.current}>
                 {label}
                 {description}
-              </a>
+              </EntryLink>
             </li>
           );
         }
@@ -130,9 +146,9 @@ function ConversationSpaces({ scope, spaces, guideName, onMenuOpenChange }: Spac
   );
 }
 
-type ItemProps = Readonly<{ item: ScreenNavigationItem; scope: MenuScope; guideName: string }>;
+type ItemProps = Readonly<{ item: ScreenNavigationItem; scope: MenuScope; guideName: string; behaviour: LinkBehaviour }>;
 
-function NavigationEntry({ item, scope, guideName }: ItemProps) {
+function NavigationEntry({ item, scope, guideName, behaviour }: ItemProps) {
   const className = joinClasses(ITEM, item.current ? ITEM_CURRENT : ITEM_OTHER, FOCUS_RING);
 
   if ("noteKey" in item) {
@@ -150,13 +166,13 @@ function NavigationEntry({ item, scope, guideName }: ItemProps) {
 
   if (item.href !== null) {
     return (
-      <a className={className} href={item.href}>
+      <EntryLink behaviour={behaviour} className={className} href={item.href} page={item.current === "page"}>
         <NavigationIcon id={item.id} />
         <span className="flex min-w-0 flex-col">
           <span>{item.label}</span>
-          {item.current ? <span className="sr-only">(current section)</span> : null}
+          {item.current === true ? <span className="sr-only">(current section)</span> : null}
         </span>
-      </a>
+      </EntryLink>
     );
   }
 
@@ -175,12 +191,16 @@ function NavigationEntry({ item, scope, guideName }: ItemProps) {
   );
 }
 
-// guideName is the Guide name the review notes show.
-type MenuData = Readonly<{
+// labels are the menu's names. guideName is the Guide name the review notes
+// show. The spaces show under the current entry; pass none where they do not
+// belong.
+export type MenuData = Readonly<{
+  labels: WorkspaceMenuLabels;
   navigation: readonly ScreenNavigationItem[];
   spaces: readonly ScreenConversationSpace[];
   guideName: string;
-}>;
+}> &
+  Omit<LinkBehaviour, "onMenuOpenChange">;
 
 type WorkspaceMenuProps = MenuData &
   Readonly<{
@@ -190,24 +210,22 @@ type WorkspaceMenuProps = MenuData &
     onMenuOpenChange?: MenuOpenChange;
   }>;
 
-// One list for both places. The conversation spaces show under Conversations
-// when it is this screen's section.
-function WorkspaceMenu({ navigation, spaces, guideName, scope, className, onKeyDown, onMenuOpenChange }: WorkspaceMenuProps) {
+// One list for both places.
+function WorkspaceMenu({ labels, navigation, spaces, guideName, scope, className, onKeyDown, ...behaviour }: WorkspaceMenuProps) {
   return (
     <nav
-      aria-label={scope === "rail" ? EXPLORER_MENU_LABELS.rail : EXPLORER_MENU_LABELS.phone}
+      aria-busy={behaviour.linksDisabled || undefined}
+      aria-label={scope === "rail" ? labels.rail : labels.phone}
       className={className}
       onKeyDown={onKeyDown}
     >
-      <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-400">
-        {EXPLORER_MENU_LABELS.heading}
-      </p>
+      <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-400">{labels.heading}</p>
       <ul className="mt-2 grid gap-1">
         {navigation.map((item) => (
           <li className={"noteKey" in item ? "grid gap-1.5" : undefined} key={item.id}>
-            <NavigationEntry guideName={guideName} item={item} scope={scope} />
-            {item.id === "conversations" && item.current ? (
-              <ConversationSpaces guideName={guideName} onMenuOpenChange={onMenuOpenChange} scope={scope} spaces={spaces} />
+            <NavigationEntry behaviour={behaviour} guideName={guideName} item={item} scope={scope} />
+            {item.current && spaces.length > 0 ? (
+              <ConversationSpaces behaviour={behaviour} guideName={guideName} label={labels.spaces} scope={scope} spaces={spaces} />
             ) : null}
           </li>
         ))}

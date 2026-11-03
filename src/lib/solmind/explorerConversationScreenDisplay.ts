@@ -7,8 +7,9 @@
 import type { NotYetImplementedKey } from "./explorerConversationScreen";
 
 // Where a menu entry leads. The review version's entries are unwired and name
-// their "Not yet implemented:" note. The signed-in screen's entries come from
-// workspaceMenus.ts (mapped in explorerConversationConnectedScreen.ts): a
+// their "Not yet implemented:" note. The signed-in screens' entries come from
+// workspaceMenus.ts (mapped in explorerConversationConnectedScreen.ts,
+// explorerWorkspaceFrame.ts and guideWorkspaceFrame.ts): a
 // working destination, or none yet (href null) with the sentence that says
 // what the entry will do.
 export type ScreenEntryTarget =
@@ -16,11 +17,15 @@ export type ScreenEntryTarget =
   | Readonly<{ href: string }>
   | Readonly<{ href: null; explanation: string }>;
 
-// current marks this screen's section (Conversations).
+// id names the entry and picks its icon (MENU_ICONS in
+// ExplorerConversationScreenIcons.tsx), so a workspace menu for another role
+// can reuse the same list. current marks this page's section (true, as
+// Conversations on the conversation screens) or an entry that is this page
+// itself ("page", as Overview on the Explorer home).
 export type ScreenNavigationItem = Readonly<{
-  id: "overview" | "conversations" | "waypoints" | "settings";
+  id: string;
   label: string;
-  current: boolean;
+  current: boolean | "page";
 }> &
   ScreenEntryTarget;
 
@@ -34,7 +39,32 @@ export type ScreenConversationSpace = Readonly<{
 }> &
   ScreenEntryTarget;
 
-export type ScreenProfile = Readonly<{ name: string; role: string }>;
+// icon picks the profile chip's icon by id (PROFILE_ICONS in
+// ExplorerConversationScreenIcons.tsx); without one the chip shows the
+// Explorer's hiking boot, as on the conversation screens.
+export type ScreenProfile = Readonly<{ name: string; role: string; icon?: string }>;
+
+// The names a workspace menu shows: the rail's and the phone panel's
+// navigation names, the list heading and the name of the list of conversation
+// spaces.
+export type WorkspaceMenuLabels = Readonly<{ rail: string; phone: string; heading: string; spaces: string }>;
+
+// One signed-in workspace page's frame (WorkspaceFrame.tsx): its menu with the
+// page's section current, the entries shown under that section (none when
+// empty), the breadcrumb root and the profile chip. guideName is unused by
+// signed-in entries and kept only for the shared menu's review notes.
+// breadcrumbPage names a page that no menu entry stands for (the Guide's
+// Waypoint Suggestions pages); otherwise the breadcrumb shows the current
+// entry's label.
+export type WorkspaceFrameData = Readonly<{
+  labels: WorkspaceMenuLabels;
+  breadcrumbRoot: string;
+  breadcrumbPage?: string;
+  navigation: readonly ScreenNavigationItem[];
+  spaces: readonly ScreenConversationSpace[];
+  profile: ScreenProfile;
+  guideName: string;
+}>;
 
 export type ScreenGuideBanner = Readonly<{ title: string; body: string; button: string }>;
 

@@ -1,6 +1,7 @@
 // Mocked endpoints prove mounted UI behavior only, never Auth/SQL/provider or human acceptance.
 import { expect, test, type Page } from "@playwright/test";
 import type { ExplorerConversationCommand, ExplorerConversationState } from "../../src/lib/solmind/explorerConversationContract";
+import { expectNoSeriousAxeViolations, expectNoSidewaysScroll } from "./conversationPreviewHelpers";
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
 const CONVERSATION = "10000000-0000-4000-8000-000000000001";
@@ -109,9 +110,15 @@ test("E05 ended review uses GET only and preserves messages, Route, source and R
   });
   await page.route("**/explorer/conversation/commands", route => { writes += 1; return route.abort(); });
   await page.goto("/explorer/conversations");
+  // The list in the Explorer workspace frame's dark and amber look (2026-11-02) passes the axe checks, after
+  // it renders and with a review open, and an open review does not scroll the page sideways on a phone.
+  await expect(page.getByRole("button", { name: "Review ended conversation 1", exact: true })).toBeVisible();
+  await expectNoSeriousAxeViolations(page);
   await page.getByRole("button", { name: "Review ended conversation 1", exact: true }).click();
   await expect(page.getByText("A factual saved ending. <script>plain text</script>", { exact: true })).toBeVisible();
   await expect(page.getByText("An earlier captured direction", { exact: false })).toBeVisible();
+  await expectNoSidewaysScroll(page);
+  await expectNoSeriousAxeViolations(page);
   await page.getByText("Review saved Reached confirmation", { exact: true }).click();
   await expect(page.getByText("A saved Reached observation.", { exact: true })).toBeVisible();
   await page.getByText("Review saved source", { exact: true }).first().click();

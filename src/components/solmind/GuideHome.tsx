@@ -1,10 +1,11 @@
 "use client";
 
+import { GuideDashboardHome } from "./GuideDashboardHome";
 import { useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { createLogoutBrowserRequest, type LogoutBrowserFetch } from "@/lib/solmind/logoutBrowserRequest";
 import {
   createExplorerExpiryClock, LOGOUT_RESPONSE_BUDGET_MS,
-  SESSION_WARNING, SIGN_OUT_UNCERTAINTY, SIGNED_OUT_PRIVACY, type ExplorerExpiry,
+  SIGN_OUT_UNCERTAINTY, SIGNED_OUT_PRIVACY, type ExplorerExpiry,
 } from "@/lib/solmind/explorerLoginJourney";
 
 const GUIDE_REENTRY_PATH = "/login/guide" as const;
@@ -120,16 +121,24 @@ export function createGuideHomeViewBinding(session: ExplorerExpiry, ports: HomeP
   });
 }
 
+const OUTCOME_LINK =
+  "inline-flex items-center justify-center rounded-full bg-amber-400 px-5 py-2.5 text-sm font-semibold text-stone-950 hover:bg-amber-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300";
+
 export function GuideSessionOutcome({ outcome }: Readonly<{ outcome: Exclude<Screen, "home"> }>) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => { headingRef.current?.focus(); }, [outcome]);
   const heading = outcome === "signed_out" ? "You're signed out" : outcome === "no_current_sign_in" ? "No current sign-in was found at this browser address." : outcome === "session_ended" ? "Your session ended" : outcome === "restoring" ? "Checking your session..." : "Sign-out could not be confirmed";
-  return <main style={{ maxWidth: 560, margin: "64px auto", padding: 24 }}>
-    <h1 ref={headingRef} tabIndex={-1}>{heading}</h1>
-    {outcome === "signed_out" ? <p>{SIGNED_OUT_PRIVACY}</p> : null}
-    {outcome === "unconfirmed" ? <p role="alert">{SIGN_OUT_UNCERTAINTY}</p> : null}
-    {outcome === "session_ended" ? <p>Sign in again to continue as a Guide.</p> : null}
-    {outcome !== "restoring" ? <a href={GUIDE_REENTRY_PATH}>Sign in</a> : null}
+  // The dark and amber page look only (Paul's 2026-11-02 decisions): no
+  // workspace menu, because no signed-in session is shown here. The text and
+  // the Guide re-entry link are unchanged.
+  return <main className="min-h-dvh bg-[#050404] px-6 py-16 text-stone-100">
+    <div className="mx-auto grid max-w-xl gap-4">
+      <h1 className="rounded-md font-serif text-3xl leading-tight text-stone-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300" ref={headingRef} tabIndex={-1}>{heading}</h1>
+      {outcome === "signed_out" ? <p className="text-sm leading-6 text-stone-300">{SIGNED_OUT_PRIVACY}</p> : null}
+      {outcome === "unconfirmed" ? <p className="rounded-2xl border border-amber-400/70 bg-amber-950/60 p-4 text-sm leading-6 text-amber-50" role="alert">{SIGN_OUT_UNCERTAINTY}</p> : null}
+      {outcome === "session_ended" ? <p className="text-sm leading-6 text-stone-300">Sign in again to continue as a Guide.</p> : null}
+      {outcome !== "restoring" ? <p><a className={OUTCOME_LINK} href={GUIDE_REENTRY_PATH}>Sign in</a></p> : null}
+    </div>
   </main>;
 }
 
@@ -161,13 +170,8 @@ export function GuideHome({ session }: Readonly<{ session: ExplorerExpiry }>) {
     };
   }, [binding]);
   if (state.screen !== "home") return <GuideSessionOutcome outcome={state.screen} />;
-  return <main style={{ maxWidth: 560, margin: "64px auto", padding: 24 }}>
-    <h1>Guide home</h1>
-    <p>You are signed in as a Guide.</p>
-    <p>This page confirms your Guide sign-in and lets you sign out.</p>
-    {state.warning ? <p role="status">{SESSION_WARNING}</p> : null}
-    <button type="button" disabled={state.pending} onClick={() => { void binding.signOut(); }}>
-      {state.pending ? "Signing out..." : "Sign out"}
-    </button>
-  </main>;
+  // The Dashboard (Paul's 2026-11-02 decisions): the signed-in Guide home in
+  // the Guide workspace frame. Only the pending and warning flags and the
+  // sign-out action leave this binding.
+  return <GuideDashboardHome onSignOut={() => { void binding.signOut(); }} pending={state.pending} warning={state.warning} />;
 }

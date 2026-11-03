@@ -21,7 +21,10 @@ function setup(reply: () => Promise<Response>) {
 describe("Admin home with shared expiry and logout boundaries", () => {
   it("renders only Admin confirmation with no private session projection or request", () => {
     const html = renderToStaticMarkup(createElement(AdminHome, { session }));
-    check(html.includes("Admin home") && html.includes("Sign out") && !html.includes("Explorer home"));
+    // Nothing renders "Explorer home" any more (2026-11-02), so the cross-role check looks for the Explorer
+    // and Guide workspace menus instead.
+    check(html.includes("Admin home") && html.includes("Sign out"));
+    check(!html.includes('aria-label="Explorer workspace"') && !html.includes('aria-label="Guide workspace"'));
     check(!html.includes(session.expiresAt) && !html.includes(session.observedAt));
   });
   it.each(["signed_out", "sign_out_unconfirmed", "denied"])("keeps shared logout outcome honest and re-enters only Admin (%s)", async outcome => {

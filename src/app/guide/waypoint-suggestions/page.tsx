@@ -1,29 +1,24 @@
 import { Suspense } from "react";
 
-import { BackLink } from "@/components/solmind/BackLink";
 import { GuideSuggestedWaypointRelationshipEntry } from "@/components/solmind/GuideSuggestedWaypointRelationshipEntry";
-import { PageShell } from "@/components/solmind/PageShell";
-import { Panel } from "@/components/solmind/Panel";
-import { SectionLabel } from "@/components/solmind/SectionLabel";
+import { GuideWaypointSuggestionsPage } from "@/components/solmind/GuideWaypointSuggestionsPage";
+import { GUIDE_HOME_ROUTE } from "@/lib/solmind/routeAccess";
 
+// In the Guide workspace frame (Paul's 2026-11-02 decisions). The back link
+// now goes to the signed-in Guide Dashboard instead of the /guide prototype,
+// as a full-document link, so the server checks access again.
 export default function GuideSuggestedWaypointEntryPage() {
   return (
-    <PageShell maxWidth="5xl">
-      <BackLink href="/guide">Back to Guide dashboard</BackLink>
-
-      <Panel className="mt-10">
-        <SectionLabel>Guide workspace</SectionLabel>
-        <h1 className="mt-4 text-4xl font-semibold">Suggested Waypoints</h1>
-        <p className="mt-4 max-w-3xl text-slate-300">
-          Choose an Explorer with an active Guide relationship. This page only
-          opens the relationship workspace; it does not create, send, schedule,
-          withdraw, or deliver a suggestion.
-        </p>
-
-        <Suspense fallback={<p className="mt-8 text-slate-300">Loading Suggested Waypoints...</p>}>
-          <GuideSuggestedWaypointRelationshipEntry />
-        </Suspense>
-      </Panel>
-    </PageShell>
+    <GuideWaypointSuggestionsPage
+      backFullDocument
+      backHref={GUIDE_HOME_ROUTE}
+      backLabel="Back to Guide dashboard"
+      heading="Suggested Waypoints"
+      intro="Choose an Explorer with an active Guide relationship. This page only opens the relationship workspace; it does not create, send, schedule, withdraw, or deliver a suggestion."
+    >
+      <Suspense fallback={<p className="mt-8 text-stone-300">Loading Suggested Waypoints...</p>}>
+        <GuideSuggestedWaypointRelationshipEntry />
+      </Suspense>
+    </GuideWaypointSuggestionsPage>
   );
 }

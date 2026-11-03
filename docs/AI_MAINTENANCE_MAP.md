@@ -49,6 +49,7 @@ User-facing routes:
 - `/guide` - human Guide dashboard preview
 - `/guide/waypoint-suggestions` - authenticated, read-only Human Guide
   relationship entry for Suggested Waypoints; no suggestion data or command
+  (since 2026-11-02 these three pages sit in the Guide workspace frame)
 - `/guide/waypoint-suggestions/[relationshipId]` - authenticated,
   relationship-scoped Guide Suggested Waypoint list
 - `/guide/waypoint-suggestions/[relationshipId]/[suggestedWaypointId]` -
@@ -149,8 +150,10 @@ icon strip and its spaces toggle. The parts import only the labels leaf
 `src/lib/solmind/workspaceNavigation.ts` (labels, the grey "Not connected
 yet" label, the prefix helper and the entry types; it imports only
 `explorerConversationScreen.ts`); the signed-in menu data and destinations
-are in `src/lib/solmind/workspaceMenus.ts`, imported only by
-`explorerConversationConnectedScreen.ts`. On the signed-in screen built
+are in `src/lib/solmind/workspaceMenus.ts`, imported only by the signed-in lib
+files `explorerConversationConnectedScreen.ts`, `explorerWorkspaceFrame.ts`,
+`explorerOverviewHome.ts`, `guideWorkspaceFrame.ts` and
+`guideDashboardHome.ts`. On the signed-in screen built
 entries are plain full-document links (a plain click on the current page's
 entry keeps the page and a typed message), and every control not built yet
 shows a grey "Not connected yet" line (or carries it in its accessible name
@@ -177,6 +180,64 @@ connected layout's tests are
 and `tests/browser/explorerConversationScreen.pw.ts`, alongside the existing
 `tests/browser/explorerConversation*.pw.ts`, `compassCategory.pw.ts`,
 `waypointClarification.pw.ts` and `waypointRelease.pw.ts` specs.
+
+Explorer workspace frame and Overview (same decisions, 2026-11-02): the
+other signed-in Explorer pages sit in `src/components/solmind/WorkspaceFrame.tsx`,
+the role-neutral, presentation-only frame that reuses the conversation
+screen's rail, top bar, Menu button, panel and "Not connected yet" parts and
+takes its menu entries, names, breadcrumb root and profile role as data
+(`WorkspaceFrameData`); `src/components/solmind/ExplorerWorkspaceFrame.tsx`
+is the thin Explorer wrapper over the frozen data in
+`src/lib/solmind/explorerWorkspaceFrame.ts`. Overview on `/explorer/home` is
+`src/components/solmind/ExplorerOverviewHome.tsx` (wording in
+`src/lib/solmind/explorerOverviewHome.ts`), the Option A home mockup's cards
+without names or counts, with the session warning, the collapsed "Design
+previews" (`ExplorerHomeNavigation.tsx`, now only that fold) and Sign out;
+`ExplorerHome.tsx` keeps every session and sign-out rule. The conversation
+list (`ExplorerConversationReview.tsx`, Conversations current), the Waypoint
+inbox (`ExplorerSuggestedWaypointInbox.tsx`, Waypoints current, its teal
+sidebar gone) and the Waypoint detail page change only in look and navigation,
+except that on 2026-11-03 the inbox's and detail's fixed sample name "Mary" became the canonical
+unnamed "SolMind Virtual Guide" (`SOLMIND_TERMS.virtualGuide`;
+`solmind-docs/canonical/06_SolMind_ScreenInventory_Phase0_v1_0.md`).
+No route is created or renamed. Tests:
+`src/components/solmind/__tests__/ExplorerWorkspaceFrame.test.tsx`,
+`src/components/solmind/__tests__/ExplorerHome.test.tsx`,
+`src/lib/solmind/__tests__/workspaceNavigation.test.ts` (WN06, WN07),
+`tests/browser/suggestedWaypointExplorerInbox.pw.ts` and
+`tests/browser/explorerConversationEnding.pw.ts` (E05: axe on the restyled list
+and an open review, and no sideways scroll); `/explorer/home` itself
+needs a sign-in, so the unit tests prove only its frame's static markup;
+interaction and contrast on the signed-in Overview are checked on the local
+demo only by Paul.
+
+Guide workspace menu and Dashboard (same decisions, 2026-11-02): the signed-in
+Guide pages use the same `WorkspaceFrame.tsx` with the August Guide menu
+(Dashboard to `/guide/home`; Explorers, "Chat with your Guide Assistant",
+Appointments and Archive not connected yet, with draft sentences), defined in
+`src/lib/solmind/workspaceMenus.ts`, through
+`src/components/solmind/GuideWorkspaceFrame.tsx` and
+`src/lib/solmind/guideWorkspaceFrame.ts`. The Dashboard on `/guide/home` is
+`src/components/solmind/GuideDashboardHome.tsx` (wording in
+`src/lib/solmind/guideDashboardHome.ts`; header, cards, warning and Sign out
+shared with Overview in `src/components/solmind/WorkspaceHomeParts.tsx`): the
+Guide dashboard mockup's four cards without names, counts or times, the Guide
+Assistant card with the "AI" badge, and one working link, "View Waypoint
+Suggestions". `GuideHome.tsx` keeps every session and sign-out rule. The three
+`/guide/waypoint-suggestions` pages sit in the frame with no entry current
+through `src/components/solmind/GuideWaypointSuggestionsPage.tsx` and change
+only in look and navigation ("Back to Guide dashboard" now goes to
+`/guide/home`, as a full-document link so the server checks access again
+instead of a client-side move restoring the Dashboard from the router cache
+after a sign-out). No route is created or renamed; `/guide`, the Avery fixture
+page and `/admin/home` are unchanged. Tests:
+`src/components/solmind/__tests__/GuideHome.test.tsx` (GD01-GD07),
+`src/components/solmind/__tests__/GuideWorkspaceFrame.test.tsx`,
+`src/lib/solmind/__tests__/workspaceNavigation.test.ts` (WN08-WN11) and
+`tests/browser/suggestedWaypointGuideRelationshipEntry.pw.ts`; `/guide/home`
+needs a sign-in, so the unit tests prove only its Dashboard's static markup;
+interaction and contrast on the signed-in Dashboard are checked on the local
+demo with the invented demo Guide.
 
 The retained sign-in preview follows the same split; banked `/login`
 instead composes `src/components/solmind/LoginExperience.tsx` as described
@@ -890,7 +951,9 @@ banking.
 | src/lib/solmind/passwordRoleSignInBrowserContract.ts, guideSignInBrowserTransport.ts, guideSignInFlowController.ts; src/components/solmind/GuideSignIn.tsx | Guide-only requests/results and private attempt state; no password on send, storage/logging or request-selected authority |
 | src/components/solmind/PasswordRoleSignInView.tsx | Shared Guide/Admin view over SignInPreviewView (approved A3/A3A and A4); password read at Send my code and held in a private ref until verify, cleared on every exit; one uniform help line after every A4 refusal (Paul, 2026-11-02); no new request, route or authority |
 | src/lib/solmind/auth/guideHomeAccess.ts; src/app/guide/home/page.tsx; src/components/solmind/GuideHome.tsx | Current principal/session/role/binding guard, raw-cookie ambiguity, minimal time projection, finite reminder and shared logout/Guide re-entry |
-| src/components/solmind/ExplorerHomeNavigation.tsx | Presentational Conversation and Compass entry, authenticated inbox link, collapsed fixed-script previews and the interim conversation screen design review link; each feature retains its own authorization; no provider/session authority |
+| src/components/solmind/ExplorerHomeNavigation.tsx | Presentational collapsed fixed-script previews and the interim conversation screen design review link on Overview (since 2026-11-02 the Explorer workspace destinations are in the workspace menu and the Overview cards); each feature retains its own authorization; no provider/session authority |
+| src/components/solmind/WorkspaceFrame.tsx; src/components/solmind/ExplorerWorkspaceFrame.tsx; src/components/solmind/ExplorerOverviewHome.tsx; src/lib/solmind/explorerWorkspaceFrame.ts; src/lib/solmind/explorerOverviewHome.ts | Role-neutral presentation-only signed-in workspace frame (layout state only), its Explorer wrapper and data, and the Overview home with its fixed wording (Paul's 2026-11-02 decisions); no reads, session or provider authority |
+| src/components/solmind/GuideWorkspaceFrame.tsx; src/components/solmind/GuideDashboardHome.tsx; src/components/solmind/WorkspaceHomeParts.tsx; src/components/solmind/GuideWaypointSuggestionsPage.tsx; src/lib/solmind/guideWorkspaceFrame.ts; src/lib/solmind/guideDashboardHome.ts | The Guide wrapper and data for the same frame (August Guide menu), the Guide Dashboard with its fixed wording, the home parts shared with Overview, and the frame around the Guide Waypoint Suggestions pages (Paul's 2026-11-02 decisions); GuideHome passes only pending/warning flags and sign-out; no reads, session or provider authority |
 | src/lib/solmind/auth/adminLoginIdentifierNormalizer.ts | Shared approved Admin parser, unused by Guide; consumed by the separate Admin connection; no first-Admin setup |
 
 October 21 R04 genuine functional/contention observations and isolated app/

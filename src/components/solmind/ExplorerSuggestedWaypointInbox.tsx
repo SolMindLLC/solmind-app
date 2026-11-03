@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -22,7 +21,15 @@ import {
 } from "@/lib/solmind/suggestedWaypointExplorerListBrowserContract";
 import { formatSuggestedWaypointDate } from "@/lib/solmind/suggestedWaypointDisplayDate";
 import { SUGGESTED_WAYPOINT_REFRESH_REQUIRED } from "@/lib/solmind/suggestedWaypointPaginationSharedContract";
+import { SOLMIND_TERMS } from "@/lib/solmind/terms";
+import { FOCUS_RING, SECONDARY_BUTTON, joinClasses } from "./ExplorerConversationScreenNotYetImplemented";
+import { ExplorerWorkspaceFrame } from "./ExplorerWorkspaceFrame";
 import { SuggestedWaypointStatusPill } from "./SuggestedWaypointStatusPill";
+
+// The dark and amber look of the signed-in conversation screen.
+const CARD_CLASS = "rounded-3xl border border-amber-200/15 bg-[#0c0a08]/90 p-5";
+const PAGER_BUTTON = joinClasses(SECONDARY_BUTTON, "disabled:cursor-not-allowed disabled:opacity-40");
+const SELECT_CLASS = joinClasses("rounded-lg border border-amber-200/25 bg-[#0c0a08] px-3 py-2 text-stone-100", FOCUS_RING);
 
 type RequestState = Readonly<{
   cursor: string | null;
@@ -41,11 +48,11 @@ const INITIAL_REQUEST: RequestState = Object.freeze({
 function StatusPills({ item }: { item: SuggestedWaypointExplorerListItem }) {
   return (
     <>
-      <SuggestedWaypointStatusPill tone={item.read ? "neutral" : "positive"}>
+      <SuggestedWaypointStatusPill surface="dark" tone={item.read ? "neutral" : "positive"}>
         {item.read ? "✓ Read" : "● Unread"}
       </SuggestedWaypointStatusPill>
       {item.receipt_acknowledged && item.acknowledged_at !== null && (
-        <SuggestedWaypointStatusPill tone="positive">
+        <SuggestedWaypointStatusPill surface="dark" tone="positive">
           ☑ You acknowledged receipt {formatSuggestedWaypointDate(item.acknowledged_at)}
         </SuggestedWaypointStatusPill>
       )}
@@ -56,7 +63,6 @@ function StatusPills({ item }: { item: SuggestedWaypointExplorerListItem }) {
 export function ExplorerSuggestedWaypointInbox() {
   const searchParams = useSearchParams();
   const requestedFocus = searchParams.get("focus");
-  const [navigationOpen, setNavigationOpen] = useState(false);
   const [request, setRequest] = useState<RequestState>(INITIAL_REQUEST);
   const [page, setPage] = useState<SuggestedWaypointExplorerListPage | null>(null);
   const [viewState, setViewState] = useState<ViewState>("loading");
@@ -232,87 +238,53 @@ export function ExplorerSuggestedWaypointInbox() {
     });
   };
 
-  const unavailableDestination = (label: string) => {
-    setNavigationOpen(false);
-    setNotice(`${label} will open its Explorer workspace destination when that route is implemented.`);
-  };
-
   return (
-    <div className="min-h-screen bg-[#f7f5ef] text-slate-900">
-      <button
-        type="button"
-        className="fixed left-3 top-3 z-30 rounded-md bg-[#174b4d] px-3 py-2 text-sm font-semibold text-white shadow lg:hidden"
-        aria-expanded={navigationOpen}
-        aria-controls="explorer-suggestion-navigation"
-        onClick={() => setNavigationOpen((current) => !current)}
-      >
-        {navigationOpen ? "Close menu" : "Open menu"}
-      </button>
-
-      <div className="mx-auto flex min-h-screen max-w-[1440px]">
-        <aside
-          id="explorer-suggestion-navigation"
-          className={`${navigationOpen ? "flex" : "hidden"} fixed inset-y-0 left-0 z-20 w-64 flex-col bg-[#174b4d] px-4 pb-6 pt-16 text-white shadow-xl lg:static lg:flex lg:w-64 lg:pt-5 lg:shadow-none`}
-        >
-          <Image
-            src="/solmind-light-logo.png"
-            alt="SolMind"
-            width={185}
-            height={134}
-            className="mb-6 h-auto w-full max-w-[185px] rounded-md bg-white object-contain"
-            priority
-          />
-          <p className="mb-4 text-sm text-teal-50">Explorer workspace</p>
-          <nav aria-label="Explorer navigation" className="space-y-2">
-            <Link className="block rounded-lg px-4 py-2 hover:bg-white/15" href="/explorer">Home</Link>
-            <button className="w-full rounded-lg px-4 py-2 text-left hover:bg-white/15" type="button" onClick={() => unavailableDestination("Talk with Mary")}>Talk with ◉ Mary</button>
-            <Link className="block rounded-lg bg-white/15 px-4 py-2 font-semibold" href="/explorer/waypoints">Waypoints</Link>
-            <button className="w-full rounded-lg px-4 py-2 text-left hover:bg-white/15" type="button" onClick={() => unavailableDestination("Appointments")}>Appointments</button>
-            <button className="w-full rounded-lg px-4 py-2 text-left hover:bg-white/15" type="button" onClick={() => unavailableDestination("History")}>History</button>
-          </nav>
-        </aside>
-
-        <main className="min-w-0 flex-1 px-5 pb-16 pt-20 sm:px-8 lg:px-12 lg:pt-8">
-          <div className="mb-8 flex flex-wrap items-center justify-between gap-3 border-b border-slate-300 pb-5">
-            <p className="font-medium">◉ Mary (SolMind Virtual Guide)</p>
-            <SuggestedWaypointStatusPill tone="private">◆ Private Explorer view</SuggestedWaypointStatusPill>
+    // In the Explorer workspace frame with Waypoints current (Paul's 2026-11-02
+    // decisions); the content keeps every read, state, live region and text.
+    <ExplorerWorkspaceFrame page="waypoints">
+        <div className="min-w-0 px-3 pb-16 pt-5 sm:px-6 lg:px-8">
+          <div className="mb-8 flex flex-wrap items-center justify-between gap-3 border-b border-amber-200/10 pb-5">
+            {/* The canonical unnamed form (solmind-docs/canonical/06_SolMind_ScreenInventory_Phase0_v1_0.md):
+                this page receives no chosen name. */}
+            <p className="font-medium text-stone-200">{`◉ ${SOLMIND_TERMS.virtualGuide}`}</p>
+            <SuggestedWaypointStatusPill surface="dark" tone="private">◆ Private Explorer view</SuggestedWaypointStatusPill>
           </div>
 
           <section aria-labelledby="suggestion-inbox-title" aria-busy={pending}>
-            <p className="text-sm font-semibold text-[#1d6768]">Waypoints</p>
-            <h1 id="suggestion-inbox-title" className="mt-2 text-3xl font-semibold">Waypoint Suggestions</h1>
-            <p className="mt-3 max-w-3xl text-slate-600">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-300">Waypoints</p>
+            <h1 id="suggestion-inbox-title" className="mt-2 font-serif text-3xl leading-tight text-stone-50 sm:text-4xl">Waypoint Suggestions</h1>
+            <p className="mt-3 max-w-3xl text-sm leading-6 text-stone-300">
               Suggestions from your Guide remain suggestions, not assignments. You decide what to do with them.
             </p>
-            <p className="mt-4 text-sm text-slate-600" role="status" aria-live="polite">{notice}</p>
+            <p className="mt-4 text-sm text-stone-300" role="status" aria-live="polite">{notice}</p>
 
             {viewState === "loading" && page === null && (
-              <div className="mt-7 rounded-xl border border-slate-300 bg-white p-5 shadow-sm">Loading Waypoint Suggestions...</div>
+              <div className={joinClasses("mt-7 text-stone-200", CARD_CLASS)}>Loading Waypoint Suggestions...</div>
             )}
 
             {viewState === "denied" && (
-              <div className="mt-7 rounded-xl border border-amber-300 bg-amber-50 p-5">
-                <h2 className="text-xl font-semibold">Waypoint Suggestions unavailable</h2>
-                <p className="mt-2 text-slate-700">This Explorer workspace cannot open the requested suggestions.</p>
+              <div className="mt-7 rounded-2xl border border-amber-400/70 bg-amber-950/60 p-5 text-amber-50">
+                <h2 className="font-serif text-xl">Waypoint Suggestions unavailable</h2>
+                <p className="mt-2 text-sm leading-6">This Explorer workspace cannot open the requested suggestions.</p>
               </div>
             )}
 
             {viewState === "failed" && page === null && (
-              <div className="mt-7 rounded-xl border border-rose-300 bg-rose-50 p-5">
-                <h2 className="text-xl font-semibold">Could not load Waypoint Suggestions</h2>
-                <p className="mt-2 text-slate-700">Nothing was changed. Try loading the inbox again.</p>
-                <button type="button" className="mt-4 rounded-lg border border-[#227a7c] bg-white px-4 py-2 font-semibold text-[#1d6768]" onClick={() => void load(request)}>Try again</button>
+              <div className="mt-7 rounded-2xl border border-rose-400/60 bg-rose-950/50 p-5 text-rose-50">
+                <h2 className="font-serif text-xl">Could not load Waypoint Suggestions</h2>
+                <p className="mt-2 text-sm leading-6">Nothing was changed. Try loading the inbox again.</p>
+                <button type="button" className={joinClasses("mt-4", SECONDARY_BUTTON)} onClick={() => void load(request)}>Try again</button>
               </div>
             )}
 
             {viewState === "ready" && page !== null && (
               <>
                 <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                  <p className="text-sm text-slate-600">Delivered suggestions only. Opening one remains private.</p>
+                  <p className="text-sm text-stone-300">Delivered suggestions only. Opening one remains private.</p>
                   {pageSizes.length > 1 && (
-                    <label className="flex items-center gap-2 text-sm text-slate-700">
+                    <label className="flex items-center gap-2 text-sm text-stone-300">
                       Show
-                      <select className="rounded-lg border border-slate-400 bg-white px-3 py-2" value={request.pageSize} onChange={changePageSize} disabled={pending}>
+                      <select className={SELECT_CLASS} value={request.pageSize} onChange={changePageSize} disabled={pending}>
                         {pageSizes.map((size) => <option key={size} value={size}>{size}</option>)}
                       </select>
                       per page
@@ -321,9 +293,9 @@ export function ExplorerSuggestedWaypointInbox() {
                 </div>
 
                 {page.items.length === 0 ? (
-                  <div className="mt-5 rounded-xl border border-slate-300 bg-white p-5 shadow-sm">
-                    <h2 className="font-semibold">No suggestions yet</h2>
-                    <p className="mt-2 text-sm text-slate-600">Suggestions from your Guide will appear here after they are delivered.</p>
+                  <div className={joinClasses("mt-5", CARD_CLASS)}>
+                    <h2 className="font-serif text-xl text-stone-50">No suggestions yet</h2>
+                    <p className="mt-2 text-sm text-stone-300">Suggestions from your Guide will appear here after they are delivered.</p>
                   </div>
                 ) : (
                   <ul className="mt-5 grid gap-3" aria-label="Waypoint Suggestions">
@@ -335,16 +307,16 @@ export function ExplorerSuggestedWaypointInbox() {
                             else rowLinks.current.set(item.suggested_waypoint_id, node);
                           }}
                           href={`/explorer/waypoints/${item.suggested_waypoint_id}`}
-                          className="group block rounded-xl border border-slate-300 border-l-4 border-l-[#227a7c] bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[#227a7c] hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#227a7c]"
+                          className={joinClasses("group block rounded-3xl border border-amber-200/15 border-l-4 border-l-amber-300/70 bg-[#0c0a08]/90 p-5 shadow-[0_24px_70px_rgba(0,0,0,0.45)] transition hover:-translate-y-0.5 hover:border-amber-300/60", FOCUS_RING)}
                         >
                           <span className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                             <span>
-                              <span className="block text-lg font-semibold">{item.destination_preview}</span>
-                              <span className="mt-2 block text-sm text-slate-600">Received {formatSuggestedWaypointDate(item.received_at)} as a suggestion, not an assignment.</span>
+                              <span className="block font-serif text-xl text-stone-50">{item.destination_preview}</span>
+                              <span className="mt-2 block text-sm text-stone-300">Received {formatSuggestedWaypointDate(item.received_at)} as a suggestion, not an assignment.</span>
                             </span>
                             <span className="flex flex-wrap gap-2 sm:max-w-md sm:justify-end"><StatusPills item={item} /></span>
                           </span>
-                          <span className="mt-4 block text-sm font-semibold text-[#1d6768] group-hover:text-[#145354]">Open suggestion</span>
+                          <span className="mt-4 block text-sm font-semibold text-amber-200 group-hover:text-amber-100">Open suggestion</span>
                         </Link>
                       </li>
                     ))}
@@ -352,19 +324,18 @@ export function ExplorerSuggestedWaypointInbox() {
                 )}
 
                 {page.total_count > 0 && (
-                  <div className="mt-5 flex flex-col gap-3 border-t border-slate-300 pt-5 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-sm text-slate-600">Showing {pageStart}-{pageEnd} of {page.total_count}</p>
+                  <div className="mt-5 flex flex-col gap-3 border-t border-amber-200/10 pt-5 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm text-stone-300">Showing {pageStart}-{pageEnd} of {page.total_count}</p>
                     <div className="flex gap-3">
-                      <button type="button" className="rounded-lg border border-slate-400 bg-white px-4 py-2 font-semibold disabled:cursor-not-allowed disabled:opacity-40" onClick={goBack} disabled={pending || request.cursorHistory.length === 0}>Previous</button>
-                      <button type="button" className="rounded-lg border border-[#227a7c] bg-white px-4 py-2 font-semibold text-[#1d6768] disabled:cursor-not-allowed disabled:opacity-40" onClick={goForward} disabled={pending || page.next_cursor === null}>Next</button>
+                      <button type="button" className={PAGER_BUTTON} onClick={goBack} disabled={pending || request.cursorHistory.length === 0}>Previous</button>
+                      <button type="button" className={PAGER_BUTTON} onClick={goForward} disabled={pending || page.next_cursor === null}>Next</button>
                     </div>
                   </div>
                 )}
               </>
             )}
           </section>
-        </main>
-      </div>
-    </div>
+        </div>
+    </ExplorerWorkspaceFrame>
   );
 }

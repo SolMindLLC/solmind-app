@@ -4,9 +4,10 @@ import type { ReactNode } from "react";
 import { SOLMIND_LOGO_SRC } from "@/lib/solmind/explorerCompassComparison";
 import { LAYOUT_ONLY_LABEL, VIRTUAL_GUIDE_SHORT } from "@/lib/solmind/explorerConversationScreen";
 import type { ScreenGuideBanner, ScreenProfile, ScreenShellData } from "@/lib/solmind/explorerConversationScreenDisplay";
+import { EXPLORER_MENU_LABELS } from "@/lib/solmind/workspaceNavigation";
 
-import { IconBell, IconBoot, IconUsers } from "./ExplorerConversationScreenIcons";
-import { MenuButton, MenuPanel, RailNavigation } from "./ExplorerConversationScreenNavigation";
+import { IconBell, IconBoot, IconUsers, PROFILE_ICONS } from "./ExplorerConversationScreenIcons";
+import { MenuButton, MenuPanel, RailNavigation, type MenuData } from "./ExplorerConversationScreenNavigation";
 import {
   FOCUS_RING, NotConnectedButton, NotConnectedLine, NotYetImplementedNote, PreviewBand, QUIET_BUTTON, SampleTag, UnwiredButton,
   UnwiredControl, joinClasses, noteId,
@@ -27,7 +28,7 @@ export function SolMindLogo({ className }: Readonly<{ className?: string }>) {
   );
 }
 
-function AmbientGlow() {
+export function AmbientGlow() {
   return (
     <div
       aria-hidden="true"
@@ -36,7 +37,14 @@ function AmbientGlow() {
   );
 }
 
-function Rail({ shell, onMenuOpenChange }: Readonly<{ shell: ScreenShellData; onMenuOpenChange: (open: boolean) => void }>) {
+// The conversation screens' menu data, with the Explorer menu names.
+function shellMenu(shell: ScreenShellData): MenuData {
+  return { labels: EXPLORER_MENU_LABELS, navigation: shell.navigation, spaces: shell.conversationSpaces, guideName: shell.guideName };
+}
+
+// The wide-screen rail: the logo and the workspace menu (also used by
+// WorkspaceFrame.tsx).
+export function Rail({ onMenuOpenChange, ...menu }: MenuData & Readonly<{ onMenuOpenChange: (open: boolean) => void }>) {
   return (
     <aside
       aria-label="SolMind workspace"
@@ -45,34 +53,34 @@ function Rail({ shell, onMenuOpenChange }: Readonly<{ shell: ScreenShellData; on
       <div className="px-6 pt-7">
         <SolMindLogo className="w-44" />
       </div>
-      <RailNavigation
-        guideName={shell.guideName}
-        navigation={shell.navigation}
-        onMenuOpenChange={onMenuOpenChange}
-        spaces={shell.conversationSpaces}
-      />
+      <RailNavigation {...menu} onMenuOpenChange={onMenuOpenChange} />
     </aside>
   );
 }
 
+// breadcrumb replaces the signed-in conversation screen's plain-text
+// breadcrumb (WorkspaceFrame.tsx passes its own).
 type UtilityBarProps = Readonly<{
   profile: ScreenProfile;
   connected: boolean;
   menuOpen: boolean;
   onMenuOpenChange: (open: boolean) => void;
+  breadcrumb?: ReactNode;
 }>;
 
 // Overview in the menu is the way home, as on September 23, so the top bar
 // has no separate home link.
-function UtilityBar({ profile, connected, menuOpen, onMenuOpenChange }: UtilityBarProps) {
+export function UtilityBar({ profile, connected, menuOpen, onMenuOpenChange, breadcrumb }: UtilityBarProps) {
   const profileLabel = profile.name ? `${profile.name}, ${profile.role} profile` : `${profile.role} profile`;
   const profileClass = joinClasses(
     "flex items-center gap-2 rounded-full border border-amber-200/20 py-1 pl-1 pr-3 text-left hover:bg-amber-300/10",
     FOCUS_RING,
   );
+  // The hiking boot unless the profile names another icon (the Guide's).
+  const ProfileIcon = (profile.icon === undefined ? undefined : PROFILE_ICONS[profile.icon]) ?? IconBoot;
   const avatar = (
     <span aria-hidden="true" className="grid h-8 w-8 place-items-center rounded-full border border-amber-300/60 bg-amber-300/10 text-amber-100">
-      <IconBoot />
+      <ProfileIcon />
     </span>
   );
 
@@ -81,7 +89,9 @@ function UtilityBar({ profile, connected, menuOpen, onMenuOpenChange }: UtilityB
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5 sm:px-6 lg:px-8">
         <MenuButton connected={connected} menuOpen={menuOpen} onMenuOpenChange={onMenuOpenChange} />
         <SolMindLogo className="w-20 lg:hidden" />
-        {connected ? (
+        {breadcrumb !== undefined ? (
+          breadcrumb
+        ) : connected ? (
           <p className="hidden text-sm text-stone-400 lg:block">
             Conversations <span aria-hidden="true">/</span>{" "}
             <span className="text-stone-200">With your {VIRTUAL_GUIDE_SHORT}</span>
@@ -231,16 +241,10 @@ export function ExplorerConversationScreenShell({
       </button>
       {connected ? null : <PreviewBand />}
       <div className="flex w-full flex-1">
-        <Rail onMenuOpenChange={onMenuOpenChange} shell={shell} />
+        <Rail {...shellMenu(shell)} onMenuOpenChange={onMenuOpenChange} />
         <div className="relative flex min-w-0 flex-1 flex-col">
           <UtilityBar connected={connected} menuOpen={menuOpen} onMenuOpenChange={onMenuOpenChange} profile={shell.profile} />
-          <MenuPanel
-            guideName={shell.guideName}
-            menuOpen={menuOpen}
-            navigation={shell.navigation}
-            onMenuOpenChange={onMenuOpenChange}
-            spaces={shell.conversationSpaces}
-          />
+          <MenuPanel {...shellMenu(shell)} menuOpen={menuOpen} onMenuOpenChange={onMenuOpenChange} />
           <main className="flex min-h-0 flex-1 flex-col">{children}</main>
           <GuideBanner banner={shell.guideBanner} connected={connected} guideName={shell.guideName} />
         </div>

@@ -25,7 +25,14 @@ import {
   type SuggestedWaypointExplorerDetail as Detail,
 } from "@/lib/solmind/suggestedWaypointExplorerDetailBrowserContract";
 import { formatSuggestedWaypointDate } from "@/lib/solmind/suggestedWaypointDisplayDate";
+import { SOLMIND_TERMS } from "@/lib/solmind/terms";
+import { FOCUS_RING, SECONDARY_BUTTON, joinClasses } from "./ExplorerConversationScreenNotYetImplemented";
 import { SuggestedWaypointStatusPill } from "./SuggestedWaypointStatusPill";
+
+// The dark and amber look of the signed-in conversation screen (Paul's
+// 2026-11-02 decisions); every text, state and focus rule is unchanged.
+const CARD_CLASS = "rounded-3xl border border-amber-200/15 bg-[#0c0a08]/90 p-6";
+const ACTION_BUTTON = joinClasses(SECONDARY_BUTTON, "disabled:cursor-not-allowed disabled:opacity-60");
 
 type ViewState = "loading" | "ready" | "denied" | "failed";
 type LoadOutcome = "loading" | "ready" | "denied" | "failed" | "aborted";
@@ -33,11 +40,11 @@ type LoadOutcome = "loading" | "ready" | "denied" | "failed" | "aborted";
 function StatusPills({ detail }: { detail: Detail }) {
   return (
     <>
-      <SuggestedWaypointStatusPill tone={detail.read ? "neutral" : "positive"}>
+      <SuggestedWaypointStatusPill surface="dark" tone={detail.read ? "neutral" : "positive"}>
         {detail.read ? "✓ Read" : "● Unread"}
       </SuggestedWaypointStatusPill>
       {detail.receipt_acknowledged && detail.acknowledged_at !== null && (
-        <SuggestedWaypointStatusPill tone="positive">
+        <SuggestedWaypointStatusPill surface="dark" tone="positive">
           ☑ You acknowledged receipt {formatSuggestedWaypointDate(detail.acknowledged_at)}
         </SuggestedWaypointStatusPill>
       )}
@@ -554,14 +561,14 @@ export function ExplorerSuggestedWaypointDetail({
 
   return (
     <div className="mt-6">
-      <p className="text-sm text-slate-600" role="status" aria-live="polite">
+      <p className="text-sm text-stone-300" role="status" aria-live="polite">
         {notice}
       </p>
 
       {actionNotice !== "" && (
         <p
           ref={actionStatusRef}
-          className="mt-3 rounded-xl border border-teal-300 bg-teal-50 p-3 text-sm text-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#227a7c]"
+          className={joinClasses("mt-3 rounded-2xl border border-amber-300/40 bg-amber-300/10 p-3 text-sm text-amber-50", FOCUS_RING)}
           role="status"
           aria-live="polite"
           tabIndex={-1}
@@ -571,16 +578,16 @@ export function ExplorerSuggestedWaypointDetail({
       )}
 
       {operation.phase === "transport_uncertain" && (
-        <section className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-5">
-          <h2 className="text-lg font-semibold">Action status needs checking</h2>
-          <p className="mt-2 text-sm text-slate-700">
+        <section className="mt-4 rounded-2xl border border-amber-400/70 bg-amber-950/60 p-5 text-amber-50">
+          <h2 className="font-serif text-lg">Action status needs checking</h2>
+          <p className="mt-2 text-sm leading-6">
             Check current status first. If the change is not there, you can
             safely try the action again without creating a duplicate.
           </p>
           <div className="mt-4 flex flex-wrap gap-3">
             <button
               type="button"
-              className="rounded-lg border border-[#227a7c] bg-white px-4 py-2 font-semibold text-[#1d6768] hover:bg-teal-50"
+              className={ACTION_BUTTON}
               disabled={commandStatusChecking}
               aria-busy={commandStatusChecking}
               onClick={() => void checkCommandStatus()}
@@ -589,7 +596,7 @@ export function ExplorerSuggestedWaypointDetail({
             </button>
             <button
               type="button"
-              className="rounded-lg border border-amber-700 bg-white px-4 py-2 font-semibold text-amber-900 hover:bg-amber-100"
+              className={ACTION_BUTTON}
               disabled={commandStatusChecking}
               onClick={retryCommand}
             >
@@ -600,14 +607,14 @@ export function ExplorerSuggestedWaypointDetail({
       )}
 
       {readRetryAvailable && operation.phase !== "transport_uncertain" && (
-        <section className="mt-4 rounded-xl border border-cyan-300 bg-cyan-50 p-5">
-          <h2 className="text-lg font-semibold">Refresh the current status</h2>
-          <p className="mt-2 text-sm text-slate-700">
+        <section className="mt-4 rounded-2xl border border-stone-600 bg-black/40 p-5 text-stone-100">
+          <h2 className="font-serif text-lg">Refresh the current status</h2>
+          <p className="mt-2 text-sm leading-6 text-stone-300">
             The command must not be submitted again. Reload only the authoritative detail.
           </p>
           <button
             type="button"
-            className="mt-4 rounded-lg border border-[#227a7c] bg-white px-4 py-2 font-semibold text-[#1d6768] hover:bg-teal-50"
+            className={joinClasses("mt-4", ACTION_BUTTON)}
             onClick={() => void refreshCurrentStatus()}
           >
             Refresh current status
@@ -616,27 +623,27 @@ export function ExplorerSuggestedWaypointDetail({
       )}
 
       {viewState === "loading" && (
-        <div className="mt-5 rounded-xl border border-slate-300 bg-white p-5 shadow-sm">
+        <div className={joinClasses("mt-5 text-stone-200", CARD_CLASS)}>
           Loading suggestion detail...
         </div>
       )}
 
       {viewState === "denied" && (
-        <div className="mt-5 rounded-xl border border-amber-300 bg-amber-50 p-5">
-          <h2 className="text-xl font-semibold">Suggestion unavailable</h2>
-          <p className="mt-2 text-slate-700">
+        <div className="mt-5 rounded-2xl border border-amber-400/70 bg-amber-950/60 p-5 text-amber-50">
+          <h2 className="font-serif text-xl">Suggestion unavailable</h2>
+          <p className="mt-2 text-sm leading-6">
             This Explorer workspace cannot open that suggestion. Return to your inbox.
           </p>
         </div>
       )}
 
       {viewState === "failed" && (
-        <div className="mt-5 rounded-xl border border-rose-300 bg-rose-50 p-5">
-          <h2 className="text-xl font-semibold">Could not load suggestion</h2>
-          <p className="mt-2 text-slate-700">Nothing was changed. Try loading the detail again.</p>
+        <div className="mt-5 rounded-2xl border border-rose-400/60 bg-rose-950/50 p-5 text-rose-50">
+          <h2 className="font-serif text-xl">Could not load suggestion</h2>
+          <p className="mt-2 text-sm leading-6">Nothing was changed. Try loading the detail again.</p>
           <button
             type="button"
-            className="mt-4 rounded-lg border border-[#227a7c] bg-white px-4 py-2 font-semibold text-[#1d6768] hover:bg-teal-50"
+            className={joinClasses("mt-4", ACTION_BUTTON)}
             onClick={() => void load()}
           >
             Try again
@@ -646,13 +653,13 @@ export function ExplorerSuggestedWaypointDetail({
 
       {viewState === "ready" && detail !== null && (
         <div className="grid gap-5">
-          <section className="rounded-xl border border-slate-300 bg-white p-6 shadow-sm">
+          <section className={CARD_CLASS}>
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <p className="text-sm font-semibold text-[#1d6768]">
+                <p className="text-sm font-semibold text-amber-200">
                   Received {formatSuggestedWaypointDate(detail.received_at)} as a suggestion, not an assignment.
                 </p>
-                <h1 className="mt-3 text-3xl font-semibold">{detail.destination}</h1>
+                <h1 className="mt-3 font-serif text-3xl leading-tight text-stone-50">{detail.destination}</h1>
               </div>
               <div className="flex flex-wrap gap-2 sm:max-w-md sm:justify-end">
                 <StatusPills detail={detail} />
@@ -660,35 +667,35 @@ export function ExplorerSuggestedWaypointDetail({
             </div>
           </section>
 
-          <section className="rounded-xl border border-slate-300 bg-white p-6 shadow-sm">
-            <h2 className="text-xl font-semibold">Why your Guide suggested this</h2>
-            <p className="mt-3 whitespace-pre-wrap text-slate-700">{detail.why}</p>
-            <h2 className="mt-6 text-xl font-semibold">Possible arrival signals</h2>
-            <ul className="mt-3 list-disc space-y-2 pl-5 text-slate-700">
+          <section className={CARD_CLASS}>
+            <h2 className="font-serif text-xl text-stone-50">Why your Guide suggested this</h2>
+            <p className="mt-3 whitespace-pre-wrap text-stone-200">{detail.why}</p>
+            <h2 className="mt-6 font-serif text-xl text-stone-50">Possible arrival signals</h2>
+            <ul className="mt-3 list-disc space-y-2 pl-5 text-stone-200">
               {detail.arrival_signals.map((signal) => <li key={signal}>{signal}</li>)}
             </ul>
           </section>
 
-          <aside className="rounded-xl border border-indigo-300 bg-indigo-50 p-6">
+          <aside className="rounded-3xl border border-indigo-300/30 bg-indigo-950/30 p-6">
             <div className="flex flex-wrap items-center gap-2">
-              <SuggestedWaypointStatusPill tone="private">◆ Private Explorer view</SuggestedWaypointStatusPill>
-              <h2 className="text-xl font-semibold">You stay in control</h2>
+              <SuggestedWaypointStatusPill surface="dark" tone="private">◆ Private Explorer view</SuggestedWaypointStatusPill>
+              <h2 className="font-serif text-xl text-stone-50">You stay in control</h2>
             </div>
-            <p className="mt-3 text-slate-700">
+            <p className="mt-3 text-stone-200">
               Opening this page and reviewing its content stays private. Your
               Guide sees only a receipt acknowledgement you deliberately send.
             </p>
 
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
-              <section className="rounded-xl border border-indigo-200 bg-white p-4">
-                <h3 className="font-semibold">Private read state</h3>
-                <p className="mt-2 text-sm text-slate-700">
+              <section className="rounded-2xl border border-indigo-300/25 bg-black/40 p-4">
+                <h3 className="font-semibold text-stone-100">Private read state</h3>
+                <p className="mt-2 text-sm text-stone-300">
                   Marking this as read changes only your private Explorer organization state.
                 </p>
                 <button
                   ref={markReadButtonRef}
                   type="button"
-                  className="mt-4 rounded-lg border border-[#227a7c] bg-white px-4 py-2 font-semibold text-[#1d6768] hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  className={joinClasses("mt-4", ACTION_BUTTON)}
                   disabled={detail.read || commandBlocked}
                   aria-busy={commandBusy && activeCommandKind === "explorer.mark_read"}
                   onClick={() => startCommand("explorer.mark_read", markReadButtonRef.current)}
@@ -701,15 +708,15 @@ export function ExplorerSuggestedWaypointDetail({
                 </button>
               </section>
 
-              <section className="rounded-xl border border-indigo-200 bg-white p-4">
-                <h3 className="font-semibold">Shared receipt acknowledgement</h3>
-                <p className="mt-2 text-sm text-slate-700">
+              <section className="rounded-2xl border border-indigo-300/25 bg-black/40 p-4">
+                <h3 className="font-semibold text-stone-100">Shared receipt acknowledgement</h3>
+                <p className="mt-2 text-sm text-stone-300">
                   Your Guide will see that you acknowledged receipt, not your private reading or reaction.
                 </p>
                 <button
                   ref={acknowledgeButtonRef}
                   type="button"
-                  className="mt-4 rounded-lg border border-[#227a7c] bg-white px-4 py-2 font-semibold text-[#1d6768] hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  className={joinClasses("mt-4", ACTION_BUTTON)}
                   disabled={detail.receipt_acknowledged || commandBlocked}
                   aria-busy={commandBusy && activeCommandKind === "explorer.acknowledge"}
                   onClick={() => startCommand("explorer.acknowledge", acknowledgeButtonRef.current)}
@@ -723,9 +730,8 @@ export function ExplorerSuggestedWaypointDetail({
               </section>
             </div>
 
-            <p className="mt-4 text-sm text-slate-600">
-              Private reflection with ◉ Mary, comparison with your Waypoints,
-              and questions or responses remain separately reviewed next steps.
+            <p className="mt-4 text-sm text-stone-300">
+              {`Private reflection with your ◉ ${SOLMIND_TERMS.virtualGuide}, comparison with your Waypoints, and questions or responses remain separately reviewed next steps.`}
             </p>
           </aside>
         </div>

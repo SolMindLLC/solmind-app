@@ -77,6 +77,10 @@ test.describe("authenticated Explorer Suggested Waypoint inbox", () => {
     await expect(page.getByText("You acknowledged receipt Aug 16, 2026", { exact: false })).toBeVisible();
     await expect(page.locator("body")).not.toContainText("Pull Back");
     await expect(page.locator("body")).not.toContainText("Pending send");
+    // These pages receive no chosen name, so they show the canonical unnamed form, never a sample name
+    // (solmind-docs/canonical/06_SolMind_ScreenInventory_Phase0_v1_0.md, 2026-11-03).
+    await expect(page.getByText("◉ SolMind Virtual Guide", { exact: true })).toBeVisible();
+    await expect(page.locator("body")).not.toContainText(/\bMary\b/);
 
     const row = page.getByRole("link", { name: /Protect one evening each week for recovery/ });
     await row.focus();
@@ -90,6 +94,11 @@ test.describe("authenticated Explorer Suggested Waypoint inbox", () => {
     await expect(page.getByText("Received Aug 16, 2026 as a suggestion, not an assignment.")).toBeVisible();
     await expect(page.getByText("One evening stays unscheduled.")).toBeVisible();
     await expect(page.getByText("Private Explorer view", { exact: false })).toBeVisible();
+    await expect(page.getByText(
+      "Private reflection with your ◉ SolMind Virtual Guide, comparison with your Waypoints, and questions or responses remain separately reviewed next steps.",
+      { exact: true },
+    )).toBeVisible();
+    await expect(page.locator("body")).not.toContainText(/\bMary\b/);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     await page.getByRole("link", { name: "Back to Waypoint Suggestions" }).click();
     await expect(page).toHaveURL(new RegExp(`/explorer/waypoints\\?focus=${UNREAD_ID}$`));
@@ -955,15 +964,29 @@ test.describe("authenticated Explorer Suggested Waypoint inbox", () => {
     await expectNoSeriousAxeViolations(page);
   });
 
+  // Since 2026-11-02 (Paul's decisions) the page is in the Explorer workspace frame: the September 23
+  // Menu button opens "Explorer workspace menu" in place of the teal "Open menu"/"Close menu" sidebar.
   test("opens and closes the Explorer navigation at narrow width", async ({ page }) => {
     await page.route("**/explorer/waypoints/suggestions?**", (route) => fulfillJson(route, success([], null, 0)));
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/explorer/waypoints");
-    const menu = page.getByRole("navigation", { name: "Explorer navigation" });
+    const menu = page.getByRole("navigation", { name: "Explorer workspace menu", exact: true });
+    const button = page.getByRole("button", { name: "Menu", exact: true });
+    await expect(page.getByRole("navigation", { name: "Explorer workspace", exact: true })).toBeHidden();
     await expect(menu).toBeHidden();
-    await page.getByRole("button", { name: "Open menu" }).click();
+    await expect(button).toHaveAttribute("aria-expanded", "false");
+    await button.click();
     await expect(menu).toBeVisible();
-    await page.getByRole("button", { name: "Close menu" }).click();
+    await expect(button).toHaveAttribute("aria-expanded", "true");
+    await expect(menu.getByRole("link", { name: "Waypoints" })).toHaveAttribute("aria-current", "page");
+    await button.click();
     await expect(menu).toBeHidden();
+    // Escape inside the open menu closes it and returns focus to the Menu button.
+    await button.click();
+    await menu.getByRole("link", { name: "Overview" }).focus();
+    await page.keyboard.press("Escape");
+    await expect(menu).toBeHidden();
+    await expect(button).toBeFocused();
+    await expect(button).toHaveAttribute("aria-expanded", "false");
   });
 });
