@@ -28,10 +28,10 @@ export const SAMPLE_GUIDE_LABEL = guideLabel(SAMPLE_GUIDE_NAME);
 export const SAMPLE_VIRTUAL_GUIDE_NAME = "Mary";
 
 export const SAMPLE_NAVIGATION: readonly ScreenNavigationItem[] = freeze([
-  freeze({ id: "overview", label: "Overview", shortLabel: "Overview", noteKey: "overview", current: false } as const),
-  freeze({ id: "conversations", label: "Conversations", shortLabel: "Conversations", noteKey: "conversations", current: true } as const),
-  freeze({ id: "waypoints", label: "Waypoints", shortLabel: "Waypoints", noteKey: "waypoints", current: false } as const),
-  freeze({ id: "settings", label: "Settings", shortLabel: "Settings", noteKey: "settings", current: false } as const),
+  freeze({ id: "overview", label: "Overview", noteKey: "overview", current: false } as const),
+  freeze({ id: "conversations", label: "Conversations", noteKey: "conversations", current: true } as const),
+  freeze({ id: "waypoints", label: "Waypoints", noteKey: "waypoints", current: false } as const),
+  freeze({ id: "settings", label: "Settings", noteKey: "settings", current: false } as const),
 ]);
 
 export const SAMPLE_CONVERSATION_SPACES: readonly ScreenConversationSpace[] = freeze([
@@ -47,6 +47,14 @@ export const SAMPLE_CONVERSATION_SPACES: readonly ScreenConversationSpace[] = fr
     label: `With ${SAMPLE_GUIDE_LABEL}`,
     description: "Direct conversations, a separate space",
     noteKey: "guideSpace",
+    current: false,
+  } as const),
+  // Shown as the last entry under Conversations, as in Paul's option A menu.
+  freeze({
+    id: "newConversation",
+    label: "Start a new conversation",
+    description: null,
+    noteKey: "newConversation",
     current: false,
   } as const),
 ]);

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 
 import {
   LAYOUT_ONLY_LABEL,
@@ -9,6 +9,7 @@ import {
   type FixedNoteKey,
   type NotYetImplementedKey,
 } from "@/lib/solmind/explorerConversationScreen";
+import { WORKSPACE_NOT_CONNECTED_LABEL, withoutReviewPrefix } from "@/lib/solmind/workspaceNavigation";
 
 // Shared building blocks for the interim conversation screen. The class
 // strings are copied from ExplorerCompassComparisonParts.tsx and adapted;
@@ -59,15 +60,79 @@ export function noteId(scope: string, key: NotYetImplementedKey): string {
   return `nyi-${scope}-${key}`;
 }
 
+// Signed-in screens (Paul's 2026-11-02 decision): a control that is not built
+// yet keeps its designed look, shows the September 23 grey "Not connected yet"
+// line and, when activated, one sentence right under it saying what it will
+// do. The connected screen places NotConnectedProvider and owns which sentence
+// is open (one at a time). Without the provider (the review version) every
+// part in this file renders exactly as before.
+type NotConnectedState = Readonly<{ openId: string | null; onToggle: (id: string) => void }>;
+
+const NotConnectedContext = createContext<NotConnectedState | null>(null);
+
+export function NotConnectedProvider({ openId, onToggle, children }: NotConnectedState & Readonly<{ children: ReactNode }>) {
+  return <NotConnectedContext value={{ openId, onToggle }}>{children}</NotConnectedContext>;
+}
+
+const EXPLANATION_CLASS = "text-xs leading-5 text-stone-300";
+
+// The grey line; it renders only on the signed-in screen.
+export function NotConnectedLine() {
+  const notConnected = useContext(NotConnectedContext);
+  return notConnected ? <span className="text-[11px] font-normal text-stone-400">{WORKSPACE_NOT_CONNECTED_LABEL}</span> : null;
+}
+
+type NotConnectedButtonProps = Readonly<{ explanationId: string; className: string; label?: string; children: ReactNode }>;
+
+// Activating it shows or hides its sentence and changes nothing else.
+export function NotConnectedButton({ explanationId, className, label, children }: NotConnectedButtonProps) {
+  const notConnected = useContext(NotConnectedContext);
+
+  return (
+    <button
+      aria-controls={explanationId}
+      aria-expanded={notConnected?.openId === explanationId}
+      aria-label={label}
+      className={className}
+      onClick={() => notConnected?.onToggle(explanationId)}
+      type="button"
+    >
+      {children}
+    </button>
+  );
+}
+
+type ExplanationProps = Readonly<{ id: string; text: string; className?: string; shown?: boolean }>;
+
+// The sentence under a control that is not connected yet: hidden until the
+// control is activated, unless no control opens it (shown).
+export function NotConnectedExplanation({ id, text, className, shown = false }: ExplanationProps) {
+  const notConnected = useContext(NotConnectedContext);
+
+  return (
+    <p className={joinClasses(EXPLANATION_CLASS, className)} hidden={!shown && notConnected?.openId !== id} id={id}>
+      {text}
+    </p>
+  );
+}
+
 // A note that names the Guide needs the Guide name from the display props.
 type NoteWording = Readonly<
   { noteKey: FixedNoteKey; guideName?: string } | { noteKey: NotYetImplementedKey; guideName: string }
 >;
 
-type NoteProps = Readonly<{ id: string; className?: string }> & NoteWording;
+// standalone: no control opens this note (it describes an area, not a
+// button), so on the signed-in screen its sentence stays shown; the caller
+// places it in an area marked with NotConnectedLine.
+type NoteProps = Readonly<{ id: string; className?: string; standalone?: boolean }> & NoteWording;
 
-export function NotYetImplementedNote({ id, noteKey, guideName, className }: NoteProps) {
+export function NotYetImplementedNote({ id, noteKey, guideName, className, standalone }: NoteProps) {
   const text = notYetImplementedText(noteKey, guideName);
+  const notConnected = useContext(NotConnectedContext);
+
+  if (notConnected) {
+    return <NotConnectedExplanation className={className} id={id} shown={standalone} text={withoutReviewPrefix(text)} />;
+  }
 
   return (
     <p className={joinClasses(NOTE_CLASS, className)} data-preview-note={noteKey} id={id}>
@@ -87,6 +152,8 @@ type UnwiredButtonProps = Readonly<{
 }>;
 
 // Stays focusable (aria-disabled, never disabled) and does nothing when used.
+// On the signed-in screen it shows its sentence instead; an icon-only or
+// relabelled control carries "(not connected yet)" in its accessible name.
 export function UnwiredButton({
   noteId: describedBy,
   className,
@@ -95,6 +162,27 @@ export function UnwiredButton({
   pressed,
   current,
 }: UnwiredButtonProps) {
+  const notConnected = useContext(NotConnectedContext);
+
+  if (notConnected) {
+    return (
+      <NotConnectedButton
+        className={className}
+        explanationId={describedBy}
+        label={label === undefined ? undefined : `${label} (${WORKSPACE_NOT_CONNECTED_LABEL.toLowerCase()})`}
+      >
+        {label === undefined ? (
+          <span className="flex flex-col items-center leading-tight">
+            <span className="inline-flex items-center gap-2">{children}</span>
+            <NotConnectedLine />
+          </span>
+        ) : (
+          children
+        )}
+      </NotConnectedButton>
+    );
+  }
+
   return (
     <button
       aria-current={current}
@@ -162,14 +250,18 @@ export function SampleTag({ className }: Readonly<{ className?: string }>) {
   );
 }
 
-// A designed v6 behaviour that exists here only as a placeholder.
+// A designed v6 behaviour that exists here only as a placeholder. Its edge is
+// dashed only in the review version.
 export function PlaceholderSlot({
   title,
   children,
   className,
 }: Readonly<{ title: string; children: ReactNode; className?: string }>) {
+  const notConnected = useContext(NotConnectedContext);
+  const edge = notConnected ? "border" : "border border-dashed";
+
   return (
-    <div className={joinClasses("grid gap-2 rounded-2xl border border-dashed border-stone-600 bg-black/20 p-3", className)}>
+    <div className={joinClasses(`grid gap-2 rounded-2xl ${edge} border-stone-600 bg-black/20 p-3`, className)}>
       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-stone-300">{title}</p>
       {children}
     </div>

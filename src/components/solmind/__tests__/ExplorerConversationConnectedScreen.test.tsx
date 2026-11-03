@@ -27,15 +27,25 @@ import {
   guideNotes,
   notYetImplementedNotes,
 } from "../../../lib/solmind/explorerConversationScreen";
+import { EXPLORER_CONVERSATION_SPACES, EXPLORER_MENU } from "../../../lib/solmind/workspaceMenus";
+import { WORKSPACE_NOT_CONNECTED_LABEL } from "../../../lib/solmind/workspaceNavigation";
 import {
   ExplorerConversationConnectedScreen,
   type ConnectedConversationActions,
   type ConnectedConversationView,
 } from "../ExplorerConversationConnectedScreen";
+import { NotConnectedProvider, UnwiredControl } from "../ExplorerConversationScreenNotYetImplemented";
 
 const appRoot = path.resolve(__dirname, "..", "..", "..", "..");
 const SCREEN_FILE = "src/components/solmind/ExplorerConversationConnectedScreen.tsx";
 const WORDING_FILE = "src/lib/solmind/explorerConversationConnectedScreen.ts";
+// The shared menu labels leaf and the signed-in menu data (Paul's 2026-11-02 option A).
+const MENU_FILES = ["src/lib/solmind/workspaceNavigation.ts", "src/lib/solmind/workspaceMenus.ts"];
+// The grey label exactly as NotConnectedLine draws it.
+const GREY_LABEL = `<span class="text-[11px] font-normal text-stone-400">${WORKSPACE_NOT_CONNECTED_LABEL}</span>`;
+// The notes that describe an area rather than a control: shown, never hidden.
+const AREA_NOTES = ["choiceGroup", "compass", "earlierCompass", "formingPoint", "keyInsight", "latestChange", "needle", "waypointCard"];
+const VOID_ELEMENTS = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"]);
 const CONVERSATION = "10000000-0000-4000-8000-000000000001";
 const ALL_NOTES = Object.values(notYetImplementedNotes(UNNAMED_GUIDE));
 
@@ -107,17 +117,55 @@ function attribute(tag: string, name: string): string | null {
   return match ? match[1] : null;
 }
 
+function escapeHtml(text: string): string {
+  return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#x27;");
+}
+
 function unescapeHtml(text: string): string {
   return text.replaceAll("&#x27;", "'").replaceAll("&quot;", '"').replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
 }
 
-function noteTextById(html: string, id: string): string | null {
-  const match = new RegExp(`<p[^>]*\\sid="${id}"[^>]*>([\\s\\S]*?)</p>`).exec(html);
-  return match ? unescapeHtml(match[1].replace(/<[^>]+>/g, "")) : null;
-}
-
 function textOf(html: string): string {
   return unescapeHtml(html.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ");
+}
+
+type MarkupElement = { name: string; start: number; end: number; parent: MarkupElement | null };
+
+// The rendered elements with their extent and parent, from balanced tags. React
+// escapes "<" and ">" inside text and attribute values, so every tag is real.
+function markupElements(html: string): MarkupElement[] {
+  const all: MarkupElement[] = [];
+  const open: MarkupElement[] = [];
+  for (const match of html.matchAll(/<(\/?)([a-zA-Z][\w-]*)\b[^>]*?(\/?)>/g)) {
+    const [whole, closing, name, selfClosing] = match;
+    const at = match.index ?? 0;
+    if (closing) {
+      const element = open.pop();
+      if (!element || element.name !== name) throw new Error(`unbalanced_markup_${name}_${at}`);
+      element.end = at + whole.length;
+      continue;
+    }
+    const element: MarkupElement = { name, start: at, end: at + whole.length, parent: open.at(-1) ?? null };
+    all.push(element);
+    if (!selfClosing && !VOID_ELEMENTS.has(name)) open.push(element);
+  }
+  expect(open).toEqual([]);
+  return all;
+}
+
+// Each area note shown in the markup, with the markup of the element that directly contains it.
+function shownAreaNotes(html: string): { key: string; sentence: string; area: string; noteAt: number }[] {
+  const elements = markupElements(html);
+  return [...html.matchAll(/<p class="text-xs leading-5 text-stone-300[^"]*" id="nyi-\w+-(\w+)">([^<]*)<\/p>/g)].map((match) => {
+    const parent = elements.find((element) => element.start === match.index)?.parent;
+    if (!parent) throw new Error(`no_parent_${match[1]}`);
+    return {
+      key: match[1],
+      sentence: unescapeHtml(match[2]),
+      area: html.slice(parent.start, parent.end),
+      noteAt: (match.index ?? 0) - parent.start,
+    };
+  });
 }
 
 beforeEach(() => {
@@ -187,28 +235,174 @@ describe("connected Explorer conversation screen", () => {
     expect(html.indexOf(notice)).toBeGreaterThan(html.indexOf('aria-label="Saved conversation"'));
   });
 
-  it("CC03 shows the approved live sentences and the Explorer home link", () => {
+  it("CC03 shows the approved live sentences, and Overview in the menu is the way home", () => {
     const html = render();
     expect(html).toContain(CONVERSATION_FOOTER);
     expect(CONNECTED_INTRO).toBe(
       "Explore with the SolMind Virtual Guide. Your conversation, Compass and Waypoints stay private; nothing is shared from this screen.",
     );
     expect(html).toContain(CONNECTED_INTRO);
-    expect(html).toContain('href="/explorer/home"');
+    const rail = /<nav aria-label="Explorer workspace"[^>]*>([\s\S]*?)<\/nav>/.exec(html)?.[1] ?? "";
+    expect(/<a\b[^>]*href="\/explorer\/home"[^>]*>[\s\S]*?Overview[\s\S]*?<\/a>/.test(rail)).toBe(true);
+    // Paul's 2026-11-02 option A: no separate "Explorer home" link in the top bar.
+    expect(/>\s*Explorer home\s*</.test(html)).toBe(false);
+    expect(html.split('href="/explorer/home"').length - 1).toBe(1);
     expect(/<h1[^>]*tabindex="-1"[^>]*>Your conversation<\/h1>/i.test(html)).toBe(true);
   });
 
-  it("CC04 every unwired control is aria-disabled, never disabled, and explained by a visible note", () => {
+  it("CC04 no review note remains; every control not connected yet says so and explains itself on request", () => {
     const html = render();
-    const unwired = [...html.matchAll(/<button\b[^>]*data-preview-control="unwired"[^>]*>/g)].map((match) => match[0]);
-    expect(unwired.length).toBeGreaterThan(10);
-    for (const tag of unwired) {
-      expect(attribute(tag, "aria-disabled"), tag).toBe("true");
-      expect(/\sdisabled=""/.test(tag), tag).toBe(false);
-      const text = noteTextById(html, attribute(tag, "aria-describedby") ?? "");
-      expect(text?.startsWith(NOT_YET_IMPLEMENTED_PREFIX), tag).toBe(true);
-      expect(ALL_NOTES).toContain(text);
+    // The current Compass and Waypoint tools below the conversation keep their own dashed
+    // empty-slot style, which is not a review mark, so the class checks leave them out.
+    const toolsAt = html.indexOf('<section aria-labelledby="conversation-current-tools-heading"');
+    const panelAt = html.indexOf('<aside aria-labelledby="conversation-preview-panel-heading"');
+    expect(toolsAt).toBeGreaterThan(0);
+    expect(panelAt).toBeGreaterThan(toolsAt);
+    const screen = html.slice(0, toolsAt) + html.slice(panelAt);
+    expect(html).not.toContain(NOT_YET_IMPLEMENTED_PREFIX);
+    expect(html).not.toContain("data-preview-");
+    // (The real controls keep their own disabled:cursor-not-allowed state style.)
+    expect(screen.match(/.{0,80}(?:\bsky-|border-dashed|(?<!disabled:)cursor-not-allowed|aria-disabled).{0,40}/g) ?? []).toEqual([]);
+    const sentences = [
+      ...ALL_NOTES.map((note) => note.slice(NOT_YET_IMPLEMENTED_PREFIX.length + 1)),
+      ...[...EXPLORER_MENU, ...EXPLORER_CONVERSATION_SPACES].flatMap((entry) => (entry.explanation ? [entry.explanation] : [])),
+    ];
+    const buttons = [...screen.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].filter(
+      ([, attrs, body]) => body.includes(WORKSPACE_NOT_CONNECTED_LABEL) || (attribute(attrs, "aria-label") ?? "").endsWith("(not connected yet)"),
+    );
+    // Menu: Settings, With your Guide, Start a new conversation. Top bar: Notifications, profile.
+    // Guide banner. Header: Rename, Share whole conversation, What the Virtual Guide can see.
+    // Composer: Pause, Finish & Review, Slow down. After the conversation ends: Continue.
+    expect(buttons.length).toBe(13);
+    const controlled = new Set<string>();
+    for (const [tag, attrs, body] of buttons) {
+      // Never disabled: each control stays usable to show its sentence.
+      expect(/\sdisabled=""/.test(attrs), tag).toBe(false);
+      expect(attribute(attrs, "aria-expanded"), tag).toBe("false");
+      const label = attribute(attrs, "aria-label");
+      expect(label === null ? body.includes(`>${WORKSPACE_NOT_CONNECTED_LABEL}<`) : label.endsWith("(not connected yet)"), tag).toBe(true);
+      const target = attribute(attrs, "aria-controls") ?? "";
+      const explanation = new RegExp(`<p class="([^"]*)" hidden="" id="${target}">([^<]*)</p>`).exec(screen);
+      expect(explanation, tag).not.toBeNull();
+      expect(explanation?.[1]).toContain("text-xs leading-5 text-stone-300");
+      expect(sentences).toContain(unescapeHtml(explanation?.[2] ?? ""));
+      controlled.add(target);
     }
+    expect(controlled.size).toBe(13);
+    // Every hidden sentence belongs to one of those controls.
+    const hidden = [...screen.matchAll(/<p\b[^>]*\shidden=""[^>]*\sid="([^"]+)"/g)].map((match) => match[1]);
+    expect(hidden.sort()).toEqual([...controlled].sort());
+    // A sentence describing an area rather than a control stays shown, without the prefix, and
+    // sits in an element that also shows the grey "Not connected yet" label (beside the area's
+    // heading, or on its own line above the sentence), with no control of its own, so it does not
+    // read as a working feature. The empty conversation adds the "Ways to begin" area.
+    const empty = render(view({ state: savedState({ conversationId: null, revision: 0, messages: [], sessionStatus: null }) }));
+    const areaNotes = [...shownAreaNotes(html), ...shownAreaNotes(empty)];
+    expect([...new Set(areaNotes.map((note) => note.key))].sort()).toEqual(AREA_NOTES);
+    for (const { key, sentence, area, noteAt } of areaNotes) {
+      expect(sentences, key).toContain(sentence);
+      expect(area.includes(GREY_LABEL), key).toBe(true);
+      expect(area.indexOf(GREY_LABEL), key).toBeLessThan(noteAt);
+      expect(/<(?:button|a|textarea|input|select)\b/.test(area), key).toBe(false);
+    }
+    expect(textOf(screen)).toContain("Your Compass will fill in from what you talk about, and you confirm what matters.");
+  });
+
+  it("CC18 each control's sentence comes directly after it; the top bar's sit in the row under it", () => {
+    const html = render();
+    const controls = [...html.matchAll(/<button\b[^>]*\saria-controls="((?:nyi|not-connected)-[\w-]+)"[^>]*>[\s\S]*?<\/button>/g)];
+    expect(controls.length).toBe(13);
+    for (const match of controls) {
+      const id = match[1];
+      const after = html.slice((match.index ?? 0) + match[0].length);
+      // Only closing tags may stand between a control and its sentence.
+      const direct = new RegExp(`^(?:</\\w+>)*<p\\b[^>]*\\sid="${id}"`).test(after);
+      expect(direct, id).toBe(!id.startsWith("nyi-top-"));
+    }
+    // Rename: the button, then its sentence, then the "supports reflection" line.
+    const renameAt = html.indexOf('aria-controls="nyi-header-rename"');
+    const renameNoteAt = html.indexOf('id="nyi-header-rename"');
+    expect(renameAt).toBeGreaterThan(0);
+    expect(renameNoteAt).toBeGreaterThan(renameAt);
+    expect(html.indexOf(CONVERSATION_FOOTER)).toBeGreaterThan(renameNoteAt);
+    // Pause, Finish & Review and Slow down each have their own sentence under them, in order.
+    const order = ["pause", "finishReview", "slowDown"].flatMap((key) => [
+      html.indexOf(`aria-controls="nyi-composer-${key}"`),
+      html.indexOf(`id="nyi-composer-${key}"`),
+    ]);
+    expect(order.every((at) => at > 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  it("CC19 the profile chip's name is its visible role and grey line, with profile for screen readers", () => {
+    const html = render();
+    const chip = /<button\b([^>]*\saria-controls="nyi-top-profile"[^>]*)>([\s\S]*?)<\/button>/.exec(html);
+    expect(chip).not.toBeNull();
+    expect(attribute(chip?.[1] ?? "", "aria-label")).toBeNull();
+    expect(attribute(chip?.[1] ?? "", "aria-expanded")).toBe("false");
+    expect(chip?.[2]).toContain('<span class="sr-only"> profile</span>');
+    expect(chip?.[2]).toContain(GREY_LABEL);
+    expect(textOf(chip?.[2] ?? "").trim()).toBe("Explorer profile Not connected yet");
+    // The bell shows only an icon, so it carries the label in its name.
+    expect(html).toContain('aria-label="Notifications (not connected yet)"');
+  });
+
+  it("CC16 the menu goes where Paul decided; the rest says it is not connected yet", () => {
+    const html = render();
+    const rail = /<nav aria-label="Explorer workspace"[^>]*>([\s\S]*?)<\/nav>/.exec(html)?.[1] ?? "";
+    const links = [...rail.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)].map(([, attrs, body]) => [
+      textOf(body).trim(),
+      attribute(attrs, "href"),
+      attribute(attrs, "aria-current"),
+    ]);
+    expect(links).toEqual([
+      ["Overview", "/explorer/home", null],
+      ["Conversations (current section)", "/explorer/conversations", null],
+      ["With your Virtual Guide Waypoint conversations, private to you", "/explorer/conversation", "page"],
+      ["Waypoints", "/explorer/waypoints", null],
+    ]);
+    const notConnected = [...rail.matchAll(/<button\b[^>]*>([\s\S]*?)<\/button>/g)].map(([, body]) => textOf(body).trim());
+    expect(notConnected).toEqual([
+      "With your Guide Not connected yet",
+      "Start a new conversation Not connected yet",
+      "Settings Not connected yet",
+    ]);
+    // The phone Menu starts closed; its panel stays in the page so the button always points at it.
+    const menuButton = /<button\b[^>]*id="explorer-menu-button"[^>]*>([\s\S]*?)<\/button>/.exec(html);
+    expect(attribute(menuButton?.[0] ?? "", "aria-expanded")).toBe("false");
+    expect(attribute(menuButton?.[0] ?? "", "aria-controls")).toBe("explorer-menu-panel");
+    expect(textOf(menuButton?.[1] ?? "").trim()).toBe("Menu");
+    expect(/<div class="[^"]*lg:hidden" hidden="" id="explorer-menu-panel"><\/div>/.test(html)).toBe(true);
+    // The old icon strip and its spaces toggle are gone.
+    expect(html).not.toContain("conversation spaces");
+    expect(html.split('aria-label="Explorer workspace"').length - 1).toBe(1);
+  });
+
+  it("CC17 a control not connected yet opens its sentence; without the provider it renders as the review version", () => {
+    const control = (
+      <UnwiredControl className="x" noteKey="settings" scope="test">
+        Settings
+      </UnwiredControl>
+    );
+    const open = renderToStaticMarkup(
+      <NotConnectedProvider onToggle={() => {}} openId="nyi-test-settings">
+        {control}
+      </NotConnectedProvider>,
+    );
+    expect(open).toContain('aria-controls="nyi-test-settings" aria-expanded="true"');
+    expect(open).toContain(`<p class="text-xs leading-5 text-stone-300" id="nyi-test-settings">${escapeHtml(EXPLORER_MENU[3].explanation ?? "")}</p>`);
+    const closed = renderToStaticMarkup(
+      <NotConnectedProvider onToggle={() => {}} openId={null}>
+        {control}
+      </NotConnectedProvider>,
+    );
+    expect(closed).toContain('aria-expanded="false"');
+    expect(closed).toContain('hidden="" id="nyi-test-settings"');
+    const review = renderToStaticMarkup(control);
+    expect(review).toContain('aria-disabled="true"');
+    expect(review).toContain('data-preview-control="unwired"');
+    expect(review).toContain(NOT_YET_IMPLEMENTED_PREFIX);
+    expect(review).not.toContain(WORKSPACE_NOT_CONNECTED_LABEL);
   });
 
   it("CC05 the real controls are not marked unwired and follow the held and unavailable states", () => {
@@ -299,7 +493,7 @@ describe("connected Explorer conversation screen", () => {
   it("CC11 the screen file is presentation only and the route stays a thin shell", () => {
     const forbidden = [/\bfetch\s*\(/, /supabase/i, /\bcookies\b/, /process\.env/, /localStorage/, /sessionStorage/,
       /["']use server["']/, /@\/lib\/solmind\/auth/, /virtual-guide\//, /explorerConversationScreenSample/, /\bSAMPLE_/];
-    for (const file of [SCREEN_FILE, WORDING_FILE]) {
+    for (const file of [SCREEN_FILE, WORDING_FILE, ...MENU_FILES]) {
       const source = readFileSync(path.join(appRoot, file), "utf8");
       expect(/^[\x09\x0a\x0d\x20-\x7e]*$/.test(source), file).toBe(true);
       for (const pattern of forbidden) expect(pattern.test(source), `${pattern} in ${file}`).toBe(false);

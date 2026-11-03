@@ -1,12 +1,15 @@
 // Paul's designed layout on the connected /explorer/conversation screen.
 // Mocked private-response endpoints prove mounted layout and behaviour only;
 // they prove no authentication, SQL persistence, provider call or genuine AI reply.
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import {
   EXPLORER_CONVERSATION_VERSION,
   type ExplorerConversationState,
 } from "../../src/lib/solmind/explorerConversationContract";
+import { NOT_YET_IMPLEMENTED, UNNAMED_GUIDE, guideNotes } from "../../src/lib/solmind/explorerConversationScreen";
+import { EXPLORER_MENU } from "../../src/lib/solmind/workspaceMenus";
+import { withoutReviewPrefix } from "../../src/lib/solmind/workspaceNavigation";
 import { capture, captureFullPage, expectNoSeriousAxeViolations, expectNoSidewaysScroll } from "./conversationPreviewHelpers";
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
@@ -43,6 +46,27 @@ async function open(page: Page, state: ExplorerConversationState) {
   return () => commands;
 }
 
+// Paul's 2026-11-02 decision: a control that is not connected yet says so in
+// grey and, when activated, shows one sentence under it; activating it again
+// hides the sentence. It changes nothing else.
+async function expectExplains(page: Page, scope: Locator, control: Locator, sentence: string) {
+  await expect(control).toHaveAttribute("aria-expanded", "false");
+  await expect(control).not.toHaveAttribute("aria-disabled", /.*/);
+  const explanation = scope.locator(`[id="${await control.getAttribute("aria-controls")}"]`);
+  await expect(explanation).toBeHidden();
+  await control.click();
+  await expect(control).toHaveAttribute("aria-expanded", "true");
+  await expect(explanation).toBeVisible();
+  await expect(explanation).toHaveText(sentence);
+  await control.click();
+  await expect(control).toHaveAttribute("aria-expanded", "false");
+  await expect(explanation).toBeHidden();
+}
+
+function notConnected(scope: Page | Locator, name: string) {
+  return scope.getByRole("button", { name: new RegExp(`^${name}\\s*Not connected yet$`) });
+}
+
 test("wide: the designed layout shows the saved conversation without preview extras", async ({ page }) => {
   test.skip((page.viewportSize()?.width ?? 0) < 1024, "wide layout only");
   const commands = await open(page, savedState());
@@ -50,11 +74,18 @@ test("wide: the designed layout shows the saved conversation without preview ext
   await expect(saved.getByRole("listitem")).toHaveCount(4);
   await expect(saved.getByRole("listitem").first()).toContainText("You");
   await expect(saved.getByRole("listitem").nth(1)).toContainText("SolMind Virtual Guide");
-  await expect(page.getByRole("navigation", { name: "Explorer workspace" }).first()).toBeVisible();
+  const rail = page.getByRole("navigation", { name: "Explorer workspace", exact: true });
+  await expect(rail).toBeVisible();
+  await expect(rail.getByRole("link", { name: "Overview", exact: true })).toHaveAttribute("href", "/explorer/home");
+  await expect(rail.getByRole("link", { name: /^With your Virtual Guide/ })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("button", { name: "Menu", exact: true })).toBeHidden();
   await expect(page.getByText(/^Interim design review/)).toHaveCount(0);
   await expect(page.locator("[data-preview-tag]")).toHaveCount(0);
   await expect(page.locator('[data-preview-control="layout"]')).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Explorer home", exact: true })).toHaveAttribute("href", "/explorer/home");
+  await expect(page.locator("[data-preview-control], [data-preview-note]")).toHaveCount(0);
+  await expect(page.getByText(/Not yet implemented:/)).toHaveCount(0);
+  // Overview in the menu is the way home (September 23); the top bar has no separate home link.
+  await expect(page.getByRole("link", { name: "Explorer home", exact: true })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Your current Compass and Waypoint tools", exact: true })).toBeVisible();
   await expectNoSidewaysScroll(page);
   await expectNoSeriousAxeViolations(page);
@@ -69,13 +100,29 @@ test("wide: the designed layout shows the saved conversation without preview ext
   await toggle.click();
   await expect(page.locator("#conversation-preview-panel")).toBeVisible();
 
-  // Unwired controls explain themselves and do nothing.
-  for (const name of ["Rename", "Pause", "Finish & Review", "Share whole conversation"]) {
-    const control = page.getByRole("button", { name, exact: true }).first();
-    await expect(control).toHaveAttribute("aria-disabled", "true");
-    await control.click({ force: true });
+  // Controls not connected yet explain themselves on request and do nothing else.
+  const body = page.locator("body");
+  await expectExplains(page, body, notConnected(rail, "Settings"), EXPLORER_MENU[3].explanation ?? "");
+  await expectExplains(page, body, notConnected(rail, "With your Guide"), withoutReviewPrefix(guideNotes(UNNAMED_GUIDE).guideSpace));
+  await expectExplains(page, body, notConnected(page, "Rename"), withoutReviewPrefix(NOT_YET_IMPLEMENTED.rename));
+  await expectExplains(page, body, notConnected(page, "Pause"), withoutReviewPrefix(NOT_YET_IMPLEMENTED.pause));
+  await expectExplains(page, body, notConnected(page, "Finish & Review"), withoutReviewPrefix(NOT_YET_IMPLEMENTED.finishReview));
+  await expectExplains(page, body, notConnected(page, "Share whole conversation"),
+    withoutReviewPrefix(guideNotes(UNNAMED_GUIDE).shareConversation));
+  await expectExplains(page, body, page.getByRole("button", { name: "Notifications (not connected yet)", exact: true }),
+    withoutReviewPrefix(NOT_YET_IMPLEMENTED.notifications));
+  // As on September 23, the profile chip's name is its visible role and grey line, with "profile" for screen readers.
+  await expectExplains(page, body, page.getByRole("button", { name: /^Explorer profile\s*Not connected yet$/ }),
+    withoutReviewPrefix(NOT_YET_IMPLEMENTED.profile));
+  // Areas that are not built yet are marked, beside their heading.
+  const panel = page.locator("#conversation-preview-panel");
+  for (const area of ["Compass", "Waypoint"]) {
+    const region = panel.getByRole("region", { name: area, exact: true });
+    await expect(region).toBeVisible();
+    await expect(region.getByText("Not connected yet", { exact: true })).toBeVisible();
   }
   await expect(page.getByRole("heading", { level: 1, name: "Your conversation", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/explorer\/conversation$/);
   expect(commands()).toBe(0);
 });
 
@@ -90,16 +137,15 @@ test("wide: an empty conversation shows the ways-to-begin placeholder", async ({
   await page.screenshot({ path: capture("connected-wide-empty-viewport") });
 });
 
-test("with Send available, the unwired composer controls neither send nor change the draft", async ({ page }) => {
+test("with Send available, the composer controls not connected yet neither send nor change the draft", async ({ page }) => {
   const commands = await open(page, { ...savedState(), providerState: "available" });
   const field = page.getByLabel("Continue the conversation", { exact: true });
   await expect(field).toBeEnabled();
   await field.fill("A synthetic draft that must stay unsent");
-  for (const name of ["Pause", "Finish & Review", "Slow down"]) {
-    const control = page.getByRole("button", { name, exact: true });
-    await expect(control).toHaveAttribute("aria-disabled", "true");
+  for (const [name, key] of [["Pause", "pause"], ["Finish & Review", "finishReview"], ["Slow down", "slowDown"]] as const) {
+    const control = notConnected(page, name);
     await expect(control).toHaveAttribute("type", "button");
-    await control.click({ force: true });
+    await expectExplains(page, page.locator("body"), control, withoutReviewPrefix(NOT_YET_IMPLEMENTED[key]));
   }
   await expect(field).toHaveValue("A synthetic draft that must stay unsent");
   expect(commands()).toBe(0);
@@ -124,13 +170,36 @@ test("a pending saved turn stays in view beside the composer however long the hi
   await expect(page.getByLabel("Continue the conversation", { exact: true })).toBeDisabled();
 });
 
-test("narrow: the drawer opens and closes and nothing scrolls sideways", async ({ page }) => {
+test("narrow: the Menu button opens the workspace menu, Escape closes it, and nothing scrolls sideways", async ({ page }) => {
   test.skip((page.viewportSize()?.width ?? 0) >= 1024, "narrow layout only");
-  await open(page, savedState());
+  const commands = await open(page, savedState());
   await expectNoSidewaysScroll(page);
   await expectNoSeriousAxeViolations(page);
   await page.screenshot({ path: capture("connected-narrow-top-viewport") });
   await captureFullPage(page, "connected-narrow-full", "top");
+
+  // Paul's 2026-11-02 option A: the September 23 Menu button replaces the icon strip.
+  await expect(page.getByRole("navigation", { name: "Explorer workspace", exact: true })).toBeHidden();
+  await expect(page.getByRole("button", { name: /conversation spaces/i })).toHaveCount(0);
+  const menuButton = page.getByRole("button", { name: "Menu", exact: true });
+  await expect(menuButton).toBeVisible();
+  await expect(menuButton).toHaveAttribute("aria-expanded", "false");
+  await menuButton.click();
+  await expect(menuButton).toHaveAttribute("aria-expanded", "true");
+  const menu = page.getByRole("navigation", { name: "Explorer workspace menu", exact: true });
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("link", { name: "Overview", exact: true })).toHaveAttribute("href", "/explorer/home");
+  await expectExplains(page, menu, notConnected(menu, "Settings"), EXPLORER_MENU[3].explanation ?? "");
+  await expectNoSidewaysScroll(page);
+  await expectNoSeriousAxeViolations(page);
+  await page.screenshot({ path: capture("connected-narrow-menu-open-viewport") });
+  await menu.getByRole("link", { name: "Overview", exact: true }).focus();
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(menuButton).toBeFocused();
+  await expect(menuButton).toHaveAttribute("aria-expanded", "false");
+  expect(commands()).toBe(0);
+
   const opener = page.locator("#conversation-preview-drawer-opener");
   await opener.click();
   const drawer = page.getByRole("dialog", { name: "Compass & Waypoint" });
@@ -141,4 +210,41 @@ test("narrow: the drawer opens and closes and nothing scrolls sideways", async (
   await drawer.getByRole("button", { name: "Close Compass & Waypoint", exact: true }).click();
   await expect(drawer).toBeHidden();
   await expect(opener).toBeFocused();
+});
+
+test("narrow: the menu entry for this page keeps a typed message instead of reloading", async ({ page }) => {
+  test.skip((page.viewportSize()?.width ?? 0) >= 1024, "narrow layout only");
+  let reads = 0;
+  page.on("request", (request) => { if (new URL(request.url()).pathname === "/explorer/conversation/state") reads += 1; });
+  const commands = await open(page, { ...savedState(), providerState: "available" });
+  const readsAtOpen = reads;
+  const field = page.getByLabel("Continue the conversation", { exact: true });
+  await field.fill("A synthetic draft that must survive the menu");
+  const menuButton = page.getByRole("button", { name: "Menu", exact: true });
+  await menuButton.click();
+  const menu = page.getByRole("navigation", { name: "Explorer workspace menu", exact: true });
+  const here = menu.getByRole("link", { name: /^With your Virtual Guide/ });
+  await expect(here).toHaveAttribute("aria-current", "page");
+  await expect(here).toHaveAttribute("href", "/explorer/conversation");
+  // A click with a modifier key or another button is left to the browser, as for any link.
+  const leftAlone = await here.evaluate((link) => {
+    const kept: boolean[] = [];
+    const stop = (event: Event) => { kept.push(!event.defaultPrevented); event.preventDefault(); };
+    window.addEventListener("click", stop);
+    for (const init of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { button: 1 }]) {
+      link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...init }));
+    }
+    window.removeEventListener("click", stop);
+    return kept;
+  });
+  expect(leftAlone).toEqual([true, true, true, true]);
+  await expect(menu).toBeVisible();
+  await here.click();
+  await expect(menu).toHaveCount(0);
+  await expect(menuButton).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("heading", { level: 1, name: "Your conversation", exact: true })).toBeFocused();
+  await expect(field).toHaveValue("A synthetic draft that must survive the menu");
+  await expect(page).toHaveURL(/\/explorer\/conversation$/);
+  expect(reads).toBe(readsAtOpen);
+  expect(commands()).toBe(0);
 });

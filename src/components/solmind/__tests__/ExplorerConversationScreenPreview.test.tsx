@@ -39,6 +39,8 @@ const NEW_SOURCE_FILES = [
   "src/lib/solmind/explorerConversationScreenSample.ts",
   "src/lib/solmind/explorerSpeakerStyle.ts",
   "src/components/solmind/ExplorerSpeakerIcon.tsx",
+  // The shared workspace menu labels leaf the parts import (Paul's 2026-11-02 option A).
+  "src/lib/solmind/workspaceNavigation.ts",
 ];
 const ALL_NOTES = Object.values(notYetImplementedNotes(SAMPLE_CONVERSATION_SCREEN.support.guideName));
 
@@ -117,7 +119,10 @@ describe("interim Explorer conversation screen", () => {
 
   it("SP02 each unwired control is aria-disabled, never disabled, and described by a visible note", () => {
     const controls = openingTags(html, 'data-preview-control="unwired"');
-    expect(controls.length).toBe(56);
+    // 52 since Paul's 2026-11-02 option A menu: the rail's 4 entries and 3 entries under
+    // Conversations (Start a new conversation is now one of them), and the phone Menu panel
+    // renders its copy only while open, so the 4 always-present icon-strip buttons are gone.
+    expect(controls.length).toBe(52);
     for (const tag of controls) {
       expect(attribute(tag, "aria-disabled"), tag).toBe("true");
       expect(/\sdisabled=""/.test(tag), tag).toBe(false);
@@ -189,6 +194,11 @@ describe("interim Explorer conversation screen", () => {
       "@/lib/solmind/explorerConversationScreenSample", "@/lib/solmind/explorerSpeakerStyle",
       "./terms", "./explorerConversationScreen", "./explorerConversationScreenDisplay",
       "@/components/solmind/ExplorerConversationScreenPreview", "./ExplorerSpeakerIcon",
+      // The shared workspace menu labels leaf (Paul's 2026-11-02 option A). The parts import only
+      // EXPLORER_MENU_LABELS, WORKSPACE_NOT_CONNECTED_LABEL and withoutReviewPrefix from it, and it
+      // imports only ./explorerConversationScreen. The signed-in menu data, which needs
+      // routeAccess.ts, is in workspaceMenus.ts, which is not allowed here.
+      "@/lib/solmind/workspaceNavigation",
     ]);
     for (const file of NEW_SOURCE_FILES) {
       const source = readFileSync(path.join(appRoot, file), "utf8");
@@ -207,11 +217,17 @@ describe("interim Explorer conversation screen", () => {
     }
     const clientFiles = NEW_SOURCE_FILES.filter((file) => readFileSync(path.join(appRoot, file), "utf8").startsWith('"use client"'));
     expect(clientFiles).toEqual([PREVIEW_FILE]);
+    // Exactly what the parts take from the labels leaf.
+    const fromLeaf = NEW_SOURCE_FILES.flatMap((file) =>
+      [...readFileSync(path.join(appRoot, file), "utf8").matchAll(/import\s*\{([^}]*)\}\s*from "@\/lib\/solmind\/workspaceNavigation"/g)]
+        .flatMap((match) => match[1].split(",").map((name) => name.trim()).filter(Boolean)));
+    expect([...new Set(fromLeaf)].sort()).toEqual(["EXPLORER_MENU_LABELS", "WORKSPACE_NOT_CONNECTED_LABEL", "withoutReviewPrefix"]);
   });
 
   it("SP08 every control on the page is classified as unwired or layout only", () => {
     const controls = controlTags(html);
-    expect(controls.length).toBe(56 + 8);
+    // 52 unwired (see SP02) and 8 layout-only: the Menu button replaced the spaces toggle.
+    expect(controls.length).toBe(52 + 8);
     for (const tag of controls) {
       expect(["unwired", "layout"], tag).toContain(attribute(tag, "data-preview-control"));
     }
@@ -245,7 +261,7 @@ describe("interim Explorer conversation screen", () => {
     const names = [support.guideName, header.virtualGuideName, shell.profile.name];
     expect(Object.values(NOT_YET_IMPLEMENTED).filter((text) => names.some((name) => text.includes(name)))).toEqual([]);
     const nivan = renderToStaticMarkup(createElement("div", null,
-      <ExplorerConversationScreenShell drawer={null} onSkip={() => {}} onToggleSpaces={() => {}} shell={{ ...shell, guideName: "Nivan" }} spacesOpen>{null}</ExplorerConversationScreenShell>,
+      <ExplorerConversationScreenShell drawer={null} menuOpen onMenuOpenChange={() => {}} onSkip={() => {}} shell={{ ...shell, guideName: "Nivan" }}>{null}</ExplorerConversationScreenShell>,
       createElement(ConversationHeader, { header: { ...header, guideName: "Nivan" } }),
       <SupportPanel compassView="full" onQuotesToggle={() => {}} onToggleCompassView={() => {}} quotesOpen={false} support={{ ...support, guideName: "Nivan" }} visible />));
     const notes = [...nivan.matchAll(/<p[^>]*data-preview-note="(\w+)"[^>]*>([\s\S]*?)<\/p>/g)].filter(([, key]) => key in guideNotes("Nivan"));

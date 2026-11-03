@@ -33,6 +33,8 @@ import { CONVERSATION_HEADING_ID, DRAWER_OPENER_ID, PANEL_TOGGLE_ID } from "./Ex
 import { IconArrowUp, IconClipboard, IconEye, IconEyeOff, IconPanelRight, IconPause } from "./ExplorerConversationScreenIcons";
 import {
   FOCUS_RING,
+  NotConnectedLine,
+  NotConnectedProvider,
   NotYetImplementedNote,
   PRIMARY_BUTTON,
   PlaceholderSlot,
@@ -59,8 +61,13 @@ import {
 // authority, retry, pending-turn and End rule and passes the results here as
 // read-only props; nothing here requests, stores or sends anything itself.
 // The only state kept here is layout: whether the wide panel shows, whether
-// the narrow drawer is open and whether the narrow conversation spaces show.
-// Parts that are not connected yet keep their "Not yet implemented:" notes.
+// the narrow drawer is open, whether the narrow-screen Menu is open and which
+// "Not connected yet" sentence is shown. Parts that are not connected yet show
+// a grey "Not connected yet" line and, when activated, one sentence directly
+// under them saying what they will do (NotConnectedProvider). A note that
+// describes an area rather than a control (standalone) stays shown, inside an
+// area marked with the same grey label: beside the area's heading, or on its
+// own line above the sentence when the area has no heading.
 
 const SPEAKER_STYLE = SPEAKER_LABEL_STYLE;
 const CARD_CLASS =
@@ -145,8 +152,9 @@ function ConnectedVirtualGuideRow({ panelVisible, drawerOpen, onTogglePanel, onO
             Rename
           </UnwiredButton>
         </div>
-        <p className="text-xs leading-5 text-stone-300">{CONVERSATION_FOOTER}</p>
+        {/* Rename's sentence comes directly after its button, before the footer line. */}
         <NotYetImplementedNote className="max-w-md" id={renameNote} noteKey="rename" />
+        <p className="text-xs leading-5 text-stone-300">{CONVERSATION_FOOTER}</p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <button
@@ -340,8 +348,9 @@ function SavedTranscript({ state, ended }: Readonly<{ state: ExplorerConversatio
             <p className="text-sm text-stone-300">There are no saved messages yet.</p>
             {ended ? null : (
               <PlaceholderSlot title="Ways to begin">
-                <NotYetImplementedNote id={noteId("chat", "choiceGroup")} noteKey="choiceGroup" />
-                <NotYetImplementedNote id={noteId("chat", "earlierCompass")} noteKey="earlierCompass" />
+                <NotConnectedLine />
+                <NotYetImplementedNote id={noteId("chat", "choiceGroup")} noteKey="choiceGroup" standalone />
+                <NotYetImplementedNote id={noteId("chat", "earlierCompass")} noteKey="earlierCompass" standalone />
               </PlaceholderSlot>
             )}
           </>
@@ -366,13 +375,11 @@ type ComposerProps = Readonly<{
 }>;
 
 // The real message form, with the designed controls that are not built yet
-// beside Send, and the notes that explain them.
+// beside Send, each with its sentence directly under it, and the marked
+// latest-change line.
 function ConnectedComposer({ view, actions, composerRef }: ComposerProps) {
   const disabled = view.held || view.sendUnavailable || view.atMessageCapacity;
   const describedBy = view.atMessageCapacity ? CAPACITY_ID : view.sendUnavailable ? AVAILABILITY_ID : undefined;
-  const pauseNote = noteId("composer", "pause");
-  const finishNote = noteId("composer", "finishReview");
-  const slowNote = noteId("composer", "slowDown");
 
   return (
     <div className="grid gap-3 border-t border-amber-200/15 bg-[#0c0a08]/95 px-3 py-3 sm:px-5" data-composer-bar="">
@@ -413,18 +420,23 @@ function ConnectedComposer({ view, actions, composerRef }: ComposerProps) {
           </p>
         ) : null}
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap gap-2">
-            <UnwiredButton className={SECONDARY_BUTTON} noteId={pauseNote}>
+          <div className="flex flex-wrap items-start gap-2">
+            <UnwiredControl className={SECONDARY_BUTTON} noteKey="pause" scope="composer" wrapperClassName="max-w-xs">
               <IconPause />
               Pause
-            </UnwiredButton>
-            <UnwiredButton className={SECONDARY_BUTTON} noteId={finishNote}>
+            </UnwiredControl>
+            <UnwiredControl className={SECONDARY_BUTTON} noteKey="finishReview" scope="composer" wrapperClassName="max-w-xs">
               <IconClipboard />
               Finish &amp; Review
-            </UnwiredButton>
-            <UnwiredButton className={joinClasses(QUIET_BUTTON, "border border-stone-700")} noteId={slowNote}>
+            </UnwiredControl>
+            <UnwiredControl
+              className={joinClasses(QUIET_BUTTON, "border border-stone-700")}
+              noteKey="slowDown"
+              scope="composer"
+              wrapperClassName="max-w-xs"
+            >
               Slow down
-            </UnwiredButton>
+            </UnwiredControl>
           </div>
           <button className={joinClasses(PRIMARY_BUTTON, "disabled:cursor-not-allowed disabled:opacity-50")} disabled={disabled} type="submit">
             Send
@@ -432,11 +444,10 @@ function ConnectedComposer({ view, actions, composerRef }: ComposerProps) {
           </button>
         </div>
       </form>
-      <div className="grid gap-1.5 sm:grid-cols-2">
-        <NotYetImplementedNote id={pauseNote} noteKey="pause" />
-        <NotYetImplementedNote id={finishNote} noteKey="finishReview" />
-        <NotYetImplementedNote id={slowNote} noteKey="slowDown" />
-        <NotYetImplementedNote id={noteId("composer", "latestChange")} noteKey="latestChange" />
+      {/* No heading names this area, so the grey label sits on its own line above its sentence. */}
+      <div className="grid gap-0.5">
+        <NotConnectedLine />
+        <NotYetImplementedNote id={noteId("composer", "latestChange")} noteKey="latestChange" standalone />
       </div>
     </div>
   );
@@ -527,9 +538,22 @@ function EndSession({ state, view, actions }: EndProps) {
   );
 }
 
-// The Compass & Waypoint card is not built yet: it says what it will do and,
-// when the current tools are shown, where the saved Compass and Waypoints are
-// meanwhile.
+// An area heading with the grey "Not connected yet" label beside it. The
+// label stays outside the heading, so the area's name is unchanged.
+function NotConnectedAreaHeading({ id, children }: Readonly<{ id: string; children: string }>) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-2">
+      <h3 className="font-serif text-lg text-stone-50" id={id}>
+        {children}
+      </h3>
+      <NotConnectedLine />
+    </div>
+  );
+}
+
+// The Compass & Waypoint card is not built yet: each area is marked "Not
+// connected yet" and says what it will do and, when the current tools are
+// shown, where the saved Compass and Waypoints are meanwhile.
 function ConnectedSupportBody({ scope, toolsShown }: Readonly<{ scope: SupportScope; toolsShown: boolean }>) {
   const compassTitle = `${scope}-connected-compass-title`;
   const waypointTitle = `${scope}-connected-waypoint-title`;
@@ -537,19 +561,15 @@ function ConnectedSupportBody({ scope, toolsShown }: Readonly<{ scope: SupportSc
   return (
     <>
       <section aria-labelledby={compassTitle} className="grid gap-2 border-b border-stone-800/80 px-4 py-4">
-        <h3 className="font-serif text-lg text-stone-50" id={compassTitle}>
-          Compass
-        </h3>
-        <NotYetImplementedNote id={noteId(scope, "compass")} noteKey="compass" />
-        <NotYetImplementedNote id={noteId(scope, "formingPoint")} noteKey="formingPoint" />
-        <NotYetImplementedNote id={noteId(scope, "needle")} noteKey="needle" />
+        <NotConnectedAreaHeading id={compassTitle}>Compass</NotConnectedAreaHeading>
+        <NotYetImplementedNote id={noteId(scope, "compass")} noteKey="compass" standalone />
+        <NotYetImplementedNote id={noteId(scope, "formingPoint")} noteKey="formingPoint" standalone />
+        <NotYetImplementedNote id={noteId(scope, "needle")} noteKey="needle" standalone />
       </section>
       <section aria-labelledby={waypointTitle} className="grid gap-2 border-b border-stone-800/80 px-4 py-4">
-        <h3 className="font-serif text-lg text-stone-50" id={waypointTitle}>
-          Waypoint
-        </h3>
-        <NotYetImplementedNote id={noteId(scope, "waypointCard")} noteKey="waypointCard" />
-        <NotYetImplementedNote id={noteId(scope, "keyInsight")} noteKey="keyInsight" />
+        <NotConnectedAreaHeading id={waypointTitle}>Waypoint</NotConnectedAreaHeading>
+        <NotYetImplementedNote id={noteId(scope, "waypointCard")} noteKey="waypointCard" standalone />
+        <NotYetImplementedNote id={noteId(scope, "keyInsight")} noteKey="keyInsight" standalone />
       </section>
       {toolsShown ? <p className="px-4 py-4 text-xs leading-5 text-stone-300">{CURRENT_TOOLS_POINTER}</p> : null}
     </>
@@ -583,62 +603,67 @@ function CurrentTools({ state, view, onCommand }: ToolsProps) {
 export function ExplorerConversationConnectedScreen({ view, actions, headingRef, composerRef }: ScreenProps) {
   const [panelVisible, setPanelVisible] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [spacesOpen, setSpacesOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [openExplanation, setOpenExplanation] = useState<string | null>(null);
   const { state } = view;
   const status = conversationStatus(state, view.ended);
   const renderSupportBody = (scope: SupportScope) => <ConnectedSupportBody scope={scope} toolsShown={state !== null} />;
 
+  const toggleExplanation = (id: string) => setOpenExplanation((open) => (open === id ? null : id));
+
   return (
-    <ExplorerConversationScreenShell
-      connected
-      drawer={<ConnectedSupportDrawer onClose={() => setDrawerOpen(false)} open={drawerOpen} renderBody={renderSupportBody} />}
-      onSkip={() => headingRef.current?.focus()}
-      onToggleSpaces={() => setSpacesOpen((open) => !open)}
-      shell={CONNECTED_SHELL}
-      spacesOpen={spacesOpen}
-    >
-      <div className="flex min-h-0 flex-1 flex-col">
-        <ConnectedVirtualGuideRow
-          drawerOpen={drawerOpen}
-          onOpenDrawer={() => setDrawerOpen(true)}
-          onTogglePanel={() => setPanelVisible((visible) => !visible)}
-          panelVisible={panelVisible}
-        />
-        <div className="flex min-h-0 flex-1 items-start gap-5 px-3 pb-6 pt-4 sm:px-6 lg:px-8">
-          <div className="flex min-w-0 flex-1 flex-col gap-5">
-            <section aria-labelledby={CONVERSATION_HEADING_ID} className={CARD_CLASS}>
-              <ConnectedConversationHeader headingRef={headingRef} status={status} />
-              <ConversationNotices actions={actions} view={view} />
-              {state !== null ? (
-                <>
-                  {/* As on the earlier screen, only the saved conversation and
-                      the composer are marked busy; the status line, alerts,
-                      Reload, Retry and End stay outside it. */}
-                  <div aria-busy={view.busy}>
-                    <SavedTranscript ended={view.ended} state={state} />
-                    {/* Outside the scrolling transcript, beside the composer, so it
-                        stays in view however long the saved history is. */}
-                    {state.pendingTurn ? (
-                      <div className="px-4 pt-3 sm:px-5">
-                        <p className={NOTICE_CLASS} role="status">
-                          A saved message is still awaiting a confirmed result. No reply is being claimed. Reload the saved
-                          conversation to check; another send will not be started.
-                        </p>
-                      </div>
-                    ) : null}
-                    {view.ended ? null : <ConnectedComposer actions={actions} composerRef={composerRef} view={view} />}
-                  </div>
-                  <EndSession actions={actions} state={state} view={view} />
-                </>
-              ) : (
-                <div className="pb-4" />
-              )}
-            </section>
-            {state !== null ? <CurrentTools onCommand={actions.onCommand} state={state} view={view} /> : null}
+    <NotConnectedProvider onToggle={toggleExplanation} openId={openExplanation}>
+      <ExplorerConversationScreenShell
+        connected
+        drawer={<ConnectedSupportDrawer onClose={() => setDrawerOpen(false)} open={drawerOpen} renderBody={renderSupportBody} />}
+        menuOpen={menuOpen}
+        onMenuOpenChange={setMenuOpen}
+        onSkip={() => headingRef.current?.focus()}
+        shell={CONNECTED_SHELL}
+      >
+        <div className="flex min-h-0 flex-1 flex-col">
+          <ConnectedVirtualGuideRow
+            drawerOpen={drawerOpen}
+            onOpenDrawer={() => setDrawerOpen(true)}
+            onTogglePanel={() => setPanelVisible((visible) => !visible)}
+            panelVisible={panelVisible}
+          />
+          <div className="flex min-h-0 flex-1 items-start gap-5 px-3 pb-6 pt-4 sm:px-6 lg:px-8">
+            <div className="flex min-w-0 flex-1 flex-col gap-5">
+              <section aria-labelledby={CONVERSATION_HEADING_ID} className={CARD_CLASS}>
+                <ConnectedConversationHeader headingRef={headingRef} status={status} />
+                <ConversationNotices actions={actions} view={view} />
+                {state !== null ? (
+                  <>
+                    {/* As on the earlier screen, only the saved conversation and
+                        the composer are marked busy; the status line, alerts,
+                        Reload, Retry and End stay outside it. */}
+                    <div aria-busy={view.busy}>
+                      <SavedTranscript ended={view.ended} state={state} />
+                      {/* Outside the scrolling transcript, beside the composer, so it
+                          stays in view however long the saved history is. */}
+                      {state.pendingTurn ? (
+                        <div className="px-4 pt-3 sm:px-5">
+                          <p className={NOTICE_CLASS} role="status">
+                            A saved message is still awaiting a confirmed result. No reply is being claimed. Reload the saved
+                            conversation to check; another send will not be started.
+                          </p>
+                        </div>
+                      ) : null}
+                      {view.ended ? null : <ConnectedComposer actions={actions} composerRef={composerRef} view={view} />}
+                    </div>
+                    <EndSession actions={actions} state={state} view={view} />
+                  </>
+                ) : (
+                  <div className="pb-4" />
+                )}
+              </section>
+              {state !== null ? <CurrentTools onCommand={actions.onCommand} state={state} view={view} /> : null}
+            </div>
+            <ConnectedSupportPanel renderBody={renderSupportBody} visible={panelVisible} />
           </div>
-          <ConnectedSupportPanel renderBody={renderSupportBody} visible={panelVisible} />
         </div>
-      </div>
-    </ExplorerConversationScreenShell>
+      </ExplorerConversationScreenShell>
+    </NotConnectedProvider>
   );
 }

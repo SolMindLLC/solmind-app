@@ -140,9 +140,29 @@ retry, Send and End rule and passes read-only props to the presentation-only
 `src/lib/solmind/explorerConversationConnectedScreen.ts` owns its wording and
 shell data; and the existing Compass and Waypoint tools stay below the
 conversation until rebuild steps 4 and 5.
-Every functional control is focusable, `aria-disabled`, and described by its
-visible note; only layout-only controls act. Tests:
+In the review version every functional control is focusable, `aria-disabled`,
+and described by its visible note; only layout-only controls act.
+Explorer menu option A (Paul's decisions, decision queue 2026-11-02 14:07:48
+and 22:19:17 CST): both screens draw the September 23 menu, in the wide rail
+and in the panel a labelled "Menu" button opens below 64rem, replacing the
+icon strip and its spaces toggle. The parts import only the labels leaf
+`src/lib/solmind/workspaceNavigation.ts` (labels, the grey "Not connected
+yet" label, the prefix helper and the entry types; it imports only
+`explorerConversationScreen.ts`); the signed-in menu data and destinations
+are in `src/lib/solmind/workspaceMenus.ts`, imported only by
+`explorerConversationConnectedScreen.ts`. On the signed-in screen built
+entries are plain full-document links (a plain click on the current page's
+entry keeps the page and a typed message), and every control not built yet
+shows a grey "Not connected yet" line (or carries it in its accessible name
+when it shows only an icon) and, when activated, one sentence
+directly under it (`NotConnectedProvider` in
+`ExplorerConversationScreenNotYetImplemented.tsx`) instead of a "Not yet
+implemented:" note; notes that describe an area stay shown in an area marked
+"Not connected yet". The sentences are the review drafts without their
+prefix, reused pending Paul's wording review. Only the review version keeps
+its blue notes. Tests:
 `src/lib/solmind/__tests__/explorerConversationScreen.test.ts`,
+`src/lib/solmind/__tests__/workspaceNavigation.test.ts`,
 `src/lib/solmind/__tests__/explorerSpeakerStyle.test.ts`,
 `src/components/solmind/__tests__/ExplorerConversationScreenPreview.test.tsx`,
 `src/components/solmind/__tests__/ExplorerSpeakerStyleOriginal.test.tsx`,
@@ -152,7 +172,8 @@ visible note; only layout-only controls act. Tests:
 `tests/browser/conversationPreviewHelpers.ts`. It adds no provider,
 persistence, authentication, route handler, storage, or real-user effect. The
 connected layout's tests are
-`src/components/solmind/__tests__/ExplorerConversationConnectedScreen.test.tsx`
+`src/components/solmind/__tests__/ExplorerConversationConnectedScreen.test.tsx`,
+`src/lib/solmind/__tests__/workspaceNavigation.test.ts`
 and `tests/browser/explorerConversationScreen.pw.ts`, alongside the existing
 `tests/browser/explorerConversation*.pw.ts`, `compassCategory.pw.ts`,
 `waypointClarification.pw.ts` and `waypointRelease.pw.ts` specs.

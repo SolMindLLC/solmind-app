@@ -26,7 +26,7 @@ import { ConversationTranscript } from "./ExplorerConversationScreenTranscript";
 // props. A connected screen could supply the same display shapes instead.
 //
 // It owns only layout state: whether the wide panel shows, whether the narrow
-// drawer is open, whether the narrow conversation spaces show, the Compass
+// drawer is open, whether the narrow-screen Menu is open, the Compass
 // view, whether the supporting quotes list is open and which speaker label
 // style is shown for comparison. That state lives in component memory only.
 // Nothing is requested, stored, sent or shared; every other control explains,
@@ -35,7 +35,7 @@ export function ExplorerConversationScreenPreview() {
   const data: ConversationScreenData = SAMPLE_CONVERSATION_SCREEN;
   const [panelVisible, setPanelVisible] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [spacesOpen, setSpacesOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [compassView, setCompassView] = useState<CompassView>("full");
   const [quotesOpen, setQuotesOpen] = useState(false);
   const [speakerStyle, setSpeakerStyle] = useState<SpeakerLabelStyle>(SPEAKER_LABEL_STYLE);
@@ -55,10 +55,10 @@ export function ExplorerConversationScreenPreview() {
   return (
     <ExplorerConversationScreenShell
       drawer={<SupportDrawer {...layout} onClose={() => setDrawerOpen(false)} open={drawerOpen} />}
+      menuOpen={menuOpen}
+      onMenuOpenChange={setMenuOpen}
       onSkip={skipToConversation}
-      onToggleSpaces={() => setSpacesOpen((open) => !open)}
       shell={data.shell}
-      spacesOpen={spacesOpen}
     >
       <div className="flex min-h-0 flex-1 flex-col">
         <VirtualGuideRow

@@ -150,6 +150,11 @@ export function IconArrowUp(props: IconProps) {
   return <Svg {...props}><path d="M12 19V5M6 11l6-6 6 6" /></Svg>;
 }
 
+// The three-line Menu icon, copied from the S01R2 design.
+export function IconMenu(props: IconProps) {
+  return <Svg {...props}><path d="M4 7h16M4 12h16M4 17h16" /></Svg>;
+}
+
 export function IconClose(props: IconProps) {
   return <Svg {...props}><path d="M6 6l12 12M18 6 6 18" /></Svg>;
 }

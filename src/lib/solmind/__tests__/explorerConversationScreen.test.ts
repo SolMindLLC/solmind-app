@@ -103,9 +103,10 @@ describe("interim conversation screen wording", () => {
     expect(LAYOUT_ONLY_LABEL).toBe("Layout only: works in this preview");
     const keys = LAYOUT_ONLY_CONTROLS.map((control) => control.key);
     expect(new Set(keys).size).toBe(keys.length);
+    // The phone Menu button replaced the conversation spaces toggle (2026-11-02 option A).
     expect(keys).toEqual([
       "skipLink",
-      "conversationSpaces",
+      "menu",
       "panelToggle",
       "drawerOpen",
       "drawerClose",

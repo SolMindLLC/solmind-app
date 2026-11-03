@@ -171,7 +171,7 @@ export function notYetImplementedText(key: NotYetImplementedKey, guideName?: str
 // carry the LAYOUT_ONLY_LABEL tag and have no "Not yet implemented" note.
 export const LAYOUT_ONLY_CONTROLS = freeze([
   freeze({ key: "skipLink", label: "Skip to the conversation" }),
-  freeze({ key: "conversationSpaces", label: "Conversation spaces (narrow screens)" }),
+  freeze({ key: "menu", label: "Menu (narrow screens)" }),
   freeze({ key: "panelToggle", label: "Show or hide Compass & Waypoint" }),
   freeze({ key: "drawerOpen", label: "Open Compass & Waypoint (narrow screens)" }),
   freeze({ key: "drawerClose", label: "Close Compass & Waypoint" }),

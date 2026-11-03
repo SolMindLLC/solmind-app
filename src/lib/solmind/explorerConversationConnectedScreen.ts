@@ -1,12 +1,14 @@
 // Fixed wording and display data for the connected /explorer/conversation
-// screen: Paul's designed layout (the S01R2 look, Jade rail navigation and the
-// wireframe v6 structure first reviewed at /explorer/conversation-preview)
-// showing the Explorer's real saved conversation.
+// screen: Paul's designed layout (the S01R2 look, the September 23 Explorer
+// menu of his 2026-11-02 option A and the wireframe v6 structure first
+// reviewed at /explorer/conversation-preview) showing the Explorer's real
+// saved conversation.
 //
 // Nothing here is sample content and nothing here is private: the saved
 // conversation itself arrives only through the authenticated feature route
 // and is rendered by ExplorerConversation.tsx. Parts that are not connected
-// yet keep their "Not yet implemented:" notes from explorerConversationScreen.ts.
+// yet show a grey "Not connected yet" line and, when activated, the sentence
+// from explorerConversationScreen.ts without its "Not yet implemented:" prefix.
 // The connected screen does not receive the Explorer's or the Guide's name, so
 // it shows the Explorer role and says "your Guide".
 
@@ -19,6 +21,7 @@ import type {
   ScreenShellData,
   ScreenSpeaker,
 } from "./explorerConversationScreenDisplay";
+import { EXPLORER_CONVERSATION_SPACES, EXPLORER_MENU } from "./workspaceMenus";
 
 function freeze<T>(value: T): Readonly<T> {
   return Object.freeze(value);
@@ -26,30 +29,15 @@ function freeze<T>(value: T): Readonly<T> {
 
 const VG = VIRTUAL_GUIDE_SHORT;
 
-// The same four destinations as the design review's rail; none is connected yet.
-export const CONNECTED_NAVIGATION: readonly ScreenNavigationItem[] = freeze([
-  freeze({ id: "overview", label: "Overview", shortLabel: "Overview", noteKey: "overview", current: false } as const),
-  freeze({ id: "conversations", label: "Conversations", shortLabel: "Conversations", noteKey: "conversations", current: true } as const),
-  freeze({ id: "waypoints", label: "Waypoints", shortLabel: "Waypoints", noteKey: "waypoints", current: false } as const),
-  freeze({ id: "settings", label: "Settings", shortLabel: "Settings", noteKey: "settings", current: false } as const),
-]);
+// The shared Explorer menu, with Conversations as this screen's section.
+export const CONNECTED_NAVIGATION: readonly ScreenNavigationItem[] = freeze(
+  EXPLORER_MENU.map((entry) => freeze({ ...entry, current: entry.id === "conversations" })),
+);
 
-export const CONNECTED_CONVERSATION_SPACES: readonly ScreenConversationSpace[] = freeze([
-  freeze({
-    id: "virtualGuide",
-    label: `With your ${VG}`,
-    description: "Private to you",
-    noteKey: "virtualGuideSpace",
-    current: true,
-  } as const),
-  freeze({
-    id: "guide",
-    label: `With ${UNNAMED_GUIDE}`,
-    description: "A separate space, still to come",
-    noteKey: "guideSpace",
-    current: false,
-  } as const),
-]);
+// The shared conversation spaces, with the Virtual Guide space as this screen.
+export const CONNECTED_CONVERSATION_SPACES: readonly ScreenConversationSpace[] = freeze(
+  EXPLORER_CONVERSATION_SPACES.map((space) => freeze({ ...space, current: space.id === "virtualGuide" })),
+);
 
 // The screen receives no Guide relationship data, so the banner makes no
 // claim about a Guide; it only says what the separate space will be.

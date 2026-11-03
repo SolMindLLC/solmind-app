@@ -219,12 +219,37 @@ stays focusable with `aria-disabled` and a visible "Not yet implemented:" note
 linked by `aria-describedby`; only controls tagged "Layout only: works in this
 preview" act, in component memory. Keep each new file at or under 300 lines;
 from existing code import only `SOLMIND_LOGO_SRC` and `SOLMIND_TERMS`, plus the
-shared `explorerSpeakerStyle.ts` and `ExplorerSpeakerIcon.tsx`; and add no
-source-isolation profile. Only
+shared `explorerSpeakerStyle.ts` and `ExplorerSpeakerIcon.tsx` and the shared
+menu labels leaf `workspaceNavigation.ts` (never `workspaceMenus.ts`); and add
+no source-isolation profile. Only
 `ExplorerConversationScreenPreview.tsx` imports the sample; the parts take
 read-only display props typed in `explorerConversationScreenDisplay.ts`.
-`/explorer/conversation` is unchanged; the S01R2 files change only in speaker
-labels and icons, which `SPEAKER_LABEL_STYLE` reverts.
+The S01R2 files change only in speaker labels and icons, which
+`SPEAKER_LABEL_STYLE` reverts.
+
+Explorer menu option A (Paul's decisions, decision queue 2026-11-02 14:07:48
+and 22:19:17 CST): both conversation screens draw the September 23 menu, in
+the wide rail and in the panel a labelled "Menu" button opens below 64rem; the
+icon strip and its spaces toggle are gone. The labels leaf
+`src/lib/solmind/workspaceNavigation.ts` imports only
+`explorerConversationScreen.ts`; the signed-in menu data and destinations are
+in `src/lib/solmind/workspaceMenus.ts`, imported only by
+`explorerConversationConnectedScreen.ts`, so the review route never reaches
+`routeAccess.ts`. On the signed-in `/explorer/conversation` screen, built
+entries are plain full-document links (a plain click on the entry for the
+current page keeps the page and a typed message, closes the phone menu and
+focuses the conversation heading), and every control not built yet shows a
+grey "Not connected yet" line (or carries it in its accessible name when it
+shows only an icon) and, when activated, one sentence directly
+under it, through `NotConnectedProvider`. Notes that describe an area (the
+Compass, Waypoint, "Ways to begin" and latest-change sentences) stay shown in
+an area marked "Not connected yet". All these sentences are the review drafts
+without their prefix, reused pending Paul's wording review; he may reword any
+of them. No blue note, dashed review mark or `data-preview-*` attribute
+appears there. Only the review version keeps the blue notes. The "Return to
+Explorer home" link shows when no saved conversation has been started; an
+ended conversation links to "Review ended conversations", and confirming End
+goes home by itself.
 
 ### Virtual Guide S03B conversation contract
 

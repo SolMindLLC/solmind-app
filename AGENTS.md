@@ -119,8 +119,9 @@ its two small icons; `SPEAKER_LABEL_STYLE = "original"` restores the earlier
 labels.
 
 The interim `/explorer/conversation-preview` route is a non-functional design
-review of the full Explorer conversation screen: the S01R2 look, Jade rail
-navigation, and wireframe v6 behaviour shown only as placeholders. Keep its
+review of the full Explorer conversation screen: the S01R2 look, the
+September 23 Explorer menu (option A, below), and wireframe v6 behaviour shown
+only as placeholders. Keep its
 route thin. `ExplorerConversationScreenPreview.tsx` is its only client boundary
 and owns layout state only; the other `ExplorerConversationScreen*.tsx` parts
 take no connected data. `explorerConversationScreen.ts` owns the "Not yet
@@ -129,7 +130,8 @@ content tagged "Sample". Only `ExplorerConversationScreenPreview.tsx` imports
 the sample; the parts take read-only display props typed in
 `explorerConversationScreenDisplay.ts`. From existing code the route imports
 only `SOLMIND_LOGO_SRC` and `SOLMIND_TERMS`, plus the shared
-`explorerSpeakerStyle.ts` and `ExplorerSpeakerIcon.tsx`, and it has no
+`explorerSpeakerStyle.ts` and `ExplorerSpeakerIcon.tsx` and the shared menu
+labels leaf `workspaceNavigation.ts` (option A, below), and it has no
 source-isolation profile. It inherits
 every S01R2 no-provider, no-persistence, no-auth, no-browser-storage,
 no-URL-state, no-timer, no-notification, and no-real-user boundary. Unwired
@@ -147,16 +149,80 @@ the same designed layout on the connected `/explorer/conversation` screen.
 pending-turn, uncertain-retry, Send and End rule unchanged and passes read-only
 view props and callbacks to the presentation-only
 `ExplorerConversationConnectedScreen.tsx`, which owns layout state only (panel,
-drawer, narrow conversation spaces). `explorerConversationConnectedScreen.ts`
+drawer, the narrow-screen Menu and which "Not connected yet" sentence is
+shown). `explorerConversationConnectedScreen.ts`
 owns its fixed wording and shell data and imports no sample. The screen
 receives no Explorer or Guide name, so its Guide notes say "your Guide"
 (`UNNAMED_GUIDE`). The shared shell, navigation and support panel take a
 `connected` flag that drops the preview band and the "Sample" and "Layout only"
 tags. The real screen shows the approved live sentences, not the unapproved
-AI-companion draft. Parts not connected yet keep their "Not yet implemented:"
+AI-companion draft. Parts not connected yet are marked "Not connected yet"
+(option A, below); only the review version keeps their "Not yet implemented:"
 notes. The existing `ExplorerConversationFormation.tsx` tools stay mounted below
 the conversation, labelled as the current tools, until rebuild steps 4 and 5
 form the Compass and Waypoints from the conversation.
+
+Explorer menu option A (Paul's decisions, decision queue 2026-11-02 14:07:48
+and 22:19:17 CST) puts the September 23 Explorer menu he accepted back on both
+conversation screens, replacing the Jade rail list, the narrow icon strip and
+its "Show/Hide conversation spaces" toggle. The rail (64rem and wider) and the
+phone panel draw the same list with the September 23 classes: a "Workspace"
+heading; Overview, Conversations, Waypoints and Settings; and under
+Conversations "With your Virtual Guide", "With your Guide" and "Start a new
+conversation". Below 64rem a labelled "Menu" button, first in the top bar,
+opens the list in the page flow under the top bar; Escape inside it closes it
+and returns focus to the button. Its open state is layout state owned by
+`ExplorerConversationScreenPreview.tsx` and
+`ExplorerConversationConnectedScreen.tsx`. No "This is your space" card,
+Prototype or Reset control returns, and no route is created or renamed.
+`src/lib/solmind/workspaceNavigation.ts` is the shared labels leaf: the
+navigation names and list heading, the grey "Not connected yet" label, the
+helper that drops the review prefix, and the entry types. It imports only
+`explorerConversationScreen.ts` and is the only menu file the
+conversation-screen parts import (test SP07 scans it). The signed-in menu data
+is frozen, ASCII presentation data in `src/lib/solmind/workspaceMenus.ts`: the
+working destinations (Overview `EXPLORER_HOME_ROUTE` from `routeAccess.ts`,
+Conversations `/explorer/conversations`, With your Virtual Guide
+`/explorer/conversation`, Waypoints `/explorer/waypoints`) and, for Settings,
+With your Guide and Start a new conversation, the sentence that says what each
+will do. Only `explorerConversationConnectedScreen.ts` imports it and maps it
+with the current section and page, so the review route never reaches
+`routeAccess.ts`; the review sample keeps its own menu data.
+On the signed-in `/explorer/conversation` screen built menu entries are plain
+full-document links. The entry for the page the Explorer is on ("With your
+Virtual Guide") stays a link with `aria-current="page"`, but a plain click on
+it does not reload the page, which would lose a typed message: it closes the
+phone menu and moves focus to the conversation heading; a click with a
+modifier key or another mouse button behaves as a normal link. Every control
+that is not built yet (menu entries, the bell, the profile button, the Guide
+banner button, and the header, composer and end controls) is a button with
+`aria-expanded` and `aria-controls`, shows the September 23 grey "Not
+connected yet" line (or carries it in its accessible name when it shows only
+an icon) and, when activated, shows one sentence directly under it, hidden
+again on the next activation; the bell's and the profile's sentences show in
+the row under the top bar. As on September 23, the profile chip's name is its
+visible role and grey line with "profile" for screen readers ("Explorer
+profile Not connected yet"). Paul chose this knowingly as an exception to the
+rule that a control without a destination is a defect.
+`ExplorerConversationScreenNotYetImplemented.tsx` implements it once through
+`NotConnectedProvider`, which the connected screen places. Notes that describe
+an area rather than a control (the Compass, forming point, needle, Waypoint
+card and key insight sentences, the "Ways to begin" and earlier-Compass
+sentences and the latest-change line) stay shown, each in an area marked "Not
+connected yet": the grey label beside or under the area's heading or title,
+or on its own line above the sentence where the area has no heading. The top bar breadcrumb is
+plain text and the separate top-bar "Explorer home" link is gone (Overview is
+the way home). The "Return to Explorer home" link is shown when no saved
+conversation has been started; an ended conversation links to "Review ended
+conversations", and confirming End goes home by itself. No blue note, dashed
+review mark, Sample tag or `data-preview-*` attribute appears on a signed-in
+screen. All these sentences, for the controls and for the marked areas alike,
+are the review drafts from `explorerConversationScreen.ts` without their
+prefix, which Paul agreed to reuse pending his review of the wording; he may
+reword any of them. The review version `/explorer/conversation-preview` keeps
+its blue "Not yet implemented:" notes, Sample tags, preview band and unwired
+`aria-disabled` controls; only its menu changed, and its Menu button is a
+layout-only control.
 
 The first provider-dispatch increment for that later lane is the bounded S03B
 conversation contract under `src/lib/solmind/virtual-guide/`. Keep it

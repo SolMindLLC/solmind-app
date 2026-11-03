@@ -175,12 +175,13 @@ The interim `/explorer/conversation-preview` design review keeps its own split.
 It imports only `SOLMIND_LOGO_SRC` from the S01R2 owners, plus the shared
 speaker-style module `src/lib/solmind/explorerSpeakerStyle.ts` and the shared
 speaker icons `src/components/solmind/ExplorerSpeakerIcon.tsx` that S01R2 also
-uses:
+uses, and the shared menu labels leaf `src/lib/solmind/workspaceNavigation.ts`
+(never the signed-in menu data in `workspaceMenus.ts`):
 
 - `src/app/explorer/conversation-preview/page.tsx` only composes the client
   boundary and exports honest metadata;
 - `ExplorerConversationScreenPreview.tsx` owns layout state only (panel,
-  drawer, narrow conversation spaces, Compass view, quote list, speaker-label
+  drawer, the narrow-screen Menu, Compass view, quote list, speaker-label
   switch);
 - the other `ExplorerConversationScreen*.tsx` files own presentation, read the
   fixed wording directly, and receive read-only display props typed in
@@ -202,12 +203,32 @@ screen, and `ExplorerConversation.tsx` stays its only fetch owner:
   turns, uncertain retry, Send and End unchanged, and passes read-only view
   props and callbacks;
 - `ExplorerConversationConnectedScreen.tsx` is presentation only and owns
-  layout state only (panel, drawer, narrow conversation spaces);
+  layout state only (panel, drawer, the narrow-screen Menu and which "Not
+  connected yet" sentence is shown, through `NotConnectedProvider`);
 - `explorerConversationConnectedScreen.ts` owns its fixed wording and shell
   data and imports no sample; its Guide notes say "your Guide"
   (`UNNAMED_GUIDE`), because the screen receives no Guide name;
 - the shared shell, navigation and support panel take a `connected` flag that
-  drops the preview band and the "Sample" and "Layout only" tags; and
+  drops the preview band and the "Sample" and "Layout only" tags;
+- the Explorer menu (Paul's 2026-11-02 option A, decision queue 14:07:48 and
+  22:19:17 CST) has two presentation-data files:
+  `src/lib/solmind/workspaceNavigation.ts`, the labels leaf (labels, the grey
+  "Not connected yet" label, the prefix helper and the entry types), imports
+  only `explorerConversationScreen.ts` and is imported by the menu and
+  not-yet-implemented parts and by `workspaceMenus.ts`; `src/lib/solmind/workspaceMenus.ts`, the
+  signed-in menu data with its destinations (Overview from `routeAccess.ts`),
+  is imported only by `explorerConversationConnectedScreen.ts`, which maps
+  it; the review sample keeps its own menu data. Both screens draw the
+  September 23 list in the rail and in the panel a labelled "Menu" button
+  opens below 64rem (the icon strip and spaces toggle are gone). On the
+  signed-in screen built entries are plain full-document links (a plain click
+  on the current page's entry keeps the page and a typed message), and every
+  control not built yet shows a grey "Not connected yet" line (or carries it
+  in its accessible name when it shows only an icon) and one sentence
+  directly under it on request instead of a "Not yet implemented:" note;
+  notes that describe an area stay shown in an area marked "Not connected
+  yet"; only the review version keeps its blue notes. The sentences are the
+  review drafts reused pending Paul's wording review; and
 - `ExplorerConversationFormation.tsx` stays mounted below the conversation as
   the current Compass and Waypoint tools until rebuild steps 4 and 5.
 

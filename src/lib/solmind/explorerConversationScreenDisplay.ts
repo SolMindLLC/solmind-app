@@ -6,21 +6,33 @@
 
 import type { NotYetImplementedKey } from "./explorerConversationScreen";
 
+// Where a menu entry leads. The review version's entries are unwired and name
+// their "Not yet implemented:" note. The signed-in screen's entries come from
+// workspaceMenus.ts (mapped in explorerConversationConnectedScreen.ts): a
+// working destination, or none yet (href null) with the sentence that says
+// what the entry will do.
+export type ScreenEntryTarget =
+  | Readonly<{ noteKey: NotYetImplementedKey }>
+  | Readonly<{ href: string }>
+  | Readonly<{ href: null; explanation: string }>;
+
+// current marks this screen's section (Conversations).
 export type ScreenNavigationItem = Readonly<{
   id: "overview" | "conversations" | "waypoints" | "settings";
   label: string;
-  shortLabel: string;
-  noteKey: NotYetImplementedKey;
   current: boolean;
-}>;
+}> &
+  ScreenEntryTarget;
 
+// The entries under Conversations. current marks this screen's own space;
+// description is the second line under the label (none when null).
 export type ScreenConversationSpace = Readonly<{
-  id: "virtualGuide" | "guide";
+  id: "virtualGuide" | "guide" | "newConversation";
   label: string;
-  description: string;
-  noteKey: NotYetImplementedKey;
+  description: string | null;
   current: boolean;
-}>;
+}> &
+  ScreenEntryTarget;
 
 export type ScreenProfile = Readonly<{ name: string; role: string }>;
 

@@ -1,17 +1,64 @@
-import type { ScreenConversationSpace, ScreenNavigationItem } from "@/lib/solmind/explorerConversationScreenDisplay";
+import type { KeyboardEvent, MouseEvent } from "react";
 
-import { IconChat, IconGear, IconMapPin, IconOverview } from "./ExplorerConversationScreenIcons";
+import type { ScreenConversationSpace, ScreenNavigationItem } from "@/lib/solmind/explorerConversationScreenDisplay";
+import { EXPLORER_MENU_LABELS } from "@/lib/solmind/workspaceNavigation";
+
+import { CONVERSATION_HEADING_ID } from "./ExplorerConversationScreenHeader";
+import { IconChat, IconClose, IconGear, IconMapPin, IconMenu, IconOverview } from "./ExplorerConversationScreenIcons";
 import {
-  FOCUS_RING, LayoutOnlyTag, NotYetImplementedNote, QUIET_BUTTON, SECONDARY_BUTTON, UnwiredButton, joinClasses, noteId,
+  FOCUS_RING, LayoutOnlyTag, NotConnectedButton, NotConnectedExplanation, NotConnectedLine, NotYetImplementedNote,
+  UnwiredButton, joinClasses, noteId,
 } from "./ExplorerConversationScreenNotYetImplemented";
 
-// Jade rail navigation (wide screens) and the icon strip (narrow screens).
-// Every destination is unwired and explains itself; only the narrow
-// "conversation spaces" switch acts, and it changes only what shows.
+// The Explorer workspace menu: the September 23 list Paul accepted (his
+// 2026-11-02 option A), in the wide-screen rail and, below 64rem, in the panel
+// the top bar's Menu button opens. The class strings are copied from
+// ExplorerCompassComparisonParts.tsx.
+//
+// Review version: every entry is unwired and its "Not yet implemented:" note
+// sits under it. Signed-in screen: a built entry is a plain full-document link
+// (as in ExplorerHomeNavigation.tsx, full document navigation retires this
+// authenticated view and requests fresh server access); an entry that is not
+// connected yet shows a grey "Not connected yet" line and, when activated, one
+// sentence under it saying what it will do.
 
-export const SPACES_LIST_ID = "conversation-preview-spaces";
+export const MENU_BUTTON_ID = "explorer-menu-button";
+export const MENU_PANEL_ID = "explorer-menu-panel";
 
-function NavigationIcon({ id, className }: Readonly<{ id: ScreenNavigationItem["id"]; className: string }>) {
+type MenuScope = "rail" | "menu";
+
+const ITEM = "flex w-full items-start gap-3 rounded-xl border px-3 py-2.5 text-left text-sm transition-colors";
+const ITEM_CURRENT = "border-amber-300/25 bg-amber-300/10 font-semibold text-amber-200";
+const ITEM_OTHER =
+  "border-transparent text-stone-300 hover:border-amber-200/15 hover:bg-white/[0.03] hover:text-stone-100";
+const SPACE = "flex w-full flex-col rounded-lg px-3 py-2 text-left text-sm transition-colors";
+const SPACE_CURRENT = "bg-amber-300/10 text-amber-100";
+const SPACE_OTHER = "text-stone-300 hover:bg-white/[0.03] hover:text-stone-100";
+const EXPLANATION_SPACING = "mt-1 px-3";
+
+function explanationId(scope: MenuScope, id: string): string {
+  return `not-connected-${scope}-${id}`;
+}
+
+type MenuOpenChange = (open: boolean) => void;
+
+// The entry for the page the Explorer is on stays a link, but a plain click on
+// it does not reload the page (which would lose a typed message): it closes
+// the phone menu and moves focus to the conversation heading. A click with a
+// modifier key or another mouse button behaves as a normal link.
+function stayOnThisPage(event: MouseEvent<HTMLAnchorElement>, onMenuOpenChange?: MenuOpenChange) {
+  if (event.defaultPrevented || event.button !== 0) return;
+  if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  // No scroll is worked out while the open panel still sits above the heading;
+  // once the panel closes, the heading moves up into view.
+  document.getElementById(CONVERSATION_HEADING_ID)?.focus({ preventScroll: true });
+  onMenuOpenChange?.(false);
+}
+
+function NavigationIcon({ id }: Readonly<{ id: ScreenNavigationItem["id"] }>) {
+  const className = "mt-0.5 h-5 w-5";
+
   switch (id) {
     case "overview":
       return <IconOverview className={className} />;
@@ -24,74 +71,143 @@ function NavigationIcon({ id, className }: Readonly<{ id: ScreenNavigationItem["
   }
 }
 
-type SpacesProps = Readonly<{ scope: string; spaces: readonly ScreenConversationSpace[]; guideName: string }>;
+type SpacesProps = Readonly<{
+  scope: MenuScope;
+  spaces: readonly ScreenConversationSpace[];
+  guideName: string;
+  onMenuOpenChange?: MenuOpenChange;
+}>;
 
-function ConversationSpaces({ scope, spaces, guideName }: SpacesProps) {
-  const newConversationNote = noteId(scope, "newConversation");
-
+function ConversationSpaces({ scope, spaces, guideName, onMenuOpenChange }: SpacesProps) {
   return (
-    <ul aria-label="Conversation spaces" className="grid gap-2 border-l border-amber-200/15 pl-3">
-      {spaces.map((space) => (
-        <li className="grid gap-1.5" key={space.id}>
-          <UnwiredButton
-            className={joinClasses(
-              "flex w-full flex-col rounded-lg border px-3 py-2 text-left text-sm",
-              space.current ? "border-amber-300/20 bg-amber-300/10 text-amber-100" : "border-transparent text-stone-300",
-              FOCUS_RING,
-            )}
-            current={space.current ? "true" : undefined}
-            noteId={noteId(scope, space.noteKey)}
-          >
-            <span className="font-medium">{space.label}</span>
-            <span className="text-[11px] text-stone-400">{space.description}</span>
-          </UnwiredButton>
-          <NotYetImplementedNote guideName={guideName} id={noteId(scope, space.noteKey)} noteKey={space.noteKey} />
-        </li>
-      ))}
-      <li className="grid gap-1.5">
-        <UnwiredButton className={joinClasses(QUIET_BUTTON, "border border-amber-300/25")} noteId={newConversationNote}>
-          <IconChat />
-          Start a new conversation
-        </UnwiredButton>
-        <NotYetImplementedNote id={newConversationNote} noteKey="newConversation" />
-      </li>
+    <ul aria-label="Conversation spaces" className="ml-6 mt-1 grid gap-1 border-l border-amber-200/15 pl-3">
+      {spaces.map((space) => {
+        const className = joinClasses(SPACE, space.current ? SPACE_CURRENT : SPACE_OTHER, FOCUS_RING);
+        const label = <span className="font-medium">{space.label}</span>;
+        const description = space.description ? <span className="text-[11px] text-stone-400">{space.description}</span> : null;
+
+        if ("noteKey" in space) {
+          const id = noteId(scope, space.noteKey);
+          return (
+            <li className="grid gap-1.5" key={space.id}>
+              <UnwiredButton className={className} current={space.current ? "true" : undefined} noteId={id}>
+                {label}
+                {description}
+              </UnwiredButton>
+              <NotYetImplementedNote guideName={guideName} id={id} noteKey={space.noteKey} />
+            </li>
+          );
+        }
+
+        if (space.href !== null) {
+          return (
+            <li key={space.id}>
+              <a
+                aria-current={space.current ? "page" : undefined}
+                className={className}
+                href={space.href}
+                onClick={space.current ? (event) => stayOnThisPage(event, onMenuOpenChange) : undefined}
+              >
+                {label}
+                {description}
+              </a>
+            </li>
+          );
+        }
+
+        const id = explanationId(scope, space.id);
+        return (
+          <li key={space.id}>
+            <NotConnectedButton className={className} explanationId={id}>
+              {label}
+              <NotConnectedLine />
+            </NotConnectedButton>
+            <NotConnectedExplanation className={EXPLANATION_SPACING} id={id} text={space.explanation} />
+          </li>
+        );
+      })}
     </ul>
   );
 }
 
-// guideName is the Guide name the notes show.
-type NavigationProps = Readonly<{
+type ItemProps = Readonly<{ item: ScreenNavigationItem; scope: MenuScope; guideName: string }>;
+
+function NavigationEntry({ item, scope, guideName }: ItemProps) {
+  const className = joinClasses(ITEM, item.current ? ITEM_CURRENT : ITEM_OTHER, FOCUS_RING);
+
+  if ("noteKey" in item) {
+    const id = noteId(scope, item.noteKey);
+    return (
+      <>
+        <UnwiredButton className={className} current={item.current ? "page" : undefined} noteId={id}>
+          <NavigationIcon id={item.id} />
+          {item.label}
+        </UnwiredButton>
+        <NotYetImplementedNote guideName={guideName} id={id} noteKey={item.noteKey} />
+      </>
+    );
+  }
+
+  if (item.href !== null) {
+    return (
+      <a className={className} href={item.href}>
+        <NavigationIcon id={item.id} />
+        <span className="flex min-w-0 flex-col">
+          <span>{item.label}</span>
+          {item.current ? <span className="sr-only">(current section)</span> : null}
+        </span>
+      </a>
+    );
+  }
+
+  const id = explanationId(scope, item.id);
+  return (
+    <>
+      <NotConnectedButton className={className} explanationId={id}>
+        <NavigationIcon id={item.id} />
+        <span className="flex min-w-0 flex-col">
+          <span>{item.label}</span>
+          <NotConnectedLine />
+        </span>
+      </NotConnectedButton>
+      <NotConnectedExplanation className={EXPLANATION_SPACING} id={id} text={item.explanation} />
+    </>
+  );
+}
+
+// guideName is the Guide name the review notes show.
+type MenuData = Readonly<{
   navigation: readonly ScreenNavigationItem[];
   spaces: readonly ScreenConversationSpace[];
   guideName: string;
 }>;
 
-export function RailNavigation({ navigation, spaces, guideName }: NavigationProps) {
+type WorkspaceMenuProps = MenuData &
+  Readonly<{
+    scope: MenuScope;
+    className?: string;
+    onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void;
+    onMenuOpenChange?: MenuOpenChange;
+  }>;
+
+// One list for both places. The conversation spaces show under Conversations
+// when it is this screen's section.
+function WorkspaceMenu({ navigation, spaces, guideName, scope, className, onKeyDown, onMenuOpenChange }: WorkspaceMenuProps) {
   return (
-    <nav aria-label="Explorer workspace" className="px-3">
-      <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-400">Workspace</p>
-      <ul className="mt-2 grid gap-3">
+    <nav
+      aria-label={scope === "rail" ? EXPLORER_MENU_LABELS.rail : EXPLORER_MENU_LABELS.phone}
+      className={className}
+      onKeyDown={onKeyDown}
+    >
+      <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-400">
+        {EXPLORER_MENU_LABELS.heading}
+      </p>
+      <ul className="mt-2 grid gap-1">
         {navigation.map((item) => (
-          <li className="grid gap-1.5" key={item.id}>
-            <UnwiredButton
-              className={joinClasses(
-                "flex w-full items-start gap-3 rounded-xl border px-3 py-2.5 text-left text-sm",
-                item.current
-                  ? "border-amber-300/25 bg-amber-300/10 font-semibold text-amber-200"
-                  : "border-stone-800 text-stone-300",
-                FOCUS_RING,
-              )}
-              current={item.current ? "page" : undefined}
-              noteId={noteId("rail", item.noteKey)}
-            >
-              <NavigationIcon className="mt-0.5 h-5 w-5" id={item.id} />
-              {item.label}
-            </UnwiredButton>
-            <NotYetImplementedNote guideName={guideName} id={noteId("rail", item.noteKey)} noteKey={item.noteKey} />
-            {item.id === "conversations" ? (
-              <div className="ml-6 mt-1">
-                <ConversationSpaces guideName={guideName} scope="rail" spaces={spaces} />
-              </div>
+          <li className={"noteKey" in item ? "grid gap-1.5" : undefined} key={item.id}>
+            <NavigationEntry guideName={guideName} item={item} scope={scope} />
+            {item.id === "conversations" && item.current ? (
+              <ConversationSpaces guideName={guideName} onMenuOpenChange={onMenuOpenChange} scope={scope} spaces={spaces} />
             ) : null}
           </li>
         ))}
@@ -100,66 +216,51 @@ export function RailNavigation({ navigation, spaces, guideName }: NavigationProp
   );
 }
 
-type NarrowNavigationProps = NavigationProps &
-  Readonly<{
-    spacesOpen: boolean;
-    onToggleSpaces: () => void;
-    // On the connected screen the spaces switch is a real control, so it
-    // carries no "Layout only" tag or preview marker.
-    connected?: boolean;
-  }>;
+export function RailNavigation(data: MenuData & Readonly<{ onMenuOpenChange: MenuOpenChange }>) {
+  return <WorkspaceMenu {...data} className="px-3" scope="rail" />;
+}
 
-// Jade's narrow icon strip replaces the S01R2 dropdown menu below 64rem.
-export function NarrowNavigation({
-  navigation,
-  spaces,
-  guideName,
-  spacesOpen,
-  onToggleSpaces,
-  connected = false,
-}: NarrowNavigationProps) {
+type MenuButtonProps = Readonly<{ menuOpen: boolean; onMenuOpenChange: MenuOpenChange; connected: boolean }>;
+
+// The September 23 Menu button, first in the top bar below 64rem. In the
+// review version it changes only what shows, so it carries the layout tag.
+export function MenuButton({ menuOpen, onMenuOpenChange, connected }: MenuButtonProps) {
+  const button = (
+    <button
+      aria-controls={MENU_PANEL_ID}
+      aria-expanded={menuOpen}
+      className={joinClasses(
+        "inline-flex items-center justify-center gap-2 rounded-full text-sm font-semibold transition-colors border border-amber-200/25 bg-white/[0.03] px-3 py-2 text-stone-100 hover:border-amber-300/60 hover:bg-amber-300/10 lg:hidden",
+        FOCUS_RING,
+      )}
+      data-preview-control={connected ? undefined : "layout"}
+      id={MENU_BUTTON_ID}
+      onClick={() => onMenuOpenChange(!menuOpen)}
+      type="button"
+    >
+      {menuOpen ? <IconClose /> : <IconMenu />}
+      Menu
+    </button>
+  );
+
+  return connected ? button : <span className="inline-flex items-center gap-2 lg:hidden">{button}<LayoutOnlyTag /></span>;
+}
+
+type MenuPanelProps = MenuData & Readonly<{ menuOpen: boolean; onMenuOpenChange: MenuOpenChange }>;
+
+// The open list sits in the page flow directly under the top bar. Escape
+// inside it closes it and returns focus to the Menu button.
+export function MenuPanel({ menuOpen, onMenuOpenChange, ...data }: MenuPanelProps) {
+  function closeOnEscape(event: KeyboardEvent<HTMLElement>) {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    onMenuOpenChange(false);
+    document.getElementById(MENU_BUTTON_ID)?.focus();
+  }
+
   return (
-    <nav aria-label="Explorer workspace" className="border-b border-amber-200/10 bg-black/80 px-3 py-3 sm:px-6 lg:hidden">
-      <ul className="grid grid-cols-4 gap-1.5">
-        {navigation.map((item) => (
-          <li className="min-w-0" key={item.id}>
-            <UnwiredButton
-              className={joinClasses(
-                "flex w-full min-w-0 flex-col items-center gap-1 rounded-xl border px-1 py-2 text-center text-[11px] leading-4",
-                item.current ? "border-amber-300/30 bg-amber-300/10 font-semibold text-amber-200" : "border-stone-800 text-stone-300",
-                FOCUS_RING,
-              )}
-              current={item.current ? "page" : undefined}
-              noteId={noteId("strip", item.noteKey)}
-            >
-              <NavigationIcon className="h-5 w-5" id={item.id} />
-              <span className="max-w-full [overflow-wrap:anywhere]">{item.shortLabel}</span>
-            </UnwiredButton>
-          </li>
-        ))}
-      </ul>
-      <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
-        {navigation.map((item) => (
-          <NotYetImplementedNote guideName={guideName} id={noteId("strip", item.noteKey)} key={item.id} noteKey={item.noteKey} />
-        ))}
-      </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <button
-          aria-controls={SPACES_LIST_ID}
-          aria-expanded={spacesOpen}
-          className={joinClasses(SECONDARY_BUTTON, "px-3 py-1.5 text-xs")}
-          data-preview-control={connected ? undefined : "layout"}
-          onClick={onToggleSpaces}
-          type="button"
-        >
-          <IconChat />
-          {spacesOpen ? "Hide conversation spaces" : "Show conversation spaces"}
-        </button>
-        {connected ? null : <LayoutOnlyTag />}
-      </div>
-      <div className="mt-2" hidden={!spacesOpen} id={SPACES_LIST_ID}>
-        {spacesOpen ? <ConversationSpaces guideName={guideName} scope="strip" spaces={spaces} /> : null}
-      </div>
-    </nav>
+    <div className="border-b border-amber-200/10 bg-black/90 px-3 py-3 lg:hidden" hidden={!menuOpen} id={MENU_PANEL_ID}>
+      {menuOpen ? <WorkspaceMenu {...data} onKeyDown={closeOnEscape} onMenuOpenChange={onMenuOpenChange} scope="menu" /> : null}
+    </div>
   );
 }

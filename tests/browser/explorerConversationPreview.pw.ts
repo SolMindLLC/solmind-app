@@ -42,6 +42,10 @@ test("wide screen: unwired controls explain themselves and layout controls work"
 
   await page.locator("summary", { hasText: "supporting quotes" }).click();
   await expect(page.locator("#conversation-preview-panel li", { hasText: "I don't know how to explain what I need." })).toBeVisible();
+  // Still 52 with Paul's 2026-11-02 option A menu: the rail keeps its 4 entries and 3 entries
+  // under Conversations (Start a new conversation moved into that list), and the phone Menu
+  // button and its panel are hidden at this width.
+  await expect(page.getByRole("button", { name: "Menu", exact: true })).toBeHidden();
   expect(await checkAndUseUnwiredControls(page, "body")).toBe(52);
   await expectTabReachesControls(page);
   await expect(page.locator("#conversation-preview-composer")).toHaveValue("");
@@ -102,7 +106,7 @@ test("opening choices never overlap at 1023, 1024 and 1280 wide", async ({ page,
   await expectNothingKept(page, guard);
 });
 
-test("narrow screen: strip, drawer and focus return work without sideways scroll", async ({ page, baseURL }) => {
+test("narrow screen: Menu, drawer and focus return work without sideways scroll", async ({ page, baseURL }) => {
   test.skip((page.viewportSize()?.width ?? 0) >= 1024, "narrow layout only");
   const guard = await guardPage(page, baseURL);
   await expect(page.locator("aside[aria-label='SolMind workspace']")).toBeHidden();
@@ -115,12 +119,26 @@ test("narrow screen: strip, drawer and focus return work without sideways scroll
   await captureFullPage(page, "interim-narrow-full", "bottom");
   await page.screenshot({ path: capture("interim-narrow-top-viewport") });
 
-  const spaces = page.getByRole("button", { name: "Show conversation spaces" });
-  await spaces.click();
-  await expect(page.getByRole("list", { name: "Conversation spaces" })).toBeVisible();
+  // Paul's 2026-11-02 option A: the September 23 Menu button replaced the icon strip and its
+  // "Show conversation spaces" toggle. It works here (layout only) and opens the same list.
+  const menuButton = page.getByRole("button", { name: "Menu", exact: true });
+  await expect(menuButton).toHaveAttribute("aria-expanded", "false");
+  await expect(menuButton).toHaveAttribute("data-preview-control", "layout");
+  await menuButton.click();
+  await expect(menuButton).toHaveAttribute("aria-expanded", "true");
+  const menu = page.getByRole("navigation", { name: "Explorer workspace menu", exact: true });
+  await expect(menu.getByRole("list", { name: "Conversation spaces" })).toBeVisible();
+  // Still 36: the open menu's 4 entries and 3 entries under Conversations take the place of
+  // the strip's 4 buttons and its 3 opened space entries.
   expect(await checkAndUseUnwiredControls(page, "body")).toBe(36);
   await expectTabReachesControls(page);
   await expectNoSidewaysScroll(page);
+  await expectNoSeriousAxeViolations(page);
+  // Escape inside the open menu closes it and returns focus to the Menu button.
+  await menu.getByRole("button").first().focus();
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(menuButton).toBeFocused();
 
   const opener = page.locator("#conversation-preview-drawer-opener");
   await opener.focus();
