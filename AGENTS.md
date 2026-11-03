@@ -945,10 +945,13 @@ the field, and holds it only in a private ref until verify (contract 25 Section
 5.3 keeps it only in page memory until the A4 submit), never in React state,
 props, markup, logs, URLs or storage; verify sends it only with a non-empty,
 required code. Because the approved A4 has no password field, it is also kept
-across Send a new code and an A4 refusal (the Executor's reading, for Paul to
-confirm), and cleared on a failed send, success, Use a different email, Choose
-a different role, an identifier edit, navigation, departure, unmount and
-pagehide. Private drafts are cleared on cancellation/disposal; logs, URLs
+across Send a new code and an A4 refusal (Paul confirmed this on 2026-11-02,
+decision queue 14:07:48), and cleared on a failed send, success, Use a
+different email, Choose a different role, an identifier edit, navigation,
+departure, unmount and pagehide. After every A4 refusal, whatever the cause,
+the status region adds Paul's approved line "To re-enter your password, choose
+'Use a different email'." for Guide and Admin alike; it never says which part
+failed. Private drafts are cleared on cancellation/disposal; logs, URLs
 and browser storage must contain no credentials, selectors or tokens.
 
 Server order is fixed-role eligible lookup, non-consuming exact challenge/

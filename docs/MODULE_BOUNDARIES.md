@@ -2606,8 +2606,10 @@ src/components/solmind/AdminSignIn.tsx (through PasswordRoleSignInView) reads th
 the field, and holds it only in a private ref until the verify request, which
 needs a non-empty, required code; send never carries it. Identifier changes
 clear password and code drafts; resend clears the code draft and keeps the held password, because the approved A4
-has no password field (the Executor's reading of contract 25 Section 5.3, for
-Paul to confirm); departure, disposal and pagehide retire the active attempt.
+has no password field (the Executor's reading of contract 25 Section 5.3,
+confirmed by Paul on 2026-11-02); departure, disposal and pagehide retire the
+active attempt. After every A4 refusal the shared view adds Paul's approved
+help line naming Use a different email, the same for every cause.
 Only current accepted success allows fixed /admin/home navigation. No credential,
 selector, token or private server detail enters logs, URLs, storage or home props;
 password values are not serialized into React state/markup.

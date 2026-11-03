@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { GuideSignIn, createGuideSignInViewBinding } from "../GuideSignIn";
+import { PASSWORD_ROLE_REENTER_PASSWORD_LINE } from "../PasswordRoleSignInView";
 import { SOLMIND_ROLES } from "@/lib/solmind/roles";
-import { NEED_HELP_LABEL, PASSWORD_SIGN_IN_COPY, PHONE_OPTION_COPY, rememberBrowserLine } from "@/lib/solmind/signInPreview";
+import { ENTER_CODE_COPY, NEED_HELP_LABEL, PASSWORD_SIGN_IN_COPY, PHONE_OPTION_COPY, rememberBrowserLine } from "@/lib/solmind/signInPreview";
 
 const PASSWORD = " private view password ";
 const SELECTOR = "10000000-0000-0000-0000-000000000001";
@@ -64,5 +65,9 @@ describe("Guide view binding and static markup; no mounted browser claim", () =>
     check(html.includes(PASSWORD_SIGN_IN_COPY.forgotPasswordLabel) && html.includes(PHONE_OPTION_COPY.label) && html.includes(NEED_HELP_LABEL));
     check(!html.includes('type="checkbox"') && !html.includes(PASSWORD_SIGN_IN_COPY.rememberSafetyLine) && !html.includes(rememberBrowserLine(SOLMIND_ROLES.GUIDE)));
     check(!html.includes("Preview controls") && !html.includes("Example screen"));
+  });
+  it("the code-screen help line is Paul's exact 2026-11-02 wording and quotes the visible button label", () => {
+    check(PASSWORD_ROLE_REENTER_PASSWORD_LINE === "To re-enter your password, choose 'Use a different email'.");
+    check(PASSWORD_ROLE_REENTER_PASSWORD_LINE.includes(`'${ENTER_CODE_COPY.differentEmailLabel}'`));
   });
 });

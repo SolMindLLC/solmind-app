@@ -10,6 +10,7 @@ const PASSWORD = "  synthetic-mounted-password  ";
 const CODE = "123456";
 const NEW_CODE = "654321";
 const NOT_MATCHED = "Couldn't sign you in. Check your password and latest code. You can request a new code or try again later.";
+const HELP_LINE = "To re-enter your password, choose 'Use a different email'.";
 const HOME_MARKER = "Fixed Admin navigation observed; authorization not tested";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const cases = [
@@ -71,6 +72,9 @@ for (const entry of cases) {
     await page.getByRole("button", { name: "Send my code", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Check your email", exact: true })).toBeFocused();
     await expect(page.getByText(`Check ${entry.shown} for a sign-in code. If one arrives, enter the latest code below.`, { exact: true })).toBeVisible();
+    // Settled on A4 after a requested code: no status and no help line before any refusal.
+    await expect(page.getByRole("status")).toBeEmpty();
+    await expect(page.getByText(HELP_LINE, { exact: true })).toHaveCount(0);
     await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
     const code = page.getByLabel("Your code", { exact: true });
     await page.getByRole("button", { name: "Verify and sign in", exact: true }).click();
@@ -78,10 +82,14 @@ for (const entry of cases) {
     await code.fill(CODE);
     await page.getByRole("button", { name: "Verify and sign in", exact: true }).click();
     await expect(page.getByText(NOT_MATCHED, { exact: true })).toBeVisible();
+    await expect(page.getByRole("status").getByText(HELP_LINE, { exact: true })).toBeVisible();
     expect(await code.inputValue() === CODE, "a refusal keeps the code").toBe(true);
     expect(!(await page.content()).includes(PASSWORD.trim()), "the held password is not in the page").toBe(true);
     await page.getByRole("button", { name: "Send a new code", exact: true }).click();
     await expect.poll(() => seen.sends.length).toBe(2);
+    // The status empties only once the new-code request has settled successfully.
+    await expect(page.getByRole("status")).toBeEmpty();
+    await expect(page.getByText(HELP_LINE, { exact: true })).toHaveCount(0);
     await code.fill(NEW_CODE);
     await page.getByRole("button", { name: "Verify and sign in", exact: true }).click();
     await page.waitForURL(`${origin}/admin/home`);
@@ -96,6 +104,27 @@ for (const entry of cases) {
     expect(seen.unexpected === 0, "only the exact fixed Admin requests were made").toBe(true);
   });
 }
+
+test("Admin: after a refusal the help line names Use a different email, which returns to an empty A3A", async ({ page, baseURL }) => {
+  if (!baseURL) throw new Error("missing_test_origin");
+  const origin = new URL(baseURL).origin;
+  const seen = await mockAdmin(page, origin, [{ outcome: "not_matched" }]);
+  await page.goto("/login/admin");
+  await page.getByLabel(IDENTIFIER_LABEL, { exact: true }).fill(" Mounted.Admin_01-2 ");
+  await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+  await page.getByRole("button", { name: "Send my code", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Check your email", exact: true })).toBeFocused();
+  const status = page.getByRole("status");
+  await expect(status).toBeEmpty();
+  await page.getByLabel("Your code", { exact: true }).fill(CODE);
+  await page.getByRole("button", { name: "Verify and sign in", exact: true }).click();
+  await expect(status).toHaveText(`${NOT_MATCHED}${HELP_LINE}`);
+  await page.getByRole("button", { name: "Use a different email", exact: true }).click();
+  await expect(page.getByText(HELP_LINE, { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Your code", { exact: true })).toHaveCount(0);
+  expect(await page.getByLabel(IDENTIFIER_LABEL, { exact: true }).inputValue() === "" && await page.getByLabel("Password", { exact: true }).inputValue() === "", "the help line's button starts the Admin sign-in again, empty").toBe(true);
+  expect(seen.verifies.length === 1 && seen.unexpected === 0, "one verify, and only the exact fixed Admin requests").toBe(true);
+});
 
 test("Admin role departure clears identifier, password, code and shown-password state before re-entry", async ({ page, baseURL }) => {
   if (!baseURL) throw new Error("missing_test_origin");

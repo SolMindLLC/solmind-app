@@ -3,13 +3,21 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 import { PASSWORD_ROLE_BROWSER_NOT_MATCHED_MESSAGE } from "@/lib/solmind/passwordRoleSignInBrowserContract";
 import {
-  INITIAL_SIGN_IN_PREVIEW_STATE, SIGN_IN_HEADING_ID, SIGN_IN_SCREENS,
+  ENTER_CODE_COPY, INITIAL_SIGN_IN_PREVIEW_STATE, SIGN_IN_HEADING_ID, SIGN_IN_SCREENS,
   type PasswordSignInRole, type SignInNoticeKey, type SignInScreen,
 } from "@/lib/solmind/signInPreview";
 import { SignInPreviewView } from "./SignInPreviewParts";
 
 /** The approved A3/A3A password field; its id is pinned by the sign-in preview tests. */
 const PASSWORD_FIELD_SELECTOR = "#a3pass";
+
+/**
+ * Paul's approved help line (2026-11-02), shown under every Guide or Admin
+ * refusal on the code screen, whatever its cause, so it never says which part
+ * failed. It quotes the visible button label, so the two cannot drift apart.
+ */
+export const PASSWORD_ROLE_REENTER_PASSWORD_LINE =
+  `To re-enter your password, choose '${ENTER_CODE_COPY.differentEmailLabel}'.`;
 
 type PasswordRoleFlow = Readonly<{
   stage: string;
@@ -52,6 +60,7 @@ const noop = () => undefined;
 // The status region stays mounted so its messages are announced; empty, it takes no space.
 const emptyStatusStyle = { margin: 0 } as const;
 const statusStyle = { margin: "12px 0 0", lineHeight: 1.5, textAlign: "center" } as const;
+const statusLineStyle = { display: "block" } as const;
 
 function clearPasswordField(root: HTMLElement | null) {
   const field = root?.querySelector<HTMLInputElement>(PASSWORD_FIELD_SELECTOR) ?? null;
@@ -68,10 +77,12 @@ function clearPasswordField(root: HTMLElement | null) {
  * markup, logs, URLs or browser storage. The send request never carries it;
  * verify does, and only with a non-empty code. Because the approved A4 has no
  * password field, it is also kept across "Send a new code" and a refusal on A4
- * (the Executor's reading, for Paul to confirm), and cleared on a failed send,
- * success, "Use a different email", "Choose a different role", an identifier
- * edit, navigation, departure, unmount and pagehide. The status region stays
- * mounted for screen readers and takes no space while it is empty.
+ * (Paul confirmed this on 2026-11-02), and cleared on a failed send, success,
+ * "Use a different email", "Choose a different role", an identifier edit,
+ * navigation, departure, unmount and pagehide. After any refusal on A4 the
+ * status adds the help line naming "Use a different email", the way to
+ * re-enter the password. The status region stays mounted for screen readers
+ * and takes no space while it is empty.
  */
 export function PasswordRoleSignInView<Destination extends string>({ binding, config, onNavigate, onDepart }: Readonly<{
   binding: PasswordRoleViewBinding<Destination>;
@@ -136,6 +147,10 @@ export function PasswordRoleSignInView<Destination extends string>({ binding, co
     : flow.outcome === "not_matched" ? PASSWORD_ROLE_BROWSER_NOT_MATCHED_MESSAGE
     : flow.outcome !== null && flow.outcome !== "verification_code_requested"
       ? "We couldn't confirm sign-in. Please try signing in again." : null;
+  // On A4 a shown status, once nothing is pending, is always a refusal: a
+  // requested code shows none. The help line then follows it in the same region.
+  const helpLine = snapshot.ready && !pending && flow.stage === "code" && statusText !== null
+    ? PASSWORD_ROLE_REENTER_PASSWORD_LINE : null;
 
   const forgetAll = () => {
     held.current = null;
@@ -182,7 +197,16 @@ export function PasswordRoleSignInView<Destination extends string>({ binding, co
         sendDisabled={unavailable}
         verifyDisabled={unavailable || !flow.hasSelector}
         resendDisabled={unavailable}
-        status={<p aria-live="polite" role="status" style={statusText === null ? emptyStatusStyle : statusStyle}>{statusText}</p>}
+        status={
+          <p aria-live="polite" role="status" style={statusText === null ? emptyStatusStyle : statusStyle}>
+            {helpLine === null ? statusText : (
+              <>
+                <span style={statusLineStyle}>{statusText}</span>
+                <span style={statusLineStyle}>{helpLine}</span>
+              </>
+            )}
+          </p>
+        }
         onChooseRole={noop}
         onChooseDifferentRole={() => { setNotice(null); forgetAll(); binding.depart(); }}
         onEmailDraftChange={value => { setNotice(null); forgetAll(); binding.setIdentifier(value); }}

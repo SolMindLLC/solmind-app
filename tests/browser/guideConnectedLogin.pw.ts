@@ -11,6 +11,8 @@ const REPLACEMENT_PASSWORD = "  synthetic-mounted-replacement  ";
 const CODE = "123456";
 const NEW_CODE = "654321";
 const NOT_MATCHED = "Couldn't sign you in. Check your password and latest code. You can request a new code or try again later.";
+const GENERIC_FAILURE = "We couldn't confirm sign-in. Please try signing in again.";
+const HELP_LINE = "To re-enter your password, choose 'Use a different email'.";
 const HOME_MARKER = "Fixed Guide navigation observed; authorization not tested";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -63,6 +65,9 @@ test("Guide A3 shows the approved parts, A4 has no password field, and the held 
   await page.getByRole("button", { name: "Send my code", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Check your email", exact: true })).toBeFocused();
   await expect(page.getByText(`Check ${EMAIL} for a sign-in code. If one arrives, enter the latest code below.`, { exact: true })).toBeVisible();
+  // Settled on A4 after a requested code: no status and no help line before any refusal.
+  await expect(page.getByRole("status")).toBeEmpty();
+  await expect(page.getByText(HELP_LINE, { exact: true })).toHaveCount(0);
   await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
   const traces = await page.evaluate(() => JSON.stringify([location.href, history.state, Object.entries(localStorage), Object.entries(sessionStorage), document.documentElement.outerHTML]));
   const cookies = JSON.stringify(await page.context().cookies());
@@ -71,10 +76,14 @@ test("Guide A3 shows the approved parts, A4 has no password field, and the held 
   await code.fill(CODE);
   await page.getByRole("button", { name: "Verify and sign in", exact: true }).click();
   await expect(page.getByText(NOT_MATCHED, { exact: true })).toBeVisible();
+  await expect(page.getByRole("status").getByText(HELP_LINE, { exact: true })).toBeVisible();
   expect(await code.inputValue() === CODE, "a refusal keeps the code").toBe(true);
   expect(!(await page.content()).includes(PASSWORD.trim()), "still nothing in the page after a refusal").toBe(true);
   await page.getByRole("button", { name: "Send a new code", exact: true }).click();
   await expect.poll(() => seen.sends.length).toBe(2);
+  // The status empties only once the new-code request has settled successfully.
+  await expect(page.getByRole("status")).toBeEmpty();
+  await expect(page.getByText(HELP_LINE, { exact: true })).toHaveCount(0);
   await code.fill(NEW_CODE);
   await page.getByRole("button", { name: "Verify and sign in", exact: true }).click();
   await page.waitForURL(`${origin}/guide/home`);
@@ -87,6 +96,30 @@ test("Guide A3 shows the approved parts, A4 has no password field, and the held 
     { identifier: EMAIL, password: PASSWORD, flowId, code: NEW_CODE },
   ]), "verify carries the unchanged held password").toBe(true);
   expect(seen.unexpected === 0, "only the exact Guide requests were made").toBe(true);
+});
+
+test("Every code-screen refusal adds the same help line in the same status region, and its button returns to an empty Guide sign-in", async ({ page, baseURL }) => {
+  if (!baseURL) throw new Error("missing_test_origin");
+  const origin = new URL(baseURL).origin;
+  const seen = await mockGuide(page, origin, [{ outcome: "denied" }]);
+  await page.goto("/login/guide");
+  await page.getByLabel("Email", { exact: true }).fill(EMAIL);
+  await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+  await page.getByRole("button", { name: "Send my code", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Check your email", exact: true })).toBeFocused();
+  await expect(page.getByRole("status")).toBeEmpty();
+  await expect(page.getByText(HELP_LINE, { exact: true })).toHaveCount(0);
+  await page.getByLabel("Your code", { exact: true }).fill(CODE);
+  await page.getByRole("button", { name: "Verify and sign in", exact: true }).click();
+  const status = page.getByRole("status");
+  await expect(status.getByText(GENERIC_FAILURE, { exact: true })).toBeVisible();
+  await expect(status.getByText(HELP_LINE, { exact: true })).toBeVisible();
+  await expect(status).toHaveText(`${GENERIC_FAILURE}${HELP_LINE}`);
+  await page.getByRole("button", { name: "Use a different email", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Welcome back", exact: true })).toBeFocused();
+  await expect(page.getByText(HELP_LINE, { exact: true })).toHaveCount(0);
+  expect(await page.getByLabel("Email", { exact: true }).inputValue() === "" && await page.getByLabel("Password", { exact: true }).inputValue() === "", "the help line's button starts the sign-in again, empty").toBe(true);
+  expect(seen.verifies.length === 1 && seen.unexpected === 0, "one verify, and only the exact Guide requests").toBe(true);
 });
 
 // Clearing the privately held password itself is checked by reading PasswordRoleSignInView; these browser
@@ -146,7 +179,8 @@ test("A failed code request leaves the password field empty, and the next attemp
   await password.fill(PASSWORD);
   await page.getByRole("button", { name: "Show password", exact: true }).click();
   await page.getByRole("button", { name: "Send my code", exact: true }).click();
-  await expect(page.getByText("We couldn't confirm sign-in. Please try signing in again.", { exact: true })).toBeVisible();
+  await expect(page.getByText(GENERIC_FAILURE, { exact: true })).toBeVisible();
+  await expect(page.getByText(HELP_LINE, { exact: true })).toHaveCount(0);
   expect(await password.inputValue() === "", "the failed send leaves no password in the field").toBe(true);
   await expect(password).toHaveAttribute("type", "password");
   await page.getByLabel("Password", { exact: true }).fill(REPLACEMENT_PASSWORD);
