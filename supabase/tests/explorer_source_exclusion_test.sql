@@ -55,8 +55,35 @@ insert into ai.ai_interaction_session(ai_interaction_session_id,session_type,act
     '{"restricted_mode":false}');
 insert into ai.explorer_conversation_state(conversation_id,actor_user_account_id) values(pg_temp.xid(51),pg_temp.xid(1));
 
+-- Independent rebuild of the saved Compass and Waypoint section (chat step slice S3, 2026-11-03) from the
+-- fixture rows: current points in display order, the saved Priority and attention, the last five needle moves
+-- on a current point (oldest first, each with the point's current label), the current Waypoint heads, no drafts.
+create function pg_temp.compass() returns jsonb language sql stable as $$
+  select jsonb_build_object('version','explorer-compass-context.v1',
+    'points',coalesce((select jsonb_agg(jsonb_build_object('id',c.item_id,'label',ai.solmind_exclusion_normalize_v3(c.label),
+      'order',c.ord-1,'formation','saved','anchor',c.compass_anchor,'emphasis',c.relative_emphasis) order by c.ord)
+      from (select x.*,row_number() over(order by x.display_order) as ord from ai.explorer_conversation_compass_item x
+        where x.conversation_id=pg_temp.xid(51) and x.merged_into_item_id is null) c),'[]'::jsonb),
+    'priorityId',(select s.priority_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.xid(51)),
+    'attentionId',(select s.attention_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.xid(51)),
+    'recentRoute',coalesce((select jsonb_agg(jsonb_build_object('kind',r.compass_route_kind,'pointId',r.compass_route_item_id,
+      'label',ai.solmind_exclusion_normalize_v3(r.current_label)) order by r.initial_revision,r.operation_id)
+      from (select o.*,c.label as current_label from ai.explorer_conversation_operation o join ai.explorer_conversation_compass_item c
+          on c.conversation_id=o.conversation_id and c.item_id=o.compass_route_item_id and c.merged_into_item_id is null
+        where o.conversation_id=pg_temp.xid(51) and o.compass_route_kind='attention_changed'
+        order by o.initial_revision desc,o.operation_id desc limit 5) r),'[]'::jsonb),
+    'waypoints',coalesce((select jsonb_agg(jsonb_build_object('id',w.waypoint_id,'title',ai.solmind_exclusion_normalize_v3(w.title),
+      'destination',ai.solmind_exclusion_normalize_v3(w.destination),'meaning',ai.solmind_exclusion_normalize_v3(w.why_it_matters),
+      'arrivalSignal',ai.solmind_exclusion_normalize_v3(w.arrival_signal),
+      'stage',case when w.lifecycle_status='reached' then 'reached' when w.released_at is not null then 'released' else 'formed' end,
+      'reachedEvidence',case when w.lifecycle_status='reached' then ai.solmind_exclusion_normalize_v3(w.reached_evidence) end)
+      order by w.created_at,w.waypoint_id)
+      from content.waypoint w where w.source_ai_interaction_session_id=pg_temp.xid(51)
+        and not exists(select 1 from content.waypoint s where s.predecessor_waypoint_id=w.waypoint_id)),'[]'::jsonb),
+    'drafts','[]'::jsonb)
+$$;
 create function pg_temp.context(body text default 'Synthetic ordinary immediate text') returns jsonb language sql stable as $$
-  select jsonb_build_object('contractVersion','wi007-v0.1+onboarding-fields-v2','aiRole','solmind_virtual_guide','actorRoleContext','explorer',
+  select jsonb_build_object('contractVersion','wi007-v0.1+onboarding-fields-v2+compass-v1','aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy',jsonb_build_object('version','synthetic-global.v1','text','Synthetic global behavior rules.'),
     'roleBehavior',jsonb_build_object('version','synthetic-role.v1','text','Synthetic role behavior rules.'),
     'crisisBehavior',jsonb_build_object('version','synthetic-crisis.v1','text','Synthetic crisis behavior rules.'),
@@ -68,6 +95,7 @@ create function pg_temp.context(body text default 'Synthetic ordinary immediate 
       'kind','onboarding_answer','field',f.name,'content',ai.solmind_exclusion_normalize_v3(i.response_json->>f.name)) order by f.ord)
       from core.intake_response_set i cross join unnest(array['supportNow','usefulOutcome','supportStyle','guideContext',
         'communicationPreference','doNotEmphasize']) with ordinality f(name,ord) where i.intake_response_set_id=pg_temp.xid(52)),
+    'compassContext',pg_temp.compass(),
     'currentSessionMessages',coalesce((select jsonb_agg(jsonb_build_object('messageId',h.ai_interaction_message_id,'order',h.ord-1,
       'explorerId',pg_temp.xid(24),'sessionId',pg_temp.xid(51),'role',case when h.sender_type='user' then 'explorer' else 'solmind_virtual_guide' end,
       'content',ai.solmind_exclusion_normalize_v3(h.content_text)) order by h.ord)
@@ -81,7 +109,11 @@ create function pg_temp.source_ids() returns uuid[] language sql stable as $$
   select array_agg(distinct id order by id) from (
     select unnest(array[pg_temp.xid(52),pg_temp.xid(61),pg_temp.xid(90)]) as id
     union all select m.ai_interaction_message_id from (select * from ai.ai_interaction_message
-      where ai_interaction_session_id=pg_temp.xid(51) order by sequence_number desc limit 24) m) x
+      where ai_interaction_session_id=pg_temp.xid(51) order by sequence_number desc limit 24) m
+    union all select c.item_id from ai.explorer_conversation_compass_item c
+      where c.conversation_id=pg_temp.xid(51) and c.merged_into_item_id is null
+    union all select w.waypoint_id from content.waypoint w where w.source_ai_interaction_session_id=pg_temp.xid(51)
+      and not exists(select 1 from content.waypoint s where s.predecessor_waypoint_id=w.waypoint_id)) x
 $$;
 create function pg_temp.inspect(body text default 'Synthetic ordinary immediate text')
 returns table(outcome text,excluded_entity_type text,excluded_entity_id uuid) language sql volatile as $$
@@ -123,6 +155,21 @@ select ok(not ai.solmind_exclusion_keys_v3('{"a":1,"a":2}'::json,array['a']),'du
 select is((select outcome from pg_temp.inspect()),'clear','real owned empty conversation and exact submitted sources inspect clear');
 select ok((select excluded_entity_type is null and excluded_entity_id is null from pg_temp.inspect()),'clear carries no private references');
 select is((select outcome from pg_temp.inspect_json(pg_temp.context()||'{"unknown":true}'::jsonb)),'unavailable','extra input envelope field is unavailable');
+select is((select outcome from pg_temp.inspect_json((pg_temp.context()-'compassContext')||'{"contractVersion":"wi007-v0.1+onboarding-fields-v2"}'::jsonb)),
+  'unavailable','S3: the previous twelve-key envelope and contract version are no longer accepted');
+select is((select outcome from pg_temp.inspect_json(pg_temp.context()-'compassContext')),
+  'unavailable','S3: the new contract version requires the Compass and Waypoint section');
+select is((select outcome from pg_temp.inspect_json(pg_temp.context()||'{"contractVersion":"wi007-v0.1+onboarding-fields-v2"}'::jsonb)),
+  'unavailable','S3: the section under the previous contract version is refused');
+select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,drafts}','[{"label":"Synthetic draft"}]'))),
+  'unavailable','S3: the reserved drafts slot must stay empty');
+select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,version}','"explorer-compass-context.v2"'))),
+  'unavailable','S3: the section version is exact');
+select is((select outcome from pg_temp.inspect_json(pg_temp.context()||jsonb_build_object('compassContext',pg_temp.compass()||'{"extra":[]}'::jsonb))),
+  'unavailable','S3: an extra section key is unavailable');
+select is((select outcome from ai.solmind_inspect_explorer_context_v3(pg_temp.xid(1),pg_temp.xid(50),pg_temp.xid(24),pg_temp.xid(25),
+  pg_temp.xid(51),pg_temp.compact(pg_temp.context()),(select array_agg(pg_temp.xid(n) order by pg_temp.xid(n)) from generate_series(2000,2103) n))),
+  'unavailable','S3: a list of 104 arbitrary source ids is unavailable (the bound itself is pinned by the catalog check below)');
 select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{sessionContext,continuityBindingId}',to_jsonb(pg_temp.xid(27))))),
   'unavailable','foreign relationship binding is unavailable');
 select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{approvedContinuity,0,content}','"invented submitted content"'))),
@@ -314,6 +361,248 @@ insert into ai.ai_interaction_message(ai_interaction_message_id,ai_interaction_s
 select is((select cardinality(pg_temp.source_ids())),4,'deduplicated transport identities alone would hide the actual intake/history collision');
 select is((select outcome from pg_temp.inspect()),'unavailable','independent SQL source check rejects cross-kind identity reuse before deduplication');
 rollback to savepoint source_identity_cross_kind_collision;
+
+-- Chat step slice S3 (2026-11-03): the saved Compass and Waypoint section is rebuilt exactly from the rows.
+-- The same synthetic rows are the state in src/lib/solmind/virtual-guide/explorerConversationContext.test.ts
+-- ("S3 golden vector"); the TypeScript serialization of the section is the literal below (compared here as jsonb).
+savepoint compass_context;
+insert into ai.explorer_conversation_compass_item(item_id,conversation_id,source_message_id,label,display_order,compass_anchor,relative_emphasis)
+  values(pg_temp.xid(401),pg_temp.xid(51),pg_temp.xid(70),'  Money worries ',1,'apex',3),
+    (pg_temp.xid(402),pg_temp.xid(51),pg_temp.xid(70),'Sleep',2,null,null),
+    (pg_temp.xid(403),pg_temp.xid(51),pg_temp.xid(70),'Work stress',3,'upper_left',2),
+    (pg_temp.xid(404),pg_temp.xid(51),pg_temp.xid(70),'Family',4,null,1);
+update ai.explorer_conversation_compass_item set merged_into_item_id=pg_temp.xid(401) where item_id=pg_temp.xid(403);
+update ai.explorer_conversation_state set priority_id=pg_temp.xid(401),attention_id=pg_temp.xid(402) where conversation_id=pg_temp.xid(51);
+insert into ai.explorer_conversation_operation(actor_user_account_id,operation_id,application_session_id,conversation_id,kind,
+  request_fingerprint,command_fingerprint,initial_revision,status,completed_at,compass_route_kind,compass_route_item_id,compass_route_label)
+  select pg_temp.xid(1),pg_temp.xid(410+r.n),pg_temp.xid(50),pg_temp.xid(51),r.kind,repeat('A',64),repeat('B',64),r.n,'completed',
+    timestamptz '2026-11-03 09:00:00+00'+r.n*interval '1 minute',r.route_kind,pg_temp.xid(r.item),r.label
+  -- Round 2 (2026-11-03): needle moves only, with each point's current label. The needle move on the combined-away
+  -- point 403 (revision 5) is among the newest five needle moves; leaving it out lets the oldest one (revision 1) in.
+  from (values(1,'set_attention','attention_changed',404,'Family'),
+    (2,'confirm_priority','priority_confirmed',404,'Family'),
+    (3,'set_attention','attention_changed',401,'  Money worries '),
+    (4,'set_attention','attention_changed',402,'Sleep'),
+    (5,'set_attention','attention_changed',403,'Work stress'),
+    (6,'confirm_priority','priority_reoriented',401,'  Money worries '),
+    (7,'set_attention','attention_changed',404,'Family'),
+    (8,'set_attention','attention_changed',402,'Sleep')) r(n,kind,route_kind,item,label);
+insert into ai.explorer_conversation_operation(actor_user_account_id,operation_id,application_session_id,conversation_id,kind,
+  request_fingerprint,command_fingerprint,initial_revision,status,completed_at)
+  values(pg_temp.xid(1),pg_temp.xid(431),pg_temp.xid(50),pg_temp.xid(51),'release_waypoint',repeat('A',64),repeat('B',64),9,'completed',
+    timestamptz '2026-11-03 12:00:00+00');
+insert into content.waypoint(waypoint_id,guide_explorer_relationship_id,source_ai_interaction_session_id,source_message_id,title,
+  destination,why_it_matters,arrival_signal,lifecycle_status,chosen_by_explorer_user_account_id,chosen_at,
+  reached_by_explorer_user_account_id,reached_at,reached_evidence,released_at,released_by_user_account_id,released_operation_id,
+  predecessor_waypoint_id,creation_reason,created_at)
+  values(pg_temp.xid(421),pg_temp.xid(25),pg_temp.xid(51),pg_temp.xid(70),'Find a calmer morning','Find a calmer morning',
+      E'Mornings set\r\nmy whole day','I start two mornings a week without rushing','chosen',pg_temp.xid(1),timestamptz '2026-11-03 10:00:00+00',
+      null,null,null,null,null,null,null,null,timestamptz '2026-11-03 10:00:00+00'),
+    (pg_temp.xid(422),pg_temp.xid(25),pg_temp.xid(51),pg_temp.xid(70),'Walk after dinner','Walk after dinner',
+      'It clears my head','I walk three evenings in one week','reached',pg_temp.xid(1),timestamptz '2026-11-03 10:01:00+00',
+      pg_temp.xid(1),timestamptz '2026-11-03 11:00:00+00','  I walked four evenings last week ',null,null,null,null,null,
+      timestamptz '2026-11-03 10:01:00+00'),
+    (pg_temp.xid(423),pg_temp.xid(25),pg_temp.xid(51),pg_temp.xid(70),'Call my sister','Call my sister',
+      'We have drifted apart','We talk once a week for a month','chosen',pg_temp.xid(1),timestamptz '2026-11-03 10:02:00+00',
+      null,null,null,timestamptz '2026-11-03 12:00:00+00',pg_temp.xid(1),pg_temp.xid(431),null,null,timestamptz '2026-11-03 10:02:00+00'),
+    (pg_temp.xid(424),pg_temp.xid(25),pg_temp.xid(51),pg_temp.xid(70),'Read before bed','Read before bed',
+      'Screens keep me awake','I read on five nights','chosen',pg_temp.xid(1),timestamptz '2026-11-03 10:03:00+00',
+      null,null,null,null,null,null,null,null,timestamptz '2026-11-03 10:03:00+00'),
+    (pg_temp.xid(425),pg_temp.xid(25),pg_temp.xid(51),pg_temp.xid(70),'Read before bed','Read before bed',
+      'Screens keep me awake','I read on three nights','chosen',pg_temp.xid(1),timestamptz '2026-11-03 10:04:00+00',
+      null,null,null,null,null,null,pg_temp.xid(424),'revision',timestamptz '2026-11-03 10:04:00+00');
+create temp table s3_golden(section jsonb) on commit drop;
+insert into s3_golden values('{"version":"explorer-compass-context.v1","points":[{"id":"f5120000-0000-4000-8000-000000000401","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},{"id":"f5120000-0000-4000-8000-000000000402","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},{"id":"f5120000-0000-4000-8000-000000000404","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],"priorityId":"f5120000-0000-4000-8000-000000000401","attentionId":"f5120000-0000-4000-8000-000000000402","recentRoute":[{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family"},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000401","label":"Money worries"},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep"},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family"},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep"}],"waypoints":[{"id":"f5120000-0000-4000-8000-000000000421","title":"Find a calmer morning","destination":"Find a calmer morning","meaning":"Mornings set\nmy whole day","arrivalSignal":"I start two mornings a week without rushing","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000422","title":"Walk after dinner","destination":"Walk after dinner","meaning":"It clears my head","arrivalSignal":"I walk three evenings in one week","stage":"reached","reachedEvidence":"I walked four evenings last week"},{"id":"f5120000-0000-4000-8000-000000000423","title":"Call my sister","destination":"Call my sister","meaning":"We have drifted apart","arrivalSignal":"We talk once a week for a month","stage":"released","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000425","title":"Read before bed","destination":"Read before bed","meaning":"Screens keep me awake","arrivalSignal":"I read on three nights","stage":"formed","reachedEvidence":null}],"drafts":[]}');
+create function pg_temp.with_compass(section jsonb) returns jsonb language sql stable as $$
+  select jsonb_set(pg_temp.context(),'{compassContext}',section)
+$$;
+select is(pg_temp.compass(),(select section from s3_golden),
+  'S3: the independent SQL rebuild equals the content of the TypeScript serialization of the same saved rows (as jsonb)');
+select is((select outcome from pg_temp.inspect()),'clear','S3: saved points, Priority, unplaced needle, recent needle moves and Waypoint heads inspect clear');
+select is((select outcome from pg_temp.inspect_json(pg_temp.with_compass((select section from s3_golden)))),'clear',
+  'S3: the TypeScript section content, set into the context as jsonb, inspects clear');
+select is((select cardinality(pg_temp.source_ids())),11,'S3: the three points and four Waypoint heads join the source ids');
+select is((select outcome from ai.solmind_inspect_explorer_context_v3(pg_temp.xid(1),pg_temp.xid(50),pg_temp.xid(24),pg_temp.xid(25),
+  pg_temp.xid(51),pg_temp.compact(pg_temp.context()),array_remove(pg_temp.source_ids(),pg_temp.xid(425)))),'unavailable',
+  'S3: a Waypoint head missing from the source ids is unavailable');
+select is((select outcome from ai.solmind_inspect_explorer_context_v3(pg_temp.xid(1),pg_temp.xid(50),pg_temp.xid(24),pg_temp.xid(25),
+  pg_temp.xid(51),pg_temp.compact(pg_temp.context()),array_remove(pg_temp.source_ids(),pg_temp.xid(404)))),'unavailable',
+  'S3: a point missing from the source ids is unavailable');
+select is((select outcome from ai.solmind_inspect_explorer_context_v3(pg_temp.xid(1),pg_temp.xid(50),pg_temp.xid(24),pg_temp.xid(25),
+  pg_temp.xid(51),pg_temp.compact(pg_temp.context()),(select array_agg(x order by x) from unnest(pg_temp.source_ids()||pg_temp.xid(403)) x))),
+  'unavailable','S3: a combined-away point cannot join the source ids');
+select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,points,0,label}','"Money"'))),
+  'unavailable','S3: a tampered point label is unavailable');
+select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,points,0,label}','"  Money worries "'))),
+  'unavailable','S3: an unnormalized point label is unavailable');
+select is((select outcome from pg_temp.inspect_json(jsonb_insert(pg_temp.context(),'{compassContext,points,3}',jsonb_build_object('id',pg_temp.xid(403),
+  'label','Work stress','order',3,'formation','saved','anchor','upper_left','emphasis',2)))),'unavailable','S3: an extra (combined-away) point is unavailable');
+select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,points}',
+  (select jsonb_agg(p order by ord desc) from jsonb_array_elements(pg_temp.compass()->'points') with ordinality x(p,ord))))),
+  'unavailable','S3: points in the wrong order are unavailable');
+select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,points,1,order}','2'))),
+  'unavailable','S3: a wrong order number is unavailable');
+select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,points,0,formation}','"forming"'))),
+  'unavailable','S3: formation is "saved" until a later slice');
+select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,points,1,anchor}','"lower_center"'))),
+  'unavailable','S3: an invented position is unavailable');
+select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,priorityId}','null'))),
+  'unavailable','S3: the saved Priority cannot be omitted');
+select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,attentionId}',to_jsonb(pg_temp.xid(401))))),
+  'unavailable','S3: the needle is the saved attention, here on an unplaced point');
+select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,recentRoute}','[]'))),
+  'unavailable','S3: the recent Route cannot be omitted');
+-- Round 2b (2026-11-03, REV225b-01): the fixture holds exactly five needle moves on current points, so a real
+-- needle move older than revision 1 (revision 0, on the current point 402) is added for the cap: the rebuild leaves
+-- it out, and the context that gives it as a sixth needle move is unavailable.
+savepoint compass_cap;
+insert into ai.explorer_conversation_operation(actor_user_account_id,operation_id,application_session_id,conversation_id,kind,
+  request_fingerprint,command_fingerprint,initial_revision,status,completed_at,compass_route_kind,compass_route_item_id,compass_route_label)
+  values(pg_temp.xid(1),pg_temp.xid(410),pg_temp.xid(50),pg_temp.xid(51),'set_attention',repeat('A',64),repeat('B',64),0,'completed',
+    timestamptz '2026-11-03 09:00:00+00','attention_changed',pg_temp.xid(402),'Sleep');
+select is(pg_temp.compass(),(select section from s3_golden),
+  'S3: a sixth, older needle move on a current point is capped away (the rebuild still equals the golden section)');
+select is((select outcome from pg_temp.inspect_json(jsonb_insert(pg_temp.context(),'{compassContext,recentRoute,0}',jsonb_build_object(
+  'kind','attention_changed','pointId',pg_temp.xid(402),'label','Sleep')))),'unavailable','S3: only the last five needle moves are given');
+rollback to savepoint compass_cap;
+-- Round 2 (2026-11-03): the combined-away filter comes before the cap of five, and Priority changes are not given.
+create function pg_temp.needle(n integer,label text) returns jsonb language sql immutable as $$
+  select jsonb_build_object('kind','attention_changed','pointId',pg_temp.xid(n),'label',label)
+$$;
+select ok((select bool_or(x.compass_route_item_id=pg_temp.xid(403)) from (select o.compass_route_item_id from ai.explorer_conversation_operation o
+    where o.conversation_id=pg_temp.xid(51) and o.compass_route_kind='attention_changed' order by o.initial_revision desc limit 5) x),
+  'S3 fixture: a needle move on the combined-away point is among the newest five needle moves');
+select is((select jsonb_agg(e->'pointId' order by i) from jsonb_array_elements(pg_temp.compass()->'recentRoute') with ordinality x(e,i)),
+  jsonb_build_array(pg_temp.xid(404),pg_temp.xid(401),pg_temp.xid(402),pg_temp.xid(404),pg_temp.xid(402)),
+  'S3: the rebuild omits the combined-away needle move and fills the five from the next older one (revision 1, on 404)');
+select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,recentRoute}',jsonb_build_array(
+  pg_temp.needle(401,'Money worries'),pg_temp.needle(402,'Sleep'),pg_temp.needle(403,'Work stress'),pg_temp.needle(404,'Family'),
+  pg_temp.needle(402,'Sleep'))))),'unavailable','S3: a needle move on a combined-away point is not given');
+select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,recentRoute}',jsonb_build_array(
+  pg_temp.needle(401,'Money worries'),pg_temp.needle(402,'Sleep'),pg_temp.needle(404,'Family'),pg_temp.needle(402,'Sleep'))))),
+  'unavailable','S3: the five are counted after the combined-away filter, so four is too few');
+select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,recentRoute}',jsonb_build_array(
+  pg_temp.needle(401,'Money worries'),pg_temp.needle(402,'Sleep'),
+  jsonb_build_object('kind','priority_reoriented','pointId',pg_temp.xid(401),'label','Money worries'),
+  pg_temp.needle(404,'Family'),pg_temp.needle(402,'Sleep'))))),'unavailable',
+  'S3: Priority changes are not given (the round-1 window of all single-point events is unavailable)');
+select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,recentRoute,0,kind}','"priority_confirmed"'))),
+  'unavailable','S3: a needle move cannot be relabelled as a Priority change');
+select is((select outcome from pg_temp.inspect_json(jsonb_insert(pg_temp.context(),'{compassContext,recentRoute,5}',jsonb_build_object(
+  'kind','category_confirmed','pointId',pg_temp.xid(401),'label','Work stress')))),'unavailable',
+  'S3: a category event and its before-label never enter the section');
+select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,recentRoute,1,label}','"Money"'))),
+  'unavailable','S3: a tampered needle-move label is unavailable');
+select is((select outcome from pg_temp.inspect_json(jsonb_insert(pg_temp.context(),'{compassContext,waypoints,3}',jsonb_build_object(
+  'id',pg_temp.xid(424),'title','Read before bed','destination','Read before bed','meaning','Screens keep me awake',
+  'arrivalSignal','I read on five nights','stage','formed','reachedEvidence',null)))),'unavailable',
+  'S3: an earlier version of a revised Waypoint is not a current head');
+select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,waypoints,2,stage}','"formed"'))),
+  'unavailable','S3: a released Waypoint is staged released');
+select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,waypoints,1,reachedEvidence}','null'))),
+  'unavailable','S3: a reached Waypoint carries its saved evidence');
+select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,waypoints,0,title}','"Calmer"'))),
+  'unavailable','S3: a Waypoint title unlike the saved wording is unavailable (the saved title and destination are equal here)');
+select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,waypoints,0,meaning}',
+  to_jsonb(E'Mornings set\r\nmy whole day'::text)))),'unavailable','S3: Waypoint text uses the same normalization as history');
+-- Round 2 (2026-11-03, DB-F1 and PRIV-F2): a needle move captured with the old wording, then a real category rename
+-- of that point with the statements public.solmind_confirm_explorer_compass_category_v1 runs (the snapshot built
+-- from the rows, the label update, the completed confirm_compass_category operation). The same rows are the rename
+-- test of explorerConversationContext.test.ts.
+savepoint compass_rename;
+insert into ai.explorer_conversation_operation(actor_user_account_id,operation_id,application_session_id,conversation_id,kind,
+  request_fingerprint,command_fingerprint,initial_revision,status,completed_at,compass_route_kind,compass_route_item_id,compass_route_label)
+  values(pg_temp.xid(1),pg_temp.xid(441),pg_temp.xid(50),pg_temp.xid(51),'set_attention',repeat('A',64),repeat('B',64),10,'completed',
+    timestamptz '2026-11-03 13:00:00+00','attention_changed',pg_temp.xid(402),'Sleep');
+create temp table s3_rename(snapshot jsonb) on commit drop;
+insert into s3_rename select jsonb_build_object('targetItemId',c.item_id,'memberItemIds',jsonb_build_array(c.item_id),'beforeItems',
+    jsonb_build_array(jsonb_build_object('compassItemId',c.item_id,'sourceMessageId',c.source_message_id,'label',c.label,
+      'mergedIntoItemId',c.merged_into_item_id,'anchor',c.compass_anchor,'emphasis',c.relative_emphasis)),'label','Evening rest')
+  from ai.explorer_conversation_compass_item c where c.conversation_id=pg_temp.xid(51) and c.item_id=pg_temp.xid(402);
+select ok((select ai.solmind_compass_category_change_valid(snapshot) from s3_rename),
+  'S3 rename: the category rename snapshot passes the shape check');
+update ai.explorer_conversation_compass_item set label='Evening rest' where conversation_id=pg_temp.xid(51) and item_id=pg_temp.xid(402);
+insert into ai.explorer_conversation_operation(actor_user_account_id,operation_id,application_session_id,conversation_id,kind,
+  request_fingerprint,command_fingerprint,initial_revision,status,completed_at,compass_route_kind,compass_category_change)
+  select pg_temp.xid(1),pg_temp.xid(442),pg_temp.xid(50),pg_temp.xid(51),'confirm_compass_category',repeat('A',64),repeat('B',64),11,
+    'completed',timestamptz '2026-11-03 13:01:00+00','category_confirmed',snapshot from s3_rename;
+select ok((select o.compass_route_label='Sleep' from ai.explorer_conversation_operation o where o.operation_id=pg_temp.xid(441))
+  and (select o.compass_category_change->'beforeItems'->0->>'label'='Sleep' from ai.explorer_conversation_operation o
+    where o.operation_id=pg_temp.xid(442)),'S3 rename: the saved rows keep the old wording as captured history');
+select is(pg_temp.compass()->'recentRoute',jsonb_build_array(pg_temp.needle(401,'Money worries'),pg_temp.needle(402,'Evening rest'),
+  pg_temp.needle(404,'Family'),pg_temp.needle(402,'Evening rest'),pg_temp.needle(402,'Evening rest')),
+  'S3 rename: every needle move on the renamed point carries its current label');
+select is(strpos(pg_temp.compact(pg_temp.context()),'Sleep'),0,'S3 rename: the old wording appears nowhere in the context');
+select is((select outcome from pg_temp.inspect()),'clear','S3 rename: the context with only the current label inspects clear');
+-- Round 2b (2026-11-03, REV225b-02): the needle moves at indices 1, 3 and 4 (revisions 4 and 8 and operation 441,
+-- all on 402) captured "Sleep"; with those labels the window is the one an inspector that kept the captured labels
+-- would rebuild, so this passes only under the current-label rule.
+select is((select outcome from pg_temp.inspect_json(jsonb_set(jsonb_set(jsonb_set(pg_temp.context(),
+  '{compassContext,recentRoute,1,label}','"Sleep"'),'{compassContext,recentRoute,3,label}','"Sleep"'),
+  '{compassContext,recentRoute,4,label}','"Sleep"'))),
+  'unavailable','S3 rename: the wording the needle move captured before the rename is unavailable');
+-- Round 2b (2026-11-03, REV225b-07): the old wording as excluded private content of this relationship.
+insert into content.trigger_observation(trigger_observation_id,guide_explorer_relationship_id,trigger_label,observation_text,created_by_actor_type)
+  values(pg_temp.xid(443),pg_temp.xid(25),'Synthetic rename trigger label.','Sleep','guide');
+select is((select outcome from pg_temp.inspect('Sleep')),'blocked','S3 rename: the old wording is now excluded private content');
+select is((select outcome from pg_temp.inspect()),'clear',
+  'S3 rename: with the old wording excluded, the context with only the current label still inspects clear');
+rollback to savepoint compass_rename;
+select is(pg_temp.compass(),(select section from s3_golden),'S3 rename: the rollback restores the golden section');
+savepoint compass_private_label;
+update ai.explorer_conversation_compass_item set label='Canary trigger text 110.' where item_id=pg_temp.xid(404);
+select ok((select outcome='blocked' and excluded_entity_id=pg_temp.xid(110) from pg_temp.inspect()),
+  'S3: a Compass label equal to excluded private text is blocked like any other context string');
+rollback to savepoint compass_private_label;
+savepoint compass_private_waypoint;
+insert into content.waypoint(waypoint_id,guide_explorer_relationship_id,source_ai_interaction_session_id,source_message_id,title,
+  destination,why_it_matters,arrival_signal,lifecycle_status,chosen_by_explorer_user_account_id,chosen_at,created_at)
+  values(pg_temp.xid(426),pg_temp.xid(25),pg_temp.xid(51),pg_temp.xid(70),'Synthetic destination','Synthetic destination',
+    'Canary trigger label 110.','Synthetic arrival','chosen',pg_temp.xid(1),now(),timestamptz '2026-11-03 10:05:00+00');
+select ok((select outcome='blocked' and excluded_entity_id=pg_temp.xid(110) from pg_temp.inspect()),
+  'S3: Waypoint wording equal to excluded private text is blocked');
+rollback to savepoint compass_private_waypoint;
+insert into ai.ai_interaction_message(ai_interaction_message_id,ai_interaction_session_id,sequence_number,sender_type,
+  sender_user_account_id,sender_role_context,content_text)
+  select pg_temp.xid(600+n),pg_temp.xid(51),1+n,'user',pg_temp.xid(1),'explorer','Synthetic later message '||n from generate_series(1,20) n;
+select is((select cardinality(pg_temp.source_ids())),31,'S3: 21 messages, 3 points and 4 Waypoints make 31 source ids, above the old bound of 27');
+select is((select outcome from pg_temp.inspect()),'clear','S3: a legitimate context with more than 27 source ids inspects clear');
+rollback to savepoint compass_context;
+select is((select outcome from pg_temp.inspect()),'clear','S3: the empty saved Compass inspects clear again after the fixture rollback');
+-- Round 2 (2026-11-03, REV225-02): pin the source-id bound. The largest legitimate set is 3 + 24 history messages
+-- + 24 current points + 20 Waypoint heads = 71 (the writers keep at most 24 saved points and 20 Waypoints per
+-- conversation); it inspects clear, and the deployed inspector's bound is exactly 3 to 103, as prepare's.
+select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+    where n.nspname='ai' and p.proname='solmind_inspect_explorer_context_v3'
+      and strpos(p.prosrc,'pg_catalog.cardinality(p_context_source_ids) not between 3 and 103')>0),1,
+  'S3: the deployed inspector bounds its source ids between 3 and 103');
+savepoint compass_maximum;
+insert into ai.ai_interaction_message(ai_interaction_message_id,ai_interaction_session_id,sequence_number,sender_type,
+  sender_user_account_id,sender_role_context,content_text)
+  select pg_temp.xid(600+n),pg_temp.xid(51),1+n,'user',pg_temp.xid(1),'explorer','Synthetic later message '||n from generate_series(1,30) n;
+insert into ai.explorer_conversation_compass_item(item_id,conversation_id,source_message_id,label,display_order,compass_anchor,relative_emphasis)
+  select pg_temp.xid(700+n),pg_temp.xid(51),pg_temp.xid(70),'Synthetic point '||n,n,
+    (array['apex','upper_left','upper_right','side_left','side_right','lower_left','lower_center','lower_right'])[n],
+    case when n<=8 then 2 end from generate_series(1,24) n;
+update ai.explorer_conversation_state set priority_id=pg_temp.xid(701),attention_id=pg_temp.xid(724) where conversation_id=pg_temp.xid(51);
+insert into ai.explorer_conversation_operation(actor_user_account_id,operation_id,application_session_id,conversation_id,kind,
+  request_fingerprint,command_fingerprint,initial_revision,status,completed_at,compass_route_kind,compass_route_item_id,compass_route_label)
+  select pg_temp.xid(1),pg_temp.xid(900+n),pg_temp.xid(50),pg_temp.xid(51),'set_attention',repeat('A',64),repeat('B',64),n,'completed',
+    timestamptz '2026-11-03 09:00:00+00'+n*interval '1 minute','attention_changed',pg_temp.xid(718+n),'Synthetic point '||(18+n)
+  from generate_series(1,6) n;
+insert into content.waypoint(waypoint_id,guide_explorer_relationship_id,source_ai_interaction_session_id,source_message_id,title,
+  destination,why_it_matters,arrival_signal,lifecycle_status,chosen_by_explorer_user_account_id,chosen_at,created_at)
+  select pg_temp.xid(800+n),pg_temp.xid(25),pg_temp.xid(51),pg_temp.xid(70),'Synthetic destination '||n,'Synthetic destination '||n,
+    'Synthetic meaning '||n,'Synthetic arrival '||n,'chosen',pg_temp.xid(1),timestamptz '2026-11-03 10:00:00+00'+n*interval '1 minute',
+    timestamptz '2026-11-03 10:00:00+00'+n*interval '1 minute'
+  from generate_series(1,20) n;
+select is((select cardinality(pg_temp.source_ids())),71,
+  'S3: 24 history messages, 24 current points and 20 Waypoint heads make 71 source ids, the largest legitimate set');
+select is((select jsonb_array_length(pg_temp.compass()->'recentRoute')),5,'S3: the largest context carries five recent needle moves');
+select is((select outcome from pg_temp.inspect()),'clear','S3: the largest legitimate context (71 source ids) inspects clear');
+rollback to savepoint compass_maximum;
+select is((select outcome from pg_temp.inspect()),'clear','S3: the empty saved Compass inspects clear again after the largest-context rollback');
+
 update identity.user_session set expires_at=now()-interval '1 second' where user_session_id=pg_temp.xid(50);
 select is((select outcome from pg_temp.inspect()),'unavailable','expired application session cannot anchor a new source operation');
 update identity.user_session set expires_at=now()+interval '1 hour' where user_session_id=pg_temp.xid(50);

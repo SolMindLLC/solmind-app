@@ -1167,7 +1167,9 @@ explorerPrivateConversationComposition.ts direct-import server-only under
 src/lib/solmind/virtual-guide/. The six-port closed repository is
 src/lib/solmind/supabase/explorerPrivateConversationRepository.ts. AV3 entries in
 src/lib/solmind/virtual-guide/explorerConversationContext.ts are separate from
-strict AV2 entries; compact input remains wi007-v0.1+onboarding-fields-v2.
+strict AV2 entries; the AV2 compact input remains wi007-v0.1+onboarding-fields-v2 (since
+2026-11-03, chat step slice S3, the AV3 input is wi007-v0.1+onboarding-fields-v2+compass-v1
+with the saved Compass and Waypoint section; see docs/AI_MAINTENANCE_MAP.md).
 
 supabase/migrations/20261025010000_explorer_source_exclusion.sql owns bounded
 current-source inspection and committed content-free exclusion accountability;

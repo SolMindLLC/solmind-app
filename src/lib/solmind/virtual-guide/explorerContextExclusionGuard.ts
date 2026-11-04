@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { types } from "node:util";
-import { EXPLORER_SAFE_CONTEXT_LIMITS } from "../context/explorerSafeContext";
+import { EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION, EXPLORER_SAFE_CONTEXT_LIMITS } from "../context/explorerSafeContext";
 
 export const EXPLORER_CONTEXT_EXCLUSION_MATCHER_VERSION =
   "explorer-context-exclusion-matcher.v1" as const;
@@ -116,8 +116,14 @@ function contextStrings(serialized: unknown, expected: ExplorerExclusionBinding)
   if (typeof serialized !== "string" || serialized.length === 0 ||
       new TextEncoder().encode(serialized).byteLength > EXPLORER_SAFE_CONTEXT_LIMITS.serializedUtf8Bytes) unavailable();
   const parsed: unknown = JSON.parse(serialized);
-  const root = record(parsed, ROOT_KEYS);
+  // Since chat step slice S3 (2026-11-03) the private context may also carry the saved
+  // Compass and Waypoint section, only under its own contract version; every string in it
+  // is inspected like any other.
+  const hasCompass = parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) &&
+    Object.prototype.hasOwnProperty.call(parsed, "compassContext");
+  const root = record(parsed, hasCompass ? [...ROOT_KEYS, "compassContext"] : ROOT_KEYS);
   if (typeof root.contractVersion !== "string" || root.contractVersion.length === 0 ||
+      (hasCompass && root.contractVersion !== EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION) ||
       root.aiRole !== "solmind_virtual_guide" || root.actorRoleContext !== "explorer") unavailable();
   // S03A remains the full layer/schema authority. This guard checks only its
   // compact envelope, roles and exact binding; it does not authorize assembly.

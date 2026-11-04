@@ -19,6 +19,8 @@ import {
   SOLMIND_SUMMARY_TYPES,
 } from "../explorerContext";
 import {
+  EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION,
+  EXPLORER_COMPASS_CONTEXT_VERSION,
   EXPLORER_ONBOARDING_CONTINUITY_FIELDS,
   EXPLORER_SAFE_CONTEXT_ERROR_CODES,
   EXPLORER_SAFE_CONTEXT_LIMITS,
@@ -860,5 +862,139 @@ describe("PRJ01_R-WS09-WI021-S03A Explorer-safe context kernel", () => {
     expect(source).not.toContain("JSON.stringify(input)");
     expect(source).not.toMatch(/console\.(?:log|warn|error)/);
     expect(barrel).not.toContain("explorerSafeContext");
+  });
+});
+
+// Chat step slice S3 (2026-11-03): the saved Compass and Waypoint section.
+const COMPASS_IDS = {
+  priority: "c0000000-0000-4000-8000-000000000001",
+  unplaced: "c0000000-0000-4000-8000-000000000002",
+  other: "c0000000-0000-4000-8000-000000000003",
+  formed: "d0000000-0000-4000-8000-000000000001",
+  reached: "d0000000-0000-4000-8000-000000000002",
+} as const;
+function compassSection(): Record<string, unknown> {
+  return {
+    version: EXPLORER_COMPASS_CONTEXT_VERSION,
+    points: [
+      { id: COMPASS_IDS.priority, label: " Money worries ", order: 0, formation: "saved", anchor: "apex", emphasis: 3 },
+      { id: COMPASS_IDS.unplaced, label: "Sleep", order: 1, formation: "saved", anchor: null, emphasis: null },
+      { id: COMPASS_IDS.other, label: "Family", order: 2, formation: "saved", anchor: null, emphasis: 1 },
+    ],
+    priorityId: COMPASS_IDS.priority,
+    attentionId: COMPASS_IDS.unplaced,
+    recentRoute: [
+      { kind: "attention_changed", pointId: COMPASS_IDS.other, label: " Family " },
+      { kind: "attention_changed", pointId: COMPASS_IDS.unplaced, label: "Sleep" },
+    ],
+    waypoints: [
+      { id: COMPASS_IDS.formed, title: "Find a calmer morning", destination: "Find a calmer morning",
+        meaning: "Mornings set\r\nmy whole day", arrivalSignal: "Two calm mornings a week", stage: "formed", reachedEvidence: null },
+      { id: COMPASS_IDS.reached, title: "Walk after dinner", destination: "Walk after dinner",
+        meaning: "It clears my head", arrivalSignal: "Three walks in a week", stage: "reached", reachedEvidence: " Four walks " },
+    ],
+    drafts: [],
+  };
+}
+function compassInput(): Record<string, unknown> {
+  return { ...validInput(), contractVersion: EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION, compassContext: compassSection() };
+}
+function withCompass(change: (section: Record<string, unknown>) => void): Record<string, unknown> {
+  const input = compassInput();
+  change(input.compassContext as Record<string, unknown>);
+  return input;
+}
+function at(section: Record<string, unknown>, key: string, index: number): Record<string, unknown> {
+  return (section[key] as Record<string, unknown>[])[index];
+}
+
+describe("Chat step slice S3 saved Compass and Waypoint section", () => {
+  it("S3-01 serializes the section after approvedContinuity with exact key order and normalized text", () => {
+    const result = assembleExplorerSafeContext(compassInput());
+    expect(Object.keys(result.context)).toEqual([
+      "contractVersion", "aiRole", "actorRoleContext", "globalPolicy", "roleBehavior", "crisisBehavior",
+      "methodologyContext", "sessionContext", "approvedContinuity", "compassContext",
+      "currentSessionMessages", "immediateExplorerMessage", "outputRequirements",
+    ]);
+    const section = JSON.stringify(result.context.compassContext);
+    expect(section).toBe(
+      '{"version":"explorer-compass-context.v1","points":[' +
+      '{"id":"c0000000-0000-4000-8000-000000000001","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},' +
+      '{"id":"c0000000-0000-4000-8000-000000000002","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},' +
+      '{"id":"c0000000-0000-4000-8000-000000000003","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],' +
+      '"priorityId":"c0000000-0000-4000-8000-000000000001","attentionId":"c0000000-0000-4000-8000-000000000002",' +
+      '"recentRoute":[{"kind":"attention_changed","pointId":"c0000000-0000-4000-8000-000000000003","label":"Family"},' +
+      '{"kind":"attention_changed","pointId":"c0000000-0000-4000-8000-000000000002","label":"Sleep"}],' +
+      '"waypoints":[{"id":"d0000000-0000-4000-8000-000000000001","title":"Find a calmer morning","destination":"Find a calmer morning",' +
+      '"meaning":"Mornings set\\nmy whole day","arrivalSignal":"Two calm mornings a week","stage":"formed","reachedEvidence":null},' +
+      '{"id":"d0000000-0000-4000-8000-000000000002","title":"Walk after dinner","destination":"Walk after dinner",' +
+      '"meaning":"It clears my head","arrivalSignal":"Three walks in a week","stage":"reached","reachedEvidence":"Four walks"}],' +
+      '"drafts":[]}',
+    );
+    expect(result.serialized).toContain(`"approvedContinuity":${JSON.stringify(result.context.approvedContinuity)},"compassContext":${section},"currentSessionMessages":`);
+    expect(Object.isFrozen(result.context.compassContext?.points[0])).toBe(true);
+  });
+
+  it("S3-02 keeps the earlier envelope byte-for-byte when no section is supplied", () => {
+    const result = assembleExplorerSafeContext(validInput());
+    expect(Object.hasOwn(result.context, "compassContext")).toBe(false);
+    expect(result.serialized).not.toContain("compassContext");
+  });
+
+  it("S3-03 ties the section to its contract version both ways", () => {
+    const missing = compassInput();
+    delete missing.compassContext;
+    expectCode(missing, "explorer_context_invalid_envelope");
+    expectCode({ ...validInput(), compassContext: compassSection() }, "explorer_context_invalid_envelope");
+    expectCode({ ...compassInput(), contractVersion: "wi007-v0.1+onboarding-fields-v2" }, "explorer_context_invalid_envelope");
+  });
+
+  it("S3-04 accepts an empty saved Compass and a needle on an unplaced point", () => {
+    const empty = withCompass(section => { section.points = []; section.priorityId = null; section.attentionId = null;
+      section.recentRoute = []; section.waypoints = []; });
+    expect(assembleExplorerSafeContext(empty).context.compassContext).toEqual({ version: EXPLORER_COMPASS_CONTEXT_VERSION,
+      points: [], priorityId: null, attentionId: null, recentRoute: [], waypoints: [], drafts: [] });
+    const unplaced = assembleExplorerSafeContext(compassInput()).context.compassContext;
+    expect(unplaced?.attentionId).toBe(COMPASS_IDS.unplaced);
+    expect(unplaced?.points.find(point => point.id === unplaced.attentionId)?.anchor).toBeNull();
+  });
+
+  it.each([
+    ["an extra section key", (s: Record<string, unknown>) => { s.extra = []; }, "explorer_context_unknown_key"],
+    ["a missing section key", (s: Record<string, unknown>) => { delete s.drafts; }, "explorer_context_missing_required_layer"],
+    ["another section version", (s: Record<string, unknown>) => { s.version = "explorer-compass-context.v2"; }, "explorer_context_invalid_envelope"],
+    ["a reserved draft", (s: Record<string, unknown>) => { s.drafts = [{ label: "Draft" }]; }, "explorer_context_invalid_envelope"],
+    ["a forming point", (s: Record<string, unknown>) => { at(s, "points", 0).formation = "forming"; }, "explorer_context_invalid_envelope"],
+    ["an unknown anchor", (s: Record<string, unknown>) => { at(s, "points", 1).anchor = "center"; at(s, "points", 1).emphasis = 1; }, "explorer_context_invalid_envelope"],
+    ["an anchor without emphasis", (s: Record<string, unknown>) => { at(s, "points", 1).anchor = "lower_center"; }, "explorer_context_invalid_envelope"],
+    ["a duplicate anchor", (s: Record<string, unknown>) => { at(s, "points", 2).anchor = "apex"; }, "explorer_context_invalid_envelope"],
+    ["an emphasis score outside 1 to 3", (s: Record<string, unknown>) => { at(s, "points", 0).emphasis = 4; }, "explorer_context_invalid_envelope"],
+    ["a duplicate point", (s: Record<string, unknown>) => { at(s, "points", 1).id = COMPASS_IDS.priority; }, "explorer_context_duplicate_source"],
+    ["a gap in point order", (s: Record<string, unknown>) => { at(s, "points", 2).order = 3; }, "explorer_context_invalid_order"],
+    ["a Priority that is not a current point", (s: Record<string, unknown>) => { s.priorityId = COMPASS_IDS.formed; }, "explorer_context_invalid_envelope"],
+    ["a needle that is not a current point", (s: Record<string, unknown>) => { s.attentionId = COMPASS_IDS.reached; }, "explorer_context_invalid_envelope"],
+    // Round 2 (2026-11-03): the recent Route gives needle moves only; Priority changes are refused.
+    ["a Priority confirmation in the recent Route", (s: Record<string, unknown>) => { at(s, "recentRoute", 0).kind = "priority_confirmed"; }, "explorer_context_invalid_envelope"],
+    ["a Priority reorientation in the recent Route", (s: Record<string, unknown>) => { at(s, "recentRoute", 0).kind = "priority_reoriented"; }, "explorer_context_invalid_envelope"],
+    ["a category Route event", (s: Record<string, unknown>) => { at(s, "recentRoute", 0).kind = "category_confirmed"; }, "explorer_context_invalid_envelope"],
+    ["an arrangement Route event", (s: Record<string, unknown>) => { at(s, "recentRoute", 0).kind = "arrangement_confirmed"; }, "explorer_context_invalid_envelope"],
+    ["a Route event on another point", (s: Record<string, unknown>) => { at(s, "recentRoute", 1).pointId = COMPASS_IDS.formed; }, "explorer_context_invalid_envelope"],
+    ["a Route event before-label key", (s: Record<string, unknown>) => { at(s, "recentRoute", 1).beforeLabel = "Old wording"; }, "explorer_context_unknown_key"],
+    ["more than five Route events", (s: Record<string, unknown>) => { s.recentRoute = Array.from({ length: 6 }, () => ({ kind: "attention_changed", pointId: COMPASS_IDS.unplaced, label: "Sleep" })); }, "explorer_context_collection_limit_exceeded"],
+    ["an unknown Waypoint stage", (s: Record<string, unknown>) => { at(s, "waypoints", 0).stage = "chosen"; }, "explorer_context_invalid_envelope"],
+    ["evidence on a formed Waypoint", (s: Record<string, unknown>) => { at(s, "waypoints", 0).reachedEvidence = "Evidence"; }, "explorer_context_invalid_envelope"],
+    ["a reached Waypoint without evidence", (s: Record<string, unknown>) => { at(s, "waypoints", 1).reachedEvidence = null; }, "explorer_context_invalid_text"],
+    ["a Waypoint id reused by a point", (s: Record<string, unknown>) => { at(s, "waypoints", 0).id = COMPASS_IDS.other; }, "explorer_context_duplicate_source"],
+    ["an empty Waypoint title", (s: Record<string, unknown>) => { at(s, "waypoints", 0).title = "  "; }, "explorer_context_invalid_text"],
+    ["a point label over 160 characters", (s: Record<string, unknown>) => { at(s, "points", 1).label = "x".repeat(161); }, "explorer_context_text_limit_exceeded"],
+    ["Waypoint text over 1000 characters", (s: Record<string, unknown>) => { at(s, "waypoints", 0).meaning = "x".repeat(1001); }, "explorer_context_text_limit_exceeded"],
+    ["more than 24 points", (s: Record<string, unknown>) => { s.points = Array.from({ length: 25 }, (_, order) => ({ id: `e0000000-0000-4000-8000-${String(order).padStart(12, "0")}`, label: `Point ${order}`, order, formation: "saved", anchor: null, emphasis: null })); s.priorityId = null; s.attentionId = null; s.recentRoute = []; }, "explorer_context_collection_limit_exceeded"],
+    ["more than 20 Waypoints", (s: Record<string, unknown>) => { s.waypoints = Array.from({ length: 21 }, (_, index) => ({ id: `f0000000-0000-4000-8000-${String(index).padStart(12, "0")}`, title: "T", destination: "T", meaning: "M", arrivalSignal: "A", stage: "formed", reachedEvidence: null })); }, "explorer_context_collection_limit_exceeded"],
+    // Kept strict and pinned (reported for the demo): a zero-width joiner, as in some emoji
+    // sequences, is refused here like in every other context text.
+    ["a zero-width joiner in a label", (s: Record<string, unknown>) => { at(s, "points", 1).label = "Sle\u200dep"; }, "explorer_context_invalid_text"],
+    ["a tab in Waypoint text", (s: Record<string, unknown>) => { at(s, "waypoints", 0).meaning = "Mornings\tset"; }, "explorer_context_invalid_text"],
+  ])("S3-05 refuses %s", (_name, change, code) => {
+    expectCode(withCompass(change), code);
   });
 });

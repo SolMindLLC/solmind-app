@@ -782,7 +782,9 @@ allowlist is `supportNow`, `usefulOutcome`, `supportStyle`, `guideContext`,
 rejected and optional blanks absent. The actual response-set UUID is qualified by
 approved field inside S03A, but appears once in physical source evidence. Duplicate
 fields and cross-kind UUID reuse reject. Serialized selection revision is
-`wi007-v0.1+onboarding-fields-v2`. The last24 owned current-conversation messages
+`wi007-v0.1+onboarding-fields-v2` (the AV2 entries; since 2026-11-03, chat step slice S3,
+the private AV3 entries serialize `wi007-v0.1+onboarding-fields-v2+compass-v1` with the
+saved Compass and Waypoint section, below). The last24 owned current-conversation messages
 and immediate turn remain; prior sessions, Reflections, summaries and Guide-private
 data stay omitted. Explorer preferences do not populate Guide guardrails.
 Source IDs and required prompt, policy, behavior, crisis, role,
@@ -1428,7 +1430,37 @@ explorerPrivateConversationComposition.ts direct-import server-only under
 src/lib/solmind/virtual-guide/. The six-port closed repository is
 src/lib/solmind/supabase/explorerPrivateConversationRepository.ts. AV3 entries in
 src/lib/solmind/virtual-guide/explorerConversationContext.ts are separate from
-strict AV2 entries; compact input remains wi007-v0.1+onboarding-fields-v2.
+strict AV2 entries; the AV2 compact input remains wi007-v0.1+onboarding-fields-v2.
+
+Chat step slice S3 (2026-11-03; Paul's decision 4 of decision queue entry 2026-11-03
+12:38:07 CST and his go-ahead at 20:50:45 CST), where to change what the SolMind Virtual
+Guide reads of the saved Compass and Waypoints: the AV3 compact input is
+wi007-v0.1+onboarding-fields-v2+compass-v1 with one section, `compassContext`, after
+`approvedContinuity`. Change these together, or Sends become unavailable:
+- the section shape and limits: src/lib/solmind/context/explorerSafeContext.ts
+  (`EXPLORER_COMPASS_CONTEXT_VERSION`, `EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION`,
+  `EXPLORER_COMPASS_CONTEXT_ROUTE_KINDS`, `parseCompassContext`);
+- how it is filled from the read state (AV3 entries only) and the source ids:
+  `compassContext` in src/lib/solmind/virtual-guide/explorerConversationContext.ts;
+- the pinned revision: `pinnedPolicyText` in explorerPrivateConversationComposition.ts;
+- the database rebuild, exact comparison, source ids and the 3 to 103 bound:
+  ai.solmind_inspect_explorer_context_v3, latest in
+  supabase/migrations/20261103210000_explorer_context_compass.sql, and the key sets in
+  methodology.serialized_methodology_valid (same migration);
+- the transport's section list and untrusted-text list in
+  openAiLunaExplorerSafetyTransport.ts (code, not the approved policy, role or crisis
+  texts), and the prompt and instruction version labels in
+  explorerPrivateConfigurationCandidate.ts, bumped by hand;
+- the SQL fixtures: `pg_temp.compass_context` and `pg_temp.compass_source_ids` in the nine
+  private-Send test files, and the golden vector shared by
+  explorerConversationContext.test.ts and supabase/tests/explorer_source_exclusion_test.sql.
+Points are current (not combined away) in saved display order; the Route gives the last
+five needle moves (`attention_changed`) on a current point, counted after leaving out
+combined-away points, each with that point's current label, never the label the Route
+captured (amended 2026-11-03, S3 fix round 2: Priority changes are not sent; arrangement
+and category events and before-labels never); Waypoints are the current heads; the title is
+the saved title, which every writer sets to the destination. `formation` is "saved" and
+`drafts` is empty until later slices; `explorerSafeGuardrail` stays null.
 
 supabase/migrations/20261025010000_explorer_source_exclusion.sql owns bounded
 current-source inspection and committed content-free exclusion accountability;

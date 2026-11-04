@@ -15,8 +15,8 @@ function freezeStaticData<T>(value: T): T {
 export const EXPLORER_PRIVATE_CONFIGURATION_CANDIDATE_DATA = freezeStaticData(
 {
   "protocolVersion": "explorer-safety-reply.v1",
-  "promptVersion": "explorer-same-call.synthetic-draft-20261025-r11q2",
-  "instructionVersion": "solmind-same-call-output.synthetic-draft-20261025-r11q2",
+  "promptVersion": "explorer-same-call.synthetic-draft-20261103-s3-compass",
+  "instructionVersion": "solmind-same-call-output.synthetic-draft-20261103-s3-compass",
   "roleVersion": "solmind-virtual-guide.synthetic-draft-20261025-r11q2",
   "globalPolicy": {
     "version": "solmind-global-policy.synthetic-draft-20261024-r01",

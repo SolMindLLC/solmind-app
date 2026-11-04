@@ -148,6 +148,9 @@ localDescribe("REAL isolated Auth/cookies/SQL; SYNTHETIC Virtual Guide transport
     expect(saved.pendingTurn).toBe(false);
     const actualContext = JSON.parse(captured[0].authorizedContext);
     expect(actualContext.contractVersion).toBe(context.EXPLORER_CONVERSATION_CONTEXT_SELECTION_VERSION);
+    // Chat step slice S3 (2026-11-03): only the private AV3 entries carry the saved Compass section;
+    // this retained AV2 proof path keeps the earlier envelope unchanged.
+    expect(Object.hasOwn(actualContext, "compassContext")).toBe(false);
     expect(actualContext.approvedContinuity.map((item: { field: string; content: string; order: number }) => [item.field, item.content, item.order])).toEqual([
       ["supportNow", "Synthetic support source", 0], ["usefulOutcome", "Synthetic useful outcome", 1],
       ["supportStyle", "Synthetic style", 2], ["guideContext", "Synthetic shared answer", 3],

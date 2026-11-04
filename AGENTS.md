@@ -429,7 +429,9 @@ order, with required blanks rejected and optional blanks absent, plus the last
 24 saved owned messages and immediate message. Qualify onboarding identity by
 actual response-set UUID and approved field; reject duplicate fields and
 cross-kind UUID reuse. Keep one physical intake UUID in source evidence and
-serialize selection revision `wi007-v0.1+onboarding-fields-v2`. Prior conversations,
+serialize selection revision `wi007-v0.1+onboarding-fields-v2` (these AV2 entries; since
+2026-11-03 the private AV3 entries serialize a later revision with the saved Compass and
+Waypoint section, Private Explorer conversation construction boundary, below). Prior conversations,
 summaries, Reflections and Guide-private data remain omitted. Explorer preferences
 must never masquerade as the Guide-authored `explorerSafeGuardrail`.
 Bind exact compact bytes, fingerprint, source IDs and configuration versions
@@ -495,14 +497,46 @@ provides explicit `createPrivateExplorerConversationContextBuilder` and
 Keep the older AV2 entries strict and unchanged. AV3 binds current owned/support
 authority plus known/unknown policy, safety version, restricted floor and adult
 stop; pre-anchor absence is not a clear classification. Keep `authority_context`
-shape and server-only `policy_state` separate. The compact model input remains
-`wi007-v0.1+onboarding-fields-v2`; output protocol/mode/configuration bindings
-are recorded separately on v3 evidence. Use actual governed methodology resolution
+shape and server-only `policy_state` separate. The compact model input of the AV3
+entries is `wi007-v0.1+onboarding-fields-v2+compass-v1` (amended 2026-11-03, chat step
+slice S3, Paul's decision 4 of decision queue entry 2026-11-03 12:38:07 CST and his
+go-ahead at 20:50:45 CST; it was `wi007-v0.1+onboarding-fields-v2`, which the AV2
+entries keep): the same layers plus one section, `compassContext`, after
+`approvedContinuity`, owned by `src/lib/solmind/context/explorerSafeContext.ts` (shape,
+limits, and the rule that this revision requires the section and every other revision
+forbids it) and filled from the read state by `explorerConversationContext.ts`:
+`{version:"explorer-compass-context.v1", points:[{id,label,order,formation:"saved",anchor,emphasis}],
+priorityId, attentionId, recentRoute:[{kind,pointId,label}],
+waypoints:[{id,title,destination,meaning,arrivalSignal,stage,reachedEvidence}], drafts:[]}`.
+Points are the current (not combined-away) points in saved display order; Priority and
+attention are the saved values, and attention may be on an unplaced point; the Route gives
+only the last five needle moves (`attention_changed`) on a current point, counted after
+leaving out combined-away points, oldest first, each with that point's current label,
+never the label the Route captured, which may be wording from before a rename (amended
+2026-11-03, S3 fix round 2: Paul's go-ahead names "recent needle moves", so Priority
+changes are not sent; arrangement and category events and their before-labels never enter
+model context); Waypoints are
+the current heads (no successor), staged formed, reached or released, with Reached
+evidence only when reached, and the title is the saved title (every writer stores the
+destination there; the state carries no title). `formation` stays "saved" and `drafts`
+stays empty until later slices. The current point and Waypoint ids join the snapshot
+source ids. `explorerSafeGuardrail` stays null. Output protocol/mode/configuration bindings
+are recorded separately on v3 evidence; the output protocol is unchanged
+(`explorer-safety-reply.v1`). The transport instructions name the section and treat its
+text as untrusted data; the approved global policy, role and crisis texts are unchanged
+(their order-of-authority list does not name the section). Use actual governed methodology resolution
 and immutable bindings, never a fabricated UUID, reviewer or candidate-ready flag.
 
 `supabase/migrations/20261025010000_explorer_source_exclusion.sql` owns ungranted
-source-inspection/audit helpers. Final v3 preparation rederives the exact allowed
-onboarding/history/immediate source set, checks field-qualified excluded identities
+source-inspection/audit helpers (its inspector is replaced in place, same signature,
+by `supabase/migrations/20261103210000_explorer_context_compass.sql`, which also lets
+`methodology.serialized_methodology_valid` accept exactly two key sets, each tied to its
+version: the earlier twelve layers with `wi007-v0.1+onboarding-fields-v2`, or those plus
+`compassContext` with the new revision). Since then the inspector accepts only the new
+revision, rebuilds `compassContext` exactly from the saved rows with the same
+normalization as the history, adds the point and Waypoint ids to the exact source set
+and allows 3 to 103 source ids, as prepare does. Final v3 preparation rederives the exact allowed
+onboarding/history/Compass/immediate source set, checks field-qualified excluded identities
 and normalized whole decoded values under finite source locks, and refuses unknown,
 busy, malformed or overflowing inspection. Preserve independent section identity
 and actual containing-revision provenance. Confirmed exclusion returns after its

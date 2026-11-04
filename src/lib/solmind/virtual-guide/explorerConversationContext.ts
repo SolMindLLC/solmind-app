@@ -4,7 +4,13 @@ import {
   composeAuthorizedVirtualGuideContext,
 } from "./authorizedVirtualGuideContext";
 import type { ExplorerConversationDependencies } from "./explorerConversationComposition";
-import { EXPLORER_ONBOARDING_CONTINUITY_FIELDS } from "../context/explorerSafeContext";
+import {
+  EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION,
+  EXPLORER_COMPASS_CONTEXT_ROUTE_KINDS,
+  EXPLORER_COMPASS_CONTEXT_VERSION,
+  EXPLORER_ONBOARDING_CONTINUITY_FIELDS,
+  EXPLORER_SAFE_CONTEXT_LIMITS,
+} from "../context/explorerSafeContext";
 import { SOLMIND_EXPLORER_STRUCTURED_FORM_FIELDS } from "../onboarding";
 import { types } from "node:util";
 import {
@@ -19,6 +25,9 @@ import {
 // Selection revision is serialized into each new context and fingerprint.
 // Historical supportNow-only snapshots keep their original version and bytes.
 export const EXPLORER_CONVERSATION_CONTEXT_SELECTION_VERSION = "wi007-v0.1+onboarding-fields-v2";
+// Chat step slice S3 (2026-11-03): the private (AV3) entries add the saved Compass and
+// Waypoint section and serialize this revision; the older AV2 entries keep the one above.
+export const EXPLORER_PRIVATE_CONVERSATION_CONTEXT_SELECTION_VERSION = EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION;
 
 type VersionedText = Readonly<{ version: string; text: string }>;
 // Supplied only by a future explicitly approved server activation. This is not
@@ -89,6 +98,52 @@ function configuration(value: ExplorerConversationContextConfiguration): Explore
   return structuredClone(value);
 }
 
+type ConversationState = Parameters<NonNullable<ExplorerConversationDependencies["buildContext"]>>[0]["state"];
+type RouteEvent = NonNullable<ConversationState["route"]>[number];
+type PointRouteEvent = Extract<RouteEvent, { compassItemId: string }>;
+const ROUTE_KINDS: readonly string[] = EXPLORER_COMPASS_CONTEXT_ROUTE_KINDS;
+function pointRouteEvent(event: RouteEvent): event is PointRouteEvent {
+  return ROUTE_KINDS.includes(event.kind) && Object.hasOwn(event, "compassItemId");
+}
+// Chat step slice S3 (Paul's decision 4, decision queue 2026-11-03 12:38:07 CST; go-ahead
+// 20:50:45 CST): the saved Compass and Waypoint section, taken from the state the final
+// read returned. The safe assembler validates it, and
+// supabase/migrations/20261103210000_explorer_context_compass.sql rebuilds it from the
+// saved rows and compares it exactly before any provider call. Current points only (not
+// combined away), in saved display order; the saved Priority and attention (the needle
+// may be on an unplaced point); the last five needle moves (attention_changed) on a
+// current point, oldest first, each with that point's current label, never the label
+// the Route captured, which may be wording from before a rename (Priority changes,
+// arrangement and category events and their before-labels are never model context);
+// the current Waypoint heads. The state carries no Waypoint title: every Waypoint writer
+// stores the destination as the title, and the database compares against the saved title.
+function compassContext(state: ConversationState) {
+  const points = state.compassItems.filter((item) => item.mergedIntoItemId == null);
+  const currentLabels = new Map(points.map((item) => [item.id, item.label]));
+  // Filtered to current points before the cap, so a combined-away point's move leaves room for an older one.
+  const recentRoute = (state.route ?? []).filter(pointRouteEvent).flatMap((event) => {
+    const label = currentLabels.get(event.compassItemId);
+    return label === undefined ? [] : [{ kind: event.kind, pointId: event.compassItemId, label }];
+  }).slice(-EXPLORER_SAFE_CONTEXT_LIMITS.compassRouteEventCount);
+  const successors = new Set(state.waypoints.flatMap((waypoint) =>
+    waypoint.lifecycle === undefined ? [] : [waypoint.lifecycle.predecessorWaypointId]));
+  const heads = state.waypoints.filter((waypoint) => !successors.has(waypoint.id));
+  return {
+    section: {
+      version: EXPLORER_COMPASS_CONTEXT_VERSION,
+      points: points.map((item, order) => ({ id: item.id, label: item.label, order, formation: "saved",
+        anchor: item.anchor ?? null, emphasis: item.emphasis ?? null })),
+      priorityId: state.priorityId, attentionId: state.attentionId, recentRoute,
+      waypoints: heads.map((waypoint) => ({ id: waypoint.id, title: waypoint.destination,
+        destination: waypoint.destination, meaning: waypoint.meaning, arrivalSignal: waypoint.arrivalSignal,
+        stage: waypoint.status === "reached" ? "reached" : waypoint.release === undefined ? "formed" : "released",
+        reachedEvidence: waypoint.status === "reached" ? waypoint.reachedEvidence ?? null : null })),
+      drafts: [],
+    },
+    sourceIds: [...points.map((item) => item.id), ...heads.map((waypoint) => waypoint.id)],
+  };
+}
+
 type ConversationContextBuilderInput = {
   repository: Pick<ExplorerConversationDependencies["repository"], "read">;
   configuration: ExplorerConversationContextConfiguration;
@@ -106,8 +161,12 @@ function createConversationContextBuilder(input: ConversationContextBuilderInput
     // so the assembler rejects them; neither text nor per-answer IDs are invented.
     const selectedFields = FIELDS.filter(field => REQUIRED_FIELDS.has(field) || facts.onboarding.answers[field].trim().length > 0);
     const recent = state.messages.slice(-24);
+    // Only the private (AV3) entries carry the Compass section; AV2 stays byte-for-byte unchanged.
+    const compass = authorizationContract === "AV3" ? compassContext(state) : undefined;
     const contextInput = {
-      contractVersion: EXPLORER_CONVERSATION_CONTEXT_SELECTION_VERSION, aiRole: "solmind_virtual_guide", actorRoleContext: "explorer",
+      contractVersion: compass === undefined ? EXPLORER_CONVERSATION_CONTEXT_SELECTION_VERSION
+        : EXPLORER_PRIVATE_CONVERSATION_CONTEXT_SELECTION_VERSION,
+      aiRole: "solmind_virtual_guide", actorRoleContext: "explorer",
       explorerBinding: binding,
       globalPolicy: config.globalPolicy, roleBehavior: config.roleBehavior,
       crisisBehavior: config.crisisBehavior, methodologyContext: config.methodologyContext,
@@ -115,6 +174,7 @@ function createConversationContextBuilder(input: ConversationContextBuilderInput
         activeFocusItems: [], nextAppointment: null, explorerSafeGuardrail: null },
       continuityCandidates: selectedFields.map((field, order) => ({ kind: "onboarding_answer",
         sourceId: facts.onboarding.responseId, order, ...binding, field, content: facts.onboarding.answers[field] })),
+      ...(compass === undefined ? {} : { compassContext: compass.section }),
       currentSessionMessages: recent.map((message, order) => ({ messageId: message.id, order,
         explorerId: facts.explorerId, sessionId: ids.conversationId,
         role: message.role === "explorer" ? "explorer" : "solmind_virtual_guide", content: message.body })),
@@ -144,8 +204,11 @@ function createConversationContextBuilder(input: ConversationContextBuilderInput
         },
       }, signal,
     });
+    // Every record the context includes is listed: the current points and Waypoint heads join
+    // the private sources (the database rebuilds the same set and refuses cross-kind reuse).
     const sourceIds = [...new Set([ids.messageId, facts.onboarding.responseId,
-      config.methodologyContextPackVersionId, ...recent.map((message) => message.id)])].sort();
+      config.methodologyContextPackVersionId, ...recent.map((message) => message.id),
+      ...(compass === undefined ? [] : compass.sourceIds)])].sort();
     return Object.freeze({ request: composed.conversationRequest, evidence: Object.freeze({
       p_context_source_ids: Object.freeze(sourceIds), p_authorization_version: facts.authorizationVersion,
       p_intake_response_set_id: facts.onboarding.responseId,

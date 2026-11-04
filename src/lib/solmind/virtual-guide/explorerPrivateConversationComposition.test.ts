@@ -22,7 +22,9 @@ function state(conversationId: string | null): ExplorerConversationState {
   return { version: "explorer-conversation.v1", conversationId, revision: 0, pendingTurn: false, providerState: "unavailable",
     messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] };
 }
-function fixture() {
+// Since chat step slice S3 (2026-11-03) the private context revision carries the saved Compass section.
+const PRIVATE_CONTEXT_VERSION = "wi007-v0.1+onboarding-fields-v2+compass-v1";
+function fixture(contextVersion: string = PRIVATE_CONTEXT_VERSION) {
   const configuration = getExplorerPrivateConfigurationCandidate(); if (!configuration) throw new Error("synthetic_candidate_missing");
   const readiness: ExplorerPrivateOperationalReadiness = { configuration, configurationFingerprint: SHA, modelName: "gpt-5.6-luna", modelPolicyVersion: "synthetic-model.v1",
     resourcePolicyVersion: "synthetic-reviewed-resources.v1", sourceVerificationReceiptSha256: SHA, resourceVerificationReceiptSha256: SHA,
@@ -72,7 +74,7 @@ function fixture() {
         body: "Synthetic reviewed support rendering.", trustedResponseVersion: ready.configuration.trustedResponses.version, resourcePolicyVersion: ready.resourcePolicyVersion })),
       pauseNotice },
     buildContext: vi.fn(async (input: Parameters<NonNullable<ExplorerPrivateConversationDependencies["buildContext"]>>[0]) => {
-      order.push("context"); const authorizedContext = JSON.stringify({ contractVersion: "wi007-v0.1+onboarding-fields-v2",
+      order.push("context"); const authorizedContext = JSON.stringify({ contractVersion: contextVersion,
         globalPolicy: { version: configuration.globalPolicy.version, text: configuration.globalPolicy.text.replace(/\r\n?/g, "\n").trim() },
         roleBehavior: { version: configuration.roleBehavior.version, text: configuration.roleBehavior.text.replace(/\r\n?/g, "\n").trim() },
         crisisBehavior: { version: configuration.crisisBehavior.version, text: configuration.crisisBehavior.text.replace(/\r\n?/g, "\n").trim() },
@@ -201,6 +203,18 @@ describe("Held private Explorer controller: explicit synthetic ports only", () =
     await commandExplorerPrivateConversation({ command: send(), dependencies: { ...old.dependencies, buildContext: adaptPrivateGovernedExplorerContextBuilder(av2) } });
     expect(old.prepare).not.toHaveBeenCalled(); expect(old.generate).not.toHaveBeenCalled();
   });
+  it.each(["wi007-v0.1+onboarding-fields-v2", "wi007-v0.1+onboarding-fields-v2+compass-v2"])(
+    "S3: refuses a private context of another revision (%s) before preparation or a provider call", async (version) => {
+      const f = fixture(version);
+      const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+      // The existing temporary assistance; nothing saved, prepared or sent.
+      expect(output.assistance?.persisted).toBe(false);
+      expect(f.prepare).not.toHaveBeenCalled(); expect(f.generate).not.toHaveBeenCalled(); expect(f.settle).not.toHaveBeenCalled();
+      const accepted = fixture();
+      await commandExplorerPrivateConversation({ command: send(), dependencies: accepted.dependencies });
+      expect(accepted.getPrepared()?.p_context_serialization).toContain(`"contractVersion":"${PRIVATE_CONTEXT_VERSION}"`);
+      expect(accepted.generate).toHaveBeenCalledOnce();
+    });
   it("a hung renderer is canceled by request and cannot prevent actual positive settlement", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
     const f = fixture(); f.generate.mockResolvedValue(JSON.stringify({ protocol: "explorer-safety-reply.v1", classification: { level: 3, minorIndicated: false }, candidateReply: null }));

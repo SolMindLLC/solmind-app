@@ -6,6 +6,7 @@ import {
   createPrivateExplorerConversationContextBuilder,
   createPrivateGovernedExplorerConversationContextBuilder,
   EXPLORER_CONVERSATION_CONTEXT_SELECTION_VERSION,
+  EXPLORER_PRIVATE_CONVERSATION_CONTEXT_SELECTION_VERSION,
   type ExplorerConversationContextConfiguration,
 } from "./explorerConversationContext";
 import { commandExplorerConversation } from "./explorerConversationComposition";
@@ -15,7 +16,7 @@ import type {
   ExplorerConversationRepository,
   ExplorerConversationRpcRow,
 } from "./explorerConversationComposition";
-import { EXPLORER_CONVERSATION_VERSION, type ExplorerConversationState } from "../explorerConversationContract";
+import { EXPLORER_CONVERSATION_VERSION, parseExplorerConversationState, type ExplorerConversationState } from "../explorerConversationContract";
 import {
   EXPLORER_CONTEXT_EXCLUSION_MATCHER_VERSION,
   inspectExplorerContextExclusions,
@@ -680,12 +681,14 @@ describe("governed Explorer context (synthetic SQL-shaped source and policy only
 
 describe("Explicit held private AV3 context entry points", () => {
   const privateVersion = `AV3:${"B".repeat(64)}`;
-  it("uses AV3 current proof with the unchanged exact input envelope", async () => {
+  it("uses AV3 current proof with the private input envelope revision (chat step slice S3)", async () => {
     const f = fixture({ facts: { ...authority(), authorizationVersion: privateVersion } });
     const build = createPrivateExplorerConversationContextBuilder({ repository: { read: f.read }, configuration: f.config });
     const result = await build(f.input);
     expect(result.evidence.p_authorization_version).toBe(privateVersion);
-    expect(assembled(result.request.authorizedContext).contractVersion).toBe(EXPLORER_CONVERSATION_CONTEXT_SELECTION_VERSION);
+    expect(assembled(result.request.authorizedContext).contractVersion).toBe(EXPLORER_PRIVATE_CONVERSATION_CONTEXT_SELECTION_VERSION);
+    expect(assembled(result.request.authorizedContext).compassContext).toEqual({ version: "explorer-compass-context.v1",
+      points: [], priorityId: null, attentionId: null, recentRoute: [], waypoints: [], drafts: [] });
     expect(f.read).toHaveBeenCalledOnce();
     expect(f.prepare).not.toHaveBeenCalled(); expect(f.complete).not.toHaveBeenCalled();
   });
@@ -720,5 +723,192 @@ describe("Explicit held private AV3 context entry points", () => {
     const build = createPrivateGovernedExplorerConversationContextBuilder(f.factoryInput);
     await expect(build(f.input)).rejects.toThrow("explorer_conversation_context_unavailable");
     expect(f.methodologyRead).not.toHaveBeenCalled(); expect(f.prepare).not.toHaveBeenCalled();
+  });
+});
+
+// Chat step slice S3 (2026-11-03): the saved Compass and Waypoint section. These rows are the
+// same synthetic rows as the "S3 golden vector" block of supabase/tests/explorer_source_exclusion_test.sql,
+// where the database rebuild must equal GOLDEN's content, compared as jsonb, and that content, set into the
+// context, must inspect clear.
+const sx = (n: number) => `f5120000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+const GOLDEN = '{"version":"explorer-compass-context.v1","points":[{"id":"f5120000-0000-4000-8000-000000000401","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},{"id":"f5120000-0000-4000-8000-000000000402","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},{"id":"f5120000-0000-4000-8000-000000000404","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],"priorityId":"f5120000-0000-4000-8000-000000000401","attentionId":"f5120000-0000-4000-8000-000000000402","recentRoute":[{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family"},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000401","label":"Money worries"},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep"},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family"},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep"}],"waypoints":[{"id":"f5120000-0000-4000-8000-000000000421","title":"Find a calmer morning","destination":"Find a calmer morning","meaning":"Mornings set\\nmy whole day","arrivalSignal":"I start two mornings a week without rushing","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000422","title":"Walk after dinner","destination":"Walk after dinner","meaning":"It clears my head","arrivalSignal":"I walk three evenings in one week","stage":"reached","reachedEvidence":"I walked four evenings last week"},{"id":"f5120000-0000-4000-8000-000000000423","title":"Call my sister","destination":"Call my sister","meaning":"We have drifted apart","arrivalSignal":"We talk once a week for a month","stage":"released","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000425","title":"Read before bed","destination":"Read before bed","meaning":"Screens keep me awake","arrivalSignal":"I read on three nights","stage":"formed","reachedEvidence":null}],"drafts":[]}';
+function s3State(): ExplorerConversationState {
+  const base = state(); const source = base.messages[0].id;
+  const at = (minute: number) => `2026-11-03T09:${String(minute).padStart(2, "0")}:00.000Z`;
+  return { ...base,
+    compassItems: [
+      { id: sx(401), sourceMessageId: source, label: "  Money worries ", anchor: "apex", emphasis: 3, mergedIntoItemId: null },
+      { id: sx(402), sourceMessageId: source, label: "Sleep", anchor: null, emphasis: null, mergedIntoItemId: null },
+      { id: sx(403), sourceMessageId: source, label: "Work stress", anchor: "upper_left", emphasis: 2, mergedIntoItemId: sx(401) },
+      { id: sx(404), sourceMessageId: source, label: "Family", anchor: null, emphasis: 1, mergedIntoItemId: null },
+    ],
+    priorityId: sx(401), attentionId: sx(402),
+    // Round 2 (2026-11-03): needle moves only, with each point's current label. The needle move on the
+    // combined-away point 403 is among the newest five needle moves; leaving it out lets the oldest one (on 404) in.
+    route: [
+      { operationId: sx(411), revision: 2, kind: "attention_changed", compassItemId: sx(404), label: "Family", recordedAt: at(1) },
+      { operationId: sx(412), revision: 3, kind: "priority_confirmed", compassItemId: sx(404), label: "Family", recordedAt: at(2) },
+      { operationId: sx(413), revision: 4, kind: "attention_changed", compassItemId: sx(401), label: "  Money worries ", recordedAt: at(3) },
+      { operationId: sx(414), revision: 5, kind: "attention_changed", compassItemId: sx(402), label: "Sleep", recordedAt: at(4) },
+      { operationId: sx(415), revision: 6, kind: "attention_changed", compassItemId: sx(403), label: "Work stress", recordedAt: at(5) },
+      { operationId: sx(416), revision: 7, kind: "priority_reoriented", compassItemId: sx(401), label: "  Money worries ", recordedAt: at(6) },
+      { operationId: sx(417), revision: 8, kind: "attention_changed", compassItemId: sx(404), label: "Family", recordedAt: at(7) },
+      { operationId: sx(418), revision: 9, kind: "attention_changed", compassItemId: sx(402), label: "Sleep", recordedAt: at(8) },
+    ],
+    waypoints: [
+      { id: sx(421), sourceMessageId: source, destination: "Find a calmer morning", meaning: "Mornings set\r\nmy whole day",
+        arrivalSignal: "I start two mornings a week without rushing", status: "chosen", reachedEvidence: null, reachedAt: null },
+      { id: sx(422), sourceMessageId: source, destination: "Walk after dinner", meaning: "It clears my head",
+        arrivalSignal: "I walk three evenings in one week", status: "reached", reachedEvidence: "  I walked four evenings last week ",
+        reachedAt: "2026-11-03T11:00:00.000Z" },
+      { id: sx(423), sourceMessageId: source, destination: "Call my sister", meaning: "We have drifted apart",
+        arrivalSignal: "We talk once a week for a month", status: "chosen", reachedEvidence: null, reachedAt: null,
+        release: { operationId: sx(431), releasedAt: "2026-11-03T12:00:00.000Z" } },
+      { id: sx(424), sourceMessageId: source, destination: "Read before bed", meaning: "Screens keep me awake",
+        arrivalSignal: "I read on five nights", status: "chosen", reachedEvidence: null, reachedAt: null },
+      { id: sx(425), sourceMessageId: source, destination: "Read before bed", meaning: "Screens keep me awake",
+        arrivalSignal: "I read on three nights", status: "chosen", reachedEvidence: null, reachedAt: null,
+        lifecycle: { predecessorWaypointId: sx(424), creationReason: "revision", clarifications: [{ component: "arrivalSignal",
+          questionKey: "waypoint.arrivalSignal.v1", answer: "I read on three nights", recordedAt: "2026-11-03T10:04:00.000Z" }] } },
+    ],
+  };
+}
+function privateFixture(history: ExplorerConversationState) {
+  const f = fixture({ facts: { ...authority(), authorizationVersion: `AV3:${"B".repeat(64)}` }, history });
+  return { ...f, build: createPrivateExplorerConversationContextBuilder({ repository: { read: f.read }, configuration: f.config }) };
+}
+
+describe("Chat step slice S3 saved Compass and Waypoint section (private AV3 entries)", () => {
+  it("S3 golden vector: serializes the exact section after approvedContinuity and lists every included record", async () => {
+    const f = privateFixture(s3State()); const result = await f.build(f.input);
+    const serialized = result.request.authorizedContext;
+    const context = assembled(serialized);
+    expect(context.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2+compass-v1");
+    expect(JSON.stringify(context.compassContext)).toBe(GOLDEN);
+    expect(serialized).toContain(`,"compassContext":${GOLDEN},"currentSessionMessages":`);
+    expect(Object.keys(context)).toEqual(["contractVersion", "aiRole", "actorRoleContext", "globalPolicy", "roleBehavior",
+      "crisisBehavior", "methodologyContext", "sessionContext", "approvedContinuity", "compassContext",
+      "currentSessionMessages", "immediateExplorerMessage", "outputRequirements"]);
+    expect(result.evidence.p_context_source_ids).toEqual([ids.messageId, authority().onboarding.responseId,
+      f.config.methodologyContextPackVersionId, ...f.input.state.messages.map(message => message.id),
+      sx(401), sx(402), sx(404), sx(421), sx(422), sx(423), sx(425)].sort());
+    expect(result.request.contextFingerprint).toBe(createHash("sha256").update(serialized, "utf8").digest("hex").toUpperCase());
+  });
+
+  it("leaves out combined-away points, earlier Waypoint versions and needle moves on them", async () => {
+    const f = privateFixture(s3State()); const result = await f.build(f.input);
+    const serialized = result.request.authorizedContext;
+    for (const absent of ["Work stress", sx(403), sx(424), "I read on five nights", sx(411), sx(431)]) {
+      expect(serialized).not.toContain(absent);
+    }
+    expect(result.evidence.p_context_source_ids).not.toContain(sx(403));
+    expect(result.evidence.p_context_source_ids).not.toContain(sx(424));
+  });
+
+  it("omits a needle move on a combined-away point inside the newest five and fills the window from the next older one", async () => {
+    const history = s3State();
+    const newestFive = history.route!.filter(event => event.kind === "attention_changed").slice(-5);
+    expect(newestFive.map(event => "compassItemId" in event ? event.compassItemId : null)).toContain(sx(403));
+    const f = privateFixture(history); const section = assembled((await f.build(f.input)).request.authorizedContext).compassContext!;
+    // The oldest needle move (revision 2, on 404) is given only because the move on 403 is left out before the cap.
+    expect(section.recentRoute.map(event => event.pointId)).toEqual([sx(404), sx(401), sx(402), sx(404), sx(402)]);
+  });
+
+  it("gives no Priority change in the recent Route, only needle moves", async () => {
+    const history = s3State();
+    expect(history.route!.filter(event => event.kind === "priority_confirmed" || event.kind === "priority_reoriented")).toHaveLength(2);
+    const f = privateFixture(history); const serialized = (await f.build(f.input)).request.authorizedContext;
+    expect(assembled(serialized).compassContext!.recentRoute.map(event => event.kind)).toEqual(Array(5).fill("attention_changed"));
+    expect(serialized).not.toContain("priority_confirmed"); expect(serialized).not.toContain("priority_reoriented");
+    const onlyPriority = privateFixture({ ...history, route: history.route!.filter(event => event.kind !== "attention_changed") });
+    expect(assembled((await onlyPriority.build(onlyPriority.input)).request.authorizedContext).compassContext!.recentRoute).toEqual([]);
+  });
+
+  it("keeps the needle on an unplaced point and the stages formed, reached and released", async () => {
+    const f = privateFixture(s3State()); const section = assembled((await f.build(f.input)).request.authorizedContext).compassContext!;
+    expect(section.attentionId).toBe(sx(402));
+    expect(section.points.find(point => point.id === section.attentionId)).toMatchObject({ anchor: null, emphasis: null });
+    expect(section.waypoints.map(waypoint => [waypoint.id, waypoint.stage, waypoint.reachedEvidence])).toEqual([
+      [sx(421), "formed", null], [sx(422), "reached", "I walked four evenings last week"],
+      [sx(423), "released", null], [sx(425), "formed", null]]);
+    expect(section.drafts).toEqual([]);
+  });
+
+  it("never gives arrangement or category Route events or their before-labels", async () => {
+    const history = s3State();
+    const withSnapshots: ExplorerConversationState = { ...history, route: [...history.route!,
+      { operationId: sx(419), revision: 10, kind: "arrangement_confirmed", previousPriorityId: sx(404), priorityId: sx(401),
+        items: [{ compassItemId: sx(401), anchor: "apex", emphasis: 3, label: "Arranged label snapshot" }], recordedAt: "2026-11-03T09:09:00.000Z" },
+      { operationId: sx(420), revision: 11, kind: "category_confirmed", change: { targetItemId: sx(401), memberItemIds: [sx(401), sx(403)],
+        beforeItems: [{ compassItemId: sx(401), sourceMessageId: history.messages[0].id, label: "Old money wording", mergedIntoItemId: null,
+          anchor: "apex", emphasis: 3 }, { compassItemId: sx(403), sourceMessageId: history.messages[0].id, label: "Old work wording",
+          mergedIntoItemId: null, anchor: "upper_left", emphasis: 2 }], label: "Money worries" }, recordedAt: "2026-11-03T09:10:00.000Z" }] };
+    const f = privateFixture(withSnapshots); const serialized = (await f.build(f.input)).request.authorizedContext;
+    expect(JSON.stringify(assembled(serialized).compassContext)).toBe(GOLDEN);
+    for (const absent of ["Arranged label snapshot", "Old money wording", "Old work wording", "arrangement_confirmed", "category_confirmed"]) {
+      expect(serialized).not.toContain(absent);
+    }
+  });
+
+  it("after a real category rename, gives only the point's current label, never the wording a needle move captured", async () => {
+    const history = s3State(); const source = history.messages[0].id;
+    // The same rows as the rename block of supabase/tests/explorer_source_exclusion_test.sql: a needle move on 402
+    // captured as "Sleep", then a confirmed category rename of 402 to "Evening rest".
+    const renamed: ExplorerConversationState = { ...history, revision: 13,
+      compassItems: history.compassItems.map(item => item.id === sx(402) ? { ...item, label: "Evening rest" } : item),
+      route: [...history.route!,
+        { operationId: sx(441), revision: 11, kind: "attention_changed", compassItemId: sx(402), label: "Sleep",
+          recordedAt: "2026-11-03T13:00:00.000Z" },
+        { operationId: sx(442), revision: 12, kind: "category_confirmed", change: { targetItemId: sx(402), memberItemIds: [sx(402)],
+          beforeItems: [{ compassItemId: sx(402), sourceMessageId: source, label: "Sleep", mergedIntoItemId: null, anchor: null,
+            emphasis: null }], label: "Evening rest" }, recordedAt: "2026-11-03T13:01:00.000Z" }] };
+    expect(parseExplorerConversationState(renamed)).not.toBeNull();
+    const f = privateFixture(renamed); const result = await f.build(f.input);
+    const serialized = result.request.authorizedContext;
+    expect(assembled(serialized).compassContext!.recentRoute).toEqual([
+      { kind: "attention_changed", pointId: sx(401), label: "Money worries" },
+      { kind: "attention_changed", pointId: sx(402), label: "Evening rest" },
+      { kind: "attention_changed", pointId: sx(404), label: "Family" },
+      { kind: "attention_changed", pointId: sx(402), label: "Evening rest" },
+      { kind: "attention_changed", pointId: sx(402), label: "Evening rest" }]);
+    expect(serialized).not.toContain("Sleep");
+    // The dormant matcher, given the old wording as excluded content, inspects the context clear.
+    expect(inspectExplorerContextExclusions({ serializedContext: serialized, includedSourceIds: result.evidence.p_context_source_ids,
+      expectedBinding: { explorerId: authority().explorerId, sessionId: ids.conversationId, relationshipId: authority().relationshipId },
+      manifest: { contractVersion: EXPLORER_CONTEXT_EXCLUSION_MATCHER_VERSION, explorerId: authority().explorerId,
+        relationshipId: authority().relationshipId, entries: [{ entityType: "private_note", entityId: uuid(901),
+          normalizedContentSha256: createHash("sha256").update("Sleep").digest("hex").toUpperCase() }] } })).toEqual({ status: "clear" });
+  });
+
+  it("gives only the last five needle moves, oldest first, each with its point's current label", async () => {
+    const history = s3State();
+    const cycle = [sx(402), sx(404), sx(401)];
+    const many: ExplorerConversationState = { ...history, route: Array.from({ length: 9 }, (_, index) => ({ operationId: sx(500 + index),
+      revision: index + 2, kind: "attention_changed" as const, compassItemId: cycle[index % 3],
+      label: `Captured wording ${index}`, recordedAt: "2026-11-03T09:00:00.000Z" })) };
+    const f = privateFixture(many);
+    const section = assembled((await f.build(f.input)).request.authorizedContext).compassContext!;
+    expect(section.recentRoute.map(event => event.pointId)).toEqual([sx(404), sx(401), sx(402), sx(404), sx(401)]);
+    expect(section.recentRoute.map(event => event.label)).toEqual(["Family", "Money worries", "Sleep", "Family", "Money worries"]);
+  });
+
+  it("the governed private entry carries the same section and source ids", async () => {
+    const f = governedFixture({ history: s3State() });
+    (f.row.authority_context as ReturnType<typeof authority>).authorizationVersion = `AV3:${"B".repeat(64)}`;
+    const result = await createPrivateGovernedExplorerConversationContextBuilder(f.factoryInput)(f.input);
+    expect(JSON.stringify(assembled(result.request.authorizedContext).compassContext)).toBe(GOLDEN);
+    expect(result.evidence.p_context_source_ids).toEqual(expect.arrayContaining([sx(401), sx(402), sx(404), sx(421), sx(422), sx(423), sx(425)]));
+    // Immediate message, intake, methodology version and two saved messages, then the seven Compass records.
+    expect(result.evidence.p_context_source_ids).toHaveLength(5 + 7);
+  });
+
+  it("the older AV2 entries stay byte-for-byte unchanged: no section, the earlier revision, no Compass sources", async () => {
+    const f = fixture({ history: s3State() }); const result = await f.build(f.input);
+    const context = assembled(result.request.authorizedContext);
+    expect(context.contractVersion).toBe(EXPLORER_CONVERSATION_CONTEXT_SELECTION_VERSION);
+    expect(Object.hasOwn(context, "compassContext")).toBe(false);
+    expect(result.request.authorizedContext).not.toContain("Money worries");
+    expect(result.evidence.p_context_source_ids).toEqual([ids.messageId, authority().onboarding.responseId,
+      f.config.methodologyContextPackVersionId, ...f.input.state.messages.map(message => message.id)].sort());
   });
 });

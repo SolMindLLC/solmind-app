@@ -813,7 +813,9 @@ response-set ID, in banked form order. Required blanks reject; optional blanks
 omit. Only onboarding identity may use (real UUID, approved field); duplicate
 fields and cross-kind UUID reuse reject. The physical UUID appears once in source
 evidence; selection revision `wi007-v0.1+onboarding-fields-v2` is fingerprinted in
-the compact context. Guide-authored guardrails stay separate from Explorer
+the compact context (the AV2 entries; since 2026-11-03, chat step slice S3, the private
+AV3 entries serialize `wi007-v0.1+onboarding-fields-v2+compass-v1` with the saved Compass
+and Waypoint section, below). Guide-authored guardrails stay separate from Explorer
 preferences. Prior conversations, Reflections, summaries and Guide-private records
 remain omitted. The last 24
 saved owned messages and immediate Explorer message bind to the current
@@ -3315,7 +3317,40 @@ explorerPrivateConversationComposition.ts direct-import server-only under
 src/lib/solmind/virtual-guide/. The six-port closed repository is
 src/lib/solmind/supabase/explorerPrivateConversationRepository.ts. AV3 entries in
 src/lib/solmind/virtual-guide/explorerConversationContext.ts are separate from
-strict AV2 entries; compact input remains wi007-v0.1+onboarding-fields-v2.
+strict AV2 entries; the AV2 compact input remains wi007-v0.1+onboarding-fields-v2.
+
+Chat step slice S3 (2026-11-03; Paul's decision 4 of decision queue entry 2026-11-03
+12:38:07 CST and his go-ahead at 20:50:45 CST): the AV3 compact input is
+wi007-v0.1+onboarding-fields-v2+compass-v1, the same layers plus `compassContext` after
+`approvedContinuity`. Owners: src/lib/solmind/context/explorerSafeContext.ts (the section
+shape, limits of 24 points, 5 Route events and 20 Waypoints, the label and text limits,
+and the version tie: this revision requires the section, every other revision forbids
+it); explorerConversationContext.ts (fills it from the read state for the AV3 entries
+only: current points in saved display order, the saved Priority and attention, the last
+five needle moves (`attention_changed`) on a current point, counted after leaving out
+combined-away points, each with that point's current label, never the label the Route
+captured (amended 2026-11-03, S3 fix round 2; Priority changes are not sent), the
+current Waypoint heads with stage formed, reached or released, `formation` "saved",
+`drafts` empty; the point and Waypoint ids join the source ids);
+explorerPrivateConversationComposition.ts (pins the new revision before preparation,
+using the section owner's exported version constant);
+openAiLunaExplorerSafetyTransport.ts (its instructions list the section and treat
+Compass point, Route and Waypoint text as untrusted data; the approved policy, role and
+crisis texts are unchanged); explorerPrivateConfigurationCandidate.ts (prompt and
+instruction version labels bumped by hand, since the labels are not tied to the text);
+explorerContextExclusionGuard.ts (the dormant matcher also accepts the section, only
+under its contract version, and inspects its strings). No module was added. One runtime
+import edge was added in S3 fix round 2: explorerPrivateConversationComposition.ts may
+import ../context/explorerSafeContext (the pure, server-only section owner) for the
+version constant, listed in eslint-rules/explorer-source-isolation.mjs and its test; the
+profile count and the erased type-only edges are unchanged.
+supabase/migrations/20261103210000_explorer_context_compass.sql
+replaces ai.solmind_inspect_explorer_context_v3 in place (the new revision only, an
+exact rebuild of the section from the saved rows, the ids in the exact source set,
+3 to 103 source ids) and methodology.serialized_methodology_valid (exactly two key sets,
+each tied to its version). A saved label or Waypoint text containing a character the
+assembler refuses (a tab, or a zero-width joiner as in some emoji) makes that
+conversation's Sends unavailable, as such a character in the recent history already does.
 
 supabase/migrations/20261025010000_explorer_source_exclusion.sql owns bounded
 current-source inspection and committed content-free exclusion accountability;

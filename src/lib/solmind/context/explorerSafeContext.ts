@@ -41,7 +41,33 @@ export const EXPLORER_SAFE_CONTEXT_LIMITS = Object.freeze({
   appointmentLocationCharacters: 256,
   appointmentChannelCharacters: 64,
   serializedUtf8Bytes: 524_288,
+  compassPointCount: 24,
+  compassLabelCharacters: 160,
+  compassRouteEventCount: 5,
+  compassWaypointCount: 20,
+  compassWaypointCharacters: 1_000,
 } as const);
+
+// Chat step slice S3 (Paul's decision 4, decision queue 2026-11-03 12:38:07 CST, and
+// his go-ahead at 20:50:45 CST): the saved Compass and Waypoint section. It is tied to
+// its own contract version both ways: that version requires the section and every
+// other version forbids it, so the older twelve-layer envelope keeps its exact bytes.
+// The database migration 20261103210000_explorer_context_compass.sql rebuilds the same
+// section from the saved rows and compares it exactly before a Send is prepared.
+export const EXPLORER_COMPASS_CONTEXT_VERSION = "explorer-compass-context.v1" as const;
+export const EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION =
+  "wi007-v0.1+onboarding-fields-v2+compass-v1" as const;
+// The eight saved anchors (kept here so this module adds no import edge).
+const COMPASS_ANCHORS = Object.freeze([
+  "apex", "upper_left", "upper_right", "side_left", "side_right",
+  "lower_left", "lower_center", "lower_right",
+] as const);
+// Only needle moves: Paul's go-ahead names "recent needle moves" (decision queue 2026-11-03
+// 20:50:45 CST), so Priority changes, arrangement and category snapshots (and their
+// before-labels) are never model context. Each event carries its point's current label.
+export const EXPLORER_COMPASS_CONTEXT_ROUTE_KINDS = Object.freeze([
+  "attention_changed",
+] as const);
 
 export const EXPLORER_SAFE_CONTEXT_ERROR_CODES = Object.freeze([
   "explorer_context_invalid_envelope",
@@ -215,6 +241,41 @@ type OutputRequirements = {
   allowMarkdown: boolean;
 };
 
+type CompassPoint = {
+  id: string;
+  label: string;
+  order: number;
+  formation: "saved";
+  anchor: (typeof COMPASS_ANCHORS)[number] | null;
+  emphasis: 1 | 2 | 3 | null;
+};
+
+type CompassRouteEvent = {
+  kind: (typeof EXPLORER_COMPASS_CONTEXT_ROUTE_KINDS)[number];
+  pointId: string;
+  label: string;
+};
+
+type CompassWaypoint = {
+  id: string;
+  title: string;
+  destination: string;
+  meaning: string;
+  arrivalSignal: string;
+  stage: "formed" | "reached" | "released";
+  reachedEvidence: string | null;
+};
+
+export type ExplorerCompassContext = {
+  version: typeof EXPLORER_COMPASS_CONTEXT_VERSION;
+  points: ReadonlyArray<CompassPoint>;
+  priorityId: string | null;
+  attentionId: string | null;
+  recentRoute: ReadonlyArray<CompassRouteEvent>;
+  waypoints: ReadonlyArray<CompassWaypoint>;
+  drafts: ReadonlyArray<never>;
+};
+
 export type ExplorerSafeContext = {
   contractVersion: string;
   aiRole: "solmind_virtual_guide";
@@ -225,6 +286,8 @@ export type ExplorerSafeContext = {
   methodologyContext: VersionedText;
   sessionContext: SessionContext;
   approvedContinuity: ReadonlyArray<ApprovedContinuityItem>;
+  // Present exactly when contractVersion is EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION.
+  compassContext?: ExplorerCompassContext;
   currentSessionMessages: ReadonlyArray<CurrentSessionMessage>;
   immediateExplorerMessage: ImmediateExplorerMessage;
   outputRequirements: OutputRequirements;
@@ -814,6 +877,145 @@ function parseOutputRequirements(value: unknown): OutputRequirements {
   };
 }
 
+function parseNullablePointId(value: unknown, pointIds: ReadonlySet<string>): string | null {
+  if (value === null) {
+    return null;
+  }
+  const id = parseUuid(value);
+  if (!pointIds.has(id)) {
+    fail("explorer_context_invalid_envelope");
+  }
+  return id;
+}
+
+function parseCompassContext(value: unknown): ExplorerCompassContext {
+  const object = parsePlainObject(value);
+  assertExactKeys(object, [
+    "version",
+    "points",
+    "priorityId",
+    "attentionId",
+    "recentRoute",
+    "waypoints",
+    "drafts",
+  ]);
+  if (object.version !== EXPLORER_COMPASS_CONTEXT_VERSION) {
+    fail("explorer_context_invalid_envelope");
+  }
+  if (
+    !Array.isArray(object.points) ||
+    !Array.isArray(object.recentRoute) ||
+    !Array.isArray(object.waypoints) ||
+    !Array.isArray(object.drafts)
+  ) {
+    fail("explorer_context_invalid_envelope");
+  }
+  if (
+    object.points.length > EXPLORER_SAFE_CONTEXT_LIMITS.compassPointCount ||
+    object.recentRoute.length > EXPLORER_SAFE_CONTEXT_LIMITS.compassRouteEventCount ||
+    object.waypoints.length > EXPLORER_SAFE_CONTEXT_LIMITS.compassWaypointCount
+  ) {
+    fail("explorer_context_collection_limit_exceeded");
+  }
+  // Reserved for a later slice; nothing may be supplied yet.
+  if (object.drafts.length !== 0) {
+    fail("explorer_context_invalid_envelope");
+  }
+  const anchors = new Set<string>();
+  const points = orderUnique(
+    object.points.map((candidate): CompassPoint => {
+      const point = parsePlainObject(candidate);
+      assertExactKeys(point, ["id", "label", "order", "formation", "anchor", "emphasis"]);
+      if (
+        point.formation !== "saved" ||
+        !(point.anchor === null || COMPASS_ANCHORS.includes(point.anchor as never)) ||
+        !(point.emphasis === null || point.emphasis === 1 || point.emphasis === 2 || point.emphasis === 3) ||
+        (point.anchor !== null && point.emphasis === null)
+      ) {
+        fail("explorer_context_invalid_envelope");
+      }
+      if (point.anchor !== null) {
+        if (anchors.has(point.anchor as string)) {
+          fail("explorer_context_invalid_envelope");
+        }
+        anchors.add(point.anchor as string);
+      }
+      return {
+        id: parseUuid(point.id),
+        label: parseText(point.label, EXPLORER_SAFE_CONTEXT_LIMITS.compassLabelCharacters),
+        order: parseOrder(point.order),
+        formation: "saved",
+        anchor: point.anchor as CompassPoint["anchor"],
+        emphasis: point.emphasis as CompassPoint["emphasis"],
+      };
+    }),
+    "id",
+  );
+  const pointIds = new Set(points.map((point) => point.id));
+  const priorityId = parseNullablePointId(object.priorityId, pointIds);
+  const attentionId = parseNullablePointId(object.attentionId, pointIds);
+  const recentRoute = object.recentRoute.map((candidate): CompassRouteEvent => {
+    const event = parsePlainObject(candidate);
+    assertExactKeys(event, ["kind", "pointId", "label"]);
+    if (!EXPLORER_COMPASS_CONTEXT_ROUTE_KINDS.includes(event.kind as never)) {
+      fail("explorer_context_invalid_envelope");
+    }
+    const pointId = parseNullablePointId(event.pointId, pointIds);
+    if (pointId === null) {
+      fail("explorer_context_invalid_envelope");
+    }
+    return {
+      kind: event.kind as CompassRouteEvent["kind"],
+      pointId,
+      label: parseText(event.label, EXPLORER_SAFE_CONTEXT_LIMITS.compassLabelCharacters),
+    };
+  });
+  const waypointIds = new Set<string>();
+  const waypoints = object.waypoints.map((candidate): CompassWaypoint => {
+    const waypoint = parsePlainObject(candidate);
+    assertExactKeys(waypoint, [
+      "id",
+      "title",
+      "destination",
+      "meaning",
+      "arrivalSignal",
+      "stage",
+      "reachedEvidence",
+    ]);
+    const id = parseUuid(waypoint.id);
+    if (waypointIds.has(id) || pointIds.has(id)) {
+      fail("explorer_context_duplicate_source");
+    }
+    waypointIds.add(id);
+    if (!(["formed", "reached", "released"] as const).includes(waypoint.stage as never)) {
+      fail("explorer_context_invalid_envelope");
+    }
+    const stage = waypoint.stage as CompassWaypoint["stage"];
+    if (stage !== "reached" && waypoint.reachedEvidence !== null) {
+      fail("explorer_context_invalid_envelope");
+    }
+    const maximum = EXPLORER_SAFE_CONTEXT_LIMITS.compassWaypointCharacters;
+    return {
+      id,
+      title: parseText(waypoint.title, maximum),
+      destination: parseText(waypoint.destination, maximum),
+      meaning: parseText(waypoint.meaning, maximum),
+      arrivalSignal: parseText(waypoint.arrivalSignal, maximum),
+      stage,
+      reachedEvidence: stage === "reached" ? parseText(waypoint.reachedEvidence, maximum) : null,
+    };
+  });
+  return {
+    version: EXPLORER_COMPASS_CONTEXT_VERSION,
+    points,
+    priorityId,
+    attentionId,
+    recentRoute,
+    waypoints,
+    drafts: [],
+  };
+}
+
 function deepFreeze<T>(value: T): DeepReadonly<T> {
   if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
     for (const nested of Object.values(value as Record<string, unknown>)) {
@@ -828,7 +1030,7 @@ export function assembleExplorerSafeContext(
   input: unknown,
 ): ExplorerSafeContextAssembly {
   const envelope = parsePlainObject(input);
-  assertExactKeys(envelope, TOP_LEVEL_KEYS);
+  assertExactKeys(envelope, TOP_LEVEL_KEYS, ["compassContext"]);
 
   if (
     envelope.aiRole !== SOLMIND_AI_ROLES.VIRTUAL_GUIDE ||
@@ -845,6 +1047,10 @@ export function assembleExplorerSafeContext(
     envelope.contractVersion,
     EXPLORER_SAFE_CONTEXT_LIMITS.versionLabelCharacters,
   );
+  const hasCompassContext = Object.prototype.hasOwnProperty.call(envelope, "compassContext");
+  if (hasCompassContext !== (contractVersion === EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION)) {
+    fail("explorer_context_invalid_envelope");
+  }
   const binding = parseBinding(envelope.explorerBinding);
   const globalPolicy = parseVersionedText(
     envelope.globalPolicy,
@@ -867,6 +1073,9 @@ export function assembleExplorerSafeContext(
     envelope.continuityCandidates,
     binding,
   );
+  const compassContext = hasCompassContext
+    ? parseCompassContext(envelope.compassContext)
+    : undefined;
   const currentSessionMessages = parseCurrentSessionMessages(
     envelope.currentSessionMessages,
     binding,
@@ -888,6 +1097,8 @@ export function assembleExplorerSafeContext(
     methodologyContext,
     sessionContext,
     approvedContinuity,
+    // Serialized after approvedContinuity, before the history, only when supplied.
+    ...(compassContext === undefined ? {} : { compassContext }),
     currentSessionMessages,
     immediateExplorerMessage,
     outputRequirements,

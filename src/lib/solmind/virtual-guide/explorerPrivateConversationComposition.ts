@@ -2,6 +2,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { types } from "node:util";
 import { parseOpenAiModelName } from "./openAiModelConfiguration";
+import { EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION } from "../context/explorerSafeContext";
 import {
   EXPLORER_CONVERSATION_VERSION, EXPLORER_CONVERSATION_LIMITS,
   parseExplorerConversationCommand, parseExplorerConversationResult, isExplorerConversationId,
@@ -160,11 +161,14 @@ export function adaptPrivateGovernedExplorerContextBuilder(
 }
 // Match the existing safe assembler's exact text normalization. Versions alone
 // cannot bind the reviewed behavior to the bytes that will actually be sent.
+// Since chat step slice S3 (2026-11-03) the private context is the revision that
+// carries the saved Compass and Waypoint section; the database inspector accepts
+// only that revision for a new Send. The version comes from the section's owner.
 function pinnedPolicyText(serialization: string, configuration: ExplorerPrivateConfigurationCandidate): boolean {
   try {
     const envelope: unknown = JSON.parse(serialization);
     if (envelope === null || typeof envelope !== "object" || Array.isArray(envelope) ||
-      (envelope as Record<string, unknown>).contractVersion !== "wi007-v0.1+onboarding-fields-v2") return false;
+      (envelope as Record<string, unknown>).contractVersion !== EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION) return false;
     for (const key of ["globalPolicy", "roleBehavior", "crisisBehavior"] as const) {
       const part = (envelope as Record<string, unknown>)[key];
       if (part === null || typeof part !== "object" || Array.isArray(part) ||
