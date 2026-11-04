@@ -245,7 +245,10 @@ grey "Not connected yet" line (the bell beside its icon, named
 "Notifications Not connected yet") and, when activated, one sentence directly
 under it, through `NotConnectedProvider`. Notes that describe an area (the
 Compass, Waypoint, "Ways to begin" and latest-change sentences) stay shown in
-an area marked "Not connected yet". All these sentences are the review drafts
+an area marked "Not connected yet" (dated exception, 2026-11-03, Paul's
+decision, decision queue 18:05:33 CST: the connected Compass card shows no
+forming-point or needle sentence and no "Not connected yet" area; the Waypoint
+card and the Key Insight area are unchanged; see AGENTS.md). All these sentences are the review drafts
 without their prefix, reused pending Paul's wording review; he may reword any
 of them. No blue note, dashed review mark or `data-preview-*` attribute
 appears there. Only the review version keeps the blue notes. The "Return to

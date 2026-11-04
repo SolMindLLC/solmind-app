@@ -99,6 +99,38 @@ describe("Explorer-owned formation command boundaries", () => {
     expect(current.priorityId).toBe(items[0].id);
   });
 
+  it("lets attention move to any current point on an arranged Compass, placed or not, as the server does since 20261103180000", () => {
+    // Paul's decision, decision queue 2026-11-03 18:05:33 CST: the needle may point at any current point.
+    const arranged = state({ compassItems: [
+      { ...items[0], anchor: "apex", emphasis: 3 },
+      { ...items[1], anchor: null, emphasis: 1 },
+      { id: "point-new", sourceMessageId: items[0].sourceMessageId, label: "Not yet arranged", anchor: null, emphasis: null },
+      { id: "point-merged", sourceMessageId: items[0].sourceMessageId, label: "Combined away", anchor: null, emphasis: 1, mergedIntoItemId: items[0].id },
+    ], priorityId: items[0].id, attentionId: items[0].id });
+    expect(buildAttentionFormationIntent(arranged, items[1].id)).toEqual({ ok: true, command: { kind: "set_attention", itemId: items[1].id }, error: null });
+    expect(buildAttentionFormationIntent(arranged, "point-new")).toEqual({ ok: true, command: { kind: "set_attention", itemId: "point-new" }, error: null });
+    // A combined-away original, the current point and an unknown point are still refused.
+    expect(buildAttentionFormationIntent(arranged, "point-merged").ok).toBe(false);
+    expect(buildAttentionFormationIntent(arranged, items[0].id).ok).toBe(false);
+    expect(buildAttentionFormationIntent(arranged, "unknown").ok).toBe(false);
+    // Priority keeps its rule: once arranged, only the apex point.
+    expect(buildPriorityFormationIntent({ ...arranged, priorityId: null }, items[1].id, true).ok).toBe(false);
+    expect(buildPriorityFormationIntent({ ...arranged, priorityId: null }, "point-new", true).ok).toBe(false);
+    expect(buildPriorityFormationIntent({ ...arranged, priorityId: null }, items[0].id, true).ok).toBe(true);
+    // The arrangement keeps its rule: with the needle on a point without a position, an arrangement that leaves it
+    // unplaced is refused, and one that places it is accepted.
+    const needleOff = { ...arranged, attentionId: items[1].id };
+    const keep = [
+      { compassItemId: items[0].id, anchor: "apex", emphasis: 3 },
+      { compassItemId: items[1].id, anchor: null, emphasis: 1 },
+      { compassItemId: "point-new", anchor: null, emphasis: 1 },
+    ] satisfies ExplorerCompassArrangementItem[];
+    expect(buildCompassArrangementFormationIntent(needleOff, items[0].id, keep, true)).toEqual({ ok: false, command: null,
+      error: "Keep current attention visible; move attention explicitly before placing that point in Other paths." });
+    expect(buildCompassArrangementFormationIntent(needleOff, items[0].id,
+      [keep[0], { ...keep[1], anchor: "side_left" }, keep[2]], true).ok).toBe(true);
+  });
+
   it("requires all three Waypoint meanings, exact source and fresh explicit confirmation", () => {
     for (const field of ["destination", "meaning", "arrivalSignal"] as const) {
       expect(buildWaypointFormationIntent(state(), { ...draft, [field]: " " }).ok).toBe(false);

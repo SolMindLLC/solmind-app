@@ -201,10 +201,21 @@ screen, and `ExplorerConversation.tsx` stays its only fetch owner:
 
 - `ExplorerConversation.tsx` keeps fetch, decoding, authority loss, pending
   turns, uncertain retry, Send and End unchanged, and passes read-only view
-  props and callbacks;
+  props and callbacks (one dated exception: since 2026-11-03, chat step slice
+  S2 fix round 2, a confirmed command other than Send keeps the Virtual Guide
+  state the screen last had instead of the result's "unavailable", because
+  that result never checks the Virtual Guide and the server checks readiness
+  again on every Send; and since fix round 3, the same day, a Send refused as
+  unavailable records "unavailable" as that kept state, because the refusal is
+  the server's latest word and a later command must not enable Send again;
+  and since the chat card redesign, the same day, the decoding it uses, the
+  closed state parser in `explorerConversationContract.ts`, reads current
+  attention on a point without a position in an arranged Compass, because the
+  server saves such a needle since migration 20261103180000);
 - `ExplorerConversationConnectedScreen.tsx` is presentation only and owns
-  layout state only (panel, drawer, the narrow-screen Menu and which "Not
-  connected yet" sentence is shown, through `NotConnectedProvider`);
+  layout state only (panel, drawer, since 2026-11-03 the Compass card's Full
+  or Compact view in the panel and in the drawer, the narrow-screen Menu and
+  which "Not connected yet" sentence is shown, through `NotConnectedProvider`);
 - `explorerConversationConnectedScreen.ts` owns its fixed wording and shell
   data and imports no sample; its Guide notes say "your Guide"
   (`UNNAMED_GUIDE`), because the screen receives no Guide name;
@@ -232,10 +243,69 @@ screen, and `ExplorerConversation.tsx` stays its only fetch owner:
   beside its icon, named "Notifications Not connected yet") and one sentence
   directly under it on request instead of a "Not yet implemented:" note;
   notes that describe an area stay shown in an area marked "Not connected
-  yet"; only the review version keeps its blue notes. The sentences are the
-  review drafts reused pending Paul's wording review; and
+  yet" (one dated exception, 2026-11-03, Paul's decision in decision queue
+  18:05:33 CST: the Compass card shows no forming-point or needle note, to cut
+  clutter; see the card below); only the review version keeps its blue notes.
+  The sentences are the review drafts reused pending Paul's wording review;
+- since chat step slices S1 and S2 (2026-11-03; Paul's chat-step decisions,
+  decision queue 2026-11-03 12:38:07 and 12:41:08 CST), the support panel and
+  drawer show the connected Compass & Waypoint card instead of the Compass and
+  Waypoint "Not connected yet" notes. `ExplorerConnectedCompassCard.tsx` draws
+  the saved Compass on its 8 stored positions in the look of the reviewed dial
+  (not that dial itself, which has 4 zones) and lists every current point;
+  choosing a point hands the existing `set_attention` intent to `onCommand`, so
+  `ExplorerConversation.tsx` sends it with its existing hold, retry and
+  expected revision. `ExplorerConnectedWaypointCard.tsx` shows each saved
+  Waypoint read-only with the stage names Formed, Reached and Released and its
+  older wording as "Earlier version - <stage>". Both are presentation only;
+  `src/lib/solmind/explorerConnectedCard.ts` owns their pure mapping from the
+  saved state, the needle rules (through `buildAttentionFormationIntent`, which
+  since 2026-11-03 takes any current point, as the server does, and the
+  reasons the needle is held) and their wording. Their names avoid the `ExplorerConversationScreen*.tsx`
+  pattern, so the review version and its checks are unchanged. Since fix
+  round 2 (2026-11-03) the Compass card keeps two pieces of presentation
+  state: the live line's last result and the point the Explorer chose there,
+  so that focus can move to the "Current attention" line once that move is
+  confirmed; and `ExplorerConversationConnectedScreen.tsx` closes the narrow
+  drawer and moves focus to the page's alert when a change made from the
+  drawer leaves no saved state. Since 2026-11-03 (Paul's decisions, decision
+  queue 16:20:29 and 16:24:39 CST) the Compass card shows one view at a time,
+  to save space: the Full view (the dial with the Priority and Current
+  attention lines; each point drawn on the dial is a button over its bubble
+  that points the needle with the list's rules, holds, reasons, live line and
+  focus, and one line says how many points are not on the dial and that the
+  Compact view shows them) or the Compact view (the point list as before, with
+  the same two lines). A button under the Compass heading ("Compact view" or
+  "Full view", with " of the Compass" for screen readers) switches between
+  them. The card takes the view as a prop; which view shows is layout state in
+  `ExplorerConversationConnectedScreen.tsx`, Full first, kept separately for
+  the panel and the drawer while the page is open and never saved. The chat
+  card redesign (2026-11-03; Paul's design and decision, decision queue
+  18:05:33 CST) amends this: the needle may point at any current point, placed
+  or not (the database rule changed with it, below); the Full view shows the
+  points without a position in a bottom row under Excursion, in grey with one
+  small yellow symbol each, at most three places, the third "+N more" (which
+  opens the Compact view, focus then on the view switch) when there are more,
+  each a button with the dial's rules; the line about the Compact view is
+  gone; a needle on such a point is drawn dashed with the yellow symbol at its
+  tip and is a button (named "Why the needle is dashed") whose tap shows one
+  short sentence and whose next tap hides it (card state only); the Compact
+  view's points without a position are grey with the same symbol; the heading
+  is "Point the needle to change topic" in both views, with no instruction
+  sentence and no placement paragraph; and the card no longer has its two
+  "Not connected yet" notes (forming points; the needle following the
+  conversation), a dated exception Paul decided for the Compass card. Key
+  Insights stay in their area marked "Not connected yet"; and
 - `ExplorerConversationFormation.tsx` stays mounted below the conversation as
-  the current Compass and Waypoint tools until rebuild steps 4 and 5.
+  the current Compass and Waypoint tools until rebuild steps 4 and 5. Since
+  2026-11-03 it labels older Waypoint wording "Earlier version - Formed",
+  "- Reached" or "- Released" (Paul's question 9 decision) instead of
+  "Superseded - ..."; its other labels are unchanged, except that since the
+  chat card redesign (2026-11-03) its "Attend to" button takes any current
+  point, so the disabled state and the sentence "Arrange this point visibly
+  before moving attention here." are gone, to match the server. Its
+  arrangement review keeps the rule that the current-attention point stays
+  placed.
 
 The Explorer workspace frame (Paul's 2026-11-02 decisions, decision queue
 14:07:48 and 22:19:17 CST) puts the same look and menu on the other signed-in
@@ -712,7 +782,11 @@ read/prepare/complete/mutate service-role capabilities.
 `src/lib/solmind/explorerConversationContract.ts` is browser-safe and owns
 closed bounded command/result shapes, exact UUID selections, expected revision
 and required `pendingTurn` boolean. Browser actor, account, application-session,
-relationship, policy and provider fields grant no authority.
+relationship, policy and provider fields grant no authority. Since 2026-11-03
+its state parser requires a saved arrangement's Priority at the apex but lets
+current attention be on any current point, placed or not, as the server saves
+it since migration 20261103180000 (Paul's decision, decision queue 18:05:33
+CST).
 `src/components/solmind/ExplorerConversation.tsx` owns fetch, exact result
 decoding, view invalidation, one operation/revision and byte-identical uncertain
 retry. Unmount/clear private drafts when authority is lost. No browser storage.
@@ -782,6 +856,33 @@ interpretation, clinical score, automatic lifecycle change, Guide-private
 projection or broader Guide work is added. Existing prototypes, S03A-S03E
 foundations and all login/session/logout owners retain their boundaries.
 Explicit24stored/eightvisible current-head Compass review adds confirmed wording/combination with retained transitive source links and immutable old captures; selectors/layout never transfer silently. One-way combination frees no slot; Route/Reached/End/owned read-only review preserve facts without reactivation.
+
+The needle may point at any current point (2026-11-03; Paul's decision,
+decision queue 18:05:33 CST, the chat card redesign).
+`supabase/migrations/20261103180000_explorer_attention_any_point.sql` replaces
+only the internal body of `public.solmind_mutate_explorer_conversation`, which
+`public.solmind_mutate_explorer_conversation_v3` calls: its latest definition
+(from `20261029030000_explorer_compass_categories.sql`) with one rule block
+changed, so `set_attention` accepts any current, not combined-away point,
+placed or not, also once a Compass is arranged, and still records the
+`attention_changed` Route event with the saved label. Signature, return shape,
+security definer, empty search_path, lock timeout, owner (postgres) and grants
+(no API role may execute it) are unchanged and restated. `confirm_priority`
+keeps its rule (once arranged, only the apex point), and
+`public.solmind_confirm_explorer_compass_arrangement_v1` is unchanged: an
+arrangement that leaves the current-attention point unplaced is still refused,
+so the needle never moves silently (Data Model Spec 03: attention stays
+visible in an arrangement). The browser rules match:
+`buildAttentionFormationIntent`, the old tools' "Attend to" button, the
+Compass card and the closed state parser `parseExplorerConversationState`,
+which now reads attention on a point without a position. pgTAP:
+`supabase/tests/explorer_compass_arrangement_test.sql`. Rollback limit
+(2026-11-03, review REV223): once an Explorer has pointed the needle at a point
+without a position in an arranged Compass, an app copy from before this change
+cannot read that conversation's saved state (its parser required a placed
+attention point), so the app cannot be rolled back on its own past this change
+while such a conversation exists; roll back the app together with the
+conversation state, or move the needle to a placed point first.
 
 ## Explorer Sharing Boundary
 

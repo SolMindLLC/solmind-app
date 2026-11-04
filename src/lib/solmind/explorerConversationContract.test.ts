@@ -508,7 +508,7 @@ describe("Confirmed Compass arrangement boundaries", () => {
     }
   });
 
-  it("rejects partial placement pairs, duplicate anchors and off-Compass Priority or attention in a saved arrangement", () => {
+  it("rejects partial placement pairs, duplicate anchors and an off-apex Priority in a saved arrangement", () => {
     const legacy = populatedState();
     for (const placement of [{ anchor: null }, { emphasis: null }, { anchor: "apex" }, { emphasis: 2 },
       { anchor: "apex", emphasis: null }, { anchor: "unknown", emphasis: 2 },
@@ -520,9 +520,24 @@ describe("Confirmed Compass arrangement boundaries", () => {
     for (const changed of [
       { ...original, compassItems: [original.compassItems[0], { ...original.compassItems[1], anchor: "apex" }] },
       { ...original, compassItems: [{ ...original.compassItems[0], anchor: "upper_left" }, original.compassItems[1]] },
+      { ...original, compassItems: [{ ...original.compassItems[0], anchor: null }, original.compassItems[1]] },
+      { ...original, compassItems: [{ ...original.compassItems[0], anchor: null, emphasis: null }, original.compassItems[1]] },
+    ]) expect(parseExplorerConversationResult(success(changed))).toBeNull();
+  });
+
+  it("reads current attention on a point without a position in a saved arrangement, as the server saves it since 20261103180000", () => {
+    // Paul's decision, decision queue 2026-11-03 18:05:33 CST: the needle may point at any current point.
+    const original = arrangedState();
+    for (const changed of [
       { ...original, compassItems: [original.compassItems[0], { ...original.compassItems[1], anchor: null }] },
       { ...original, compassItems: [original.compassItems[0], { ...original.compassItems[1], anchor: null, emphasis: null }] },
-    ]) expect(parseExplorerConversationResult(success(changed))).toBeNull();
+    ]) {
+      const parsed = parseExplorerConversationResult(success(changed));
+      expect(parsed).toEqual(success(changed));
+      expect(parsed?.ok && parsed.state.attentionId).toBe(otherPointId);
+    }
+    // A combined-away or unknown attention point is still refused.
+    expect(parseExplorerConversationResult(success({ ...original, attentionId: uuid(77) }))).toBeNull();
   });
 
   it("reads the exact seven-key captured Route union in revision order with detached historical labels", () => {

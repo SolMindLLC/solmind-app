@@ -192,7 +192,13 @@ export function ExplorerConversation() {
           window.location.assign("/explorer/home");
           return;
         }
-        replaceState(result.state);
+        // A result for any command but Send never checks the Virtual Guide (it
+        // always says "unavailable"), and the server checks readiness again on
+        // every Send, so after such a command the screen keeps the Virtual
+        // Guide state it last had (chat step slice S2, fix round 2, 2026-11-03).
+        // A Send refused as unavailable sets that state (fix round 3, below).
+        replaceState(pending.command.kind === "send" || previous === null ? result.state
+          : Object.freeze({ ...result.state, providerState: previous.providerState }));
         setError(null);
         setNotice(output?.assistance === null ? "Your saved conversation is up to date." : "");
         if (pending.command.kind === "send" && output?.assistance === null) setDraft("");
@@ -200,6 +206,14 @@ export function ExplorerConversation() {
         setError(result.error);
         if (result.error === "denied" || result.error === "refresh_required") replaceState(null);
         if (result.error === "denied") setDraft("");
+        // A Send refused because the Virtual Guide is unavailable records that
+        // as the Virtual Guide state the screen keeps, so a later confirmed
+        // command does not enable Send again; a reload reads it afresh (chat
+        // step slice S2, fix round 3, 2026-11-03).
+        const kept = stateRef.current;
+        if (pending.command.kind === "send" && result.error === "provider_unavailable" && kept !== null) {
+          replaceState(Object.freeze({ ...kept, providerState: "unavailable" }));
+        }
       }
       pendingRef.current = null;
     } catch {

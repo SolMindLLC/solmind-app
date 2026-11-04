@@ -146,11 +146,23 @@ Rebuild step 2 (Paul's 2026-10-29 20:24 rebuild approval with the interim
 review first, and his 2026-10-31 01:01-01:03 go-ahead after that review) puts
 the same designed layout on the connected `/explorer/conversation` screen.
 `ExplorerConversation.tsx` keeps every fetch, decoding, authority-loss,
-pending-turn, uncertain-retry, Send and End rule unchanged and passes read-only
-view props and callbacks to the presentation-only
+pending-turn, uncertain-retry, Send and End rule unchanged (one dated
+exception: since 2026-11-03, chat step slice S2 fix round 2, a confirmed
+command other than Send keeps the Virtual Guide state the screen last had
+instead of the result's "unavailable", because that result never checks the
+Virtual Guide and the server checks readiness again on every Send; and since
+fix round 3, the same day, a Send refused as unavailable records "unavailable"
+as that kept state, because the refusal is the server's latest word and a
+later command must not enable Send again; and since the chat card redesign,
+the same day, the decoding it uses, the closed state parser in
+`explorerConversationContract.ts`, reads current attention on a point without
+a position in an arranged Compass, because the server saves such a needle
+since migration 20261103180000) and passes
+read-only view props and callbacks to the presentation-only
 `ExplorerConversationConnectedScreen.tsx`, which owns layout state only (panel,
-drawer, the narrow-screen Menu and which "Not connected yet" sentence is
-shown). `explorerConversationConnectedScreen.ts`
+drawer, since 2026-11-03 the Compass card's Full or Compact view in the panel
+and in the drawer, the narrow-screen Menu and which "Not connected yet"
+sentence is shown). `explorerConversationConnectedScreen.ts`
 owns its fixed wording and shell data and imports no sample. The screen
 receives no Explorer or Guide name, so its Guide notes say "your Guide"
 (`UNNAMED_GUIDE`). The shared shell, navigation and support panel take a
@@ -212,11 +224,27 @@ connected yet"). Paul chose this knowingly as an exception to the rule that a
 control without a destination is a defect.
 `ExplorerConversationScreenNotYetImplemented.tsx` implements it once through
 `NotConnectedProvider`, which the connected screen places. Notes that describe
-an area rather than a control (the Compass, forming point, needle, Waypoint
-card and key insight sentences, the "Ways to begin" and earlier-Compass
-sentences and the latest-change line) stay shown, each in an area marked "Not
+an area rather than a control (the forming point, needle and key insight
+sentences, the "Ways to begin" and earlier-Compass sentences and the
+latest-change line) stay shown, each in an area marked "Not
 connected yet": the grey label beside or under the area's heading or title,
-or on its own line above the sentence where the area has no heading. The top bar breadcrumb is
+or on its own line above the sentence where the area has no heading. Since
+chat step slices S1 and S2 (2026-11-03) the connected Compass & Waypoint card
+(`ExplorerConnectedCompassCard.tsx`, `ExplorerConnectedWaypointCard.tsx`;
+mapping and wording in `src/lib/solmind/explorerConnectedCard.ts`) replaces the
+Compass and Waypoint card sentences. Dated exception, 2026-11-03 (Paul's
+decision, decision queue 18:05:33 CST, the chat card redesign, "there is too
+much text explaining things"): the Compass card shows neither the forming point
+nor the needle sentence and has no "Not connected yet" area, although forming
+points and the needle following the conversation are not built yet; this rule
+still holds for every other area, and the Waypoint card and the Key Insight
+area are unchanged. The same redesign lets the needle point at any current
+point, placed or not (migration
+`supabase/migrations/20261103180000_explorer_attention_any_point.sql`, with
+the browser rule in `explorerConversationFormation.ts` and the closed state
+parser in `explorerConversationContract.ts` matching it); the Full view shows
+the points without a position in a bottom row, and a needle on one of them is
+drawn dashed, which is the Compass design, not a review mark. The top bar breadcrumb is
 plain text and the separate top-bar "Explorer home" link is gone (Overview is
 the way home). The "Return to Explorer home" link is shown when no saved
 conversation has been started; an ended conversation links to "Review ended
@@ -372,7 +400,10 @@ raw duplicate cookies through src/lib/solmind/auth/readRawRequestCookies.ts, tol
 `src/lib/solmind/supabase/explorerConversationRepository.ts` exposes only the
 four closed feature RPC capabilities.
 
-`src/lib/solmind/explorerConversationContract.ts` owns closed browser shapes.
+`src/lib/solmind/explorerConversationContract.ts` owns closed browser shapes
+(since 2026-11-03 a saved arrangement still requires the Priority at the apex,
+while current attention may be on any current point, placed or not, as the
+server saves it since migration 20261103180000).
 `src/components/solmind/ExplorerConversation.tsx` owns fetch, view lifetime,
 bounded results and one operation identity/revision with exact uncertain retry
 bytes. Browser IDs are selections, never actor/session/provider authority.

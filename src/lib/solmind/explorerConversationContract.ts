@@ -412,9 +412,12 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
   const currentCompassIds = new Set(currentCompass.map(item => item.id));
   if (!(state.priorityId === null || (id(state.priorityId) && currentCompassIds.has(state.priorityId))) ||
       !(state.attentionId === null || (id(state.attentionId) && currentCompassIds.has(state.attentionId)))) return null;
+  // Once a Compass is arranged the Priority sits at the apex. Current attention
+  // may be on any current point, placed or not, since migration 20261103180000
+  // (Paul's decision, decision queue 2026-11-03 18:05:33 CST): the server now
+  // saves such a needle, so its state must still parse.
   if (currentCompass.some(item => item.emphasis != null) &&
-      ((state.priorityId !== null && !currentCompass.some(item => item.id === state.priorityId && item.anchor === "apex")) ||
-       (state.attentionId !== null && !currentCompass.some(item => item.id === state.attentionId && item.anchor != null)))) return null;
+      state.priorityId !== null && !currentCompass.some(item => item.id === state.priorityId && item.anchor === "apex")) return null;
   const waypoints: ExplorerConversationWaypoint[] = [];
   const waypointIds = new Set<string>();
   for (const item of state.waypoints) {

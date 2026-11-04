@@ -17,6 +17,12 @@ import {
   type ConnectedConversationStatus,
 } from "@/lib/solmind/explorerConversationConnectedScreen";
 import {
+  CONNECTED_KEY_INSIGHT_HEADING,
+  needleHold,
+  pointNeedleIntent,
+  type CardCompassView,
+} from "@/lib/solmind/explorerConnectedCard";
+import {
   EXPLORER_CONVERSATION_LIMITS,
   type ExplorerConversationMessage,
   type ExplorerConversationState,
@@ -25,6 +31,8 @@ import type { ExplorerPrivateAssistance } from "@/lib/solmind/explorerPrivateCon
 import { SPEAKER_LABEL_STYLE, speakerLabelClass } from "@/lib/solmind/explorerSpeakerStyle";
 import { SOLMIND_TERMS } from "@/lib/solmind/terms";
 
+import { ConnectedCompassCard } from "./ExplorerConnectedCompassCard";
+import { ConnectedWaypointCard } from "./ExplorerConnectedWaypointCard";
 import {
   ExplorerConversationFormation,
   type ExplorerConversationFormationIntent,
@@ -60,8 +68,14 @@ import {
 // This file is presentation only. ExplorerConversation.tsx keeps every fetch,
 // authority, retry, pending-turn and End rule and passes the results here as
 // read-only props; nothing here requests, stores or sends anything itself.
+// The Compass & Waypoint card (ExplorerConnectedCompassCard.tsx and
+// ExplorerConnectedWaypointCard.tsx) draws the saved Compass and Waypoints,
+// and choosing a Compass point hands the existing set_attention command to
+// onCommand, which ExplorerConversation.tsx sends.
 // The only state kept here is layout: whether the wide panel shows, whether
-// the narrow drawer is open, whether the narrow-screen Menu is open and which
+// the narrow drawer is open (it closes, and focus moves to the page's alert,
+// when a change made from it leaves no saved state), which Compass view (Full
+// or Compact) shows in the panel and in the drawer, whether the narrow-screen Menu is open and which
 // "Not connected yet" sentence is shown. Parts that are not connected yet show
 // a grey "Not connected yet" line and, when activated, one sentence directly
 // under them saying what they will do (NotConnectedProvider). A note that
@@ -236,10 +250,15 @@ function ConnectedConversationHeader({ status, headingRef }: HeaderProps) {
   );
 }
 
-type NoticesProps = Readonly<{ view: ConnectedConversationView; actions: ConnectedConversationActions }>;
+type NoticesProps = Readonly<{
+  view: ConnectedConversationView;
+  actions: ConnectedConversationActions;
+  errorRef: RefObject<HTMLDivElement | null>;
+}>;
 
-// The live status line, the alerts and Reload, exactly as before.
-function ConversationNotices({ view, actions }: NoticesProps) {
+// The live status line, the alerts and Reload, exactly as before. The error
+// alert can take focus, for when the narrow drawer closes after a refusal.
+function ConversationNotices({ view, actions, errorRef }: NoticesProps) {
   return (
     <div className="grid gap-3 px-4 pt-3 sm:px-5">
       <p aria-atomic="true" aria-live="polite" className="min-h-6 text-sm text-stone-200" role="status">
@@ -255,7 +274,7 @@ function ConversationNotices({ view, actions }: NoticesProps) {
         </div>
       ) : null}
       {view.errorMessage !== null ? (
-        <div className={ALERT_CLASS} role="alert">
+        <div className={joinClasses(ALERT_CLASS, FOCUS_RING)} ref={errorRef} role="alert" tabIndex={-1}>
           <p>{view.errorMessage}</p>
           {view.signInRequired ? (
             <a className={LINK_CLASS} href="/login/explorer">
@@ -551,27 +570,50 @@ function NotConnectedAreaHeading({ id, children }: Readonly<{ id: string; childr
   );
 }
 
-// The Compass & Waypoint card is not built yet: each area is marked "Not
-// connected yet" and says what it will do and, when the current tools are
-// shown, where the saved Compass and Waypoints are meanwhile.
-function ConnectedSupportBody({ scope, toolsShown }: Readonly<{ scope: SupportScope; toolsShown: boolean }>) {
-  const compassTitle = `${scope}-connected-compass-title`;
-  const waypointTitle = `${scope}-connected-waypoint-title`;
+type SupportBodyProps = Readonly<{
+  scope: SupportScope;
+  view: ConnectedConversationView;
+  compassView: CardCompassView;
+  onToggleCompassView: () => void;
+  onCommand: (intent: ExplorerConversationFormationIntent) => void;
+}>;
+
+// The Compass & Waypoint card (chat step slices S1 and S2): the saved Compass
+// on its 8 positions, where the Explorer can point the needle, and the saved
+// Waypoints, read-only. Choosing a point sends the existing set_attention
+// command through onCommand, so ExplorerConversation.tsx keeps its hold,
+// retry and expected-revision rules. Key Insights are not built yet (Paul's
+// decision 7), so that area stays marked "Not connected yet". When the
+// current tools are shown for an open conversation, the panel says what they
+// are still for; after End they show the saved record read-only, so it does
+// not (fix round 2, 2026-11-03). The Compass card shows its Full or Compact
+// view as this scope's layout state says (2026-11-03).
+function ConnectedSupportBody({ scope, view, compassView, onToggleCompassView, onCommand }: SupportBodyProps) {
+  const { state } = view;
+  const keyInsightTitle = `${scope}-connected-key-insight-title`;
+  const flags = { ended: view.ended, endReviewOpen: view.endReviewOpen, uncertain: view.uncertain, busy: view.busy, held: view.held };
+  const hold = state === null ? null : needleHold(state, flags);
+  const pointNeedle = (itemId: string) => {
+    const intent = state === null ? null : pointNeedleIntent(state, flags, itemId);
+    if (intent !== null) onCommand(intent);
+  };
 
   return (
     <>
-      <section aria-labelledby={compassTitle} className="grid gap-2 border-b border-stone-800/80 px-4 py-4">
-        <NotConnectedAreaHeading id={compassTitle}>Compass</NotConnectedAreaHeading>
-        <NotYetImplementedNote id={noteId(scope, "compass")} noteKey="compass" standalone />
-        <NotYetImplementedNote id={noteId(scope, "formingPoint")} noteKey="formingPoint" standalone />
-        <NotYetImplementedNote id={noteId(scope, "needle")} noteKey="needle" standalone />
-      </section>
-      <section aria-labelledby={waypointTitle} className="grid gap-2 border-b border-stone-800/80 px-4 py-4">
-        <NotConnectedAreaHeading id={waypointTitle}>Waypoint</NotConnectedAreaHeading>
-        <NotYetImplementedNote id={noteId(scope, "waypointCard")} noteKey="waypointCard" standalone />
+      <ConnectedCompassCard
+        hold={hold}
+        onPoint={pointNeedle}
+        onToggleView={onToggleCompassView}
+        scope={scope}
+        state={state}
+        view={compassView}
+      />
+      <ConnectedWaypointCard scope={scope} state={state} />
+      <section aria-labelledby={keyInsightTitle} className="grid gap-2 border-b border-stone-800/80 px-4 py-4">
+        <NotConnectedAreaHeading id={keyInsightTitle}>{CONNECTED_KEY_INSIGHT_HEADING}</NotConnectedAreaHeading>
         <NotYetImplementedNote id={noteId(scope, "keyInsight")} noteKey="keyInsight" standalone />
       </section>
-      {toolsShown ? <p className="px-4 py-4 text-xs leading-5 text-stone-300">{CURRENT_TOOLS_POINTER}</p> : null}
+      {state !== null && !view.ended ? <p className="px-4 py-4 text-xs leading-5 text-stone-300">{CURRENT_TOOLS_POINTER}</p> : null}
     </>
   );
 }
@@ -605,9 +647,39 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [openExplanation, setOpenExplanation] = useState<string | null>(null);
+  // Which Compass view shows, kept separately for the wide panel and the phone
+  // drawer and never saved (Paul's decision, 2026-11-03 16:20:29 CST). It is
+  // kept here because the drawer's content is removed while it is closed.
+  const [compassViews, setCompassViews] = useState<Readonly<Record<SupportScope, CardCompassView>>>({ panel: "full", drawer: "full" });
   const { state } = view;
+  const errorRef = useRef<HTMLDivElement>(null);
+  // A change made from the narrow drawer that leaves no saved state (a refusal
+  // or a sign-in problem) closes the drawer, which makes the rest of the page
+  // inert, so that the page's alert and its action can be reached; focus then
+  // moves to that alert (fix round 2, 2026-11-03). Adjusted during render, as
+  // React does for a value that follows a prop; the drawer's own close effect
+  // runs first, then the effect below moves focus.
+  const [shown, setShown] = useState<Readonly<{ loaded: boolean; alertFocus: number }>>({ loaded: state !== null, alertFocus: 0 });
+  if (shown.loaded !== (state !== null)) {
+    const lost = state === null && drawerOpen && view.errorMessage !== null;
+    setShown({ loaded: state !== null, alertFocus: shown.alertFocus + (lost ? 1 : 0) });
+    if (lost) setDrawerOpen(false);
+  }
+  useEffect(() => {
+    if (shown.alertFocus > 0) errorRef.current?.focus();
+  }, [shown.alertFocus]);
   const status = conversationStatus(state, view.ended);
-  const renderSupportBody = (scope: SupportScope) => <ConnectedSupportBody scope={scope} toolsShown={state !== null} />;
+  const toggleCompassView = (scope: SupportScope) =>
+    setCompassViews((views) => ({ ...views, [scope]: views[scope] === "full" ? "compact" : "full" }));
+  const renderSupportBody = (scope: SupportScope) => (
+    <ConnectedSupportBody
+      compassView={compassViews[scope]}
+      onCommand={actions.onCommand}
+      onToggleCompassView={() => toggleCompassView(scope)}
+      scope={scope}
+      view={view}
+    />
+  );
 
   const toggleExplanation = (id: string) => setOpenExplanation((open) => (open === id ? null : id));
 
@@ -632,7 +704,7 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
             <div className="flex min-w-0 flex-1 flex-col gap-5">
               <section aria-labelledby={CONVERSATION_HEADING_ID} className={CARD_CLASS}>
                 <ConnectedConversationHeader headingRef={headingRef} status={status} />
-                <ConversationNotices actions={actions} view={view} />
+                <ConversationNotices actions={actions} errorRef={errorRef} view={view} />
                 {state !== null ? (
                   <>
                     {/* As on the earlier screen, only the saved conversation and

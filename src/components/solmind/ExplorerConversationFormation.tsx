@@ -129,7 +129,6 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
   const currentPoints = currentCompassHeads(state);
   const priority = currentPoints.find(item => item.id === state.priorityId);
   const attention = currentPoints.find(item => item.id === state.attentionId);
-  const hasArrangement = currentPoints.some(item => item.emphasis != null);
   const otherPaths = currentPoints.filter(item => item.anchor == null);
   const staleArrangement = arrangementDraft !== null &&
     (arrangementDraft.conversationId !== state.conversationId || arrangementDraft.revision !== state.revision);
@@ -264,7 +263,8 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
   }
   function pointCard(item: ExplorerConversationState["compassItems"][number]) {
     const emphasisClass = item.emphasis === 3 ? "text-lg font-bold" : item.emphasis === 1 ? "text-sm font-medium" : "font-semibold";
-    const attentionUnavailable = hasArrangement && item.anchor == null;
+    // Any current point can take current attention, placed or not (2026-11-03,
+    // migration 20261103180000; Paul's decision, decision queue 18:05:33 CST).
     const sources = compassCategorySources(state, item.id);
     return <div className="min-w-0 rounded-2xl border border-slate-700 bg-slate-950 p-3">
       <h4 className={`break-words text-slate-100 ${emphasisClass}`}>{item.label}</h4>
@@ -283,10 +283,9 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
       </details> : null}
       {!readOnly ? <div className="mt-3 flex flex-wrap gap-2">
         <button type="button" className={`${buttonClass} max-w-full break-words text-left`} disabled={busy || state.priorityId === item.id} onClick={() => reviewArrangement(item.id)}>Review Priority: {item.label}</button>
-        <button type="button" className={`${buttonClass} max-w-full break-words text-left`} disabled={busy || state.attentionId === item.id || attentionUnavailable} onClick={() => submit(buildAttentionFormationIntent(state, item.id))}>Attend to: {item.label}</button>
+        <button type="button" className={`${buttonClass} max-w-full break-words text-left`} disabled={busy || state.attentionId === item.id} onClick={() => submit(buildAttentionFormationIntent(state, item.id))}>Attend to: {item.label}</button>
         <button type="button" className={`${buttonClass} max-w-full break-words text-left`} disabled={busy} onClick={() => reviewCategory(item.id)}>Review wording or combine: {item.label}</button>
       </div> : null}
-      {!readOnly && attentionUnavailable && state.attentionId !== item.id ? <p className="mt-2 text-xs text-slate-400">Arrange this point visibly before moving attention here.</p> : null}
     </div>;
   }
   function chooseWaypoint(event: FormEvent<HTMLFormElement>) {
@@ -473,7 +472,7 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
           <ul className="mt-4 space-y-4">{state.waypoints.map(waypoint => (
             <li key={waypoint.id} id={`${id}-waypoint-${waypoint.id}`} className="rounded-2xl border border-slate-700 p-4">
               <h3 className="break-words font-semibold text-slate-100">{waypoint.destination}</h3>
-              <p className="mt-1 text-xs font-semibold text-cyan-200">{waypointSuccessors.has(waypoint.id) ? waypoint.release !== undefined ? "Superseded — earlier Released history" : waypoint.status === "reached" ? "Superseded — earlier Reached confirmation" : "Superseded — earlier chosen definition" : waypoint.release !== undefined ? "Released — kept in your private history" : waypoint.status === "reached" ? "Reached — confirmed by you" : "In progress — chosen by you"}</p>
+              <p className="mt-1 text-xs font-semibold text-cyan-200">{waypointSuccessors.has(waypoint.id) ? waypoint.release !== undefined ? "Earlier version - Released" : waypoint.status === "reached" ? "Earlier version - Reached" : "Earlier version - Formed" : waypoint.release !== undefined ? "Released — kept in your private history" : waypoint.status === "reached" ? "Reached — confirmed by you" : "In progress — chosen by you"}</p>
               <dl className="mt-3 space-y-3 text-sm"><div><dt className="font-semibold text-slate-200">Why it matters</dt><dd className="mt-1 whitespace-pre-wrap break-words text-slate-300">{waypoint.meaning}</dd></div><div><dt className="font-semibold text-slate-200">Arrival signal</dt><dd className="mt-1 whitespace-pre-wrap break-words text-slate-300">{waypoint.arrivalSignal}</dd></div></dl>
               {waypoint.lifecycle !== undefined ? <details className="mt-3 rounded-xl border border-slate-700 p-3">
                 <summary className="cursor-pointer text-sm text-cyan-200">Review this {waypoint.lifecycle.creationReason === "revision" ? "revision" : "new lifecycle"} and its clarification sources</summary>

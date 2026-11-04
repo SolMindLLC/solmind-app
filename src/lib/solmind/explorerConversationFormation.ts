@@ -164,6 +164,9 @@ export function buildPriorityFormationIntent(
   return accept({ kind: "confirm_priority", itemId });
 }
 
+// The needle may point at any current point, placed on the Compass or not,
+// also once a Compass is arranged, as the server allows since migration
+// 20261103180000 (Paul's decision, decision queue 2026-11-03 18:05:33 CST).
 export function buildAttentionFormationIntent(
   state: ExplorerConversationState,
   itemId: string,
@@ -173,10 +176,6 @@ export function buildAttentionFormationIntent(
     return refuse("Choose a saved Compass point for current attention.");
   }
   if (state.attentionId === itemId) return refuse("Current attention is already on this point.");
-  if (heads.some(item => item.emphasis != null) &&
-      !heads.some(item => item.id === itemId && item.anchor != null)) {
-    return refuse("Place this point on your Compass before moving current attention to it.");
-  }
   return accept({ kind: "set_attention", itemId });
 }
 

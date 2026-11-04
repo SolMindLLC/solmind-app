@@ -2,6 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { ExplorerConversationFormation } from "../ExplorerConversationFormation";
+import { buildAttentionFormationIntent } from "../../../lib/solmind/explorerConversationFormation";
 import { EXPLORER_CONVERSATION_VERSION, type ExplorerConversationState } from "../../../lib/solmind/explorerConversationContract";
 
 function state(overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
@@ -121,10 +122,11 @@ describe("Formation presentation (static proof only)", () => {
       label: `Saved anchored choice ${index}`, anchor, emphasis: (index % 3 + 1) as 1 | 2 | 3 }));
     const overflow = { id: "point-other", sourceMessageId: source.id, label: "A ninth preserved path", anchor: null, emphasis: 2 as const };
     const onCommand = vi.fn();
-    const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: state({
+    const arranged = state({
       conversationId: "conversation-a", messages: [source], compassItems: [overflow, ...points.toReversed()],
       priorityId: "point-0", attentionId: "point-3",
-    }), busy: false, onCommand }));
+    });
+    const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: arranged, busy: false, onCommand }));
     const saved = html.slice(html.indexOf('aria-label="Saved Compass arrangement"'), html.indexOf("Other paths ("));
     const other = html.slice(html.indexOf("Other paths ("));
     expect(saved).toContain("Top position");
@@ -137,8 +139,12 @@ describe("Formation presentation (static proof only)", () => {
     expect(other).toContain("Other paths (1)");
     expect(other).toContain(overflow.label);
     expect(other).toContain(source.body);
-    expect(other).toContain("Arrange this point visibly before moving attention here.");
-    expect(other).toMatch(/<button[^>]*disabled=""[^>]*>Attend to: A ninth preserved path<\/button>/);
+    // Since 2026-11-03 (migration 20261103180000; Paul's decision, decision queue 18:05:33 CST) any current
+    // point can take current attention, also an Other paths point once a Compass is arranged.
+    expect(other).not.toContain("Arrange this point visibly before moving attention here.");
+    expect(other).toMatch(/<button type="button" class="[^"]*">Attend to: A ninth preserved path<\/button>/);
+    expect(other).not.toMatch(/<button[^>]*disabled=""[^>]*>Attend to: A ninth preserved path<\/button>/);
+    expect(buildAttentionFormationIntent(arranged, overflow.id)).toEqual({ ok: true, command: { kind: "set_attention", itemId: overflow.id }, error: null });
     expect(html).toContain("Relative emphasis: Light.");
     expect(html).toContain("Relative emphasis: Regular.");
     expect(html).toContain("Relative emphasis: Strong.");
@@ -374,7 +380,9 @@ describe("Category presentation (static proof only)", () => {
     const onCommand = vi.fn();
     const stateValue = state({ conversationId: "conversation-a", sessionStatus: "active", messages: [source], waypoints: [earlier, successor] });
     const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: stateValue, busy: false, readOnly: true, onCommand }));
-    expect(html).toContain("Superseded — earlier Reached confirmation");
+    // Paul's question 9 decision (decision queue 2026-11-03 12:41:08 CST): older wording is an "Earlier version".
+    expect(html).toContain("Earlier version - Reached");
+    expect(html).not.toContain("Superseded");
     expect(html).toContain("Actual earlier observation");
     expect(html).toContain("Original destination");
     expect(html).toContain("Original saved source");
@@ -385,6 +393,24 @@ describe("Category presentation (static proof only)", () => {
     expect(html).not.toContain("Revisit this Waypoint in the conversation");
     expect(html).not.toContain("Clarify this Waypoint in the conversation");
     expect(onCommand).not.toHaveBeenCalled();
+  });
+
+  it("labels an earlier chosen and an earlier released version as Earlier version - Formed and - Released", () => {
+    const source = { id: "message-a", role: "explorer" as const, body: "Original saved source", createdAt: "2026-10-29T10:00:00Z" };
+    const chosen = { id: "waypoint-a", sourceMessageId: source.id, destination: "First destination", meaning: "Meaning", arrivalSignal: "Signal", status: "chosen" as const };
+    const revised = { ...chosen, id: "waypoint-b", destination: "Revised destination", lifecycle: { predecessorWaypointId: chosen.id, creationReason: "revision" as const, clarifications: [{ component: "destination" as const, questionKey: "waypoint.destination.v1" as const, answer: "Revised destination", recordedAt: "2026-10-29T12:00:00Z" }] } };
+    const released = { ...chosen, id: "waypoint-c", destination: "Released destination", release: { operationId: "70000000-0000-4000-8000-000000000001", releasedAt: "2026-10-29T13:00:00Z" } };
+    const revisited = { ...chosen, id: "waypoint-d", destination: "Released destination", lifecycle: { predecessorWaypointId: released.id, creationReason: "revisit" as const, clarifications: [] } };
+    const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, {
+      state: state({ conversationId: "conversation-a", sessionStatus: "active", messages: [source], waypoints: [chosen, released, revised, revisited] }),
+      busy: false, readOnly: true, onCommand: vi.fn(),
+    }));
+    expect(html).toContain("Earlier version - Formed");
+    expect(html).toContain("Earlier version - Released");
+    expect(html).not.toContain("Earlier version - Reached");
+    expect(html).not.toContain("Superseded");
+    // The current versions keep the old tools' own labels (decision 8: the old tools otherwise stay as they are).
+    expect(html.split("In progress — chosen by you").length - 1).toBe(2);
   });
 
 });

@@ -173,13 +173,25 @@ test("wide: the designed layout shows the saved conversation without preview ext
   // As on September 23, the profile chip's name is its visible role and grey line, with "profile" for screen readers.
   await expectExplains(page, body, page.getByRole("button", { name: /^Explorer profile\s*Not connected yet$/ }),
     withoutReviewPrefix(NOT_YET_IMPLEMENTED.profile));
-  // Areas that are not built yet are marked, beside their heading.
+  // Chat step slices S1 and S2: the Compass and Waypoints areas are connected, with no grey label beside their
+  // headings. Key Insights stay marked beside their heading. Since the chat card redesign (Paul's decision,
+  // decision queue 2026-11-03 18:05:33 CST) the Compass has no forming-point or needle note: Paul removed them,
+  // a dated exception to the rule that unbuilt areas stay marked.
   const panel = page.locator("#conversation-preview-panel");
-  for (const area of ["Compass", "Waypoint"]) {
-    const region = panel.getByRole("region", { name: area, exact: true });
-    await expect(region).toBeVisible();
-    await expect(region.getByText("Not connected yet", { exact: true })).toBeVisible();
-  }
+  const compassArea = panel.getByRole("region", { name: "Compass", exact: true });
+  const waypointArea = panel.getByRole("region", { name: "Waypoints", exact: true });
+  await expect(compassArea).toBeVisible();
+  await expect(waypointArea).toBeVisible();
+  await expect(compassArea.getByText("No Compass point is saved yet. Your Compass can stay empty while you explore.", { exact: true })).toBeVisible();
+  await expect(waypointArea.getByText("No Waypoint is chosen yet. You can keep exploring without one.", { exact: true })).toBeVisible();
+  await expect(waypointArea.getByText("Not connected yet", { exact: true })).toHaveCount(0);
+  await expect(compassArea.getByText("Not connected yet", { exact: true })).toHaveCount(0);
+  await expect(panel.getByText(withoutReviewPrefix(NOT_YET_IMPLEMENTED.formingPoint), { exact: true })).toHaveCount(0);
+  await expect(panel.getByText(withoutReviewPrefix(NOT_YET_IMPLEMENTED.needle), { exact: true })).toHaveCount(0);
+  await expect(panel.getByText(withoutReviewPrefix(NOT_YET_IMPLEMENTED.compass), { exact: true })).toHaveCount(0);
+  const insight = panel.getByRole("region", { name: "Key Insight", exact: true });
+  await expect(insight.getByText("Not connected yet", { exact: true })).toBeVisible();
+  await expect(insight.getByText(withoutReviewPrefix(NOT_YET_IMPLEMENTED.keyInsight), { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { level: 1, name: "Your conversation", exact: true })).toBeVisible();
   await expect(page).toHaveURL(/\/explorer\/conversation$/);
   expect(commands()).toBe(0);
@@ -266,7 +278,12 @@ test("narrow: the Menu button opens the workspace menu, Escape closes it, and no
   const drawer = page.getByRole("dialog", { name: "Compass & Waypoint" });
   await expect(drawer).toBeVisible();
   await expect(drawer.getByRole("heading", { name: "Compass & Waypoint", exact: true })).toBeFocused();
-  await expect(drawer.getByText(/Your Compass will fill in from what you talk about/)).toBeVisible();
+  await expect(drawer.getByRole("region", { name: "Compass", exact: true })).toBeVisible();
+  // The Compass card's forming-point note is gone since the chat card redesign (2026-11-03); the empty
+  // Compass says so in its own words.
+  await expect(drawer.getByText(withoutReviewPrefix(NOT_YET_IMPLEMENTED.formingPoint), { exact: true })).toHaveCount(0);
+  await expect(drawer.getByText("No Compass point is saved yet. Your Compass can stay empty while you explore.", { exact: true })).toBeVisible();
+  await expect(drawer.getByText(/Your Compass will fill in from what you talk about/)).toHaveCount(0);
   await page.screenshot({ path: capture("connected-narrow-drawer-open-viewport") });
   await drawer.getByRole("button", { name: "Close Compass & Waypoint", exact: true }).click();
   await expect(drawer).toBeHidden();

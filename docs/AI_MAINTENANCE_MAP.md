@@ -146,6 +146,78 @@ retry, Send and End rule and passes read-only props to the presentation-only
 `src/lib/solmind/explorerConversationConnectedScreen.ts` owns its wording and
 shell data; and the existing Compass and Waypoint tools stay below the
 conversation until rebuild steps 4 and 5.
+Since chat step slices S1 and S2 (2026-11-03; Paul's chat-step decisions,
+decision queue 2026-11-03 12:38:07 and 12:41:08 CST) the connected screen's
+panel and drawer show the Compass & Waypoint card:
+`src/components/solmind/ExplorerConnectedCompassCard.tsx` (the saved Compass on
+its 8 stored positions in the reviewed dial's look, and the point list; since
+the Compact and Full views below, the Explorer points the needle from either)
+and
+`src/components/solmind/ExplorerConnectedWaypointCard.tsx` (each saved
+Waypoint, read-only, as Formed, Reached or Released, with older wording as
+"Earlier version - <stage>"), both presentation only, with their mapping,
+needle rules and wording in `src/lib/solmind/explorerConnectedCard.ts`.
+Choosing a point sends only the existing `set_attention` command through
+`onCommand` and `ExplorerConversation.tsx`'s existing command path; there is no
+server or provider change, and no database change except the chat card
+redesign's one rule change below (2026-11-03). The browser cannot tell that a
+conversation is restricted, so the server's refusal is the only guard there.
+The current tools label older Waypoint wording "Earlier version - <stage>"
+too. Fix round 2 (2026-11-03, after review REV221): an ended conversation's
+card shows one read-only line, without the choose-a-point help, the placement
+sentence or the current-tools pointer; the needle's holds are checked in the
+order ended, unconfirmed, pending reply, busy, End Session review; a polite
+live line in the card says a hold's reason when it starts and "The needle now
+points to <point>." after a move; in the narrow drawer a reason that names a
+control behind it says "close this panel, then choose ..."; after a confirmed
+move the Explorer asked for, focus goes to the "Current attention" line; and a
+change made from the drawer that leaves no saved state closes the drawer and
+moves focus to the page's alert. `ExplorerConversation.tsx` keeps the Virtual
+Guide state it last had after a confirmed command other than Send, because
+that result never checks the Virtual Guide (it always says "unavailable") and
+the server checks readiness again on every Send. Fix round 3 (2026-11-03,
+after review REV221b): a Send refused as unavailable records "unavailable" as
+that kept state, so a later confirmed command does not enable Send again; and
+the card's live line is polite only in the narrow drawer, since on the wide
+panel the page's own status line is not hidden and already says when a
+change, a reply or a reload is under way.
+Compact and Full views (2026-11-03; Paul's decisions, decision queue 16:20:29
+and 16:24:39 CST): the Compass card shows one view at a time. The Full view,
+shown first, is the dial with the Priority and Current attention lines; each
+point drawn on the dial is a round button laid over its bubble (beside the
+picture, not inside it) that points the needle with the list's rules, holds,
+reasons, live line and focus, and when some points are not on the dial one
+line says how many and that the Compact view shows them. The Compact view is
+the point list as before, with the same two lines. A button under the Compass
+heading switches views; which view shows is layout state in
+`ExplorerConversationConnectedScreen.tsx`, separate for the panel and the
+drawer and never saved.
+Chat card redesign (2026-11-03; Paul's design and decision, decision queue
+18:05:33 CST, to cut clutter): the needle may point at any current point,
+placed or not. This one part of the slices changes the database:
+`supabase/migrations/20261103180000_explorer_attention_any_point.sql` replaces
+only the internal body of `public.solmind_mutate_explorer_conversation` so that
+`set_attention` accepts any current point (the arrangement and Priority rules
+are unchanged), and the browser matches it in `buildAttentionFormationIntent`,
+the old tools' "Attend to" button and the closed state parser in
+`explorerConversationContract.ts`. In the Full view the points without a
+position sit in a bottom row under Excursion (`bottomRow`: at most three
+places, the third "+N more" when there are more, which opens the Compact view;
+a needle point beyond the first two takes the second place), grey with one
+small yellow symbol each, each a button with the dial's rules; a needle on such
+a point is drawn dashed toward its place with the yellow symbol at its tip, and
+is a button named "Why the needle is dashed" whose tap shows one short sentence
+(`dashedNeedleText`) and whose next tap hides it. The Compact view's points
+without a position are grey with the same symbol. The heading is "Point the
+needle to change topic", with no instruction sentence, placement paragraph or
+line about the Compact view, and the Compass card has no "Not connected yet"
+notes (a dated exception in AGENTS.md). The SVG's acknowledgement of a move is
+a later slice (S3 and S4).
+Tests: `src/lib/solmind/__tests__/explorerConnectedCard.test.ts`,
+CC21-CC26 in
+`src/components/solmind/__tests__/ExplorerConversationConnectedScreen.test.tsx`
+and `tests/browser/explorerConnectedCard.pw.ts`, with the synthetic state in
+`tests/browser/connectedCardFixture.ts`.
 In the review version every functional control is focusable, `aria-disabled`,
 and described by its visible note; only layout-only controls act.
 Explorer menu option A (Paul's decisions, decision queue 2026-11-02 14:07:48
@@ -698,10 +770,10 @@ request/browser owners are specified in the private successor section below.
 | --- | --- |
 | `src/app/explorer/conversation/page.tsx`; `src/app/explorer/conversation/state/route.ts`; `src/app/explorer/conversation/commands/route.ts` | Public data-free shell; freshly authorized private no-store read; guarded same-origin JSON command. The shell and home link confer no authority. |
 | `src/components/solmind/ExplorerConversation.tsx`; `src/lib/solmind/explorerConversationContract.ts`; `src/lib/solmind/explorerConversationReviewContract.ts`; `src/components/solmind/ExplorerConversationReview.tsx`; `src/app/explorer/conversations/page.tsx`; `src/app/explorer/conversations/state/route.ts` | Closed projection, deliberate End/home return, exact uncertain retry and separate authenticated read-only ended list/review; selectors confer no authority or reactivation. |
-| `src/components/solmind/ExplorerConversationFormation.tsx`; `src/lib/solmind/explorerConversationFormation.ts` | Empty Discovery, exact saved sources, explicit Priority/separate attention, reviewed 24-point/eight-anchor arrangement/emphasis, captured Route, chosen Waypoint and saved Reached evidence/time. |
+| `src/components/solmind/ExplorerConversationFormation.tsx`; `src/lib/solmind/explorerConversationFormation.ts` | Empty Discovery, exact saved sources, explicit Priority/separate attention (any current point since 2026-11-03), reviewed 24-point/eight-anchor arrangement/emphasis, captured Route, chosen Waypoint and saved Reached evidence/time. |
 | `src/lib/solmind/supabase/explorerConversationRequestDependencies.ts`; `src/lib/solmind/supabase/explorerConversationRepository.ts` | Shared src/lib/solmind/auth/readRawRequestCookies.ts preserves raw occurrences/limits and tolerates malformed unrelated pairs; fixed Explorer authority and predecessor RPCs remain. |
 | `src/lib/solmind/virtual-guide/explorerConversationComposition.ts`; `src/lib/solmind/virtual-guide/explorerConversationContext.ts` | Server-derived turn identities and exact replay preflight; real S03A/S03C context assembly with final revalidation and exact-byte fingerprint/evidence binding. |
-| `supabase/migrations/20261024000000_explorer_conversation_composition.sql`; `supabase/migrations/20261029000000_explorer_formation_route_readback.sql`; `supabase/migrations/20261029003000_explorer_compass_arrangement.sql`; `supabase/migrations/20261029020000_explorer_conversation_end_review.sql`; `supabase/migrations/20261029030000_explorer_compass_categories.sql`; `supabase/migrations/20261029100000_explorer_waypoint_release.sql`; `supabase/migrations/20261029103000_explorer_waypoint_revision.sql` | Private immutable Route/arrangement/category/ending/release/lineage facts; exact9arg category and revision/revisit plus7arg Release/twelve-port repository retain source/history and20stored versions. ExplorerWaypointClarification.tsx owns local app-question/full-confirmation interaction; private immutable clarification answers are separate from AI messages/context, earlier Reached/release stays historical, and no sharing or after-End reactivation follows. |
+| `supabase/migrations/20261024000000_explorer_conversation_composition.sql`; `supabase/migrations/20261029000000_explorer_formation_route_readback.sql`; `supabase/migrations/20261029003000_explorer_compass_arrangement.sql`; `supabase/migrations/20261029020000_explorer_conversation_end_review.sql`; `supabase/migrations/20261029030000_explorer_compass_categories.sql`; `supabase/migrations/20261029100000_explorer_waypoint_release.sql`; `supabase/migrations/20261029103000_explorer_waypoint_revision.sql`; `supabase/migrations/20261103180000_explorer_attention_any_point.sql` | Private immutable Route/arrangement/category/ending/release/lineage facts; since 2026-11-03 (Paul, decision queue 18:05:33 CST) set_attention takes any current point, placed or not, with the arrangement and Priority rules unchanged; exact9arg category and revision/revisit plus7arg Release/twelve-port repository retain source/history and20stored versions. ExplorerWaypointClarification.tsx owns local app-question/full-confirmation interaction; private immutable clarification answers are separate from AI messages/context, earlier Reached/release stays historical, and no sharing or after-End reactivation follows. |
 | `tests/browser/explorerConversation.pw.ts` and co-located feature tests | Authored browser/fake and focused contract cases. Their existence is not passing execution, real database/provider proof or source assurance. |
 
 Context requires injected trusted versioned configuration. Its submitted intake

@@ -46,8 +46,12 @@ test("clarification uses one app question at a time and saves only after complet
   await expect(confirm).toBeDisabled(); expect(commands).toHaveLength(0);
   await thread.getByLabel("I reviewed the complete understanding and its sources, and I confirm this revision.", { exact: true }).check();
   await confirm.click();
-  await expect(page.getByText("Superseded — earlier chosen definition", { exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "A newly clarified destination", exact: true })).toBeVisible();
+  // Paul's question 9 decision (2026-11-03 12:41:08 CST). The current tools are scoped: since chat step slices S1 and S2 the
+  // Compass & Waypoint card shows the same Waypoints on wide screens.
+  const tools = page.getByLabel("Private Compass and Waypoints", { exact: true });
+  await expect(tools.getByText("Earlier version - Formed", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Superseded/)).toHaveCount(0);
+  await expect(tools.getByRole("heading", { name: "A newly clarified destination", exact: true })).toBeVisible();
   expect(commands).toHaveLength(1); expect(commands.some(command => command.kind === "send")).toBe(false);
   await page.reload();
   await expect(page.getByRole("region", { name: "Waypoint clarification — application prompt", exact: true })).toHaveCount(0);
@@ -75,7 +79,9 @@ test("all-Keep revisit starts a new chosen lifecycle without inheriting earlier 
   await expect(confirm).toBeDisabled(); expect(commands).toHaveLength(0);
   await thread.getByLabel("I reviewed the complete understanding and its sources, and I confirm this new current lifecycle.", { exact: true }).check();
   await confirm.click();
-  await expect(page.getByText("Superseded — earlier Reached confirmation", { exact: true })).toBeVisible();
+  const tools = page.getByLabel("Private Compass and Waypoints", { exact: true });
+  await expect(tools.getByText("Earlier version - Reached", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Superseded/)).toHaveCount(0);
   await expect(page.getByText("In progress — chosen by you", { exact: true })).toBeVisible();
   expect(commands).toHaveLength(1); expect(commands.some(command => command.kind === "send")).toBe(false);
 });

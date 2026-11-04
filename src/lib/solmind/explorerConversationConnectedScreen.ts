@@ -102,8 +102,11 @@ export function connectedStatusText(status: Exclude<ConnectedConversationStatus,
 export const CURRENT_TOOLS_HEADING = "Your current Compass and Waypoint tools";
 export const CURRENT_TOOLS_INTRO =
   "These are the tools you have used so far for your Compass and Waypoints. They stay here so your saved Compass and Waypoints remain usable while the new Compass & Waypoint card is built. Later, your Compass and Waypoints will form from the conversation instead.";
+// The Compass & Waypoint card shows the saved Compass and Waypoints and points
+// the needle (chat step slices S1 and S2); every other change still uses the
+// current tools.
 export const CURRENT_TOOLS_POINTER =
-  "Until then, your saved Compass points and Waypoints are in your current tools, below the conversation.";
+  "To add, arrange or reword Compass points, or to choose, clarify, reach or release a Waypoint, use your current tools below the conversation.";
 
 export const COMPOSER_LABEL = "Continue the conversation";
 export const COMPOSER_PLACEHOLDER = "Share what comes to mind...";

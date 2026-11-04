@@ -411,8 +411,8 @@ select ok(not exists(select 1 from ai.explorer_conversation_operation where conv
   'malformed/refused batches create no completed operation or partial arrangement');
 select throws_ok($$select * from pg_temp.mutate(24203,'confirm_priority',null,23001)$$,
   'P0001','solmind_explorer_conversation_denied','old new-write Priority command cannot bypass the saved apex');
-select throws_ok($$select * from pg_temp.mutate(24204,'set_attention',null,23009)$$,
-  'P0001','solmind_explorer_conversation_denied','old new-write attention command cannot select overflow');
+-- Since 20261103180000 (Paul's decision, decision queue 2026-11-03 18:05:33 CST) the attention
+-- command may select an Other paths point; that rule is pinned after the 24-point setup below.
 select is((select outcome from pg_temp.mutate(24201,'confirm_priority',null,23001)),'exact_replay',
   'old exact Priority replay resolves even though that old point is now off-apex');
 select is(pg_temp.read_state(),(select value from refusal_before),'old refusals and legitimate exact replay preserve current layout and history');
@@ -441,6 +441,59 @@ do $$ begin
       then raise exception 'synthetic_compass_twentyfour_point_setup_failed'; end if;
   end loop;
 end $$;
+-- The needle may point at any current point (20261103180000; Paul's decision, decision queue
+-- 2026-11-03 18:05:33 CST). Here the Compass is arranged, 23009 is in Other paths and 23010-23024
+-- are not yet arranged, under clear policy; the Priority is 23002 at the apex and the needle is on it.
+create temp table any_point_before as select pg_temp.read_state() value;
+select is((select outcome from pg_temp.mutate(24701,'set_attention',null,23009)),'ok',
+  'the needle may point at an Other paths point once a Compass is arranged');
+select ok((pg_temp.read_state()->>'attentionId')::uuid=pg_temp.gid(23009)
+  and (pg_temp.read_state()->>'priorityId')::uuid=pg_temp.gid(23002)
+  and (pg_temp.read_state()->>'revision')::integer=(select (value->>'revision')::integer+1 from any_point_before),
+  'pointing at an Other paths point moves only the needle, in one revision, and keeps the Priority');
+select is(pg_temp.read_state()->'route'->-1,
+  (select jsonb_build_object('operationId',operation_id,'revision',initial_revision+1,'kind','attention_changed',
+    'compassItemId',pg_temp.gid(23009),'label','Saved ninth point','recordedAt',completed_at)
+    from ai.explorer_conversation_operation where operation_id=pg_temp.gid(24701)),
+  'the Route records the move to the Other paths point with its saved label');
+select is((select compass_route_kind||'|'||compass_route_label from ai.explorer_conversation_operation where operation_id=pg_temp.gid(24701)),
+  'attention_changed|Saved ninth point','the operation keeps the attention_changed Route fact');
+select is((select outcome from pg_temp.mutate(24702,'set_attention',null,23010)),'ok',
+  'the needle may point at a point not yet arranged once a Compass is arranged');
+select is(pg_temp.read_state()->'route'->-1,
+  (select jsonb_build_object('operationId',operation_id,'revision',initial_revision+1,'kind','attention_changed',
+    'compassItemId',pg_temp.gid(23010),'label','Saved point 10','recordedAt',completed_at)
+    from ai.explorer_conversation_operation where operation_id=pg_temp.gid(24702)),
+  'the Route records the move to the point not yet arranged with its saved label');
+select ok((select compass_anchor is null and relative_emphasis is null from ai.explorer_conversation_compass_item where item_id=pg_temp.gid(23010))
+  and (select compass_anchor is null and relative_emphasis=1 from ai.explorer_conversation_compass_item where item_id=pg_temp.gid(23009)),
+  'pointing the needle places nothing: both points keep their saved layout');
+select is((select jsonb_array_length(pg_temp.read_state()->'route')),(select jsonb_array_length(value->'route')+2 from any_point_before),
+  'two moves add exactly two Route events');
+-- confirm_priority keeps its rule: once a Compass is arranged, only the apex point.
+create temp table priority_rule_before as select pg_temp.read_state() value;
+select throws_ok($$select * from pg_temp.mutate(24703,'confirm_priority',null,23009)$$,
+  'P0001','solmind_explorer_conversation_denied','a new Priority still cannot be an Other paths point');
+select throws_ok($$select * from pg_temp.mutate(24704,'confirm_priority',null,23010)$$,
+  'P0001','solmind_explorer_conversation_denied','a new Priority still cannot be a point not yet arranged');
+select throws_ok($$select * from pg_temp.mutate(24705,'confirm_priority',null,23003)$$,
+  'P0001','solmind_explorer_conversation_denied','a new Priority still cannot be a placed point off the apex');
+select is(pg_temp.read_state(),(select value from priority_rule_before),'the refused Priority commands change nothing saved');
+-- The arrangement rule is unchanged (Data Model Spec 03: attention stays placed when a Compass is
+-- arranged): with the needle on a point not yet arranged, an arrangement that leaves that point
+-- unplaced is refused, so the needle is never moved silently; one that places it keeps the needle there.
+select throws_ok($$select * from pg_temp.arrange(24706,23002,jsonb_set(jsonb_set(pg_temp.layout(),'{0,anchor}','"upper_left"'),'{1,anchor}','"apex"'))$$,
+  'P0001','solmind_explorer_private_invalid_input','an arrangement that leaves the needle''s unplaced point unplaced is refused');
+select is(pg_temp.read_state(),(select value from priority_rule_before),'the refused arrangement changes nothing saved');
+select is((select outcome from pg_temp.arrange(24707,23002,jsonb_set(jsonb_set(jsonb_set(jsonb_set(pg_temp.layout(),
+  '{0,anchor}','"upper_left"'),'{1,anchor}','"apex"'),'{7,anchor}','null'),'{9,anchor}','"lower_right"'))),'ok',
+  'an arrangement that places the needle''s point is confirmed');
+select ok((pg_temp.read_state()->>'attentionId')::uuid=pg_temp.gid(23010)
+  and (select compass_anchor='lower_right' from ai.explorer_conversation_compass_item where item_id=pg_temp.gid(23010))
+  and (select compass_anchor is null and relative_emphasis=1 from ai.explorer_conversation_compass_item where item_id=pg_temp.gid(23008)),
+  'the needle stays on its point, now placed, and the point moved out is kept in Other paths');
+select is((select outcome from pg_temp.mutate(24708,'set_attention',null,23002)),'ok',
+  'the needle returns to the Priority point before the capacity arrangement below');
 create temp table capacity_request as select jsonb_set(jsonb_set(pg_temp.layout(),'{0,anchor}','"upper_left"'),'{1,anchor}','"apex"') items;
 select is((select outcome from pg_temp.arrange(24105,23002,(select items from capacity_request))),'ok',
   'complete twenty-four-point batch saves eight anchors plus sixteen explicit Other paths');
@@ -478,6 +531,18 @@ select ok(not exists(select 1 from (values('anon'),('authenticated'),('service_r
     or has_table_privilege(r.role_name,'ai.explorer_conversation_compass_item','SELECT,INSERT,UPDATE,DELETE')
     or has_table_privilege(r.role_name,'ai.explorer_conversation_operation','SELECT,INSERT,UPDATE,DELETE')),
   'no API role gains schema or direct current-layout/history table access');
+-- 20261103180000 replaced only the internal body: its owner, security, settings and grants stay.
+select ok((select pg_get_userbyid(p.proowner)='postgres' and p.prosecdef and p.proconfig @> array['search_path=""','lock_timeout=2000ms']
+    and cardinality(p.proconfig)=2
+  from pg_proc p where p.oid='public.solmind_mutate_explorer_conversation(uuid,uuid,uuid,uuid,integer,text,text,uuid,uuid,uuid,text,text,text,text,text)'::regprocedure),
+  'the replaced internal body keeps its owner, security definer, empty search_path and lock timeout');
+select ok(not exists(select 1 from (values('anon'),('authenticated'),('service_role')) r(role_name)
+  where has_function_privilege(r.role_name,'public.solmind_mutate_explorer_conversation(uuid,uuid,uuid,uuid,integer,text,text,uuid,uuid,uuid,text,text,text,text,text)','EXECUTE')),
+  'no API role may execute the replaced internal body');
+select ok(has_function_privilege('service_role','public.solmind_mutate_explorer_conversation_v3(uuid,uuid,uuid,uuid,integer,text,text,uuid,uuid,uuid,text,text,text,text,text)','EXECUTE')
+  and not has_function_privilege('anon','public.solmind_mutate_explorer_conversation_v3(uuid,uuid,uuid,uuid,integer,text,text,uuid,uuid,uuid,text,text,text,text,text)','EXECUTE')
+  and not has_function_privilege('authenticated','public.solmind_mutate_explorer_conversation_v3(uuid,uuid,uuid,uuid,integer,text,text,uuid,uuid,uuid,text,text,text,text,text)','EXECUTE'),
+  'only service_role executes the v3 wrapper that calls it, as before');
 -- Total capacity and visible capacity are independent: Discovery can retain all
 -- twenty-four points as Other paths, without forcing an apex or Priority.
 do $$ begin
@@ -497,6 +562,33 @@ select ok((select count(*)=24 and bool_and(compass_anchor is null and relative_e
   from ai.explorer_conversation_compass_item where conversation_id=pg_temp.gid(6105))
   and (select priority_id is null from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6105)),
   'there is no independent sixteen-Other-path cap or automatically invented Priority');
+-- With every point in Other paths the needle may still point at one (20261103180000), while a
+-- combined-away original still cannot take it and a new Priority still needs the apex.
+select is((select outcome from public.solmind_mutate_explorer_conversation_v3(pg_temp.gid(4),pg_temp.gid(54),pg_temp.gid(6105),
+  pg_temp.gid(24801),(select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6105)),
+  'set_attention',pg_temp.request_sha(24801),null,pg_temp.gid(24501))),'ok',
+  'with every point in Other paths the needle may point at one of them');
+select ok((select attention_id=pg_temp.gid(24501) from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6105))
+  and (select compass_route_kind='attention_changed' and compass_route_item_id=pg_temp.gid(24501) and compass_route_label='Other path 1'
+    from ai.explorer_conversation_operation where operation_id=pg_temp.gid(24801)),
+  'that move is saved with its attention_changed Route fact and saved label');
+select is((select outcome from public.solmind_confirm_explorer_compass_category_v1(pg_temp.gid(4),pg_temp.gid(54),pg_temp.gid(6105),
+  pg_temp.gid(24802),(select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6105)),pg_temp.request_sha(24802),
+  pg_temp.gid(24503),array[pg_temp.gid(24502),pg_temp.gid(24503)],'Other paths 2 and 3')),'ok',
+  'two Other paths points are combined under the second');
+create temp table merged_before as select revision,attention_id from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6105);
+select throws_ok($$select * from public.solmind_mutate_explorer_conversation_v3(pg_temp.gid(4),pg_temp.gid(54),pg_temp.gid(6105),
+  pg_temp.gid(24803),(select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6105)),
+  'set_attention',pg_temp.request_sha(24803),null,pg_temp.gid(24502))$$,
+  'P0001','solmind_explorer_conversation_denied','a combined-away original still cannot take the needle');
+select throws_ok($$select * from public.solmind_mutate_explorer_conversation_v3(pg_temp.gid(4),pg_temp.gid(54),pg_temp.gid(6105),
+  pg_temp.gid(24804),(select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6105)),
+  'confirm_priority',pg_temp.request_sha(24804),null,pg_temp.gid(24503))$$,
+  'P0001','solmind_explorer_conversation_denied','an Other paths point still cannot become the Priority');
+select ok((select s.revision=b.revision and s.attention_id=b.attention_id from ai.explorer_conversation_state s,merged_before b
+    where s.conversation_id=pg_temp.gid(6105))
+  and not exists(select 1 from ai.explorer_conversation_operation where operation_id in (pg_temp.gid(24803),pg_temp.gid(24804))),
+  'both refusals leave the saved needle, revision and history unchanged');
 select ok(not exists(select 1 from (values('anon'),('authenticated'),('service_role')) r(role_name)
   where has_function_privilege(r.role_name,'ai.solmind_compass_arrangement_snapshot_valid(jsonb)','EXECUTE')),
   'closed private snapshot validator remains ungranted to every API role');
