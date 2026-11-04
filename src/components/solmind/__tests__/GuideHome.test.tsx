@@ -91,7 +91,8 @@ describe("Guide home as the Dashboard", () => {
   const dashboard = (pending = false, warning = false) =>
     renderToStaticMarkup(createElement(GuideDashboardHome, { pending, warning, onSignOut: () => undefined }));
   const CURRENT = "border-amber-300/25 bg-amber-300/10 font-semibold text-amber-200";
-  const GREY = `<span class="text-[11px] font-normal text-stone-400">${WORKSPACE_NOT_CONNECTED_LABEL}</span>`;
+  // The blue build-note label (Paul's build-note rule, decision queue 2026-11-03 17:59:20 and 18:00:59 CST).
+  const BLUE_LABEL = `<span class="text-[11px] font-normal text-[#4A86FF]" data-build-note="label">${WORKSPACE_NOT_CONNECTED_LABEL}</span>`;
   const { explorers, assistant, appointment, suggestions } = GUIDE_DASHBOARD;
   const text = (html: string) => html.replace(/<[^>]+>/g, " ").replaceAll("&#x27;", "'").replace(/\s+/g, " ");
   const rail = (html: string) => {
@@ -108,7 +109,7 @@ describe("Guide home as the Dashboard", () => {
     // The August Guide menu in order: Dashboard works, the other four are not connected yet.
     const labels = [...menu.matchAll(/<span>([^<]+)<\/span>/g)].map((match) => match[1]);
     expect(labels).toEqual(["Dashboard", "Explorers", "Chat with your Guide Assistant", "Appointments", "Archive"]);
-    expect(menu.split(GREY).length - 1).toBe(4);
+    expect(menu.split(BLUE_LABEL).length - 1).toBe(4);
     expect(html).toContain(`Guide workspace <span aria-hidden="true">/</span> <span class="text-stone-200">Dashboard</span>`);
     expect(html).toContain(`>${GUIDE_DASHBOARD.eyebrow}</p>`);
     expect(html).toMatch(new RegExp(`<h1 class="[^"]*" id="${GUIDE_DASHBOARD_HEADING_ID}" tabindex="-1">Welcome back</h1>`));
@@ -145,7 +146,7 @@ describe("Guide home as the Dashboard", () => {
       const button = new RegExp(`<button aria-controls="${id}" aria-expanded="false" class="[^"]*" type="button">([\\s\\S]*?)</button>`).exec(html);
       expect(button, card).not.toBeNull();
       expect(button?.[1], card).toContain(`>${label}</span>`);
-      expect(button?.[1], card).toContain(GREY);
+      expect(button?.[1], card).toContain(BLUE_LABEL);
       expect(html, card).toContain(`<p class="text-xs leading-5 text-stone-300" hidden="" id="${id}">${sentence.replaceAll("'", "&#x27;")}</p>`);
     }
     expect(explorers.explanation).toBe(GUIDE_MENU[1].explanation);

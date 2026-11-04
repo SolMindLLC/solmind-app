@@ -47,6 +47,64 @@ Most binding product references before auth/database work:
 8. Do not modify database schema or Row Level Security policies without updating relevant documentation.
 9. Run verification commands before claiming success.
 
+## Build notes and the release-candidate check - 2026-11-03
+
+Paul's rule (decision queue 2026-11-03 17:59:20, 18:00:59, 18:03:39, 18:30:50,
+18:32:04 and 18:33:15 CST, and his go-ahead of 20:50:45; the section "Pages
+under development: build notes" in
+`solmind-docs/ai-assistant/02_SolMind_AI_Assistant_Implementation_Repository_Workflow_v1_0.md`).
+Build notes are for the people reviewing the work, never messages to users,
+and are for live screens under development, not generally for mockups. On the
+signed-in screens (the connected `/explorer/conversation` screen and every page
+in `WorkspaceFrame.tsx`: the Explorer Overview, conversations and Waypoints
+inbox and detail, the Guide Dashboard and Waypoint Suggestions pages, and the
+Admin pages), `src/components/solmind/ExplorerConversationScreenBuildNotes.tsx`
+owns them:
+
+- a control not built yet keeps its small "Not connected yet" label, in the
+  reserved build-note blue `#4A86FF` (it was grey before; Paul: "Yes, blue too");
+- a note for an area not built yet (the "Ways to begin" and earlier-Compass
+  sentences, the latest-change line, Key Insights) is a blue dashed box,
+  starting with the words "Not connected yet", with an X in its upper corner
+  that hides that box;
+- a part planned for removal gets a dashed violet `#D27BFF` outline and a small
+  violet "Planned for removal" tag that shows one sentence on tap saying why;
+  the part keeps working (today only the old form tools below the
+  conversation, `ExplorerConversationFormation.tsx`, under Paul's chat-step
+  decision 8);
+- one "Build notes" toggle (`aria-pressed`) first in the top bar's right-hand
+  group, on every page that has notes or markers (every signed-in page: the
+  bell and the profile chip carry labels), hides every blue label, blue box and
+  violet marker; the controls and tools stay, and a control's tap-to-explain
+  sentence still opens. An X hides only its box, which stays hidden while the
+  toggle is off; turning the toggle on shows every box again, including those
+  closed with their X. Nothing is saved (no browser storage, no URL state); a
+  reload shows them all, with the toggle on. Closing a box moves focus to the
+  control before it in the same page or drawer.
+
+The blue and violet are used nowhere else in the app; the blue is not the sky
+blue `#8BC6EE` of the "You" speaker label, the current tools' cyan, or the
+private Waypoint panels' indigo. Every build note, label, box, removal marker
+and the toggle carries the fixed attribute `data-build-note` or
+`data-removal-marker`. The review version `/explorer/conversation-preview` and
+the fixture and prototype routes are mockups and stay unchanged.
+
+Release-candidate check: `node scripts/checkReleaseCandidate.mjs` (core scan in
+`scripts/releaseCandidateScan.mjs`, tested by
+`scripts/__tests__/releaseCandidateScan.test.ts`; not a `package.json` script,
+which would need Paul's approval under rule 7) fails, naming each place, while
+either attribute is present in the app source under `src/` (only tests left
+out; the mockup routes and files ship with every build, so they are scanned
+too, amended 2026-11-03 after review REV224) or in the built pages of every
+route (`.next/server` and `.next/static` after `next build`), and also when
+there is no build or the build is older than the source. A Test version that
+is a candidate for UAT or production must pass this check, and is not promoted
+until it does (Paul's rule, decision queue 2026-11-03 18:32:04 and 18:33:15
+CST). While the notes exist, as on 2026-11-03, it fails. The app has no
+runtime Test-only switch (2026-11-03): following Paul's 18:33:15 CST
+refinement of 18:32:04, a release candidate has no notes at all, and this
+check is the guard.
+
 ## Canonical SolMind Terms
 
 Use these role names consistently:
@@ -162,17 +220,24 @@ read-only view props and callbacks to the presentation-only
 `ExplorerConversationConnectedScreen.tsx`, which owns layout state only (panel,
 drawer, since 2026-11-03 the Compass card's Full or Compact view in the panel
 and in the drawer, the narrow-screen Menu and which "Not connected yet"
-sentence is shown). `explorerConversationConnectedScreen.ts`
+sentence is shown, and since 2026-11-03 which build notes show, through
+`useBuildNotesState`). `explorerConversationConnectedScreen.ts`
 owns its fixed wording and shell data and imports no sample. The screen
 receives no Explorer or Guide name, so its Guide notes say "your Guide"
 (`UNNAMED_GUIDE`). The shared shell, navigation and support panel take a
 `connected` flag that drops the preview band and the "Sample" and "Layout only"
 tags. The real screen shows the approved live sentences, not the unapproved
 AI-companion draft. Parts not connected yet are marked "Not connected yet"
-(option A, below); only the review version keeps their "Not yet implemented:"
-notes. The existing `ExplorerConversationFormation.tsx` tools stay mounted below
+(option A, below), since 2026-11-03 as blue build notes (Build notes and the
+release-candidate check, above); only the review version keeps their "Not yet
+implemented:" notes. The existing `ExplorerConversationFormation.tsx` tools stay mounted below
 the conversation, labelled as the current tools, until rebuild steps 4 and 5
-form the Compass and Waypoints from the conversation.
+form the Compass and Waypoints from the conversation; since 2026-11-03 they
+carry the violet "Planned for removal" marker, whose sentence
+(`CURRENT_TOOLS_REMOVAL_REASON`) reads "These tools will be removed once the
+Compass & Waypoint card does everything they do.", and keep working. The ended
+conversation review (`ExplorerConversationReview.tsx`) shows the same tools
+read-only and is not marked.
 
 Explorer menu option A (Paul's decisions, decision queue 2026-11-02 14:07:48
 and 22:19:17 CST) puts the September 23 Explorer menu he accepted back on both
@@ -188,8 +253,9 @@ and returns focus to the button. Its open state is layout state owned by
 `ExplorerConversationConnectedScreen.tsx`. No "This is your space" card,
 Prototype or Reset control returns, and no route is created or renamed.
 `src/lib/solmind/workspaceNavigation.ts` is the shared labels leaf: the
-navigation names, list heading and conversation-spaces list name, the grey
-"Not connected yet" label, the helper that drops the review prefix, and the
+navigation names, list heading and conversation-spaces list name, the
+"Not connected yet" label (grey until 2026-11-03, now drawn in the build-note
+blue), the helper that drops the review prefix, and the
 entry types. It imports only
 `explorerConversationScreen.ts` and is the only menu file the
 conversation-screen parts import (test SP07 scans it). The signed-in menu data
@@ -213,22 +279,26 @@ phone menu and moves focus to the conversation heading; a click with a
 modifier key or another mouse button behaves as a normal link. Every control
 that is not built yet (menu entries, the bell, the profile button, the Guide
 banner button, and the header, composer and end controls) is a button with
-`aria-expanded` and `aria-controls`, shows the September 23 grey "Not
-connected yet" line and, when activated, shows one sentence directly under
+`aria-expanded` and `aria-controls`, shows the September 23 "Not connected
+yet" line (grey until 2026-11-03; since then the same words in the build-note
+blue, Paul's decision, decision queue 2026-11-03 18:00:59 CST) and, when
+activated, shows one sentence directly under
 it, hidden again on the next activation; the bell's and the profile's
 sentences show in the row under the top bar. As on September 23, the profile
-chip's name is its visible role and grey line with "profile" for screen
-readers ("Explorer profile Not connected yet"). The bell shows its grey line
+chip's name is its visible role and label with "profile" for screen
+readers ("Explorer profile Not connected yet"). The bell shows its label
 beside its icon, with "Notifications" for screen readers ("Notifications Not
-connected yet"). Paul chose this knowingly as an exception to the rule that a
-control without a destination is a defect.
+connected yet"). With the build notes off the label goes and the name is the
+role or "Notifications" alone. Paul chose this knowingly as an exception to the
+rule that a control without a destination is a defect.
 `ExplorerConversationScreenNotYetImplemented.tsx` implements it once through
 `NotConnectedProvider`, which the connected screen places. Notes that describe
-an area rather than a control (the forming point, needle and key insight
-sentences, the "Ways to begin" and earlier-Compass sentences and the
-latest-change line) stay shown, each in an area marked "Not
-connected yet": the grey label beside or under the area's heading or title,
-or on its own line above the sentence where the area has no heading. Since
+an area rather than a control (the key insight sentence, the "Ways to begin"
+and earlier-Compass sentences and the latest-change line) are shown, until
+2026-11-03 each in an area marked with the grey label, and since then (Paul's
+decision, decision queue 2026-11-03 17:59:20 CST) each in its own blue
+build-note box with an X, placed in the area (under the Key Insight heading,
+inside "Ways to begin", under the composer). Since
 chat step slices S1 and S2 (2026-11-03) the connected Compass & Waypoint card
 (`ExplorerConnectedCompassCard.tsx`, `ExplorerConnectedWaypointCard.tsx`;
 mapping and wording in `src/lib/solmind/explorerConnectedCard.ts`) replaces the
@@ -248,9 +318,13 @@ drawn dashed, which is the Compass design, not a review mark. The top bar breadc
 plain text and the separate top-bar "Explorer home" link is gone (Overview is
 the way home). The "Return to Explorer home" link is shown when no saved
 conversation has been started; an ended conversation links to "Review ended
-conversations", and confirming End goes home by itself. No blue note, dashed
-review mark, Sample tag or `data-preview-*` attribute appears on a signed-in
-screen. All these sentences, for the controls and for the marked areas alike,
+conversations", and confirming End goes home by itself. No review-version
+"Not yet implemented:" note, Sample tag or `data-preview-*` attribute appears
+on a signed-in screen; since 2026-11-03 the only blue notes, dashed review marks and
+violet marks there are the build notes and removal markers, each carrying
+`data-build-note` or `data-removal-marker` (amended 2026-11-03 for Paul's
+build-note rule; until then no blue note or dashed review mark appeared).
+All these sentences, for the controls and for the marked areas alike,
 are the review drafts from `explorerConversationScreen.ts` without their
 prefix, which Paul agreed to reuse pending his review of the wording; he may
 reword any of them. The review version `/explorer/conversation-preview` keeps
@@ -267,8 +341,11 @@ presentation-only frame: the ambient glow, the wide-screen rail, the top bar
 "<root> / <current entry>" on wide screens, and the bell and profile that
 explain themselves), the phone menu panel and one `<main>`, reusing the
 conversation screen's exported parts (`Rail`, `UtilityBar`, `AmbientGlow`,
-`MenuPanel`). It owns layout state only (whether the phone menu is open and
-which "Not connected yet" sentence shows) and places `NotConnectedProvider`.
+`MenuPanel`). It owns layout state only (whether the phone menu is open,
+which "Not connected yet" sentence shows and, since 2026-11-03, whether the
+build notes show) and places `NotConnectedProvider` and `BuildNotesProvider`;
+its top bar always has the "Build notes" toggle, because the bell and the
+profile chip carry blue labels on every page in it.
 It takes the menu entries, names, breadcrumb root and profile role as data
 (`WorkspaceFrameData` in `explorerConversationScreenDisplay.ts`; menu icons by
 entry id in `MENU_ICONS`), so the Guide menu reuses it (Connected Guide
@@ -1142,7 +1219,8 @@ role-neutral `WorkspaceFrame.tsx` (Explorer workspace frame, above) with the
 August Guide menu in the dark and amber look: Dashboard (`GUIDE_HOME_ROUTE`,
 `/guide/home`, the signed-in Guide home), then Explorers, "Chat with your
 Guide Assistant", Appointments and Archive, which are not connected yet and
-explain themselves with the grey "Not connected yet" line and one sentence
+explain themselves with the "Not connected yet" line (in the build-note blue
+since 2026-11-03) and one sentence
 each. No route is created or renamed. The Guide menu, its names
 ("Guide workspace", "Guide workspace menu") and its sentences are frozen data
 in `workspaceMenus.ts`; the sentences are new drafts adapted from Paul's
@@ -1269,7 +1347,8 @@ Dashboard (`/admin/home`), Guides and Explorers (`/admin/people`), AI use and
 pauses (`/admin/ai-use`) and Settings (`/admin/settings`), all full-document
 links, with no placeholders. The Admin pages also show the banked frame's bell
 and profile chip ("Admin"), each with "Not connected yet" (Paul's decision,
-decision queue 2026-11-02 22:19:17). Each page and each POST (`/admin/ai-use/lift`,
+decision queue 2026-11-02 22:19:17; a blue build note with the page's
+"Build notes" toggle since 2026-11-03). Each page and each POST (`/admin/ai-use/lift`,
 `/admin/settings/change`) has its own fixed Admin-only rule in `routeAccess.ts`
 and its own fixed resolver in `adminRouteAccess.ts`.
 `src/lib/solmind/auth/adminWorkspaceAccess.ts` runs

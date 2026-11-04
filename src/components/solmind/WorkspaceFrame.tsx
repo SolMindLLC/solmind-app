@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 
 import type { WorkspaceFrameData } from "@/lib/solmind/explorerConversationScreenDisplay";
 
+import { BuildNotesProvider, useBuildNotesState } from "./ExplorerConversationScreenBuildNotes";
 import { MenuPanel, type MenuData } from "./ExplorerConversationScreenNavigation";
 import { FOCUS_RING, NotConnectedProvider, joinClasses } from "./ExplorerConversationScreenNotYetImplemented";
 import { AmbientGlow, Rail, UtilityBar } from "./ExplorerConversationScreenShell";
@@ -19,8 +20,12 @@ import { AmbientGlow, Rail, UtilityBar } from "./ExplorerConversationScreenShell
 // Presentation only, and role-neutral: the menu entries, names, breadcrumb
 // root and profile role come in as data (explorerWorkspaceFrame.ts for the
 // Explorer, guideWorkspaceFrame.ts for the Guide). The frame owns layout
-// state only: whether the phone menu is open and which "Not connected yet"
-// sentence is shown. While a sign-out is pending (linksDisabled) every menu
+// state only: whether the phone menu is open, which "Not connected yet"
+// sentence is shown, and whether the build notes show. Every page in it has
+// build notes (the bell's and the profile chip's blue labels at least), so the
+// top bar always has the "Build notes" toggle (Paul's build-note rule,
+// decision queue 2026-11-03 17:59:20 and 18:00:59 CST). While a sign-out is
+// pending (linksDisabled) every menu
 // link shows in its non-link form. The conversation screen keeps its own
 // shell (ExplorerConversationScreenShell.tsx).
 
@@ -52,6 +57,7 @@ function Breadcrumb({ frame }: Readonly<{ frame: WorkspaceFrameData }>) {
 export function WorkspaceFrame({ frame, skipTargetId = WORKSPACE_MAIN_ID, linksDisabled = false, children }: WorkspaceFrameProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [openExplanation, setOpenExplanation] = useState<string | null>(null);
+  const buildNotes = useBuildNotesState();
   const toggleExplanation = (id: string) => setOpenExplanation((open) => (open === id ? null : id));
   const menu: MenuData = {
     labels: frame.labels,
@@ -63,36 +69,38 @@ export function WorkspaceFrame({ frame, skipTargetId = WORKSPACE_MAIN_ID, linksD
   };
 
   return (
-    <NotConnectedProvider onToggle={toggleExplanation} openId={openExplanation}>
-      <div className="relative isolate flex min-h-dvh w-full flex-col bg-[#050404] text-stone-100">
-        <AmbientGlow />
-        <button
-          className={joinClasses(
-            "sr-only rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-stone-950 focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50",
-            FOCUS_RING,
-          )}
-          onClick={() => document.getElementById(skipTargetId)?.focus()}
-          type="button"
-        >
-          Skip to the main content
-        </button>
-        <div className="flex w-full flex-1">
-          <Rail {...menu} onMenuOpenChange={setMenuOpen} />
-          <div className="relative flex min-w-0 flex-1 flex-col">
-            <UtilityBar
-              breadcrumb={<Breadcrumb frame={frame} />}
-              connected
-              menuOpen={menuOpen}
-              onMenuOpenChange={setMenuOpen}
-              profile={frame.profile}
-            />
-            <MenuPanel {...menu} menuOpen={menuOpen} onMenuOpenChange={setMenuOpen} />
-            <main className="flex min-w-0 flex-1 flex-col focus:outline-none" id={WORKSPACE_MAIN_ID} tabIndex={-1}>
-              {children}
-            </main>
+    <BuildNotesProvider state={buildNotes}>
+      <NotConnectedProvider onToggle={toggleExplanation} openId={openExplanation}>
+        <div className="relative isolate flex min-h-dvh w-full flex-col bg-[#050404] text-stone-100">
+          <AmbientGlow />
+          <button
+            className={joinClasses(
+              "sr-only rounded-full bg-amber-400 px-4 py-2 text-sm font-semibold text-stone-950 focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50",
+              FOCUS_RING,
+            )}
+            onClick={() => document.getElementById(skipTargetId)?.focus()}
+            type="button"
+          >
+            Skip to the main content
+          </button>
+          <div className="flex w-full flex-1">
+            <Rail {...menu} onMenuOpenChange={setMenuOpen} />
+            <div className="relative flex min-w-0 flex-1 flex-col">
+              <UtilityBar
+                breadcrumb={<Breadcrumb frame={frame} />}
+                connected
+                menuOpen={menuOpen}
+                onMenuOpenChange={setMenuOpen}
+                profile={frame.profile}
+              />
+              <MenuPanel {...menu} menuOpen={menuOpen} onMenuOpenChange={setMenuOpen} />
+              <main className="flex min-w-0 flex-1 flex-col focus:outline-none" id={WORKSPACE_MAIN_ID} tabIndex={-1}>
+                {children}
+              </main>
+            </div>
           </div>
         </div>
-      </div>
-    </NotConnectedProvider>
+      </NotConnectedProvider>
+    </BuildNotesProvider>
   );
 }

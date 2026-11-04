@@ -6,6 +6,7 @@ import { LAYOUT_ONLY_LABEL, VIRTUAL_GUIDE_SHORT } from "@/lib/solmind/explorerCo
 import type { ScreenGuideBanner, ScreenProfile, ScreenShellData } from "@/lib/solmind/explorerConversationScreenDisplay";
 import { EXPLORER_MENU_LABELS } from "@/lib/solmind/workspaceNavigation";
 
+import { BuildNotesToggle } from "./ExplorerConversationScreenBuildNotes";
 import { IconBell, IconBoot, IconUsers, PROFILE_ICONS } from "./ExplorerConversationScreenIcons";
 import { MenuButton, MenuPanel, RailNavigation, type MenuData } from "./ExplorerConversationScreenNavigation";
 import {
@@ -106,10 +107,13 @@ export function UtilityBar({ profile, connected, menuOpen, onMenuOpenChange, bre
           </p>
         )}
         <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          {/* The page's build-note toggle, only where the screen places BuildNotesProvider. */}
+          <BuildNotesToggle />
           {connected ? (
-            // Like the menu entries, the bell shows the grey line beside its
-            // icon, with "Notifications" for screen readers: "Notifications Not
-            // connected yet". It stays no taller than the profile chip.
+            // Like the menu entries, the bell shows the blue build-note label
+            // beside its icon, with "Notifications" for screen readers:
+            // "Notifications Not connected yet". It stays no taller than the
+            // profile chip.
             <NotConnectedButton
               className={joinClasses(
                 "flex h-10 items-center gap-2 rounded-full border border-amber-200/20 pl-2.5 pr-3 text-amber-200 hover:bg-amber-300/10",
@@ -134,7 +138,7 @@ export function UtilityBar({ profile, connected, menuOpen, onMenuOpenChange, bre
             </UnwiredButton>
           )}
           {connected ? (
-            // As on September 23, the visible role and grey line are the name,
+            // As on September 23, the visible role and label are the name,
             // with "profile" for screen readers: "Explorer profile Not connected yet".
             <NotConnectedButton className={profileClass} explanationId={noteId("top", "profile")}>
               {avatar}

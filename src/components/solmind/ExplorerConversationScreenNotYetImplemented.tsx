@@ -11,6 +11,8 @@ import {
 } from "@/lib/solmind/explorerConversationScreen";
 import { WORKSPACE_NOT_CONNECTED_LABEL, withoutReviewPrefix } from "@/lib/solmind/workspaceNavigation";
 
+import { BuildNoteBox, BuildNoteLabel } from "./ExplorerConversationScreenBuildNotes";
+
 // Shared building blocks for the interim conversation screen. The class
 // strings are copied from ExplorerCompassComparisonParts.tsx and adapted;
 // this file imports nothing from the S01R2 files.
@@ -61,9 +63,12 @@ export function noteId(scope: string, key: NotYetImplementedKey): string {
 }
 
 // Signed-in screens (Paul's 2026-11-02 decision): a control that is not built
-// yet keeps its designed look, shows the September 23 grey "Not connected yet"
-// line and, when activated, one sentence right under it saying what it will
-// do. The connected screen places NotConnectedProvider and owns which sentence
+// yet keeps its designed look, shows the September 23 "Not connected yet" line
+// and, when activated, one sentence right under it saying what it will do.
+// Since 2026-11-03 (Paul's build-note rule, decision queue 17:59:20 and
+// 18:00:59 CST) that line is a build note in the reserved blue, and a note for
+// an area is a blue box with an X (ExplorerConversationScreenBuildNotes.tsx).
+// The connected screen places NotConnectedProvider and owns which sentence
 // is open (one at a time). Without the provider (the review version) every
 // part in this file renders exactly as before.
 type NotConnectedState = Readonly<{ openId: string | null; onToggle: (id: string) => void }>;
@@ -76,10 +81,11 @@ export function NotConnectedProvider({ openId, onToggle, children }: NotConnecte
 
 const EXPLANATION_CLASS = "text-xs leading-5 text-stone-300";
 
-// The grey line; it renders only on the signed-in screen.
+// The blue build-note label; it renders only on the signed-in screen, and the
+// page's build-note toggle hides it.
 export function NotConnectedLine() {
   const notConnected = useContext(NotConnectedContext);
-  return notConnected ? <span className="text-[11px] font-normal text-stone-400">{WORKSPACE_NOT_CONNECTED_LABEL}</span> : null;
+  return notConnected ? <BuildNoteLabel /> : null;
 }
 
 type NotConnectedButtonProps = Readonly<{ explanationId: string; className: string; label?: string; children: ReactNode }>;
@@ -102,15 +108,16 @@ export function NotConnectedButton({ explanationId, className, label, children }
   );
 }
 
-type ExplanationProps = Readonly<{ id: string; text: string; className?: string; shown?: boolean }>;
+type ExplanationProps = Readonly<{ id: string; text: string; className?: string }>;
 
 // The sentence under a control that is not connected yet: hidden until the
-// control is activated, unless no control opens it (shown).
-export function NotConnectedExplanation({ id, text, className, shown = false }: ExplanationProps) {
+// control is activated. It is the control's own behaviour, so the build-note
+// toggle leaves it as it is (a note for an area is a BuildNoteBox instead).
+export function NotConnectedExplanation({ id, text, className }: ExplanationProps) {
   const notConnected = useContext(NotConnectedContext);
 
   return (
-    <p className={joinClasses(EXPLANATION_CLASS, className)} hidden={!shown && notConnected?.openId !== id} id={id}>
+    <p className={joinClasses(EXPLANATION_CLASS, className)} hidden={notConnected?.openId !== id} id={id}>
       {text}
     </p>
   );
@@ -122,8 +129,8 @@ type NoteWording = Readonly<
 >;
 
 // standalone: no control opens this note (it describes an area, not a
-// button), so on the signed-in screen its sentence stays shown; the caller
-// places it in an area marked with NotConnectedLine.
+// button), so on the signed-in screen its sentence is shown in a blue build
+// note box with an X (BuildNoteBox), which the caller places in the area.
 type NoteProps = Readonly<{ id: string; className?: string; standalone?: boolean }> & NoteWording;
 
 export function NotYetImplementedNote({ id, noteKey, guideName, className, standalone }: NoteProps) {
@@ -131,7 +138,11 @@ export function NotYetImplementedNote({ id, noteKey, guideName, className, stand
   const notConnected = useContext(NotConnectedContext);
 
   if (notConnected) {
-    return <NotConnectedExplanation className={className} id={id} shown={standalone} text={withoutReviewPrefix(text)} />;
+    return standalone ? (
+      <BuildNoteBox className={className} id={id} text={withoutReviewPrefix(text)} />
+    ) : (
+      <NotConnectedExplanation className={className} id={id} text={withoutReviewPrefix(text)} />
+    );
   }
 
   return (
@@ -152,7 +163,7 @@ type UnwiredButtonProps = Readonly<{
 }>;
 
 // Stays focusable (aria-disabled, never disabled) and does nothing when used.
-// On the signed-in screens it shows the grey "Not connected yet" line and its
+// On the signed-in screens it shows the blue "Not connected yet" label and its
 // sentence instead. A control given a label would carry "(not connected yet)"
 // in its accessible name without the visible line; no signed-in control uses
 // that form (the bell draws its own line), and the frame tests refuse it.

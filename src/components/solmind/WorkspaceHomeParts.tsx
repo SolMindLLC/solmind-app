@@ -68,7 +68,7 @@ export function HomeCardLink({ href, className, disabled, children }: CardLinkPr
 
 type ActionProps = Readonly<{ id: string; className: string; label: string; explanation: string }>;
 
-// A card button with no working screen yet: the grey "Not connected yet" line
+// A card button with no working screen yet: the blue "Not connected yet" build-note label
 // under its label and, when activated, its sentence directly beneath it, as
 // the menu entries do. It stays a button while a sign-out is pending.
 export function HomeNotConnectedAction({ id, className, label, explanation }: ActionProps) {

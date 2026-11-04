@@ -215,7 +215,30 @@ screen, and `ExplorerConversation.tsx` stays its only fetch owner:
 - `ExplorerConversationConnectedScreen.tsx` is presentation only and owns
   layout state only (panel, drawer, since 2026-11-03 the Compass card's Full
   or Compact view in the panel and in the drawer, the narrow-screen Menu and
-  which "Not connected yet" sentence is shown, through `NotConnectedProvider`);
+  which "Not connected yet" sentence is shown, through `NotConnectedProvider`,
+  and since 2026-11-03 which build notes show, through `BuildNotesProvider`);
+- `ExplorerConversationScreenBuildNotes.tsx` (2026-11-03; Paul's build-note
+  rule, decision queue 2026-11-03 17:59:20, 18:00:59, 18:03:39, 18:30:50,
+  18:32:04 and 18:33:15 CST) owns the build notes of the signed-in screens and
+  nothing else: the blue label (`BuildNoteLabel`, `#4A86FF`), the blue dashed
+  box with its X (`BuildNoteBox`), the violet removal outline and tag
+  (`REMOVAL_OUTLINE`, `RemovalTag`, `#D27BFF`), the page toggle
+  (`BuildNotesToggle`, `aria-pressed`, first in the top bar's right-hand group)
+  and the pure toggle and X rules (`toggleBuildNotes`, `closeBuildNote`,
+  `buildNoteShown`) with the boundary hook `useBuildNotesState`. Its fixed
+  words are in `explorerConversationScreen.ts` (`BUILD_NOTE_WORDING`). It
+  imports only React, those two lib leaves and its icons, never the other
+  parts, because `ExplorerConversationScreenNotYetImplemented.tsx` imports it.
+  Without `BuildNotesProvider` (the review version) it draws no toggle, so the
+  review version is unchanged. Every note, label, box, marker and the toggle
+  carries `data-build-note` or `data-removal-marker`;
+- `scripts/checkReleaseCandidate.mjs` (with its pure scan in
+  `scripts/releaseCandidateScan.mjs`) is the release-candidate check: it reads
+  `src/` and the built `.next/server` and `.next/static` and fails while either
+  attribute remains anywhere outside tests, the mockup routes and files
+  included, because they ship with every build (amended 2026-11-03 after review
+  REV224). It changes nothing and is not a `package.json` script. A release
+  candidate for UAT or production must pass it (Paul's rule, 2026-11-03);
 - `explorerConversationConnectedScreen.ts` owns its fixed wording and shell
   data and imports no sample; its Guide notes say "your Guide"
   (`UNNAMED_GUIDE`), because the screen receives no Guide name;
@@ -223,12 +246,14 @@ screen, and `ExplorerConversation.tsx` stays its only fetch owner:
   drops the preview band and the "Sample" and "Layout only" tags;
 - the Explorer menu (Paul's 2026-11-02 option A, decision queue 14:07:48 and
   22:19:17 CST) has two presentation-data files:
-  `src/lib/solmind/workspaceNavigation.ts`, the labels leaf (labels, the grey
-  "Not connected yet" label, the prefix helper and the entry types), imports
+  `src/lib/solmind/workspaceNavigation.ts`, the labels leaf (labels, the
+  "Not connected yet" label, grey until 2026-11-03 and a blue build note since,
+  the prefix helper and the entry types), imports
   only `explorerConversationScreen.ts` and is imported by the
-  conversation-screen shell and not-yet-implemented parts
+  conversation-screen shell, not-yet-implemented and build-note parts
   (`ExplorerConversationScreenShell.tsx`,
-  `ExplorerConversationScreenNotYetImplemented.tsx`), by `workspaceMenus.ts`
+  `ExplorerConversationScreenNotYetImplemented.tsx`,
+  `ExplorerConversationScreenBuildNotes.tsx`), by `workspaceMenus.ts`
   and by `explorerWorkspaceFrame.ts`; `src/lib/solmind/workspaceMenus.ts`, the
   signed-in menu data with its destinations (Overview from `routeAccess.ts`),
   is imported only by the signed-in lib files `explorerConversationConnectedScreen.ts`,
@@ -239,13 +264,16 @@ screen, and `ExplorerConversation.tsx` stays its only fetch owner:
   opens below 64rem (the icon strip and spaces toggle are gone). On the
   signed-in screen built entries are plain full-document links (a plain click
   on the current page's entry keeps the page and a typed message), and every
-  control not built yet shows a grey "Not connected yet" line (the bell
-  beside its icon, named "Notifications Not connected yet") and one sentence
+  control not built yet shows a "Not connected yet" line (the bell
+  beside its icon, named "Notifications Not connected yet"; grey until
+  2026-11-03, the build-note blue since) and one sentence
   directly under it on request instead of a "Not yet implemented:" note;
-  notes that describe an area stay shown in an area marked "Not connected
-  yet" (one dated exception, 2026-11-03, Paul's decision in decision queue
+  notes that describe an area are shown, since 2026-11-03 each in a blue
+  build-note box with an X instead of an area marked with the grey label (one
+  dated exception, 2026-11-03, Paul's decision in decision queue
   18:05:33 CST: the Compass card shows no forming-point or needle note, to cut
-  clutter; see the card below); only the review version keeps its blue notes.
+  clutter; see the card below); only the review version keeps its "Not yet
+  implemented:" notes.
   The sentences are the review drafts reused pending Paul's wording review;
 - since chat step slices S1 and S2 (2026-11-03; Paul's chat-step decisions,
   decision queue 2026-11-03 12:38:07 and 12:41:08 CST), the support panel and
@@ -295,9 +323,15 @@ screen, and `ExplorerConversation.tsx` stays its only fetch owner:
   sentence and no placement paragraph; and the card no longer has its two
   "Not connected yet" notes (forming points; the needle following the
   conversation), a dated exception Paul decided for the Compass card. Key
-  Insights stay in their area marked "Not connected yet"; and
+  Insights stay marked as not built yet, since 2026-11-03 with a blue
+  build-note box under their heading; and
 - `ExplorerConversationFormation.tsx` stays mounted below the conversation as
   the current Compass and Waypoint tools until rebuild steps 4 and 5. Since
+  2026-11-03 (Paul's build-note rule, decision queue 18:03:39 CST; his
+  chat-step decision 8) the screen's section around it carries the violet
+  removal marker (dashed violet outline and the "Planned for removal" tag with
+  the sentence `CURRENT_TOOLS_REMOVAL_REASON`); the tools keep working, and the
+  ended conversation review, which shows them read-only, is not marked. Since
   2026-11-03 it labels older Waypoint wording "Earlier version - Formed",
   "- Reached" or "- Released" (Paul's question 9 decision) instead of
   "Superseded - ..."; its other labels are unchanged, except that since the
@@ -315,7 +349,9 @@ Explorer pages:
   presentation-only client frame (rail, top bar with Menu button and plain
   breadcrumb, phone panel, one `<main>`). It reuses the exported conversation
   parts (`Rail`, `UtilityBar` and `AmbientGlow` from the shell, `MenuPanel`,
-  the `MENU_ICONS` icons and `NotConnectedProvider`), owns layout state only,
+  the `MENU_ICONS` icons and `NotConnectedProvider`, and since 2026-11-03
+  `BuildNotesProvider` with `useBuildNotesState`, so its top bar has the
+  "Build notes" toggle on every page), owns layout state only,
   and takes `WorkspaceFrameData` (typed in `explorerConversationScreenDisplay.ts`)
   with the menu entries, names, breadcrumb root and profile role;
 - `src/components/solmind/ExplorerWorkspaceFrame.tsx` is the thin Explorer

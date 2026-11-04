@@ -20,12 +20,14 @@ import {
   CONNECTED_SHELL,
   CURRENT_TOOLS_HEADING,
   CURRENT_TOOLS_POINTER,
+  CURRENT_TOOLS_REMOVAL_REASON,
 } from "../../../lib/solmind/explorerConversationConnectedScreen";
 import {
   EXPLORER_CONVERSATION_VERSION,
   type ExplorerConversationState,
 } from "../../../lib/solmind/explorerConversationContract";
 import {
+  BUILD_NOTE_WORDING,
   CONVERSATION_FOOTER,
   LAYOUT_ONLY_LABEL,
   MIDDLE_DOT,
@@ -58,8 +60,14 @@ const CARD_FILES = [
 ];
 // The shared menu labels leaf and the signed-in menu data (Paul's 2026-11-02 option A).
 const MENU_FILES = ["src/lib/solmind/workspaceNavigation.ts", "src/lib/solmind/workspaceMenus.ts"];
-// The grey label exactly as NotConnectedLine draws it.
-const GREY_LABEL = `<span class="text-[11px] font-normal text-stone-400">${WORKSPACE_NOT_CONNECTED_LABEL}</span>`;
+// The blue build-note label exactly as NotConnectedLine draws it (Paul's build-note rule, decision queue
+// 2026-11-03 17:59:20 and 18:00:59 CST: the September 23 grey line became the same words in the reserved blue).
+const BLUE_LABEL = `<span class="text-[11px] font-normal text-[#4A86FF]" data-build-note="label">${WORKSPACE_NOT_CONNECTED_LABEL}</span>`;
+// The blue build-note box of an area not built yet: dashed, its lead words, then its sentence, then its X.
+const BOX_OPEN =
+  '<div class="relative grid gap-0.5 rounded-lg border border-dashed border-[#4A86FF] bg-[#071433] py-1.5 pl-2.5 pr-9 text-left [overflow-wrap:anywhere]" data-build-note="box">' +
+  `<p class="text-[11px] font-semibold leading-4 text-[#4A86FF]">${WORKSPACE_NOT_CONNECTED_LABEL}</p>`;
+const BOX_SENTENCE_CLASS = "text-xs leading-5 text-[#D6E4FF]";
 // The notes that describe an area rather than a control: shown, never hidden. Since chat step
 // slices S1 and S2 the Compass and Waypoint card is connected, so its "compass" and "waypointCard"
 // notes are gone. Since the chat card redesign (Paul's decision, decision queue 2026-11-03 18:05:33
@@ -183,15 +191,17 @@ function markupElements(html: string): MarkupElement[] {
   return all;
 }
 
-// Each area note shown in the markup, with the markup of the element that directly contains it.
-function shownAreaNotes(html: string): { key: string; sentence: string; area: string; noteAt: number }[] {
+// Each area note shown in the markup, with the markup of the element that directly contains it (its build-note box).
+function shownAreaNotes(html: string): { id: string; key: string; sentence: string; area: string; noteAt: number }[] {
   const elements = markupElements(html);
-  return [...html.matchAll(/<p class="text-xs leading-5 text-stone-300[^"]*" id="nyi-\w+-(\w+)">([^<]*)<\/p>/g)].map((match) => {
+  const sentence = new RegExp(`<p class="${BOX_SENTENCE_CLASS.replaceAll("[", "\\[").replaceAll("]", "\\]")}" id="(nyi-\\w+-(\\w+))">([^<]*)</p>`, "g");
+  return [...html.matchAll(sentence)].map((match) => {
     const parent = elements.find((element) => element.start === match.index)?.parent;
-    if (!parent) throw new Error(`no_parent_${match[1]}`);
+    if (!parent) throw new Error(`no_parent_${match[2]}`);
     return {
-      key: match[1],
-      sentence: unescapeHtml(match[2]),
+      id: match[1],
+      key: match[2],
+      sentence: unescapeHtml(match[3]),
       area: html.slice(parent.start, parent.end),
       noteAt: (match.index ?? 0) - parent.start,
     };
@@ -283,7 +293,8 @@ describe("connected Explorer conversation screen", () => {
   it("CC04 no review note remains; every control not connected yet says so and explains itself on request", () => {
     const html = render();
     // The current Compass and Waypoint tools below the conversation keep their own dashed
-    // empty-slot style, which is not a review mark, so the class checks leave them out.
+    // empty-slot style, which is not a review mark, and carry the violet removal marker (CC28),
+    // so the class checks leave them out.
     const toolsAt = html.indexOf('<section aria-labelledby="conversation-current-tools-heading"');
     const panelAt = html.indexOf('<aside aria-labelledby="conversation-preview-panel-heading"');
     expect(toolsAt).toBeGreaterThan(0);
@@ -292,7 +303,12 @@ describe("connected Explorer conversation screen", () => {
     expect(html).not.toContain(NOT_YET_IMPLEMENTED_PREFIX);
     expect(html).not.toContain("data-preview-");
     // (The real controls keep their own disabled:cursor-not-allowed state style.)
-    expect(screen.match(/.{0,80}(?:\bsky-|border-dashed|(?<!disabled:)cursor-not-allowed|aria-disabled).{0,40}/g) ?? []).toEqual([]);
+    expect(screen.match(/.{0,80}(?:\bsky-|(?<!disabled:)cursor-not-allowed|aria-disabled).{0,40}/g) ?? []).toEqual([]);
+    // Since Paul's build-note rule (decision queue 2026-11-03 17:59:20 CST) the only dashed edges here are the
+    // blue build-note boxes of the areas not built yet, each carrying its marker.
+    const dashed = [...screen.matchAll(/<\w+\b[^>]*\bborder-dashed\b[^>]*>/g)].map(([tag]) => tag);
+    expect(dashed.length).toBe(2);
+    for (const tag of dashed) expect(BOX_OPEN.startsWith(tag), tag).toBe(true);
     const sentences = [
       ...ALL_NOTES.map((note) => note.slice(NOT_YET_IMPLEMENTED_PREFIX.length + 1)),
       ...[...EXPLORER_MENU, ...EXPLORER_CONVERSATION_SPACES].flatMap((entry) => (entry.explanation ? [entry.explanation] : [])),
@@ -322,18 +338,23 @@ describe("connected Explorer conversation screen", () => {
     // Every hidden sentence belongs to one of those controls.
     const hidden = [...screen.matchAll(/<p\b[^>]*\shidden=""[^>]*\sid="([^"]+)"/g)].map((match) => match[1]);
     expect(hidden.sort()).toEqual([...controlled].sort());
-    // A sentence describing an area rather than a control stays shown, without the prefix, and
-    // sits in an element that also shows the grey "Not connected yet" label (beside the area's
-    // heading, or on its own line above the sentence), with no control of its own, so it does not
-    // read as a working feature. The empty conversation adds the "Ways to begin" area.
+    // A sentence describing an area rather than a control is shown, without the prefix, in a blue
+    // build-note box (Paul's build-note rule, decision queue 2026-11-03 17:59:20 CST) that starts with
+    // the "Not connected yet" words, so it does not read as a working feature. The box's only control
+    // is its X, which hides that box and is described by the sentence. The empty conversation adds the
+    // "Ways to begin" area.
     const empty = render(view({ state: savedState({ conversationId: null, revision: 0, messages: [], sessionStatus: null }) }));
     const areaNotes = [...shownAreaNotes(html), ...shownAreaNotes(empty)];
     expect([...new Set(areaNotes.map((note) => note.key))].sort()).toEqual(AREA_NOTES);
-    for (const { key, sentence, area, noteAt } of areaNotes) {
+    for (const { id, key, sentence, area, noteAt } of areaNotes) {
       expect(sentences, key).toContain(sentence);
-      expect(area.includes(GREY_LABEL), key).toBe(true);
-      expect(area.indexOf(GREY_LABEL), key).toBeLessThan(noteAt);
-      expect(/<(?:button|a|textarea|input|select)\b/.test(area), key).toBe(false);
+      expect(area.startsWith(BOX_OPEN), key).toBe(true);
+      expect(BOX_OPEN.length, key).toBe(noteAt);
+      const controls = [...area.matchAll(/<(?:button|a|textarea|input|select)\b[^>]*>/g)].map(([tag]) => tag);
+      expect(controls, key).toEqual([
+        `<button aria-describedby="${id}" aria-label="${BUILD_NOTE_WORDING.hide}" class="${attribute(controls[0] ?? "", "class")}" type="button">`,
+      ]);
+      expect(area.endsWith("</svg></button></div>"), key).toBe(true);
     }
     // The card replaced the Compass and Waypoint area sentences, in both the loaded and the empty conversation;
     // since the redesign the Compass card has no forming-point or needle note either, also with a saved Compass.
@@ -348,8 +369,12 @@ describe("connected Explorer conversation screen", () => {
         expect(markup, `${key} ${name}`).not.toContain(`id="nyi-drawer-${key}"`);
       }
     }
-    // Key Insights are not built yet (Paul's decision 7): their own area, marked beside its heading.
-    expect(html).toMatch(/<section aria-labelledby="panel-connected-key-insight-title"[^>]*><div class="flex flex-wrap items-baseline gap-x-2"><h3[^>]*id="panel-connected-key-insight-title">Key Insight<\/h3><span class="text-\[11px\] font-normal text-stone-400">Not connected yet<\/span><\/div><p class="text-xs leading-5 text-stone-300" id="nyi-panel-keyInsight">/);
+    // Key Insights are not built yet (Paul's decision 7): their own area, its heading, then its build-note box.
+    expect(html).toContain(
+      '<section aria-labelledby="panel-connected-key-insight-title" class="grid gap-2 border-b border-stone-800/80 px-4 py-4">' +
+      `<h3 class="font-serif text-lg text-stone-50" id="panel-connected-key-insight-title">Key Insight</h3>${BOX_OPEN}` +
+      `<p class="${BOX_SENTENCE_CLASS}" id="nyi-panel-keyInsight">`,
+    );
   });
 
   it("CC18 each control's sentence comes directly after it; the top bar's sit in the row under it", () => {
@@ -378,29 +403,29 @@ describe("connected Explorer conversation screen", () => {
     expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 
-  it("CC19 the profile chip's name is its visible role and grey line, with profile for screen readers", () => {
+  it("CC19 the profile chip's name is its visible role and blue label, with profile for screen readers", () => {
     const html = render();
     const chip = /<button\b([^>]*\saria-controls="nyi-top-profile"[^>]*)>([\s\S]*?)<\/button>/.exec(html);
     expect(chip).not.toBeNull();
     expect(attribute(chip?.[1] ?? "", "aria-label")).toBeNull();
     expect(attribute(chip?.[1] ?? "", "aria-expanded")).toBe("false");
     expect(chip?.[2]).toContain('<span class="sr-only"> profile</span>');
-    expect(chip?.[2]).toContain(GREY_LABEL);
+    expect(chip?.[2]).toContain(BLUE_LABEL);
     expect(textOf(chip?.[2] ?? "").trim()).toBe("Explorer profile Not connected yet");
   });
 
-  it("CC20 the bell shows the grey line beside its icon, with Notifications for screen readers", () => {
+  it("CC20 the bell shows the blue label beside its icon, with Notifications for screen readers", () => {
     const html = render();
     const bell = /<button\b([^>]*\saria-controls="nyi-top-notifications"[^>]*)>([\s\S]*?)<\/button>/.exec(html);
     expect(bell).not.toBeNull();
-    // Like the menu entries and the profile chip, the visible grey line is part of its name, once.
+    // Like the menu entries and the profile chip, the visible blue label is part of its name, once.
     expect(attribute(bell?.[1] ?? "", "aria-label")).toBeNull();
     expect(attribute(bell?.[1] ?? "", "aria-expanded")).toBe("false");
     expect(attribute(bell?.[1] ?? "", "type")).toBe("button");
-    expect(bell?.[2]).toMatch(new RegExp(`^<svg aria-hidden="true"[^>]*>[\\s\\S]*?</svg><span class="sr-only">Notifications </span>${GREY_LABEL.replaceAll("[", "\\[").replaceAll("]", "\\]")}$`));
+    expect(bell?.[2]).toMatch(new RegExp(`^<svg aria-hidden="true"[^>]*>[\\s\\S]*?</svg><span class="sr-only">Notifications </span>${BLUE_LABEL.replaceAll("[", "\\[").replaceAll("]", "\\]")}$`));
     expect(textOf(bell?.[2] ?? "").trim()).toBe("Notifications Not connected yet");
     expect(html).not.toContain("(not connected yet)");
-    // The bell keeps its earlier height (h-10), border, colours and hover; the grey line sits beside the icon.
+    // The bell keeps its earlier height (h-10), border, colours and hover; the blue label sits beside the icon.
     // tests/browser/explorerConversationScreen.pw.ts measures it against the profile chip.
     const bellClass = attribute(bell?.[1] ?? "", "class") ?? "";
     expect(bellClass).toContain("flex h-10 items-center gap-2 rounded-full border border-amber-200/20");
@@ -1091,5 +1116,66 @@ describe("connected Explorer conversation screen", () => {
     expect(otherDial.match(/<line class="stroke-orange-300"/g)?.length).toBe(1);
     // The bubble the solid needle would point at keeps its plain stroke.
     expect(otherDial).not.toContain("stroke-orange-300\" cx=\"114.95\"");
+  });
+
+  // Paul's build-note rule (decision queue 2026-11-03 17:59:20, 18:00:59 and 18:03:39 CST; build spec
+  // .validation/build-notes-20261103): the page toggle, the blue labels and boxes, and the violet removal marker.
+  it("CC27 the screen's build notes: one toggle in the top bar, a blue label on each control, a box per area", () => {
+    const html = render();
+    const markers = (markup: string) => [...markup.matchAll(/data-(build-note|removal-marker)="(\w+)"/g)].map(([, kind, value]) => `${kind}:${value}`);
+    const count = (markup: string, marker: string) => markers(markup).filter((found) => found === marker).length;
+    // 13 controls not built yet (CC04), one blue label each; the two area boxes of a saved conversation (the
+    // latest-change line and Key Insights); the toggle; the outline and tag on the current tools.
+    expect(count(html, "build-note:label")).toBe(13);
+    expect(count(html, "build-note:box")).toBe(2);
+    expect(count(html, "build-note:toggle")).toBe(1);
+    expect(count(html, "removal-marker:outline")).toBe(1);
+    expect(count(html, "removal-marker:tag")).toBe(1);
+    expect(markers(html)).toHaveLength(13 + 2 + 1 + 2);
+    expect(html.split(BLUE_LABEL).length - 1).toBe(13);
+    // The empty conversation adds the two "Ways to begin" boxes.
+    const empty = render(view({ state: savedState({ conversationId: null, revision: 0, messages: [], sessionStatus: null }) }));
+    expect(count(empty, "build-note:box")).toBe(4);
+    // The toggle: first in the top bar's right-hand group, before the bell, pressed (the notes show), named
+    // "Build notes", announcing nothing and controlling no single element.
+    const toggle = /<button aria-pressed="true" class="([^"]*)" data-build-note="toggle" id="build-notes-toggle" type="button">([\s\S]*?)<\/button>/.exec(html);
+    expect(toggle).not.toBeNull();
+    expect(textOf(toggle?.[2] ?? "").trim()).toBe(BUILD_NOTE_WORDING.toggle);
+    expect(toggle?.[1]).toContain("flex h-10 items-center");
+    expect(html).toContain('<div class="ml-auto flex flex-wrap items-center justify-end gap-2"><button aria-pressed="true"');
+    expect(html.indexOf('id="build-notes-toggle"')).toBeLessThan(html.indexOf('aria-controls="nyi-top-notifications"'));
+    // Without data the screen still has its top bar labels and the toggle, and no box outside the header.
+    const loading = render(view({ state: null, busy: true, statusText: "Loading your saved conversation...", reloadAvailable: false }));
+    expect(count(loading, "build-note:toggle")).toBe(1);
+    expect(count(loading, "removal-marker:outline")).toBe(0);
+  });
+
+  it("CC28 the old form tools carry the violet Planned for removal outline and tag, the tag controls its hidden reason, and the tools are still rendered inside the outline", () => {
+    const tools = (markup: string) => {
+      const at = markup.indexOf('<section aria-labelledby="conversation-current-tools-heading"');
+      expect(at).toBeGreaterThan(0);
+      return markup.slice(at, markup.indexOf('<aside aria-labelledby="conversation-preview-panel-heading"'));
+    };
+    for (const markup of [render(), render(view({ state: savedState({ sessionStatus: "ended" }), ended: true, held: true }))]) {
+      const section = tools(markup);
+      expect(section).toMatch(
+        /^<section aria-labelledby="conversation-current-tools-heading" class="rounded-3xl border border-stone-800 bg-\[#090807\]\/85 p-4 sm:p-5 outline-2 outline-offset-2 outline-dashed outline-\[#D27BFF\]" data-removal-marker="outline">/,
+      );
+      expect(section).toContain(
+        `<h2 class="font-serif text-xl text-stone-50" id="conversation-current-tools-heading">${CURRENT_TOOLS_HEADING}</h2>` +
+        '<div class="grid min-w-0 justify-items-start gap-1" data-removal-marker="tag"><button aria-controls="removal-current-tools" aria-expanded="false"',
+      );
+      expect(section).toContain(`>${BUILD_NOTE_WORDING.removalTag}</button>`);
+      expect(section).toContain(
+        `hidden="" id="removal-current-tools">${escapeHtml(CURRENT_TOOLS_REMOVAL_REASON)}</p>`,
+      );
+      // The tools themselves are unchanged and still there.
+      expect(section).toContain('aria-label="Private Compass and Waypoints"');
+      expect(section.split("data-removal-marker").length - 1).toBe(2);
+    }
+    expect(CURRENT_TOOLS_REMOVAL_REASON).toBe("These tools will be removed once the Compass & Waypoint card does everything they do.");
+    // Nothing else on the screen is marked for removal.
+    const html = render();
+    expect(html.split("data-removal-marker").length - 1).toBe(2);
   });
 });

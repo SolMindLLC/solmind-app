@@ -7,8 +7,10 @@
 // Nothing here is sample content and nothing here is private: the saved
 // conversation itself arrives only through the authenticated feature route
 // and is rendered by ExplorerConversation.tsx. Parts that are not connected
-// yet show a grey "Not connected yet" line and, when activated, the sentence
-// from explorerConversationScreen.ts without its "Not yet implemented:" prefix.
+// yet show a blue "Not connected yet" build-note label and, when activated, the
+// sentence from explorerConversationScreen.ts without its "Not yet
+// implemented:" prefix; an area not built yet shows that sentence in a blue
+// build-note box (Paul's build-note rule, 2026-11-03).
 // The connected screen does not receive the Explorer's or the Guide's name, so
 // it shows the Explorer role and says "your Guide".
 
@@ -107,6 +109,11 @@ export const CURRENT_TOOLS_INTRO =
 // current tools.
 export const CURRENT_TOOLS_POINTER =
   "To add, arrange or reword Compass points, or to choose, clarify, reach or release a Waypoint, use your current tools below the conversation.";
+// The sentence the current tools' violet "Planned for removal" tag shows on
+// tap (Paul's build-note rule, decision queue 2026-11-03 18:03:39 CST; the
+// tools go under his chat-step decision 8). A build note for reviewers.
+export const CURRENT_TOOLS_REMOVAL_REASON =
+  "These tools will be removed once the Compass & Waypoint card does everything they do.";
 
 export const COMPOSER_LABEL = "Continue the conversation";
 export const COMPOSER_PLACEHOLDER = "Share what comes to mind...";

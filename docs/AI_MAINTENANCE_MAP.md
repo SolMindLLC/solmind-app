@@ -224,7 +224,7 @@ Explorer menu option A (Paul's decisions, decision queue 2026-11-02 14:07:48
 and 22:19:17 CST): both screens draw the September 23 menu, in the wide rail
 and in the panel a labelled "Menu" button opens below 64rem, replacing the
 icon strip and its spaces toggle. The parts import only the labels leaf
-`src/lib/solmind/workspaceNavigation.ts` (labels, the grey "Not connected
+`src/lib/solmind/workspaceNavigation.ts` (labels, the "Not connected
 yet" label, the prefix helper and the entry types; it imports only
 `explorerConversationScreen.ts`); the signed-in menu data and destinations
 are in `src/lib/solmind/workspaceMenus.ts`, imported only by the signed-in lib
@@ -233,14 +233,16 @@ files `explorerConversationConnectedScreen.ts`, `explorerWorkspaceFrame.ts`,
 `guideDashboardHome.ts`. On the signed-in screen built
 entries are plain full-document links (a plain click on the current page's
 entry keeps the page and a typed message), and every control not built yet
-shows a grey "Not connected yet" line (the bell beside its icon, named
-"Notifications Not connected yet") and, when activated, one sentence
+shows a "Not connected yet" line (the bell beside its icon, named
+"Notifications Not connected yet"; grey until 2026-11-03, a blue build note
+since) and, when activated, one sentence
 directly under it (`NotConnectedProvider` in
 `ExplorerConversationScreenNotYetImplemented.tsx`) instead of a "Not yet
-implemented:" note; notes that describe an area stay shown in an area marked
-"Not connected yet". The sentences are the review drafts without their
-prefix, reused pending Paul's wording review. Only the review version keeps
-its blue notes. Tests:
+implemented:" note; notes that describe an area are shown, since 2026-11-03
+each in a blue build-note box with an X. The sentences are the review drafts
+without their prefix, reused pending Paul's wording review. Only the review
+version keeps its "Not yet implemented:" notes.
+Tests:
 `src/lib/solmind/__tests__/explorerConversationScreen.test.ts`,
 `src/lib/solmind/__tests__/workspaceNavigation.test.ts`,
 `src/lib/solmind/__tests__/explorerSpeakerStyle.test.ts`,
@@ -258,10 +260,36 @@ and `tests/browser/explorerConversationScreen.pw.ts`, alongside the existing
 `tests/browser/explorerConversation*.pw.ts`, `compassCategory.pw.ts`,
 `waypointClarification.pw.ts` and `waypointRelease.pw.ts` specs.
 
+Build notes (2026-11-03; Paul's rule, decision queue 2026-11-03 17:59:20,
+18:00:59, 18:03:39, 18:30:50, 18:32:04 and 18:33:15 CST, go-ahead 20:50:45;
+`solmind-docs` ai-assistant/02 "Pages under development: build notes"): on
+the signed-in screens `src/components/solmind/ExplorerConversationScreenBuildNotes.tsx`
+draws the blue `#4A86FF` labels on controls not built yet, the blue dashed
+boxes with an X for areas not built yet, the violet `#D27BFF` "Planned for
+removal" outline and tag on the old form tools below the conversation (the
+sentence `CURRENT_TOOLS_REMOVAL_REASON` in
+`explorerConversationConnectedScreen.ts`; the tools keep working), and the one
+"Build notes" toggle (`aria-pressed`) in the top bar of the conversation screen
+and every `WorkspaceFrame.tsx` page. Off hides every blue label, box and violet
+marker; an X hides only its box, which stays hidden while the toggle is off;
+on shows every box again. Nothing is saved. Their fixed words are
+`BUILD_NOTE_WORDING` in `explorerConversationScreen.ts`. Each carries
+`data-build-note` or `data-removal-marker`, which the release-candidate check
+`node scripts/checkReleaseCandidate.mjs` (core in
+`scripts/releaseCandidateScan.mjs`) finds in `src/` and in the built pages; a
+release candidate for UAT or production must pass it (Paul's rule,
+2026-11-03), and while the notes exist it fails. Tests:
+`src/components/solmind/__tests__/ExplorerConversationScreenBuildNotes.test.tsx`,
+CC04, CC19, CC20, CC27 and CC28 in
+`src/components/solmind/__tests__/ExplorerConversationConnectedScreen.test.tsx`,
+`scripts/__tests__/releaseCandidateScan.test.ts` and
+`tests/browser/buildNotes.pw.ts`.
+
 Explorer workspace frame and Overview (same decisions, 2026-11-02): the
 other signed-in Explorer pages sit in `src/components/solmind/WorkspaceFrame.tsx`,
 the role-neutral, presentation-only frame that reuses the conversation
-screen's rail, top bar, Menu button, panel and "Not connected yet" parts and
+screen's rail, top bar, Menu button, panel and "Not connected yet" parts (and
+since 2026-11-03 places the build notes' toggle, Build notes above) and
 takes its menu entries, names, breadcrumb root and profile role as data
 (`WorkspaceFrameData`); `src/components/solmind/ExplorerWorkspaceFrame.tsx`
 is the thin Explorer wrapper over the frozen data in

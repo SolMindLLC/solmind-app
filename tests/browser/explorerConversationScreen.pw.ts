@@ -46,8 +46,8 @@ async function open(page: Page, state: ExplorerConversationState) {
   return () => commands;
 }
 
-// Paul's 2026-11-02 decision: a control that is not connected yet says so in
-// grey and, when activated, shows one sentence under it; activating it again
+// Paul's 2026-11-02 decision: a control that is not connected yet says so (in the blue build-note label
+// since 2026-11-03) and, when activated, shows one sentence under it; activating it again
 // hides the sentence. It changes nothing else.
 async function expectExplains(page: Page, scope: Locator, control: Locator, sentence: string) {
   await expect(control).toHaveAttribute("aria-expanded", "false");
@@ -67,8 +67,8 @@ function notConnected(scope: Page | Locator, name: string) {
   return scope.getByRole("button", { name: new RegExp(`^${name}\\s*Not connected yet$`) });
 }
 
-// Paul's 2026-11-02 decision ("Same as menu entries"): the bell shows the grey
-// "Not connected yet" line, visibly. The build spec for that change adds: the
+// Paul's 2026-11-02 decision ("Same as menu entries"): the bell shows the
+// "Not connected yet" line, visibly (a blue build note since 2026-11-03). The build spec for that change adds: the
 // line beside its icon, the name "Notifications Not connected yet" with the
 // line said once, and no taller than the profile chip, so on wide screens the
 // top bar keeps the chip's height.
@@ -82,7 +82,7 @@ async function expectBellShowsLine(page: Page, wide: boolean) {
   const line = bell.getByText("Not connected yet", { exact: true });
   await expect(line).toBeVisible();
   const chip = page.getByRole("button", { name: /^Explorer profile\s*Not connected yet$/ });
-  // The same small grey line as the profile chip's.
+  // The same small blue label as the profile chip's.
   const look = (element: Element) => {
     const style = getComputedStyle(element);
     return [style.color, style.fontSize, style.fontWeight].join(" ");
@@ -170,11 +170,12 @@ test("wide: the designed layout shows the saved conversation without preview ext
     withoutReviewPrefix(guideNotes(UNNAMED_GUIDE).shareConversation));
   await expectBellShowsLine(page, true);
   await expectExplains(page, body, notConnected(page, "Notifications"), withoutReviewPrefix(NOT_YET_IMPLEMENTED.notifications));
-  // As on September 23, the profile chip's name is its visible role and grey line, with "profile" for screen readers.
+  // As on September 23, the profile chip's name is its visible role and label, with "profile" for screen readers.
   await expectExplains(page, body, page.getByRole("button", { name: /^Explorer profile\s*Not connected yet$/ }),
     withoutReviewPrefix(NOT_YET_IMPLEMENTED.profile));
-  // Chat step slices S1 and S2: the Compass and Waypoints areas are connected, with no grey label beside their
-  // headings. Key Insights stay marked beside their heading. Since the chat card redesign (Paul's decision,
+  // Chat step slices S1 and S2: the Compass and Waypoints areas are connected, with no label beside their
+  // headings. Key Insights stay marked, since 2026-11-03 with a blue build-note box under their heading
+  // (tests/browser/buildNotes.pw.ts proves its X and the toggle). Since the chat card redesign (Paul's decision,
   // decision queue 2026-11-03 18:05:33 CST) the Compass has no forming-point or needle note: Paul removed them,
   // a dated exception to the rule that unbuilt areas stay marked.
   const panel = page.locator("#conversation-preview-panel");
@@ -191,6 +192,7 @@ test("wide: the designed layout shows the saved conversation without preview ext
   await expect(panel.getByText(withoutReviewPrefix(NOT_YET_IMPLEMENTED.compass), { exact: true })).toHaveCount(0);
   const insight = panel.getByRole("region", { name: "Key Insight", exact: true });
   await expect(insight.getByText("Not connected yet", { exact: true })).toBeVisible();
+  await expect(insight.locator('[data-build-note="box"]')).toHaveCount(1);
   await expect(insight.getByText(withoutReviewPrefix(NOT_YET_IMPLEMENTED.keyInsight), { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { level: 1, name: "Your conversation", exact: true })).toBeVisible();
   await expect(page).toHaveURL(/\/explorer\/conversation$/);

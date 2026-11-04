@@ -241,17 +241,22 @@ files (`explorerConversationConnectedScreen.ts`, `explorerWorkspaceFrame.ts`,
 entries are plain full-document links (a plain click on the entry for the
 current page keeps the page and a typed message, closes the phone menu and
 focuses the conversation heading), and every control not built yet shows a
-grey "Not connected yet" line (the bell beside its icon, named
-"Notifications Not connected yet") and, when activated, one sentence directly
+"Not connected yet" line (the bell beside its icon, named
+"Notifications Not connected yet"; grey until 2026-11-03, since then a blue
+build note, see Build notes below) and, when activated, one sentence directly
 under it, through `NotConnectedProvider`. Notes that describe an area (the
-Compass, Waypoint, "Ways to begin" and latest-change sentences) stay shown in
-an area marked "Not connected yet" (dated exception, 2026-11-03, Paul's
+Key Insight, "Ways to begin", earlier-Compass and latest-change sentences) are
+shown, since 2026-11-03 each in a blue build-note box with an X instead of an
+area marked with the grey label (dated exception, 2026-11-03, Paul's
 decision, decision queue 18:05:33 CST: the connected Compass card shows no
 forming-point or needle sentence and no "Not connected yet" area; the Waypoint
 card and the Key Insight area are unchanged; see AGENTS.md). All these sentences are the review drafts
 without their prefix, reused pending Paul's wording review; he may reword any
-of them. No blue note, dashed review mark or `data-preview-*` attribute
-appears there. Only the review version keeps the blue notes. The "Return to
+of them. No review-version "Not yet implemented:" note or `data-preview-*`
+attribute appears there; only the review version keeps those notes. Since
+2026-11-03 the only blue notes, dashed review marks and violet marks on the signed-in
+screens are the build notes and removal markers (Build notes, below; amended
+2026-11-03, until then no blue note or dashed review mark appeared). The "Return to
 Explorer home" link shows when no saved conversation has been started; an
 ended conversation links to "Review ended conversations", and confirming End
 goes home by itself.
@@ -262,7 +267,9 @@ Explorer pages (`/explorer/home`, `/explorer/conversations`,
 presentation-only `WorkspaceFrame.tsx`, through the thin Explorer wrapper
 `ExplorerWorkspaceFrame.tsx` and its data in `explorerWorkspaceFrame.ts`. The
 frame reuses the conversation screen's rail, top bar, Menu button, panel and
-"Not connected yet" parts and owns layout state only; keep it at or under 300
+"Not connected yet" parts and owns layout state only (since 2026-11-03 also
+whether the build notes show; its top bar always has the "Build notes"
+toggle, Build notes below); keep it at or under 300
 lines, ASCII, and free of Explorer and Guide data (the menu entries, names,
 breadcrumb root and profile role come in as data), so the Guide menu reuses
 it (below). Any change to the shared conversation-screen parts must leave both
@@ -665,6 +672,47 @@ Relevant documents may include:
 - root `AGENTS.md`
 - root `README.md`
 - canonical docs in `../solmind-docs`
+
+## Build notes and the release-candidate check - 2026-11-03
+
+Paul's rule (decision queue 2026-11-03 17:59:20, 18:00:59, 18:03:39, 18:30:50,
+18:32:04 and 18:33:15 CST, go-ahead 20:50:45; `solmind-docs` ai-assistant/02,
+"Pages under development: build notes"). On the signed-in screens (the
+connected conversation screen and every `WorkspaceFrame.tsx` page) a part not
+built yet is marked with a build note for the reviewer, never a message to
+users, through `ExplorerConversationScreenBuildNotes.tsx` only:
+
+- a control not built yet: its small "Not connected yet" label in the reserved
+  blue `#4A86FF` (`NotConnectedLine`), with its tap-to-explain sentence
+  unchanged;
+- an area not built yet: a blue dashed box with an X in its upper corner that
+  hides that box (`NotYetImplementedNote` with `standalone`, drawn by
+  `BuildNoteBox`);
+- a part planned for removal: a dashed violet `#D27BFF` outline
+  (`REMOVAL_OUTLINE`) and the violet "Planned for removal" tag with one
+  sentence on tap (`RemovalTag`); the part keeps working until Paul confirms
+  its removal. When asked to remove something, mark it violet and show Paul
+  first.
+- one "Build notes" toggle in the top bar (`BuildNotesToggle`, `aria-pressed`)
+  hides or shows every blue label, blue box and violet marker on the page; the
+  controls stay. An X hides only its box, which stays hidden while the toggle is
+  off; turning the toggle on shows every box again. Nothing is saved.
+
+Use no other colour for a build note and never these colours for the design.
+Every note, label, box, marker and the toggle carries `data-build-note` or
+`data-removal-marker`; the check below looks for these attribute names as text
+in the source and in the built pages. Mockups (`/explorer/conversation-preview`, the fixture and prototype
+routes) do not get build notes unless a change to them needs one.
+
+A release candidate for UAT or production must pass
+`node scripts/checkReleaseCandidate.mjs` after its own `next build` (Paul's
+rule, 2026-11-03): it fails, naming each place, while any build note or removal
+marker remains in `src/` (only tests left out; the mockup routes and files ship
+with every build, so they are scanned too, amended 2026-11-03 after review
+REV224) or in the built pages of every route, or when there is no current
+build. Do not promote a
+candidate that fails. Do not add the check to `package.json` without Paul's
+approval (AGENTS.md rule 7).
 
 ## Verification Commands
 

@@ -12,6 +12,7 @@ import {
   CURRENT_TOOLS_HEADING,
   CURRENT_TOOLS_INTRO,
   CURRENT_TOOLS_POINTER,
+  CURRENT_TOOLS_REMOVAL_REASON,
   connectedHeaderLabel,
   connectedStatusText,
   type ConnectedConversationStatus,
@@ -37,11 +38,17 @@ import {
   ExplorerConversationFormation,
   type ExplorerConversationFormationIntent,
 } from "./ExplorerConversationFormation";
+import {
+  BuildNotesProvider,
+  REMOVAL_OUTLINE,
+  RemovalTag,
+  useBuildNotesShown,
+  useBuildNotesState,
+} from "./ExplorerConversationScreenBuildNotes";
 import { CONVERSATION_HEADING_ID, DRAWER_OPENER_ID, PANEL_TOGGLE_ID } from "./ExplorerConversationScreenHeader";
 import { IconArrowUp, IconClipboard, IconEye, IconEyeOff, IconPanelRight, IconPause } from "./ExplorerConversationScreenIcons";
 import {
   FOCUS_RING,
-  NotConnectedLine,
   NotConnectedProvider,
   NotYetImplementedNote,
   PRIMARY_BUTTON,
@@ -75,13 +82,16 @@ import {
 // The only state kept here is layout: whether the wide panel shows, whether
 // the narrow drawer is open (it closes, and focus moves to the page's alert,
 // when a change made from it leaves no saved state), which Compass view (Full
-// or Compact) shows in the panel and in the drawer, whether the narrow-screen Menu is open and which
-// "Not connected yet" sentence is shown. Parts that are not connected yet show
-// a grey "Not connected yet" line and, when activated, one sentence directly
+// or Compact) shows in the panel and in the drawer, whether the narrow-screen Menu is open, which
+// "Not connected yet" sentence is shown, and which build notes show. Parts that are not connected yet show
+// a blue "Not connected yet" build-note label and, when activated, one sentence directly
 // under them saying what they will do (NotConnectedProvider). A note that
-// describes an area rather than a control (standalone) stays shown, inside an
-// area marked with the same grey label: beside the area's heading, or on its
-// own line above the sentence when the area has no heading.
+// describes an area rather than a control (standalone) is a blue build-note box
+// with an X in its upper corner, in the area. The old form tools below the
+// conversation, planned for removal (chat-step decision 8), carry the violet
+// removal marker. The top bar's "Build notes" toggle hides or shows all of them
+// (BuildNotesProvider; Paul's build-note rule, decision queue 2026-11-03
+// 17:59:20, 18:00:59 and 18:03:39 CST).
 
 const SPEAKER_STYLE = SPEAKER_LABEL_STYLE;
 const CARD_CLASS =
@@ -367,7 +377,6 @@ function SavedTranscript({ state, ended }: Readonly<{ state: ExplorerConversatio
             <p className="text-sm text-stone-300">There are no saved messages yet.</p>
             {ended ? null : (
               <PlaceholderSlot title="Ways to begin">
-                <NotConnectedLine />
                 <NotYetImplementedNote id={noteId("chat", "choiceGroup")} noteKey="choiceGroup" standalone />
                 <NotYetImplementedNote id={noteId("chat", "earlierCompass")} noteKey="earlierCompass" standalone />
               </PlaceholderSlot>
@@ -463,11 +472,8 @@ function ConnectedComposer({ view, actions, composerRef }: ComposerProps) {
           </button>
         </div>
       </form>
-      {/* No heading names this area, so the grey label sits on its own line above its sentence. */}
-      <div className="grid gap-0.5">
-        <NotConnectedLine />
-        <NotYetImplementedNote id={noteId("composer", "latestChange")} noteKey="latestChange" standalone />
-      </div>
+      {/* The latest-change line is not built yet: its build-note box. */}
+      <NotYetImplementedNote id={noteId("composer", "latestChange")} noteKey="latestChange" standalone />
     </div>
   );
 }
@@ -557,19 +563,6 @@ function EndSession({ state, view, actions }: EndProps) {
   );
 }
 
-// An area heading with the grey "Not connected yet" label beside it. The
-// label stays outside the heading, so the area's name is unchanged.
-function NotConnectedAreaHeading({ id, children }: Readonly<{ id: string; children: string }>) {
-  return (
-    <div className="flex flex-wrap items-baseline gap-x-2">
-      <h3 className="font-serif text-lg text-stone-50" id={id}>
-        {children}
-      </h3>
-      <NotConnectedLine />
-    </div>
-  );
-}
-
 type SupportBodyProps = Readonly<{
   scope: SupportScope;
   view: ConnectedConversationView;
@@ -583,7 +576,7 @@ type SupportBodyProps = Readonly<{
 // Waypoints, read-only. Choosing a point sends the existing set_attention
 // command through onCommand, so ExplorerConversation.tsx keeps its hold,
 // retry and expected-revision rules. Key Insights are not built yet (Paul's
-// decision 7), so that area stays marked "Not connected yet". When the
+// decision 7), so that area keeps its blue build-note box. When the
 // current tools are shown for an open conversation, the panel says what they
 // are still for; after End they show the saved record read-only, so it does
 // not (fix round 2, 2026-11-03). The Compass card shows its Full or Compact
@@ -610,7 +603,9 @@ function ConnectedSupportBody({ scope, view, compassView, onToggleCompassView, o
       />
       <ConnectedWaypointCard scope={scope} state={state} />
       <section aria-labelledby={keyInsightTitle} className="grid gap-2 border-b border-stone-800/80 px-4 py-4">
-        <NotConnectedAreaHeading id={keyInsightTitle}>{CONNECTED_KEY_INSIGHT_HEADING}</NotConnectedAreaHeading>
+        <h3 className="font-serif text-lg text-stone-50" id={keyInsightTitle}>
+          {CONNECTED_KEY_INSIGHT_HEADING}
+        </h3>
         <NotYetImplementedNote id={noteId(scope, "keyInsight")} noteKey="keyInsight" standalone />
       </section>
       {state !== null && !view.ended ? <p className="px-4 py-4 text-xs leading-5 text-stone-300">{CURRENT_TOOLS_POINTER}</p> : null}
@@ -625,15 +620,27 @@ type ToolsProps = Readonly<{
 }>;
 
 // The existing Compass and Waypoint tools, unchanged, until the conversation
-// forms them (rebuild steps 4 and 5).
+// forms them (rebuild steps 4 and 5). They are planned for removal once the
+// Compass & Waypoint card does everything they do (Paul's chat-step decision
+// 8), so while the build notes show they carry the violet removal marker: a
+// dashed violet outline and the "Planned for removal" tag with its sentence.
+// The tools keep working.
 function CurrentTools({ state, view, onCommand }: ToolsProps) {
   const headingId = "conversation-current-tools-heading";
+  const marked = useBuildNotesShown();
 
   return (
-    <section aria-labelledby={headingId} className="rounded-3xl border border-stone-800 bg-[#090807]/85 p-4 sm:p-5">
-      <h2 className="font-serif text-xl text-stone-50" id={headingId}>
-        {CURRENT_TOOLS_HEADING}
-      </h2>
+    <section
+      aria-labelledby={headingId}
+      className={joinClasses("rounded-3xl border border-stone-800 bg-[#090807]/85 p-4 sm:p-5", marked && REMOVAL_OUTLINE)}
+      data-removal-marker={marked ? "outline" : undefined}
+    >
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
+        <h2 className="font-serif text-xl text-stone-50" id={headingId}>
+          {CURRENT_TOOLS_HEADING}
+        </h2>
+        <RemovalTag id="removal-current-tools" reason={CURRENT_TOOLS_REMOVAL_REASON} />
+      </div>
       <p className="mt-1 text-sm leading-6 text-stone-300">{CURRENT_TOOLS_INTRO}</p>
       <div className="mt-4">
         <ExplorerConversationFormation busy={view.held} onCommand={onCommand} readOnly={view.ended} state={state} />
@@ -647,6 +654,8 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [openExplanation, setOpenExplanation] = useState<string | null>(null);
+  // Which build notes show (the top bar's toggle and each box's X), never saved.
+  const buildNotes = useBuildNotesState();
   // Which Compass view shows, kept separately for the wide panel and the phone
   // drawer and never saved (Paul's decision, 2026-11-03 16:20:29 CST). It is
   // kept here because the drawer's content is removed while it is closed.
@@ -684,58 +693,60 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
   const toggleExplanation = (id: string) => setOpenExplanation((open) => (open === id ? null : id));
 
   return (
-    <NotConnectedProvider onToggle={toggleExplanation} openId={openExplanation}>
-      <ExplorerConversationScreenShell
-        connected
-        drawer={<ConnectedSupportDrawer onClose={() => setDrawerOpen(false)} open={drawerOpen} renderBody={renderSupportBody} />}
-        menuOpen={menuOpen}
-        onMenuOpenChange={setMenuOpen}
-        onSkip={() => headingRef.current?.focus()}
-        shell={CONNECTED_SHELL}
-      >
-        <div className="flex min-h-0 flex-1 flex-col">
-          <ConnectedVirtualGuideRow
-            drawerOpen={drawerOpen}
-            onOpenDrawer={() => setDrawerOpen(true)}
-            onTogglePanel={() => setPanelVisible((visible) => !visible)}
-            panelVisible={panelVisible}
-          />
-          <div className="flex min-h-0 flex-1 items-start gap-5 px-3 pb-6 pt-4 sm:px-6 lg:px-8">
-            <div className="flex min-w-0 flex-1 flex-col gap-5">
-              <section aria-labelledby={CONVERSATION_HEADING_ID} className={CARD_CLASS}>
-                <ConnectedConversationHeader headingRef={headingRef} status={status} />
-                <ConversationNotices actions={actions} errorRef={errorRef} view={view} />
-                {state !== null ? (
-                  <>
-                    {/* As on the earlier screen, only the saved conversation and
-                        the composer are marked busy; the status line, alerts,
-                        Reload, Retry and End stay outside it. */}
-                    <div aria-busy={view.busy}>
-                      <SavedTranscript ended={view.ended} state={state} />
-                      {/* Outside the scrolling transcript, beside the composer, so it
-                          stays in view however long the saved history is. */}
-                      {state.pendingTurn ? (
-                        <div className="px-4 pt-3 sm:px-5">
-                          <p className={NOTICE_CLASS} role="status">
-                            A saved message is still awaiting a confirmed result. No reply is being claimed. Reload the saved
-                            conversation to check; another send will not be started.
-                          </p>
-                        </div>
-                      ) : null}
-                      {view.ended ? null : <ConnectedComposer actions={actions} composerRef={composerRef} view={view} />}
-                    </div>
-                    <EndSession actions={actions} state={state} view={view} />
-                  </>
-                ) : (
-                  <div className="pb-4" />
-                )}
-              </section>
-              {state !== null ? <CurrentTools onCommand={actions.onCommand} state={state} view={view} /> : null}
+    <BuildNotesProvider state={buildNotes}>
+      <NotConnectedProvider onToggle={toggleExplanation} openId={openExplanation}>
+        <ExplorerConversationScreenShell
+          connected
+          drawer={<ConnectedSupportDrawer onClose={() => setDrawerOpen(false)} open={drawerOpen} renderBody={renderSupportBody} />}
+          menuOpen={menuOpen}
+          onMenuOpenChange={setMenuOpen}
+          onSkip={() => headingRef.current?.focus()}
+          shell={CONNECTED_SHELL}
+        >
+          <div className="flex min-h-0 flex-1 flex-col">
+            <ConnectedVirtualGuideRow
+              drawerOpen={drawerOpen}
+              onOpenDrawer={() => setDrawerOpen(true)}
+              onTogglePanel={() => setPanelVisible((visible) => !visible)}
+              panelVisible={panelVisible}
+            />
+            <div className="flex min-h-0 flex-1 items-start gap-5 px-3 pb-6 pt-4 sm:px-6 lg:px-8">
+              <div className="flex min-w-0 flex-1 flex-col gap-5">
+                <section aria-labelledby={CONVERSATION_HEADING_ID} className={CARD_CLASS}>
+                  <ConnectedConversationHeader headingRef={headingRef} status={status} />
+                  <ConversationNotices actions={actions} errorRef={errorRef} view={view} />
+                  {state !== null ? (
+                    <>
+                      {/* As on the earlier screen, only the saved conversation and
+                          the composer are marked busy; the status line, alerts,
+                          Reload, Retry and End stay outside it. */}
+                      <div aria-busy={view.busy}>
+                        <SavedTranscript ended={view.ended} state={state} />
+                        {/* Outside the scrolling transcript, beside the composer, so it
+                            stays in view however long the saved history is. */}
+                        {state.pendingTurn ? (
+                          <div className="px-4 pt-3 sm:px-5">
+                            <p className={NOTICE_CLASS} role="status">
+                              A saved message is still awaiting a confirmed result. No reply is being claimed. Reload the saved
+                              conversation to check; another send will not be started.
+                            </p>
+                          </div>
+                        ) : null}
+                        {view.ended ? null : <ConnectedComposer actions={actions} composerRef={composerRef} view={view} />}
+                      </div>
+                      <EndSession actions={actions} state={state} view={view} />
+                    </>
+                  ) : (
+                    <div className="pb-4" />
+                  )}
+                </section>
+                {state !== null ? <CurrentTools onCommand={actions.onCommand} state={state} view={view} /> : null}
+              </div>
+              <ConnectedSupportPanel renderBody={renderSupportBody} visible={panelVisible} />
             </div>
-            <ConnectedSupportPanel renderBody={renderSupportBody} visible={panelVisible} />
           </div>
-        </div>
-      </ExplorerConversationScreenShell>
-    </NotConnectedProvider>
+        </ExplorerConversationScreenShell>
+      </NotConnectedProvider>
+    </BuildNotesProvider>
   );
 }

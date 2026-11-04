@@ -97,7 +97,7 @@ describe("Explorer workspace frame", () => {
     }
   });
 
-  it("WF04 marks what is not connected yet with the grey line and a hidden sentence, never a blue note", () => {
+  it("WF04 marks what is not connected yet with the blue build-note label and a hidden sentence, never a review note", () => {
     for (const page of ["overview", "conversations", "waypoints", "waypointDetail"] as const) {
       const html = frame(page);
       expect(/data-preview-|sky-|border-dashed|Not yet implemented|aria-disabled/.test(html), page).toBe(false);
@@ -110,12 +110,18 @@ describe("Explorer workspace frame", () => {
         const named = inner.includes(WORKSPACE_NOT_CONNECTED_LABEL) || attributes.includes(`(${WORKSPACE_NOT_CONNECTED_LABEL.toLowerCase()})`);
         expect(named, `${page} ${id}`).toBe(true);
       }
-      // The bell shows the grey line beside its icon, named "Notifications Not connected yet" like the menu entries.
+      // The bell shows the blue build-note label beside its icon, named "Notifications Not connected yet" like the menu entries.
       const bell = /<button aria-controls="nyi-top-notifications" aria-expanded="false" class="[^"]*"[^>]*>([\s\S]*?)<\/button>/.exec(html);
       expect(bell, page).not.toBeNull();
       expect(bell?.[1], page).toMatch(
-        new RegExp(`</svg><span class="sr-only">Notifications </span><span class="[^"]*text-stone-400">${WORKSPACE_NOT_CONNECTED_LABEL}</span>$`),
+        new RegExp(`</svg><span class="sr-only">Notifications </span><span class="[^"]*text-\\[#4A86FF\\]" data-build-note="label">${WORKSPACE_NOT_CONNECTED_LABEL}</span>$`),
       );
+      // Paul's build-note rule (decision queue 2026-11-03 17:59:20 and 18:00:59 CST): every label not built yet is
+      // a blue build note, the frame pages have no area box or removal marker, and the top bar has the one toggle.
+      expect(html.split('data-build-note="label"').length - 1, page).toBe(buttons.length);
+      expect(/data-build-note="box"|data-removal-marker/.test(html), page).toBe(false);
+      expect(html.match(/<button aria-pressed="true" class="[^"]*" data-build-note="toggle" id="build-notes-toggle" type="button">/g), page).toHaveLength(1);
+      expect(html.indexOf('id="build-notes-toggle"'), page).toBeLessThan(html.indexOf('aria-controls="nyi-top-notifications"'));
       expect(html, page).not.toContain(`(${WORKSPACE_NOT_CONNECTED_LABEL.toLowerCase()})`);
       expect(html, page).toContain('Explorer<span class="sr-only"> profile</span>');
       expect(/Mary|Avery|Jordan|Steve/.test(html), page).toBe(false);

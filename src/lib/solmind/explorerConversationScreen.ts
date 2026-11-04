@@ -181,6 +181,17 @@ export const LAYOUT_ONLY_CONTROLS = freeze([
   freeze({ key: "speakerStyle", label: "Speaker labels: New / Original" }),
 ]);
 
+// The fixed words of the build notes on the signed-in screens (Paul's rule,
+// decision queue 2026-11-03 17:59:20 to 18:33:15 CST): the page toggle, the
+// name of each blue box's X, and the violet tag on a part planned for removal.
+// They live here because the conversation-screen parts may import only this
+// wording module and the labels leaf (test SP07). The review version shows none.
+export const BUILD_NOTE_WORDING = freeze({
+  toggle: "Build notes",
+  hide: "Hide this build note",
+  removalTag: "Planned for removal",
+});
+
 export const PREVIEW_BAND_TEXT = `Interim design review. Nothing here is connected: no AI, no ${GUIDE}, and nothing is saved or shared. Messages are written samples. Each 'Not yet implemented' note says what that part will do.`;
 
 // OQ-18 recommendation, not yet contradicted by Paul. The name comes from the

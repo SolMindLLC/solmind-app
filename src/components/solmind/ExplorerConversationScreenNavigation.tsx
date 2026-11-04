@@ -22,7 +22,7 @@ import {
 // sits under it. Signed-in screens: a built entry is a plain full-document link
 // (as in ExplorerHomeNavigation.tsx, full document navigation retires this
 // authenticated view and requests fresh server access); an entry that is not
-// connected yet shows a grey "Not connected yet" line and, when activated, one
+// connected yet shows a blue "Not connected yet" build-note label and, when activated, one
 // sentence under it saying what it will do.
 
 export const MENU_BUTTON_ID = "explorer-menu-button";

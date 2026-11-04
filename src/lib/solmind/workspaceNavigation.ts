@@ -1,7 +1,7 @@
 // The Explorer workspace menu labels for both conversation screens: Paul's
 // 2026-11-02 Explorer menu option A, the September 23 menu he accepted
 // (decision queue 14:07:48 and 22:19:17 CST). This leaf holds only the
-// navigation names and list heading, the grey "Not connected yet" label, the
+// navigation names and list heading, the "Not connected yet" label, the
 // helper that drops the review prefix from a sentence, and the entry types.
 // It imports nothing but explorerConversationScreen.ts, so the review route's
 // parts can use it without reaching any route or access module.
@@ -19,7 +19,8 @@ function freeze<T>(value: T): Readonly<T> {
   return Object.freeze(value);
 }
 
-// The grey line under an entry, or beside an area, that has no working screen yet.
+// The label on an entry or control, or at the head of an area's build-note box, that has
+// no working screen yet: a build note in the reserved blue since 2026-11-03 (Paul's rule).
 export const WORKSPACE_NOT_CONNECTED_LABEL = "Not connected yet";
 
 // A review sentence without its "Not yet implemented: " prefix.

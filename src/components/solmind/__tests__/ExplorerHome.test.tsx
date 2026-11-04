@@ -263,12 +263,13 @@ describe("Explorer home as Overview", () => {
     expect(html).toMatch(/<a class="[^"]*border-amber-200\/25[^"]*" href="\/explorer\/waypoints">Open suggestions<\/a>/);
     expect(html.indexOf(EXPLORER_OVERVIEW.begin.title)).toBeLessThan(html.indexOf(EXPLORER_OVERVIEW.suggestions.title));
   });
-  it("H21 the not-connected secondary action explains itself with the review sentence, no blue note", () => {
+  it("H21 the not-connected secondary action explains itself with the review sentence, no review note", () => {
     const html = overview();
     const button = new RegExp(`<button aria-controls="${SENTENCE_ID}" aria-expanded="false" class="[^"]*" type="button">([\\s\\S]*?)</button>`).exec(html);
     expect(button).not.toBeNull();
     expect(button?.[1]).toContain(EXPLORER_OVERVIEW.begin.canSee);
-    expect(button?.[1]).toContain(`<span class="text-[11px] font-normal text-stone-400">${WORKSPACE_NOT_CONNECTED_LABEL}</span>`);
+    // The blue build-note label (Paul's build-note rule, decision queue 2026-11-03 17:59:20 and 18:00:59 CST).
+    expect(button?.[1]).toContain(`<span class="text-[11px] font-normal text-[#4A86FF]" data-build-note="label">${WORKSPACE_NOT_CONNECTED_LABEL}</span>`);
     const sentence = withoutReviewPrefix(NOT_YET_IMPLEMENTED.virtualGuideCanSee).replaceAll("'", "&#x27;");
     expect(html).toContain(`<p class="text-xs leading-5 text-stone-300" hidden="" id="${SENTENCE_ID}">${sentence}</p>`);
     expect(html).not.toContain(NOT_YET_IMPLEMENTED_PREFIX);
