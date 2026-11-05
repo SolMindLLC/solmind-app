@@ -61,7 +61,7 @@ export const cardState = (overrides: Partial<ExplorerConversationState> = {}): E
   version: EXPLORER_CONVERSATION_VERSION,
   conversationId: CARD_CONVERSATION,
   revision: 12,
-  pendingTurn: false,
+  pendingTurn: false, turnedDownLimitReached: false,
   providerState: "unavailable",
   messages: MESSAGES,
   compassItems: [

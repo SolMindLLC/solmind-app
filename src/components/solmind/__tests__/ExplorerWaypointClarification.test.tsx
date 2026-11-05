@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ExplorerWaypointClarification } from "../ExplorerWaypointClarification";
 import { type ExplorerConversationState } from "../../../lib/solmind/explorerConversationContract";
 
-const current = (): ExplorerConversationState => ({ version: "explorer-conversation.v1", conversationId: "conversation-a", revision: 3, sessionStatus: "active", pendingTurn: false, providerState: "unavailable", messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [{ id: "waypoint-a", sourceMessageId: "message-a", destination: "Earlier destination <script>", meaning: "Earlier meaning", arrivalSignal: "Earlier signal", status: "chosen" }] });
+const current = (): ExplorerConversationState => ({ version: "explorer-conversation.v1", conversationId: "conversation-a", revision: 3, sessionStatus: "active", pendingTurn: false, turnedDownLimitReached: false, providerState: "unavailable", messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [{ id: "waypoint-a", sourceMessageId: "message-a", destination: "Earlier destination <script>", meaning: "Earlier meaning", arrivalSignal: "Earlier signal", status: "chosen" }] });
 const review = { conversationId: "conversation-a", revision: 3, waypointId: "waypoint-a", kind: "revise_waypoint" as const };
 
 describe("Application-authored Waypoint conversation (static proof only)", () => {

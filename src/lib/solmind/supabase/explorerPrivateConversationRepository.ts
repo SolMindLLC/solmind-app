@@ -214,6 +214,8 @@ export function createExplorerPrivateConversationRepository(client: SupabaseClie
       }
       if (error || !Array.isArray(data) || data.length !== 1 || !object(data[0])) throw new Error(FAILURE);
       const row = data[0];
+      if (row.conversation_state != null && (!object(row.conversation_state) ||
+          typeof Object.getOwnPropertyDescriptor(row.conversation_state, "turnedDownLimitReached")?.value !== "boolean")) throw new Error(FAILURE);
       if (Object.keys(row).length !== spec.columns.length || !spec.columns.every((column) => Object.hasOwn(row, column)) ||
         typeof row.outcome !== "string" || !OUTCOMES[port].includes(row.outcome) ||
         (Object.hasOwn(row, "dispatch_permitted") && typeof row.dispatch_permitted !== "boolean") ||

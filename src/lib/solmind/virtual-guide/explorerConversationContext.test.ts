@@ -63,7 +63,7 @@ function authority() {
 function state(count = 2): ExplorerConversationState {
   return {
     version: EXPLORER_CONVERSATION_VERSION, conversationId: ids.conversationId,
-    revision: 7, providerState: "available", pendingTurn: false, messages: Array.from({ length: count }, (_, index) => ({
+    revision: 7, providerState: "available", pendingTurn: false, turnedDownLimitReached: false, messages: Array.from({ length: count }, (_, index) => ({
       id: uuid(100 + index), role: index % 2 === 0 ? "explorer" as const : "virtualGuide" as const,
       body: `Saved message ${index}`, createdAt: "2026-10-24T05:00:00.000Z",
     })), compassItems: [], priorityId: null, attentionId: null, waypoints: [],

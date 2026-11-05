@@ -2015,6 +2015,19 @@ A pending turn, the turned-down limit and invalid forming-point selections use
 the existing definite-conflict path: the browser requires a refresh and starts
 no follow-up Send.
 
+Amendment 2026-11-05 (turned-down limit): saved state includes the required
+boolean turnedDownLimitReached, true at 24 rejected Compass rows in that
+conversation under S5's counting rule, with no rejected details or count.
+The browser contract and repository reject missing or non-boolean values.
+Only "That's not it" is disabled; the named row gets Paul's approved reason
+once beneath it. ExplorerConversation.tsx refuses not_it locally without a
+request. The other replies and typing retain their existing gates. A server
+refusal after a race still takes the definite-conflict path. S6b typed
+rejections at the limit still leave the point unchanged and let Send complete.
+The app change and its migration (20261105040000) must reach a database
+together; out of step in either direction, every conversation state read
+fails closed.
+
 explorerConversationContract.ts owns the closed command and optional UI-only
 compassSuggestionReplies availability (available, support, adult_policy or
 unavailable). explorerPrivateConversationComposition.ts derives that value from

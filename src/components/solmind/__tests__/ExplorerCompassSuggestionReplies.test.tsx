@@ -1,6 +1,6 @@
-import { createElement, createRef } from "react";
+import { Children, createElement, createRef, isValidElement, type ComponentProps, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   EXPLORER_CONVERSATION_VERSION,
@@ -21,6 +21,7 @@ const POINT = "40000000-0000-4000-8000-000000000001";
 const OTHER_POINT = "40000000-0000-4000-8000-000000000002";
 const LABEL = "Making time to rest";
 const LABELS = ["That's right", "Close, not quite", "That's not it"];
+const LIMIT_REASON = 'Because this conversation already keeps the most turned-down suggestions it can, "That\'s not it" is not available here. You can still choose another reply or type what you would change.';
 
 function state(overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
   return {
@@ -28,6 +29,7 @@ function state(overrides: Partial<ExplorerConversationState> = {}): ExplorerConv
     conversationId: CONVERSATION,
     revision: 5,
     pendingTurn: false,
+    turnedDownLimitReached: false,
     providerState: "available",
     compassSuggestionReplies: "available",
     messages: [
@@ -108,7 +110,83 @@ function transcriptItems(html: string) {
   return [...list.matchAll(/<li\b[\s\S]*?<\/li>/g)].map(match => match[0]);
 }
 
+function buttonElements(node: ReactNode): ReactElement<ComponentProps<"button">>[] {
+  return Children.toArray(node).flatMap(child => {
+    if (!isValidElement<{ children?: ReactNode }>(child)) return [];
+    if (child.type === "button") return [child as ReactElement<ComponentProps<"button">>];
+    return buttonElements(child.props.children);
+  });
+}
+
 describe("S6a Compass suggestion replies", () => {
+  it("keeps the turned-down reply disabled in its named group with one exact plain-text reason below the buttons", () => {
+    const items = transcriptItems(renderScreen(state({ turnedDownLimitReached: true })));
+    expect(items).toHaveLength(2);
+    expect(buttons(items[1])).toEqual([
+      { label: "That's right", disabled: false },
+      { label: "Close, not quite", disabled: false },
+      { label: "That's not it", disabled: true },
+    ]);
+    expect(items[1]).toContain(`aria-label="Reply to Compass suggestion: ${LABEL}"`);
+    expect(items[1]).toContain('role="group"');
+    const descriptionId = /aria-describedby="([^"]+)"/.exec(items[1])?.[1];
+    expect(descriptionId).toBeTruthy();
+    const description = [...items[1].matchAll(/<p\b[^>]*id="([^"]+)"[^>]*>([^<]*)<\/p>/g)]
+      .find(match => match[1] === descriptionId);
+    expect(description?.[1]).toBe(descriptionId);
+    expect(plain(description?.[2] ?? "")).toBe(LIMIT_REASON);
+    expect(plain(items[1]).split(LIMIT_REASON)).toHaveLength(2);
+    expect(items[1].indexOf(description?.[0] ?? "")).toBeGreaterThan(items[1].lastIndexOf("</button>"));
+    expect(items[1]).not.toContain("data-build-note");
+    expect(items[1]).not.toContain("data-removal-marker");
+    expect(renderRows()).not.toContain("aria-describedby");
+    expect(plain(renderRows())).not.toContain(LIMIT_REASON);
+  });
+
+  it.each(["right", "close"] as const)("keeps %s available and dispatches its selected reply at the turned-down limit", response => {
+    const onCommand = vi.fn();
+    const rows = ExplorerCompassSuggestionReplies({
+      state: state({ turnedDownLimitReached: true }), messageId: GUIDE_MESSAGE,
+      held: false, followUpHeld: false, onCommand,
+    });
+    const label = response === "right" ? "That's right" : "Close, not quite";
+    const button = buttonElements(rows).find(element => element.props.children === label);
+    expect(button?.props.disabled).toBe(false);
+    expect(button?.props.onClick).toBeTypeOf("function");
+    button?.props.onClick?.({ currentTarget: { closest: () => null } } as unknown as MouseEvent<HTMLButtonElement>);
+    expect(onCommand).toHaveBeenCalledExactlyOnceWith({ kind: "respond_compass_suggestion", itemId: POINT, response });
+  });
+
+  it("keeps the limit reason separately associated once with each suggestion row", () => {
+    const original = state();
+    const html = renderRows(state({ turnedDownLimitReached: true, compassItems: [...original.compassItems,
+      { ...original.compassItems[0], id: OTHER_POINT, label: "Asking for help" }] }));
+    const descriptionIds = [...html.matchAll(/aria-describedby="([^"]+)"/g)].map(match => match[1]);
+    expect(descriptionIds).toHaveLength(2);
+    expect(new Set(descriptionIds).size).toBe(2);
+    for (const id of descriptionIds) expect(html.split(`id="${id}"`)).toHaveLength(2);
+    expect(plain(html).split(LIMIT_REASON)).toHaveLength(3);
+    expect(buttons(html).filter(button => button.disabled).map(button => button.label)).toEqual(["That's not it", "That's not it"]);
+  });
+
+  it("preserves existing holds and policy reasons at the turned-down limit", () => {
+    const limited = state({ turnedDownLimitReached: true });
+    for (const html of [renderRows(limited, GUIDE_MESSAGE, true), renderRows({ ...limited, pendingTurn: true })]) {
+      expect(buttons(html)).toEqual(LABELS.map(label => ({ label, disabled: true })));
+    }
+    expect(buttons(renderRows(limited, GUIDE_MESSAGE, false, true))).toEqual([
+      { label: "That's right", disabled: false },
+      { label: "Close, not quite", disabled: true },
+      { label: "That's not it", disabled: true },
+    ]);
+    for (const availability of ["support", "adult_policy", "unavailable"] as const) {
+      const html = renderRows({ ...limited, compassSuggestionReplies: availability });
+      expect(buttons(html)).toEqual([]);
+      expect(plain(html)).not.toContain(LIMIT_REASON);
+    }
+    expect(renderRows({ ...limited, sessionStatus: "ended" })).toBe("");
+  });
+
   it("keeps one row of three replies inside the suggesting message's existing list item", () => {
     const items = transcriptItems(renderScreen());
     expect(items).toHaveLength(2);

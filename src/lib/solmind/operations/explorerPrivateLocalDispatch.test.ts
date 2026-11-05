@@ -53,7 +53,7 @@ function fixture(options: { body?: string; ledger?: ReturnType<typeof fakeLedger
     restrictedLevel: options.restricted ? 4 : null, adultReflectionStopped: options.adultStopped ?? false };
   const mode = options.restricted || options.adultStopped ? "classification_only" as const : "classification_and_reply" as const;
   const initial = { version: "explorer-conversation.v1" as const, conversationId: ids.conversationId,
-    revision: 0, pendingTurn: false, providerState: "available" as const, messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] };
+    revision: 0, pendingTurn: false, turnedDownLimitReached: false, providerState: "available" as const, messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] };
   const authority = { accountId: actor.accountId, applicationSessionId: actor.applicationSessionId, explorerId: profile.explorerId,
     guideId: profile.guideId, authorizationVersion: AV3, applicationSessionExpiresAt: profile.expiresAt };
   const row = { outcome: "ok", authority_context: authority, policy_state: policy,

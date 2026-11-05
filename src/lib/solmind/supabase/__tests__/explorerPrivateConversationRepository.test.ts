@@ -42,6 +42,29 @@ function fixture(row: unknown) {
   return { repository, rpc, abortSignal };
 }
 describe("Closed private Explorer RPC repository (synthetic client)", () => {
+  it("read and ended review require a boolean turned-down limit without changing other state fields", async () => {
+    const state = { version: "explorer-conversation.v1", conversationId: UUID, revision: 0,
+      pendingTurn: false, providerState: "unavailable", messages: [], compassItems: [],
+      priorityId: null, attentionId: null, waypoints: [] };
+    for (const turnedDownLimitReached of [false, true]) {
+      const conversation_state = { ...state, turnedDownLimitReached };
+      const row = { outcome: "ok", conversation_state, authority_context: null, policy_state: null };
+      const f = fixture(row);
+      expect(await f.repository.read({ accountId: UUID, applicationSessionId: UUID })).toEqual(row);
+      const ended = { outcome: "ok", conversation_state, ended_conversations: [] };
+      expect(await fixture(ended).repository.review!(review())).toEqual(ended);
+    }
+    for (const conversation_state of [state, ...[undefined, null, "false", "true", 0, 1, [], {}]
+      .map(turnedDownLimitReached => ({ ...state, turnedDownLimitReached }))]) {
+      const f = fixture({ outcome: "ok", conversation_state, authority_context: null, policy_state: null });
+      await expect(f.repository.read({ accountId: UUID, applicationSessionId: UUID }))
+        .rejects.toThrowError("explorer_private_repository_unavailable");
+      expect(f.rpc).toHaveBeenCalledOnce();
+      const ended = fixture({ outcome: "ok", conversation_state, ended_conversations: [] });
+      await expect(ended.repository.review!(review())).rejects.toThrowError("explorer_private_repository_unavailable");
+      expect(ended.rpc).toHaveBeenCalledOnce();
+    }
+  });
   it("exposes fourteen closed ports including suggestion replies, End, ended review and the pause read, without generic access", () => {
     const f = fixture(null);
     expect(Object.keys(f.repository).sort()).toEqual(["arrange", "category", "end", "ensure", "mutate", "observe", "pause", "prepare", "read", "release", "respondCompassSuggestion", "review", "settle", "waypointRevision"]);

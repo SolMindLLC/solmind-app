@@ -12,7 +12,7 @@ const WAYPOINT = "40000000-0000-4000-8000-000000000001";
 const ROUTE_OPERATION = "50000000-0000-4000-8000-000000000001";
 const END_OPERATION = "60000000-0000-4000-8000-000000000001";
 const empty = (): ExplorerConversationState => ({ version: "explorer-conversation.v1", conversationId: null,
-  revision: 0, pendingTurn: false, providerState: "unavailable", messages: [], compassItems: [], priorityId: null,
+  revision: 0, pendingTurn: false, turnedDownLimitReached: false, providerState: "unavailable", messages: [], compassItems: [], priorityId: null,
   attentionId: null, waypoints: [], route: [], sessionStatus: null, ending: null });
 const active = (): ExplorerConversationState => ({ ...empty(), conversationId: CONVERSATION, revision: 5, sessionStatus: "active",
   messages: [{ id: SOURCE, role: "explorer", body: "A synthetic saved message.", createdAt: "2026-10-29T07:00:00Z" }],

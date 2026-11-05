@@ -18,7 +18,7 @@ const SHA = "A".repeat(64);
 const ACTOR = Object.freeze({ accountId: ID, applicationSessionId: SESSION });
 const OPERATION = Object.freeze({ operationId: ID, fingerprint: SHA });
 const STATE = Object.freeze({ version: "explorer-conversation.v1" as const, conversationId: ID,
-  revision: 1, pendingTurn: false, providerState: "unavailable" as const,
+  revision: 1, pendingTurn: false, turnedDownLimitReached: false, providerState: "unavailable" as const,
   messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] });
 const ROW: ExplorerPrivateReadRow = Object.freeze({ outcome: "ok", conversation_state: STATE });
 const PAUSE_ROW: ExplorerPrivatePauseRow = Object.freeze({ outcome: "ok", notice_kind: null, crisis: false, adults_only: false });

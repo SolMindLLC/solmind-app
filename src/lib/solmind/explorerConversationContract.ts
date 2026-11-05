@@ -114,6 +114,7 @@ export type ExplorerConversationState = Readonly<{
   conversationId: string | null;
   revision: number;
   pendingTurn: boolean;
+  turnedDownLimitReached: boolean;
   providerState: "unavailable" | "available";
   // Server-derived presentation capability; never browser authority.
   compassSuggestionReplies?: ExplorerCompassSuggestionReplies;
@@ -388,9 +389,10 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
   const hasRoute = Object.hasOwn(state, "route");
   const hasLifecycle = Object.hasOwn(state, "sessionStatus") || Object.hasOwn(state, "ending");
   const hasSuggestionReplies = Object.hasOwn(state, "compassSuggestionReplies");
-  if (!keys(state, ["version", "conversationId", "revision", "pendingTurn", "providerState", "messages", "compassItems", "priorityId", "attentionId", "waypoints", ...(hasRoute ? ["route"] : []), ...(hasLifecycle ? ["sessionStatus", "ending"] : []), ...(hasSuggestionReplies ? ["compassSuggestionReplies"] : [])]) ||
+  if (!keys(state, ["version", "conversationId", "revision", "pendingTurn", "turnedDownLimitReached", "providerState", "messages", "compassItems", "priorityId", "attentionId", "waypoints", ...(hasRoute ? ["route"] : []), ...(hasLifecycle ? ["sessionStatus", "ending"] : []), ...(hasSuggestionReplies ? ["compassSuggestionReplies"] : [])]) ||
       state.version !== EXPLORER_CONVERSATION_VERSION || !revision(state.revision) ||
       typeof state.pendingTurn !== "boolean" ||
+      typeof state.turnedDownLimitReached !== "boolean" ||
       !(state.conversationId === null || id(state.conversationId)) ||
       !["available", "unavailable"].includes(state.providerState as string) ||
       (hasSuggestionReplies && !["available", "support", "adult_policy", "unavailable"].includes(state.compassSuggestionReplies as string)) ||
@@ -565,7 +567,7 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
       previousRevision = event.revision;
     }
   }
-  if (state.conversationId === null && (state.revision !== 0 || state.pendingTurn || messages.length || compassItems.length || waypoints.length || route.length)) return null;
+  if (state.conversationId === null && (state.revision !== 0 || state.pendingTurn || state.turnedDownLimitReached || messages.length || compassItems.length || waypoints.length || route.length)) return null;
   let ending: ExplorerConversationEnding | null = null;
   if (hasLifecycle) {
     if (state.conversationId === null) {
@@ -595,6 +597,7 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
   return Object.freeze({ ok: true, error: null, state: Object.freeze({ version: EXPLORER_CONVERSATION_VERSION,
     conversationId: state.conversationId as string | null, revision: state.revision,
     pendingTurn: state.pendingTurn,
+    turnedDownLimitReached: state.turnedDownLimitReached,
     providerState: state.providerState as ExplorerConversationState["providerState"], messages: Object.freeze(messages),
     compassItems: Object.freeze(compassItems), priorityId: state.priorityId as string | null,
     attentionId: state.attentionId as string | null, waypoints: Object.freeze(waypoints),

@@ -38,6 +38,9 @@ function createRepository(client: SupabaseClient, prepareFunction:
       }
       if (error || !Array.isArray(data) || data.length !== 1 || !data[0] || typeof data[0] !== "object" ||
           typeof data[0].outcome !== "string") throw new Error(FAILED);
+      const state: unknown = data[0].conversation_state;
+      if (state != null && (typeof state !== "object" || Array.isArray(state) ||
+          typeof Object.getOwnPropertyDescriptor(state, "turnedDownLimitReached")?.value !== "boolean")) throw new Error(FAILED);
       return data[0] as ExplorerConversationRpcRow;
     } catch { throw new Error(FAILED); }
   }

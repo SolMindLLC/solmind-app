@@ -17,7 +17,7 @@ const child = () => ({ ...parent, id: uuid(4), destination: clarification().answ
   lifecycle: { predecessorWaypointId: parent.id, creationReason: "revision", clarifications: [clarification()] } });
 function state(waypoints: readonly unknown[] = [parent, child()]) {
   return { version: EXPLORER_CONVERSATION_VERSION, conversationId: uuid(1), revision: 5,
-    providerState: "unavailable", pendingTurn: false, messages: [
+    providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, messages: [
       { id: uuid(2), role: "explorer", body: "I want more time with my family.", createdAt: "2026-10-29T14:00:00Z" },
     ], compassItems: [], priorityId: null, attentionId: null, waypoints, sessionStatus: "active", ending: null };
 }

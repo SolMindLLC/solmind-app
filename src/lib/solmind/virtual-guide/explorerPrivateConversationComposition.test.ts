@@ -19,7 +19,7 @@ const ACTOR = { accountId: ID.actor, applicationSessionId: ID.app };
 const POLICY = { known: true, contractVersion: "explorer-conversation-safety.v1", restrictedLevel: null, adultReflectionStopped: false, version: 0 };
 const RAW = JSON.stringify({ protocol: "explorer-safety-reply.v2", classification: { level: 0, minorIndicated: false }, candidateReply: { content: "One saved synthetic reply." } });
 function state(conversationId: string | null): ExplorerConversationState {
-  return { version: "explorer-conversation.v1", conversationId, revision: 0, pendingTurn: false, providerState: "unavailable",
+  return { version: "explorer-conversation.v1", conversationId, revision: 0, pendingTurn: false, turnedDownLimitReached: false, providerState: "unavailable",
     messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] };
 }
 // Since chat step slice S3 (2026-11-03) the private context revision carries the saved Compass section.

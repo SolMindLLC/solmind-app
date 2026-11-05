@@ -12,7 +12,7 @@ const CONVERSATION = "10000000-0000-4000-8000-000000000001";
 const EXPLORER_MESSAGE = "20000000-0000-4000-8000-000000000001";
 const GUIDE_MESSAGE = "30000000-0000-4000-8000-000000000001";
 const emptyState = (providerState: ExplorerConversationState["providerState"] = "available"): ExplorerConversationState => ({
-  version: EXPLORER_CONVERSATION_VERSION, conversationId: null, revision: 0, providerState, pendingTurn: false,
+  version: EXPLORER_CONVERSATION_VERSION, conversationId: null, revision: 0, providerState, pendingTurn: false, turnedDownLimitReached: false,
   messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [],
 });
 const savedState = (body = "A synthetic Explorer question"): ExplorerConversationState => ({

@@ -7,7 +7,7 @@ import { EXPLORER_CONVERSATION_VERSION, type ExplorerConversationState } from ".
 
 function state(overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
   return { version: EXPLORER_CONVERSATION_VERSION, conversationId: null, revision: 0,
-    providerState: "unavailable", pendingTurn: false, messages: [], compassItems: [], priorityId: null,
+    providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, messages: [], compassItems: [], priorityId: null,
     attentionId: null, waypoints: [], ...overrides };
 }
 

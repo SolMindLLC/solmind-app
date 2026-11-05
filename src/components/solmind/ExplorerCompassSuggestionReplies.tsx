@@ -3,6 +3,7 @@ import type { ExplorerConversationFormationIntent } from "@/lib/solmind/explorer
 import {
   COMPASS_SUGGESTION_REPLY_HOLDS,
   COMPASS_SUGGESTION_REPLY_LABELS,
+  COMPASS_SUGGESTION_TURNED_DOWN_LIMIT_REASON,
   formingSuggestionsForMessage,
   type CompassSuggestionReply,
 } from "@/lib/solmind/explorerCompassSuggestionReplies";
@@ -23,13 +24,18 @@ export function ExplorerCompassSuggestionReplies({ state, messageId, held, follo
     return <p className="mt-2 text-sm leading-6 text-stone-300">{COMPASS_SUGGESTION_REPLY_HOLDS[availability]}</p>;
   }
   return suggestions.map(item => (
-    <div aria-label={`Reply to Compass suggestion: ${item.label}`} className="mt-3 grid gap-2" key={item.id} role="group">
+    <div
+      aria-describedby={state.turnedDownLimitReached ? `compass-suggestion-limit-${item.id}` : undefined}
+      aria-label={`Reply to Compass suggestion: ${item.label}`}
+      className="mt-3 grid gap-2" key={item.id} role="group"
+    >
       <p className="text-sm text-stone-200 [overflow-wrap:anywhere]">{item.label}</p>
       <div className="flex flex-wrap gap-2">
         {(Object.keys(COMPASS_SUGGESTION_REPLY_LABELS) as CompassSuggestionReply[]).map(response => (
           <button
             className={joinClasses(SECONDARY_BUTTON, "disabled:cursor-not-allowed disabled:opacity-50")}
-            disabled={held || state.pendingTurn || (response !== "right" && followUpHeld)}
+            disabled={held || state.pendingTurn || (response !== "right" && followUpHeld) ||
+              (response === "not_it" && state.turnedDownLimitReached)}
             key={response}
             onClick={(event) => {
               onCommand({ kind: "respond_compass_suggestion", itemId: item.id, response });
@@ -43,6 +49,11 @@ export function ExplorerCompassSuggestionReplies({ state, messageId, held, follo
           </button>
         ))}
       </div>
+      {state.turnedDownLimitReached && (
+        <p className="text-sm leading-6 text-stone-300" id={`compass-suggestion-limit-${item.id}`}>
+          {COMPASS_SUGGESTION_TURNED_DOWN_LIMIT_REASON}
+        </p>
+      )}
     </div>
   ));
 }

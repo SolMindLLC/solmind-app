@@ -14,7 +14,7 @@ const legacyWaypoint = {
 };
 function state(waypoint: unknown = legacyWaypoint) {
   return { version: EXPLORER_CONVERSATION_VERSION, conversationId: uuid(1), revision: 5,
-    providerState: "unavailable", pendingTurn: false, messages: [
+    providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, messages: [
       { id: uuid(2), role: "explorer", body: "I want time for my family.", createdAt: "2026-10-29T14:00:00.000Z" },
     ], compassItems: [], priorityId: null, attentionId: null, waypoints: [waypoint],
     sessionStatus: "active", ending: null };

@@ -35,12 +35,12 @@ function without(value: Record<string, unknown>, key: string): Record<string, un
 }
 function emptyState() {
   return { version: EXPLORER_CONVERSATION_VERSION, conversationId: null, revision: 0,
-    providerState: "unavailable", pendingTurn: false, messages: [], compassItems: [], priorityId: null,
+    providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, messages: [], compassItems: [], priorityId: null,
     attentionId: null, waypoints: [] };
 }
 function populatedState() {
   return { version: EXPLORER_CONVERSATION_VERSION, conversationId: uuid(1), revision: 3,
-    providerState: "unavailable", pendingTurn: false, messages: [
+    providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, messages: [
       { id: sourceId, role: "explorer", body: "I want an unhurried morning.\nWhat could that look like?", createdAt: "2026-10-24T05:05:00.000Z" },
       { id: uuid(3), role: "virtualGuide", body: "What would tell you that you arrived?", createdAt: "2026-10-24T05:05:01.123456+00:00" },
     ], compassItems: [{ id: pointId, sourceMessageId: sourceId, label: "Calmer mornings" }],
@@ -380,6 +380,7 @@ describe("Explorer conversation closed result parser", () => {
     expect(parseExplorerConversationResult(success({ ...emptyState(), priorityId: pointId }))).toBeNull();
     expect(parseExplorerConversationResult(success({ ...emptyState(), version: "explorer-conversation.v2" }))).toBeNull();
     expect(parseExplorerConversationResult(success({ ...emptyState(), pendingTurn: true }))).toBeNull();
+    expect(parseExplorerConversationResult(success({ ...emptyState(), turnedDownLimitReached: true }))).toBeNull();
   });
 
   it("requires an honest boolean pending-turn projection and preserves a real pending conversation", () => {
@@ -390,6 +391,22 @@ describe("Explorer conversation closed result parser", () => {
     const parsed = parseExplorerConversationResult(success({ ...original, pendingTurn: true }));
     expect(parsed?.ok && parsed.state.pendingTurn).toBe(true);
     expect(parseExplorerConversationResult(success(without(original, "pendingTurn")))).toBeNull();
+  });
+
+  it("requires and preserves the turned-down limit boolean without adding rejected details", () => {
+    const original = populatedState();
+    for (const turnedDownLimitReached of [false, true]) {
+      const state = { ...original, turnedDownLimitReached };
+      expect(parseExplorerConversationState(state)).toEqual(state);
+      expect(parseExplorerConversationResult(success(state))).toEqual(success(state));
+    }
+    expect(parseExplorerConversationState(without(original, "turnedDownLimitReached"))).toBeNull();
+    for (const turnedDownLimitReached of [undefined, null, "false", "true", 0, 1, [], {}]) {
+      expect(parseExplorerConversationState({ ...original, turnedDownLimitReached })).toBeNull();
+    }
+    for (const extra of [{ rejectedCount: 24 }, { rejectedPoints: [uuid(99)] }]) {
+      expect(parseExplorerConversationState({ ...original, ...extra })).toBeNull();
+    }
   });
 
   it("bounds all collections while retaining every item at the accepted boundary", () => {

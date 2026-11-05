@@ -22,7 +22,7 @@ const source = { id: "saved-message-a", role: "explorer" as const, body: "I want
 function state(overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
   return {
     version: EXPLORER_CONVERSATION_VERSION,
-    conversationId: "conversation-a", revision: 4, providerState: "unavailable", pendingTurn: false,
+    conversationId: "conversation-a", revision: 4, providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false,
     messages: [source], compassItems: [], priorityId: null, attentionId: null, waypoints: [],
     ...overrides,
   };

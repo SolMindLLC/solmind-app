@@ -5,7 +5,7 @@ const id = (value: number) => `00000000-0000-4000-8000-${String(value).padStart(
 function state() {
   return {
     version: EXPLORER_CONVERSATION_VERSION, conversationId: id(1), revision: 4,
-    pendingTurn: false, providerState: "unavailable", messages: [
+    pendingTurn: false, turnedDownLimitReached: false, providerState: "unavailable", messages: [
       { id: id(2), role: "explorer", body: "A synthetic question.", createdAt: "2026-11-04T10:00:00.000Z" },
       { id: id(3), role: "virtualGuide", body: "A synthetic reply.", createdAt: "2026-11-04T10:00:01.000Z" },
     ], compassItems: [{ id: id(4), sourceMessageId: id(2), label: "Money worries" }],

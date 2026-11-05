@@ -22,7 +22,7 @@ const PRIVATE_DETAIL = "SYNTHETIC_INTERNAL_DETAIL_NOT_FOR_CALLERS";
 const UNAVAILABLE = "explorer_conversation_repository_unavailable";
 const STATE = Object.freeze({
   version: "explorer-conversation.v1", conversationId: null, revision: 0,
-  pendingTurn: false, providerState: "unavailable", messages: [], compassItems: [],
+  pendingTurn: false, turnedDownLimitReached: false, providerState: "unavailable", messages: [], compassItems: [],
   priorityId: null, attentionId: null, waypoints: [],
 });
 const ROW = Object.freeze({ outcome: "ok", conversation_state: STATE });
@@ -93,6 +93,20 @@ const CALLS: ReadonlyArray<Readonly<{
 ];
 
 describe("explorerConversationRepository closed transport boundary", () => {
+  it.each(CALLS)("$method requires the turned-down limit boolean in every returned state", async ({ invoke }) => {
+    for (const turnedDownLimitReached of [false, true]) {
+      const row = { ...ROW, conversation_state: { ...STATE, conversationId: CONVERSATION_ID, turnedDownLimitReached } };
+      const fixture = transport({ data: [row], error: null });
+      expect(await invoke(createExplorerConversationRepository(fixture.client))).toEqual(row);
+    }
+    const missing = Object.fromEntries(Object.entries(STATE).filter(([key]) => key !== "turnedDownLimitReached"));
+    for (const conversation_state of [missing, ...[undefined, null, 0, 1, "true", "false", [], {}]
+      .map(turnedDownLimitReached => ({ ...STATE, turnedDownLimitReached }))]) {
+      const fixture = transport({ data: [{ ...ROW, conversation_state }], error: null });
+      await expectUnavailable(invoke(createExplorerConversationRepository(fixture.client)));
+      expect(fixture.rpc).toHaveBeenCalledOnce();
+    }
+  });
   it.each(CALLS)("$method calls only its exact RPC with a 12-second abort bound", async ({ functionName, parameters, invoke }) => {
     const fixture = transport();
     const boundedSignal = new AbortController().signal;

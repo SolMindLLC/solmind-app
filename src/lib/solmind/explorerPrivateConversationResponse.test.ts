@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { EXPLORER_PRIVATE_RESPONSE_VERSION, parseExplorerPrivateConversationResponse } from "./explorerPrivateConversationResponse";
 
 const result = { ok: true, error: null, state: { version: "explorer-conversation.v1", conversationId: null,
-  revision: 0, providerState: "unavailable", pendingTurn: false, messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] } };
+  revision: 0, providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] } };
 const assistance = { kind: "support", body: "Synthetic temporary support.\nNo saved reply.", persisted: false };
 const response = () => ({ version: EXPLORER_PRIVATE_RESPONSE_VERSION, result, assistance });
 describe("private conversation browser response", () => {

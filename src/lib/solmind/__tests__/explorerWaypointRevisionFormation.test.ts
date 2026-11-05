@@ -9,7 +9,7 @@ const parent = { id: "waypoint-a", sourceMessageId: "source-a", destination: "A 
 const answer = () => ({ component: "destination" as const, answer: "A calm evening meal" });
 function state(overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
   return { version: EXPLORER_CONVERSATION_VERSION, conversationId: "conversation-a", revision: 4,
-    providerState: "unavailable", pendingTurn: false, messages: [], compassItems: [], priorityId: null,
+    providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, messages: [], compassItems: [], priorityId: null,
     attentionId: null, waypoints: [parent], sessionStatus: "active", ending: null, ...overrides };
 }
 function review(overrides: Partial<WaypointRevisionReview> = {}): WaypointRevisionReview {

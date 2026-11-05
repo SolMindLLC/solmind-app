@@ -20,7 +20,7 @@ const ACTOR = Object.freeze({ accountId: uuid(4), applicationSessionId: uuid(5) 
 const EXPECTED_SCOPE = Object.freeze({ type: "guide" as const, id: GUIDE });
 const SHA = "A".repeat(64);
 const STATE = Object.freeze({ version: "explorer-conversation.v1" as const, conversationId: uuid(6),
-  revision: 0, pendingTurn: false, providerState: "unavailable" as const,
+  revision: 0, pendingTurn: false, turnedDownLimitReached: false, providerState: "unavailable" as const,
   messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] });
 function fixture() {
   const configuration = getExplorerPrivateConfigurationCandidate();

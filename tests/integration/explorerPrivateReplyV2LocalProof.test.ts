@@ -38,7 +38,7 @@ function fixture(proposals: Record<string, unknown>, options: { restrictedLevel?
     rendererVerificationReceiptSha256: SHA, signalVerificationReceiptSha256: SHA,
     methodology: { packId: id(6), versionId: id(7), contentSha256: SHA, authorizationVersion: "MV1:" + SHA } };
   let current: ExplorerConversationState = { version: "explorer-conversation.v1", conversationId: id(3),
-    revision: 1, pendingTurn: false, providerState: "unavailable",
+    revision: 1, pendingTurn: false, turnedDownLimitReached: false, providerState: "unavailable",
     messages: [{ id: id(10), role: "explorer", body: "Synthetic source about money worries.", createdAt: "2026-11-04T12:00:00Z" },
       ...(options.forming ? [{ id: id(13), role: "virtualGuide" as const, body: "Does Money worries fit?", createdAt: "2026-11-04T12:00:00.500Z" }] : [])],
     compassItems: [{ id: id(9), sourceMessageId: id(10), label: "Money worries",

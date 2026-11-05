@@ -274,6 +274,7 @@ export function ExplorerConversation() {
       : undefined;
     if (intent.kind === "respond_compass_suggestion" &&
         (current.compassSuggestionReplies !== "available" ||
+         (intent.response === "not_it" && current.turnedDownLimitReached) ||
          suggestion === undefined ||
          (intent.response !== "right" && (current.providerState !== "available" ||
           current.messages.length > EXPLORER_CONVERSATION_LIMITS.messages - 2)))) return;

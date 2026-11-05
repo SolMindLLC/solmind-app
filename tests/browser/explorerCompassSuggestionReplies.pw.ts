@@ -31,6 +31,7 @@ function savedState(overrides: Partial<ExplorerConversationState> = {}): Explore
     conversationId: CONVERSATION,
     revision: 5,
     pendingTurn: false,
+    turnedDownLimitReached: false,
     providerState: "available",
     compassSuggestionReplies: "available",
     messages: [
@@ -113,6 +114,32 @@ function afterSend(current: ExplorerConversationState, response: Exclude<Reply, 
       ({ ...point, label: REFINED_LABEL, wordingMessageId: FOLLOW_UP_GUIDE })) : [],
   };
 }
+
+test("S6a the turned-down limit disables only That's not it and explains the row while typing stays available", async ({ page }) => {
+  const current = savedState({ turnedDownLimitReached: true });
+  const requests: ExplorerConversationCommand[] = [];
+  await page.route("**/explorer/conversation/commands", route => {
+    requests.push(route.request().postDataJSON() as ExplorerConversationCommand);
+    return fulfill(route, success(current));
+  });
+  await openPage(page, () => current);
+  const suggestion = row(page);
+  const reason = 'Because this conversation already keeps the most turned-down suggestions it can, "That\'s not it" is not available here. You can still choose another reply or type what you would change.';
+  await expect(suggestion.getByRole("button")).toHaveCount(3);
+  const turnedDown = suggestion.getByRole("button", { name: "That's not it", exact: true });
+  await expect(turnedDown).toBeVisible();
+  await expect(turnedDown).toBeDisabled();
+  await expect(suggestion.getByRole("button", { name: "That's right", exact: true })).toBeEnabled();
+  await expect(suggestion.getByRole("button", { name: "Close, not quite", exact: true })).toBeEnabled();
+  await expect(suggestion.getByText(reason, { exact: true })).toHaveCount(1);
+  await expect(suggestion.getByText(reason, { exact: true })).toBeVisible();
+  await expect(suggestion).toHaveAccessibleDescription(reason);
+  await expect(composer(page)).toBeEnabled();
+  await composer(page).fill(DRAFT);
+  await expect(composer(page)).toHaveValue(DRAFT);
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
+  expect(requests).toHaveLength(0);
+});
 
 for (const response of ["right", "close", "not_it"] as const) {
   test(`S6a ${response} uses the closed reply command, updates the card and preserves the typed draft`, async ({ page }) => {

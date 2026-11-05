@@ -43,7 +43,7 @@ const POINT = (index: number) => `40000000-0000-4000-8000-00000000000${index}`;
 
 function bare(compassItems: ExplorerConversationCompassItem[], overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
   return {
-    version: EXPLORER_CONVERSATION_VERSION, conversationId: "10000000-0000-4000-8000-000000000001", revision: 3, pendingTurn: false,
+    version: EXPLORER_CONVERSATION_VERSION, conversationId: "10000000-0000-4000-8000-000000000001", revision: 3, pendingTurn: false, turnedDownLimitReached: false,
     providerState: "available", messages: [{ id: SOURCE, role: "explorer", body: "A synthetic message", createdAt: "2026-11-03T14:00:00.000Z" }],
     compassItems, priorityId: null, attentionId: null, waypoints: [], route: [], sessionStatus: "active", ending: null, ...overrides,
   };
