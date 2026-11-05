@@ -615,7 +615,6 @@ src/
       RoleBadge.tsx
       RouteAccessPreview.tsx
       SectionLabel.tsx
-      SessionCompass.tsx
       SignInPreview.tsx
       SignInPreviewParts.tsx
 
@@ -623,7 +622,6 @@ src/
     solmind/
       conversation.ts
       dashboardPanels.ts
-      explorerExperience.ts
       invitations.ts
       navigation.ts
       onboarding.ts
@@ -663,8 +661,6 @@ the current exact import allowlists or imply that completed proof is pending.
 |---|---|---|
 | Routes | `src/app/**/page.tsx` | Page composition only |
 | Explorer address | `src/app/explorer/page.tsx` | Thin Server Component that redirects to the Explorer Overview; the S01 prototype it composed was removed on 2026-11-04 (Paul's decision, decision queue 2026-11-04 21:44:03 CST) |
-| Compass presentation | `src/components/solmind/SessionCompass.tsx` | Controlled fixed-frame Compass rendering; no policy or state ownership; no page uses it since 2026-11-04 |
-| Explorer S01 domain | `src/lib/solmind/explorerExperience.ts` | Pure deterministic Compass, Route, Waypoint, summary, snapshot, and narrow Guide-projection transitions |
 | Suggested Waypoint pure domain | `src/lib/solmind/suggestedWaypoints.ts` | Immutable Guide authoring, shared-channel, Explorer-private engagement, replay, timing, and role-projection rules |
 | Explorer Suggested Waypoint fixture UI | `src/components/solmind/ExplorerSuggestedWaypointWorkspace.tsx`; `src/lib/solmind/suggestedWaypointFixtures.ts` | Retained deterministic detail/private-comparison design fixture over one synthetic delivered suggestion; no production route owner, persistence, provider, or authenticated runtime |
 | Explorer Suggested Waypoint authenticated inbox | `src/app/explorer/waypoints/page.tsx`; `src/app/explorer/waypoints/suggestions/route.ts`; `src/components/solmind/ExplorerSuggestedWaypointInbox.tsx`; `src/lib/solmind/suggestedWaypoint{ExplorerListBrowser,ExplorerListShared,PaginationShared}Contract.ts`; co-located focused and browser tests | Authenticated, read-only Explorer inbox over the banked `explorer.list` request composition; exact browser validation, delivered-current-version data only, private read state, explicit dated receipt acknowledgement, progressive opaque-cursor pagination, one bounded later-page stale-cursor reset to page one with the same page size, safe-page retention after malformed or operationally failed reset, authority-denial clearing, and suggestion-scoped navigation into the separately owned detail read. Guide-only authoring, pending, policy, Pull Back, Assistant, relationship, and private Waypoint data are structurally omitted. It adds no command, worker, provider, database, deployment, or real-user activation. |
@@ -1035,9 +1031,10 @@ Extend these modules deliberately and in small slices. Keep server-only modules 
 
 ## S01 Test Ownership
 
-`src/lib/solmind/__tests__/explorerExperience.test.ts` owns deterministic
-acceptance proofs for S01 Compass, Route, Waypoint, summary selection, final
-review, frozen snapshot, and non-live Guide projection behavior.
+`src/lib/solmind/__tests__/explorerExperience.test.ts`, which owned the S01
+Compass, Route, Waypoint, summary, review, snapshot and Guide-projection
+proofs, was removed on 2026-11-05 with `explorerExperience.ts` and
+`SessionCompass.tsx` (Paul's decision, decision queue 2026-11-05 11:07:58 CST, item 4).
 
 `src/lib/solmind/__tests__/onboarding.test.ts` owns the exact six-field
 onboarding contract, required/optional distinction, Guide-visibility marker,

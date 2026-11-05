@@ -21,7 +21,7 @@ import {
       label: `${SOLMIND_ROLE_LABELS.explorer} Preview`,
       href: SOLMIND_ROLE_HOME_ROUTES.explorer,
       role: "explorer",
-      description: "Explorer-facing conversation and onboarding preview.",
+      description: "Explorer workspace: the conversation with your Virtual Guide, your Compass and your Waypoints.",
     },
     {
       label: `${SOLMIND_ROLE_LABELS.guide} Preview`,

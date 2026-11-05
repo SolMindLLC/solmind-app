@@ -52,7 +52,6 @@ src/
       RoleBadge.tsx
       RouteAccessPreview.tsx
       SectionLabel.tsx
-      SessionCompass.tsx
       SignInPreview.tsx
       SignInPreviewParts.tsx
 
@@ -60,7 +59,6 @@ src/
     solmind/
       conversation.ts
       dashboardPanels.ts
-      explorerExperience.ts
       invitations.ts
       navigation.ts
       onboarding.ts
@@ -146,10 +144,8 @@ Avoid placing core product rules inside components. If a component needs product
 
 - `ExplorerExperiencePrototype.tsx`, the S01 `"use client"` entry point, was
   removed on 2026-11-04 (Paul's decision, decision queue 2026-11-04 21:44:03 CST).
-- `SessionCompass.tsx` is a controlled presentational component (no page uses
-  it since 2026-11-04). It renders a
-  fixed Priority-up frame, readable zone labels, current attention, zero
-  through eight visible points, and `Other paths`.
+- `SessionCompass.tsx`, the S01 controlled Compass component, was removed on
+  2026-11-05 (Paul's decision, decision queue 2026-11-05 11:07:58 CST, item 4).
 
 Neither component may own provider, persistence, auth, consent-version,
 safety, or visibility policy. The mock Guide view receives only the narrow
@@ -581,7 +577,6 @@ Current examples:
 
 - `conversation.ts`
 - `dashboardPanels.ts`
-- `explorerExperience.ts`
 - `navigation.ts`
 - `onboarding.ts`
 - `pages.ts`
@@ -606,10 +601,9 @@ Use this area for:
 `onboarding.ts` owns the exact S01 structured-form field definitions and the
 distinct required-form/optional-First-Compass states.
 
-`explorerExperience.ts` owns pure deterministic Discovery, Compass, Route,
-private Waypoint, summary selection, exact review, frozen Shared Snapshot, and
-narrow non-live Guide-projection behavior. It has no React, provider,
-database, browser-storage, or server-only dependency.
+`explorerExperience.ts`, the S01 pure Discovery, Compass, Route, Waypoint,
+summary, review, snapshot and Guide-projection helper, was removed on
+2026-11-05 with its test (Paul's decision, decision queue 2026-11-05 11:07:58 CST, item 4).
 
 `suggestedWaypoints.ts` owns the separate pure Suggested Waypoint lifecycle,
 timing, replay, immutable-version, and role-projection rules. Do not duplicate

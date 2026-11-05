@@ -139,14 +139,12 @@ June onboarding and sharing mockup) until 2026-11-04, when it was removed
 (Paul's decision, decision queue 2026-11-04 21:44:03 CST). `src/app/explorer/page.tsx` stays a
 thin Server Component that only redirects to the Explorer Overview
 (`EXPLORER_HOME_ROUTE`, `/explorer/home`), which keeps its own sign-in check;
-`ExplorerExperiencePrototype.tsx` is deleted. The S01 files below remain, and
-no page uses the first two any more:
+`ExplorerExperiencePrototype.tsx` is deleted. Its two remaining helpers,
+`src/components/solmind/SessionCompass.tsx` and
+`src/lib/solmind/explorerExperience.ts` (with its test), were removed on
+2026-11-05 (Paul's decision, decision queue 2026-11-05 11:07:58 CST, item 4).
+The S01 file below remains:
 
-- `src/components/solmind/SessionCompass.tsx` is controlled and
-  presentational.
-- `src/lib/solmind/explorerExperience.ts` owns pure deterministic transitions,
-  Compass grouping, Route history, exact selection, snapshot freezing, and
-  the narrow non-live Guide projection.
 - `src/lib/solmind/onboarding.ts` owns the exact structured-form definitions
   and distinct required-form/optional-First-Compass states.
 

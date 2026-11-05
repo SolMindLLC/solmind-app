@@ -78,7 +78,6 @@ describe("release-candidate scan", () => {
       "src/lib/solmind/explorerConversationScreenSample.ts",
       "src/components/solmind/ExplorerCompassComparison.tsx",
       "src/components/solmind/ExplorerCompassComparisonParts.tsx",
-      "src/components/solmind/SessionCompass.tsx",
       "src/components/solmind/GuideSuggestedWaypointWorkspace.tsx",
       "src/lib/solmind/guideSuggestedWaypointFixtures.ts",
       "src/components/solmind/ExplorerSuggestedWaypointWorkspace.tsx",
