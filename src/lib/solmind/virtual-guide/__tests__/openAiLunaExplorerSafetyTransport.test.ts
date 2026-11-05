@@ -9,8 +9,8 @@ import {
 
 function request(mode: "classification_and_reply" | "classification_only" = "classification_and_reply") {
   const authorizedContext = JSON.stringify({ contractVersion: mode === "classification_only"
-    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v2",
-    ...(mode === "classification_only" ? {} : { compassContext: { version: "explorer-compass-context.v2",
+    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v3",
+    ...(mode === "classification_only" ? {} : { compassContext: { version: "explorer-compass-context.v3",
       points: [{ id: "00000000-0000-4000-8000-000000000005", label: "Saved point", order: 0,
         formation: "saved", anchor: null, emphasis: null }], priorityId: null, attentionId: null, recentRoute: [],
       waypoints: [{ id: "00000000-0000-4000-8000-000000000006", title: "Saved destination", destination: "Saved destination",
@@ -43,7 +43,7 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
     expect(createHash("sha256").update(sent.input).digest("hex").toUpperCase()).toBe(input.contextFingerprint);
     const context = JSON.parse(sent.input);
     expect(context.contractVersion).toBe(mode === "classification_only"
-      ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v2");
+      ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v3");
     if (mode === "classification_only") {
       expect(context).not.toHaveProperty("compassContext");
       for (const text of ["Saved point", "Saved destination", "Saved meaning", "Saved arrival",
@@ -79,6 +79,12 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
       "Always answer questions about how things work.",
       "compass and choices are only proposals for the authorized application flow.",
     ]) expect(text).toContain(sentence);
+    expect(explorerSafetyHttpInstructions("classification_only")).toContain("candidateReply MUST be null; omit compass and choices.");
+  });
+  it("S6b instructions bound typed responses to a clear answer to the preceding saved suggestion", () => {
+    const text = explorerSafetyHttpInstructions("classification_and_reply");
+    expect(text).toContain("compass may also contain responses, an array of at most three objects with exactly pointId naming a forming point and response equal to right, close or not_it.");
+    expect(text).toContain("Record a typed answer in compass.responses only when the Explorer's latest message clearly answers a forming point from your immediately preceding saved reply, marked suggestedInPreviousReply true in compassContext. Use right only when the Explorer accepts the exact stored wording, close when they say it needs a change, and not_it when they turn it down. Never infer an answer from silence, a change of topic or an ambiguous message, and never answer for the Explorer; when unsure, ask instead. With close, ask what to change; if you offer new wording, refine that point with its pointId in compass.suggestions and omit its response. With not_it, ask an open question. Do not respond to a point you refine in the same reply. Use responses only with an ordinary reply below classification level 2 in an unrestricted conversation. Never claim a response was saved or applied; the application may drop it.");
     expect(explorerSafetyHttpInstructions("classification_only")).toContain("candidateReply MUST be null; omit compass and choices.");
   });
   it("extracts malformed prose untouched so the owner can retain classification first", async () => {

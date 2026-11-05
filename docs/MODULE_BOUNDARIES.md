@@ -861,6 +861,7 @@ Explorer/conversation. Final source revalidation rejects revoked or changed
 authority/history. Fingerprint the exact compact assembled bytes and retain
 sorted source IDs and exact version bindings.
 Amendment 2026-11-04 (S5): ordinary AV3 now uses `wi007-v0.1+onboarding-fields-v2+compass-v2` with `explorer-compass-context.v2`; classification_only and AV2 keep the section-free base revision.
+Amendment 2026-11-05 (S6b): ordinary AV3 now uses compass-v3 / explorer-compass-context.v3 (forming points add suggestedInPreviousReply); the current inspector is in 20261105030000_explorer_typed_suggestion_replies.sql; compass-v2 is refused.
 
 `supabase/migrations/20261024000000_explorer_conversation_composition.sql`
 proposes private conversation-state/operation/Compass and Waypoint storage over
@@ -3362,6 +3363,7 @@ Chat step slice S3 (2026-11-03; Paul's decision 4 of decision queue entry 2026-1
 wi007-v0.1+onboarding-fields-v2+compass-v1, the same layers plus `compassContext` after
 `approvedContinuity`.
 Amendment 2026-11-04 (S5): the ordinary AV3 revision is now `wi007-v0.1+onboarding-fields-v2+compass-v2`, requiring `explorer-compass-context.v2`; classification_only and AV2 keep the section-free base revision.
+Amendment 2026-11-05 (S6b): ordinary AV3 now uses compass-v3 / explorer-compass-context.v3 (forming points add suggestedInPreviousReply); the current inspector is in 20261105030000_explorer_typed_suggestion_replies.sql; compass-v2 is refused.
 Owners: src/lib/solmind/context/explorerSafeContext.ts (the section
 shape, limits of 24 points, 5 Route events and 20 Waypoints, the label and text limits,
 and the version tie: this revision requires the section, every other revision forbids
@@ -3393,6 +3395,7 @@ each tied to its version). A saved label or Waypoint text containing a character
 assembler refuses (a tab, or a zero-width joiner as in some emoji) makes that
 conversation's ordinary Sends unavailable, as such a character in the recent history already does.
 Amendment 2026-11-04 (S5): both current SQL owners are in `20261105010000_explorer_forming_compass_points.sql`; validation accepts only the base revision without a section or compass-v2 with it, refusing compass-v1, and inspection requires the exact current mode's envelope.
+Amendment 2026-11-05 (S6b): both current SQL owners (the inspector and methodology.serialized_methodology_valid) are in 20261105030000_explorer_typed_suggestion_replies.sql; validation accepts only the base revision without a section or compass-v3 with it, refusing compass-v1 and compass-v2.
 
 supabase/migrations/20261025010000_explorer_source_exclusion.sql owns bounded
 current-source inspection and committed content-free exclusion accountability;
@@ -3793,6 +3796,7 @@ both; only the latest Explorer needle move after the last saved Virtual Guide re
 has awaitingReply true. This prevents repeated acknowledgments without a persistent
 marker. Priority changes remain excluded. AV2 stays unchanged.
 Amendment 2026-11-04 (S5): ordinary AV3 uses compass-v2 / explorer-compass-context.v2; the latest Explorer move onto a forming point also supplies the transient awaitingReply signal without a Route row.
+Amendment 2026-11-05 (S6b): ordinary AV3 now uses compass-v3 / explorer-compass-context.v3 (forming points add suggestedInPreviousReply); the current inspector is in 20261105030000_explorer_typed_suggestion_replies.sql; compass-v2 is refused.
 
 The global policy and role text change only for the v2 proposals and approved shift,
 acknowledgment and choice guidance; prompt/instruction labels and integrity pins
@@ -3821,6 +3825,7 @@ both private builders, which omit the section before serialization and hashing.
 The controller pins mode, revision and section presence together. Ordinary
 classification_and_reply keeps the existing compass-v1 bytes; AV2 is unchanged.
 Amendment 2026-11-04 (S5): ordinary classification_and_reply now uses compass-v2 / explorer-compass-context.v2; classification_only and AV2 keep the section-free base revision.
+Amendment 2026-11-05 (S6b): ordinary AV3 now uses compass-v3 / explorer-compass-context.v3 (forming points add suggestedInPreviousReply); the current inspector is in 20261105030000_explorer_typed_suggestion_replies.sql; compass-v2 is refused.
 
 The inspector replacement in
 supabase/migrations/20261105000000_explorer_crisis_context_without_compass.sql
@@ -3988,3 +3993,56 @@ independent review, canonical solmind-docs updates and any integration or demo
 publication remain Executor work. The builder was limited to the clone and
 the three named package files; no sibling product documentation was read or
 written. Paul must read the new wording before anything reaches the app or demo.
+
+## Chat step S6b: typed replies to Compass suggestions - 2026-11-05
+
+Paul's decision of 2026-11-03 12:38:07 says typed replies always count.
+The Virtual Guide may propose right, close or not_it only when the latest
+Explorer message clearly answers its immediately preceding saved suggestion.
+Residual risk: the model judges the typed answer's meaning; a button press
+records the Explorer's explicit selection. Silence, topic changes and ambiguous
+messages supply no answer; when unsure the Virtual Guide asks.
+
+The additive optional compass.responses keeps explorer-safety-reply.v2.
+The first three submitted entries are considered independently; malformed
+entries are dropped and the first valid response per point wins. Ordinary
+context becomes wi007-v0.1+onboarding-fields-v2+compass-v3 with
+explorer-compass-context.v3. Each forming point adds only the boolean
+suggestedInPreviousReply, derived identically in TypeScript and SQL from its
+wording source and the last saved Virtual Guide message. Saved points add no
+field. The prior context version is refused for new turns. Classification-only
+calls keep the section-free base version and existing source exclusions.
+
+The only forward migration is
+supabase/migrations/20261105030000_explorer_typed_suggestion_replies.sql.
+Settle v4 adds p_compass_responses as its 24th argument. It independently
+requires an ordinary saved reply, delivery still wanted, unrestricted and
+adult-allowed state, classification below level 2 and classification_and_reply.
+A response must target a current forming head whose stored wording came from
+the immediately preceding saved Virtual Guide reply. A response is also
+dropped when that point already has an answer receipt (button or typed)
+completed at or after that reply was saved, so a button Close followed by its
+automatic Send never adds a typed receipt; typed answers to that same wording
+then no longer count, and new wording from a refinement makes them count again.
+A valid refinement in the same reply wins over its response, even when the
+wording is unchanged.
+The shared S6a transition confirms exact stored wording for right and records
+deferred needle moves once; not_it rejects privately, silently dropping the
+response at the separate 24-row limit; close records only the answer.
+Applied responses use immutable point-id/answer receipts marked typed, with
+no wording snapshot. Response proposals bind exact replay; no duplicate
+transition or provider call is authorized.
+
+explorerPrivateConversationComposition.ts filters proposals defensively;
+explorerPrivateConversationRepository.ts closes and freezes the 24-argument
+payload. The saved state updates the existing card and S6a reply row without
+new controls. Prepare remains 37 arguments; grants, current authority checks,
+30/10/60-second context/RPC/provider budgets, cancellation and Send counting
+remain unchanged. App and migration must reach the database together.
+
+Global policy, role text, output instructions, version labels, byte counts and
+integrity pins move together. Paul must read the exact changed sentences before
+anything reaches the app or demo. This isolated build grants no publication or
+deployment authority. SQL/pgTAP and browser execution, independent review and
+canonical sibling-document updates remain Executor work; the builder cannot
+read or write the sibling documentation under this package's access limits.

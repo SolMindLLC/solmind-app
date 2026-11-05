@@ -159,9 +159,14 @@ create function pg_temp.compass_context() returns jsonb language sql stable as $
     select 'set_attention',(value->>'recordedAt')::timestamptz,'attention_changed',(value->>'pointId')::uuid,
       (value->>'revision')::integer-1,null::uuid from forming_move where value is not null
   )
-  select jsonb_build_object('version','explorer-compass-context.v2',
+  select jsonb_build_object('version','explorer-compass-context.v3',
     'points',coalesce((select jsonb_agg(jsonb_build_object('id',c.item_id,'label',ai.solmind_exclusion_normalize_v3(c.label),
-      'order',c.ord-1,'formation',case when c.formation_status='proposed' then 'forming' else 'saved' end,'anchor',c.compass_anchor,'emphasis',c.relative_emphasis) order by c.ord)
+      'order',c.ord-1,'formation',case when c.formation_status='proposed' then 'forming' else 'saved' end,'anchor',c.compass_anchor,'emphasis',c.relative_emphasis)
+      ||case when c.formation_status='proposed' then jsonb_build_object('suggestedInPreviousReply',coalesce(
+        c.wording_message_id=(select previous.ai_interaction_message_id from ai.ai_interaction_message previous
+          where previous.ai_interaction_session_id=c.conversation_id and previous.sender_type='ai'
+            and previous.ai_role='solmind_virtual_guide' order by previous.sequence_number desc limit 1),false))
+        else '{}'::jsonb end order by c.ord)
       from (select x.*,row_number() over(order by x.display_order) as ord from ai.explorer_conversation_compass_item x
         where x.conversation_id=pg_temp.gid(6005) and x.merged_into_item_id is null and x.formation_status is distinct from 'rejected') c),'[]'::jsonb),
     'priorityId',(select s.priority_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.gid(6005)),
@@ -197,7 +202,7 @@ create function pg_temp.compass_source_ids() returns uuid[] language sql stable 
 $$;
 create function pg_temp.context_value(msg uuid,body text,classification_only boolean default false) returns jsonb language sql stable as $$
   select jsonb_build_object('contractVersion',case when classification_only then 'wi007-v0.1+onboarding-fields-v2'
-    else 'wi007-v0.1+onboarding-fields-v2+compass-v2' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
+    else 'wi007-v0.1+onboarding-fields-v2+compass-v3' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy',jsonb_build_object('version','synthetic-policy.v1','text','Synthetic policy.'),
     'roleBehavior',jsonb_build_object('version','synthetic-behavior.v1','text','Synthetic behavior.'),
     'crisisBehavior',jsonb_build_object('version','synthetic-crisis.v1','text','Synthetic crisis.'),
@@ -327,11 +332,11 @@ create function pg_temp.inspect_forming(context_override jsonb default null) ret
 $$;
 create temp table points(name text primary key,id uuid);
 
-select ok((select p.pronargs=23 and p.prosecdef and p.proconfig @> array['lock_timeout=2000ms','statement_timeout=5000ms']
+select ok((select p.pronargs=24 and p.prosecdef and p.proconfig @> array['lock_timeout=2000ms','statement_timeout=5000ms']
   and has_function_privilege('service_role',p.oid,'EXECUTE') and not has_function_privilege('anon',p.oid,'EXECUTE')
   and not has_function_privilege('authenticated',p.oid,'EXECUTE') from pg_proc p join pg_namespace n on n.oid=p.pronamespace
   where n.nspname='public' and p.proname='solmind_settle_explorer_conversation_turn_v4'),
-  'S5: settle has 23 arguments, unchanged limits and service-only execution');
+  'S6b: settle has 24 arguments, unchanged limits and service-only execution');
 select ok(not has_function_privilege('service_role','ai.solmind_resolve_forming_compass_point(uuid,uuid,uuid,uuid,integer,uuid,text,uuid,text,text)','EXECUTE')
   and not has_function_privilege('anon','ai.solmind_resolve_forming_compass_point(uuid,uuid,uuid,uuid,integer,uuid,text,uuid,text,text)','EXECUTE')
   and not has_function_privilege('authenticated','ai.solmind_resolve_forming_compass_point(uuid,uuid,uuid,uuid,integer,uuid,text,uuid,text,text)','EXECUTE')

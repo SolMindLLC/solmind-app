@@ -127,7 +127,7 @@ function comparableInstant(value: string): string {
 // Chat step slice S3 (Paul's decision 4, decision queue 2026-11-03 12:38:07 CST; go-ahead
 // 20:50:45 CST): the saved Compass and Waypoint section, taken from the state the final
 // read returned. The safe assembler validates it, and
-// supabase/migrations/20261105010000_explorer_forming_compass_points.sql rebuilds it from the
+// supabase/migrations/20261105030000_explorer_typed_suggestion_replies.sql rebuilds it from the
 // saved rows and compares it exactly before any provider call. Current points only (not
 // combined away), in saved display order; the saved Priority and attention (the needle
 // may be on an unplaced point); the last five needle moves (attention_changed) on a
@@ -141,6 +141,8 @@ function compassContext(state: ConversationState, formingMove: Authority["formin
   const currentLabels = new Map(points.filter((item) => item.formation !== "forming").map((item) => [item.id, item.label]));
   const moves = (state.route ?? []).filter(pointRouteEvent);
   const latestMove = moves.at(-1);
+  // State messages retain saved sequence order; timestamps can tie or arrive out of order.
+  const previousReplyId = state.messages.findLast(message => message.role === "virtualGuide")?.id;
   const lastReplyAt = state.messages.filter((message) => message.role === "virtualGuide")
     .map((message) => comparableInstant(message.createdAt)).sort().at(-1);
   const formingPoint = formingMove === undefined ? undefined : points.find(point => point.id === formingMove.pointId);
@@ -173,7 +175,9 @@ function compassContext(state: ConversationState, formingMove: Authority["formin
     section: {
       version: EXPLORER_COMPASS_CONTEXT_VERSION,
       points: points.map((item, order) => ({ id: item.id, label: item.label, order, formation: item.formation ?? "saved",
-        anchor: item.anchor ?? null, emphasis: item.emphasis ?? null })),
+        anchor: item.anchor ?? null, emphasis: item.emphasis ?? null,
+        ...(item.formation === "forming" ? { suggestedInPreviousReply:
+          previousReplyId !== undefined && item.wordingMessageId === previousReplyId } : {}) })),
       priorityId: state.priorityId, attentionId: state.attentionId,
       recentRoute: recentRoute.slice(-EXPLORER_SAFE_CONTEXT_LIMITS.compassRouteEventCount),
       waypoints: heads.map((waypoint) => ({ id: waypoint.id, title: waypoint.destination,

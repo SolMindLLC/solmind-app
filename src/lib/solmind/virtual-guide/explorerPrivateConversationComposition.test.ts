@@ -23,7 +23,7 @@ function state(conversationId: string | null): ExplorerConversationState {
     messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] };
 }
 // Since chat step slice S3 (2026-11-03) the private context revision carries the saved Compass section.
-const PRIVATE_CONTEXT_VERSION = "wi007-v0.1+onboarding-fields-v2+compass-v2";
+const PRIVATE_CONTEXT_VERSION = "wi007-v0.1+onboarding-fields-v2+compass-v3";
 function fixture(contextVersion?: string) {
   const configuration = getExplorerPrivateConfigurationCandidate(); if (!configuration) throw new Error("synthetic_candidate_missing");
   const readiness: ExplorerPrivateOperationalReadiness = { configuration, configurationFingerprint: SHA, modelName: "gpt-5.6-luna", modelPolicyVersion: "synthetic-model.v1",
@@ -79,9 +79,11 @@ function fixture(contextVersion?: string) {
         globalPolicy: { version: configuration.globalPolicy.version, text: configuration.globalPolicy.text.replace(/\r\n?/g, "\n").trim() },
         roleBehavior: { version: configuration.roleBehavior.version, text: configuration.roleBehavior.text.replace(/\r\n?/g, "\n").trim() },
         crisisBehavior: { version: configuration.crisisBehavior.version, text: configuration.crisisBehavior.text.replace(/\r\n?/g, "\n").trim() },
-        ...(includeCompass ? { compassContext: { version: "explorer-compass-context.v2",
+        ...(includeCompass ? { compassContext: { version: "explorer-compass-context.v3",
           points: input.state.compassItems.map((point, order) => ({ id: point.id, label: point.label, order,
-            formation: point.formation ?? "saved", anchor: point.anchor ?? null, emphasis: point.emphasis ?? null })),
+            formation: point.formation ?? "saved", anchor: point.anchor ?? null, emphasis: point.emphasis ?? null,
+            ...(point.formation === "forming" ? { suggestedInPreviousReply: point.wordingMessageId !== undefined &&
+              point.wordingMessageId === [...input.state.messages].reverse().find(message => message.role === "virtualGuide")?.id } : {}) })),
           priorityId: input.state.priorityId, attentionId: input.state.attentionId, recentRoute: [],
           waypoints: input.state.waypoints.map(point => ({ id: point.id, title: point.destination, destination: point.destination,
             meaning: point.meaning, arrivalSignal: point.arrivalSignal, stage: "formed", reachedEvidence: null })), drafts: [] } } : {}),
@@ -1270,15 +1272,23 @@ describe("S4 optional reply proposals keep settlement and safety separate", () =
   const pointId = "00000000-0000-4000-8000-000000000011";
   const otherId = "00000000-0000-4000-8000-000000000012";
   const mergedId = "00000000-0000-4000-8000-000000000013";
+  const olderReplyId = "00000000-0000-4000-8000-000000000014";
+  const previousReplyId = "00000000-0000-4000-8000-000000000015";
   const choices = [{ label: "Show me around" }, { label: "I have a question" }, { label: "Let's begin" }];
-  function withPoints(formation?: "saved" | "forming") {
+  function withPoints(formation?: "saved" | "forming", wordingSource?: "previous" | "older" | "missing") {
     const f = fixture();
     const current: ExplorerConversationState = { ...state(ID.conversation),
-      messages: [{ id: sourceId, role: "explorer", body: "Synthetic saved topic.", createdAt: "2026-10-25T17:00:00Z" }],
+      messages: [{ id: sourceId, role: "explorer", body: "Synthetic saved topic.", createdAt: "2026-10-25T17:00:00Z" },
+        ...(wordingSource === undefined ? [] : [
+          { id: olderReplyId, role: "virtualGuide" as const, body: "An older suggestion.", createdAt: "2026-10-25T17:00:01Z" },
+          { id: previousReplyId, role: "virtualGuide" as const, body: "Does this wording fit?", createdAt: "2026-10-25T17:00:02Z" },
+        ])],
       compassItems: [
         { id: pointId, sourceMessageId: sourceId, label: "Synthetic priority", anchor: "apex", emphasis: 2, mergedIntoItemId: null },
         { id: otherId, sourceMessageId: sourceId, label: "Synthetic unplaced topic", anchor: null, emphasis: null, mergedIntoItemId: null,
-          ...(formation === undefined ? {} : { formation }) },
+          ...(formation === undefined ? {} : { formation }),
+          ...(formation === "forming" && wordingSource && wordingSource !== "missing"
+            ? { wordingMessageId: wordingSource === "previous" ? previousReplyId : olderReplyId } : {}) },
         { id: mergedId, sourceMessageId: sourceId, label: "Synthetic merged topic", anchor: null, emphasis: null, mergedIntoItemId: pointId },
       ], priorityId: pointId, attentionId: pointId };
     f.setCurrent(current);
@@ -1294,6 +1304,63 @@ describe("S4 optional reply proposals keep settlement and safety separate", () =
     body.compass.suggestions = suggestions;
     return JSON.stringify(body);
   }
+  function answeredReply(responses: unknown, level = 0, suggestions?: unknown) {
+    const body = JSON.parse(reply(otherId, choices, level));
+    body.compass.responses = responses;
+    if (suggestions !== undefined) body.compass.suggestions = suggestions;
+    return JSON.stringify(body);
+  }
+  it.each(["right", "close", "not_it"])("S6b passes a clear typed %s answer only for the preceding forming wording", async response => {
+    const f = withPoints("forming", "previous");
+    f.generate.mockResolvedValue(answeredReply([{ pointId: otherId, response }]));
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(output.result.ok).toBe(true); expect(output.assistance).toBeNull();
+    expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_reply_kind: "ordinary",
+      p_compass_responses: [{ pointId: otherId, response }] });
+  });
+  it.each(["older", "missing"] as const)("S6b drops a typed answer with %s wording provenance", async source => {
+    const f = withPoints("forming", source);
+    f.generate.mockResolvedValue(answeredReply([{ pointId: otherId, response: "right" }]));
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(output.result.ok).toBe(true);
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_reply_kind: "ordinary", p_compass_responses: null });
+  });
+  it.each([pointId, mergedId, "00000000-0000-4000-8000-000000000099"])(
+    "S6b drops saved, merged or foreign answer target %s without losing an eligible sibling", async invalidId => {
+      const f = withPoints("forming", "previous");
+      f.generate.mockResolvedValue(answeredReply([{ pointId: invalidId, response: "right" }, { pointId: otherId, response: "close" }]));
+      await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+      expect(f.settle.mock.calls[0][0].p_compass_responses).toEqual([{ pointId: otherId, response: "close" }]);
+    });
+  it.each(["Refined wording", "Synthetic unplaced topic"])("S6b keeps a refinement and drops its answer, including unchanged wording: %s", async label => {
+    const f = withPoints("forming", "previous");
+    const suggestions = [{ pointId: otherId, label }];
+    f.generate.mockResolvedValue(answeredReply([{ pointId: otherId, response: "right" }], 0, suggestions));
+    await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_compass_responses: null, p_compass_suggestions: suggestions });
+  });
+  it.each([2, 3, 4])("S6b drops typed answers at level %i", async level => {
+    const f = withPoints("forming", "previous");
+    f.generate.mockResolvedValue(answeredReply([{ pointId: otherId, response: "right" }], level));
+    await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.settle.mock.calls[0][0].p_compass_responses).toBeNull();
+    expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
+  });
+  it.each(["restricted", "adult_stopped", "canceled"])("S6b drops typed answers when %s", async condition => {
+    const f = withPoints("forming", "previous"); const abort = new AbortController();
+    if (condition === "restricted") f.setPolicy({ ...POLICY, restrictedLevel: 3 });
+    if (condition === "adult_stopped") f.setPolicy({ ...POLICY, adultReflectionStopped: true });
+    f.generate.mockImplementation(async () => {
+      if (condition === "canceled") abort.abort();
+      return answeredReply([{ pointId: otherId, response: "right" }]);
+    });
+    await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies, signal: abort.signal });
+    expect(f.settle).toHaveBeenCalledOnce();
+    expect(f.settle.mock.calls[0][0].p_compass_responses).toBeNull();
+    if (condition === "canceled") expect(f.settle.mock.calls[0][0]).toMatchObject({ p_reply_kind: "none", p_delivery_interested: false });
+    else expect(f.settle.mock.calls[0][0].p_request_mode).toBe("classification_only");
+  });
   it("S5 passes new and owned forming suggestions with the ordinary reply in one terminal intent", async () => {
     const f = withPoints("forming");
     const suggestions = [{ label: "A new topic" }, { label: "Updated forming topic", pointId: otherId }];

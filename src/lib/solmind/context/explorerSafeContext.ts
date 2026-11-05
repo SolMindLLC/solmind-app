@@ -52,11 +52,11 @@ export const EXPLORER_SAFE_CONTEXT_LIMITS = Object.freeze({
 // his go-ahead at 20:50:45 CST): the saved Compass and Waypoint section. It is tied to
 // its own contract version both ways: that version requires the section and every
 // other version forbids it, so the older twelve-layer envelope keeps its exact bytes.
-// The S5 migration 20261105010000_explorer_forming_compass_points.sql rebuilds the same
+// The S6b migration 20261105030000_explorer_typed_suggestion_replies.sql rebuilds the same
 // section from the saved rows and compares it exactly before a Send is prepared.
-export const EXPLORER_COMPASS_CONTEXT_VERSION = "explorer-compass-context.v2" as const;
+export const EXPLORER_COMPASS_CONTEXT_VERSION = "explorer-compass-context.v3" as const;
 export const EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION =
-  "wi007-v0.1+onboarding-fields-v2+compass-v2" as const;
+  "wi007-v0.1+onboarding-fields-v2+compass-v3" as const;
 // The eight saved anchors (kept here so this module adds no import edge).
 const COMPASS_ANCHORS = Object.freeze([
   "apex", "upper_left", "upper_right", "side_left", "side_right",
@@ -246,6 +246,7 @@ type CompassPoint = {
   label: string;
   order: number;
   formation: "saved" | "forming";
+  suggestedInPreviousReply?: boolean;
   anchor: (typeof COMPASS_ANCHORS)[number] | null;
   emphasis: 1 | 2 | 3 | null;
 };
@@ -928,9 +929,11 @@ function parseCompassContext(value: unknown): ExplorerCompassContext {
   const points = orderUnique(
     object.points.map((candidate): CompassPoint => {
       const point = parsePlainObject(candidate);
-      assertExactKeys(point, ["id", "label", "order", "formation", "anchor", "emphasis"]);
+      assertExactKeys(point, ["id", "label", "order", "formation", "anchor", "emphasis"], ["suggestedInPreviousReply"]);
       if (
         (point.formation !== "saved" && point.formation !== "forming") ||
+        (point.formation === "forming" ? typeof point.suggestedInPreviousReply !== "boolean"
+          : Object.hasOwn(point, "suggestedInPreviousReply")) ||
         (point.formation === "forming" && (point.anchor !== null || point.emphasis !== null)) ||
         !(point.anchor === null || COMPASS_ANCHORS.includes(point.anchor as never)) ||
         !(point.emphasis === null || point.emphasis === 1 || point.emphasis === 2 || point.emphasis === 3) ||
@@ -951,6 +954,7 @@ function parseCompassContext(value: unknown): ExplorerCompassContext {
         formation: point.formation,
         anchor: point.anchor as CompassPoint["anchor"],
         emphasis: point.emphasis as CompassPoint["emphasis"],
+        ...(point.formation === "forming" ? { suggestedInPreviousReply: point.suggestedInPreviousReply as boolean } : {}),
       };
     }),
     "id",
@@ -1068,7 +1072,9 @@ export function assembleExplorerSafeContext(
     EXPLORER_SAFE_CONTEXT_LIMITS.versionLabelCharacters,
   );
   const hasCompassContext = Object.prototype.hasOwnProperty.call(envelope, "compassContext");
-  if (hasCompassContext !== (contractVersion === EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION)) {
+  if (hasCompassContext !== (contractVersion === EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION) ||
+      (contractVersion.startsWith("wi007-v0.1+onboarding-fields-v2+compass-") &&
+        contractVersion !== EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION)) {
     fail("explorer_context_invalid_envelope");
   }
   const binding = parseBinding(envelope.explorerBinding);
