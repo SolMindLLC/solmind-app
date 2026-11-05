@@ -105,6 +105,11 @@ const ROUTE_KINDS: readonly string[] = EXPLORER_COMPASS_CONTEXT_ROUTE_KINDS;
 function pointRouteEvent(event: RouteEvent): event is PointRouteEvent {
   return ROUTE_KINDS.includes(event.kind) && Object.hasOwn(event, "compassItemId");
 }
+// State timestamps are validated UTC instants. Keep PostgreSQL's microseconds so
+// a move and a reply in the same millisecond are ordered the same on both sides.
+function comparableInstant(value: string): string {
+  return value.slice(0, 19) + "." + (/\.(\d{1,6})/.exec(value)?.[1] ?? "").padEnd(6, "0");
+}
 // Chat step slice S3 (Paul's decision 4, decision queue 2026-11-03 12:38:07 CST; go-ahead
 // 20:50:45 CST): the saved Compass and Waypoint section, taken from the state the final
 // read returned. The safe assembler validates it, and
@@ -120,10 +125,19 @@ function pointRouteEvent(event: RouteEvent): event is PointRouteEvent {
 function compassContext(state: ConversationState) {
   const points = state.compassItems.filter((item) => item.mergedIntoItemId == null);
   const currentLabels = new Map(points.map((item) => [item.id, item.label]));
+  const moves = (state.route ?? []).filter(pointRouteEvent);
+  const latestMove = moves.at(-1);
+  const lastReplyAt = state.messages.filter((message) => message.role === "virtualGuide")
+    .map((message) => comparableInstant(message.createdAt)).sort().at(-1);
   // Filtered to current points before the cap, so a combined-away point's move leaves room for an older one.
-  const recentRoute = (state.route ?? []).filter(pointRouteEvent).flatMap((event) => {
+  const recentRoute = moves.flatMap((event) => {
     const label = currentLabels.get(event.compassItemId);
-    return label === undefined ? [] : [{ kind: event.kind, pointId: event.compassItemId, label }];
+    const actor = event.actor ?? "explorer";
+    // Only the next saved reply may acknowledge the latest Explorer move. A tie
+    // is deliberately ineligible, and a newer move on a retired point still wins.
+    const awaitingReply = actor === "explorer" && event === latestMove &&
+      (lastReplyAt === undefined || comparableInstant(event.recordedAt) > lastReplyAt);
+    return label === undefined ? [] : [{ kind: event.kind, pointId: event.compassItemId, label, actor, awaitingReply }];
   }).slice(-EXPLORER_SAFE_CONTEXT_LIMITS.compassRouteEventCount);
   const successors = new Set(state.waypoints.flatMap((waypoint) =>
     waypoint.lifecycle === undefined ? [] : [waypoint.lifecycle.predecessorWaypointId]));

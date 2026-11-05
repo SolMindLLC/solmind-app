@@ -3340,7 +3340,7 @@ PUBLICATION_TRANSPORT_RETURN_R10/STATUS_CLOSEOUT.json PASS. No outcome credit.
 
 ## Private Explorer successor ownership
 
-The current private construction and its six v3 ports are owned by
+The current private construction and its six lifecycle ports (settle v4, others v3) are owned by
 solmind-app/AGENTS.md and solmind-app/README.md. The older v1/v2/AV2 descriptions
 and dated eleven-profile proof above retain their predecessor scope. The current
 source graph has28 exact profiles and twelve erased type-only edges; pure openAiModelConfiguration.ts validates the supplied SOLMIND_OPENAI_MODEL (undefined alone defaults to gpt-5.6-luna), and migration 20261028010000_openai_model_configuration_binding.sql captures immutable operation/screen model identity without a settings table or history backfill; do not infer
@@ -3741,3 +3741,57 @@ These server-only direct-import mechanisms remain dormant: no default adoption,
 credential lookup, provider activation or real-user effect. Actual Admin/Guide
 decisions, accepted operational policy/resources, source/integrity coverage and
 genuine joined-path evidence remain gates. Construction is not passing proof.
+
+## Chat slice S4: reply v2 construction - 2026-11-04
+
+Paul approved the corrected S4 scope on 2026-11-04 (decision queue 09:57:20 and
+10:22:18 CST). New provider replies use the closed explorer-safety-reply.v2 body:
+protocol, classification, candidateReply, optional compass {attention: saved point
+UUID or null}, and optional choices [{label}] (one to three, 1 to 40 Unicode scalar
+characters per plain-text label). Malformed optional groups are absent independently;
+they never discard valid classification or candidate prose. Classification-only mode
+requests neither optional group nor candidate prose. The request remains
+explorer-safety-request.v2. Existing v1 evidence and saved messages remain valid.
+
+explorerSafetyReplyContract.ts owns parsing; explorerPrivateConversationComposition.ts
+passes proposals only for ordinary replies with delivery still wanted. Attention must
+name a current saved head; unplaced heads remain eligible. Choices require level 0 or
+1. SQL rechecks current authority, ownership, unrestricted state and successful reply
+persistence. A null, missing, foreign or merged attention is ignored, never a request
+to clear attention or fail the reply. The pending-turn guard keeps formation stable.
+The closed repository now calls public.solmind_settle_explorer_conversation_turn_v4
+with the previous 20 arguments plus p_attention_item_id and p_choices. Service-role
+execute on settle v3 is revoked; its definition and old evidence are retained.
+Prepare keeps its exact 37 arguments and one-count-per-Send hard-stop behavior.
+The forward migration is
+`supabase/migrations/20261104000000_explorer_reply_protocol_v2.sql`.
+
+Choices are an insert-time nullable column on the saved Virtual Guide message,
+protected by the message guard for both v1 and v2, and returned as optional choices
+in the closed browser state. S4 renders no choice controls. A real automatic move
+adds one completed follow_attention operation, with an immutable origin_operation_id
+link to its Send and an attention_changed Route event. The optional Route actor is
+explorer or virtual_guide; no origin identifier enters browser or model context.
+The existing AV3 compass-v1 section keeps its revision and adds an optional actor /
+awaitingReply pair to recentRoute. New assembly and SQL exact rederivation supply
+both; only the latest Explorer needle move after the last saved Virtual Guide reply
+has awaitingReply true. This prevents repeated acknowledgments without a persistent
+marker. Priority changes remain excluded. AV2 stays unchanged.
+
+The global policy and role text change only for the v2 proposals and approved shift,
+acknowledgment and choice guidance; prompt/instruction labels and integrity pins
+change together. Never claim a proposed move was saved. Mention only substantial,
+unannounced shifts, once, below level 2 and outside restricted conversations; offer
+a return to the earlier topic at most once without pressure. Acknowledge an Explorer
+move awaiting a reply briefly once, then follow their lead. Offer choices only when
+helpful; a first reply without a named topic may offer Show me around, I have a
+question and Let's begin. Always answer questions about how the screen works.
+
+This is source construction, not demo approval or provider evidence. Paul must read
+the exact changed wording before demo use; his decision on retaining Compass context
+in crisis-classification calls is still pending (S4 leaves those calls unchanged).
+The independent AI-provider/database review and two-round rule remain Executor
+work. SQL/pgTAP, browser validation and any approved demo migration are Executor
+work; no database, provider or server was run by the builder. Daily repeated tour
+offers, remembered feature-use evidence, the Admin duration setting, forming points
+and Waypoints, S6 buttons, and Key Insights remain later slices.

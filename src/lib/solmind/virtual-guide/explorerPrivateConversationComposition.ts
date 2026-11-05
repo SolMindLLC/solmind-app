@@ -46,7 +46,8 @@ export type ExplorerPrivateSettleParameters = ActorParameters & Readonly<{
   p_model_level: number | null; p_model_minor_indicated: boolean | null; p_protocol_version: string;
   p_request_mode: string; p_configuration_fingerprint: string; p_fallback_policy_version: string;
   p_model_policy_version: string; p_trusted_response_version: string; p_resource_policy_version: string;
-  p_fallback_level: number; p_fallback_minor_indicated: boolean; p_delivery_interested: boolean }>;
+  p_fallback_level: number; p_fallback_minor_indicated: boolean; p_delivery_interested: boolean;
+  p_attention_item_id: string | null; p_choices: readonly Readonly<{ label: string }>[] | null }>;
 export type ExplorerPrivateMutateParameters = ActorParameters & Readonly<{
   p_conversation_id: string; p_operation_id: string; p_expected_revision: number; p_command_fingerprint: string;
   p_kind: string; p_source_message_id: string | null; p_item_id: string | null; p_waypoint_id: string | null;
@@ -666,6 +667,16 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
       // Freeze current delivery interest once before the single terminal intent.
       const terminalDeliveryInterested = deliveryInterested && !input.signal?.aborted;
       if (!terminalDeliveryInterested) { replyKind = "none"; replyBody = null; }
+      // Optional proposals are never authority. Settle rechecks saved-head ownership,
+      // safety and delivery atomically; a rejected proposal must not lose the reply.
+      const ordinaryExtras = replyKind === "ordinary" && terminalDeliveryInterested && mode === "classification_and_reply" &&
+        safety.policyKnown && safety.restrictedLevel === null && !safety.adultReflectionStopped;
+      const proposedAttention = observedModel?.observation?.compass?.attention;
+      const attentionItemId = ordinaryExtras && typeof proposedAttention === "string" &&
+        builderState.state.compassItems.some((item) => item.id === proposedAttention && !item.mergedIntoItemId)
+        ? proposedAttention : null;
+      const choices = ordinaryExtras && safety.currentLevel !== null && safety.currentLevel < 2
+        ? observedModel?.observation?.choices ?? null : null;
       const settlement: ExplorerPrivateSettleParameters = { ...base(actor), p_conversation_id: ids.conversationId,
         p_operation_id: command.operationId, p_status: model !== null ? "completed" : terminalDeliveryInterested ? "failed" : "canceled",
         p_reply_message_id: replyKind === "none" ? null : ids.replyId, p_reply_kind: replyKind, p_reply_body: replyBody,
@@ -674,7 +685,7 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
         p_fallback_policy_version: fallback.policyVersion, p_model_policy_version: readiness.modelPolicyVersion,
         p_trusted_response_version: readiness.configuration.trustedResponses.version, p_resource_policy_version: readiness.resourcePolicyVersion,
         p_fallback_level: fallback.classification.level, p_fallback_minor_indicated: fallback.classification.minorIndicated,
-        p_delivery_interested: terminalDeliveryInterested };
+        p_delivery_interested: terminalDeliveryInterested, p_attention_item_id: attentionItemId, p_choices: choices };
       let settled: ExplorerPrivateRpcRow;
       try { settled = await dependencies.repository.settle(settlement); }
       catch { policy = safety.policyKnown ? { status: "known", restrictedLevel: safety.restrictedLevel, adultReflectionStopped: safety.adultReflectionStopped,

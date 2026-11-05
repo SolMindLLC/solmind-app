@@ -12,7 +12,7 @@ function request() {
     mode: "classification_and_reply", classificationPolicyVersion: "synthetic-model.v1",
     fallbackPolicyVersion: "synthetic-fallback.v1", instructionVersion: "synthetic-instructions.v1" };
 }
-const POSITIVE = JSON.stringify({ protocol: "explorer-safety-reply.v1", classification: { level: 4, minorIndicated: true }, candidateReply: { content: "\ud800" } });
+const POSITIVE = JSON.stringify({ protocol: "explorer-safety-reply.v2", classification: { level: 4, minorIndicated: true }, candidateReply: { content: "\ud800" } });
 function deferred() {
   let resolve!: (value: unknown) => void; let reject!: (reason: unknown) => void;
   const promise = new Promise<unknown>((yes, no) => { resolve = yes; reject = no; });
@@ -25,6 +25,15 @@ describe("Explorer one result-admission owner (fake port only)", () => {
     const result = await invokeExplorerSafetyReply({ request: request(), transport: { generate }, timeoutMilliseconds: 1000 });
     expect(generate).toHaveBeenCalledOnce(); expect(result.status).toBe("observed");
     expect(result.observation).toEqual({ classification: { level: 4, minorIndicated: true }, candidate: { kind: "unusable" } });
+  });
+  it("S4 passes admitted optional proposals through the same single invocation", async () => {
+    const proposals = { compass: { attention: "00000000-0000-4000-8000-000000000005" }, choices: [{ label: "Begin" }] };
+    const generate = vi.fn(async () => JSON.stringify({ protocol: "explorer-safety-reply.v2",
+      classification: { level: 0, minorIndicated: false }, candidateReply: { content: "We can begin." }, ...proposals }));
+    const result = await invokeExplorerSafetyReply({ request: request(), transport: { generate }, timeoutMilliseconds: 1000 });
+    expect(generate).toHaveBeenCalledOnce(); expect(result.status).toBe("observed");
+    expect(result.observation).toEqual({ classification: { level: 0, minorIndicated: false },
+      candidate: { kind: "usable", content: "We can begin." }, ...proposals });
   });
   it("makes no dispatch if delivery is canceled beforehand", async () => {
     const controller = new AbortController(); controller.abort(); const generate = vi.fn(async () => POSITIVE);

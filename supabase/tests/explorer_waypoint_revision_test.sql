@@ -149,7 +149,14 @@ create function pg_temp.compass_context() returns jsonb language sql stable as $
     'priorityId',(select s.priority_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.gid(6005)),
     'attentionId',(select s.attention_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.gid(6005)),
     'recentRoute',coalesce((select jsonb_agg(jsonb_build_object('kind',r.compass_route_kind,'pointId',r.compass_route_item_id,
-      'label',ai.solmind_exclusion_normalize_v3(r.current_label)) order by r.initial_revision,r.operation_id)
+      'label',ai.solmind_exclusion_normalize_v3(r.current_label),
+      'actor',case when r.kind='follow_attention' then 'virtual_guide' else 'explorer' end,
+      'awaitingReply',r.kind='set_attention'
+        and r.operation_id=(select last_move.operation_id from ai.explorer_conversation_operation last_move
+          where last_move.conversation_id=pg_temp.gid(6005) and last_move.compass_route_kind='attention_changed'
+          order by last_move.initial_revision desc,last_move.operation_id desc limit 1)
+        and not exists(select 1 from ai.ai_interaction_message reply where reply.ai_interaction_session_id=pg_temp.gid(6005)
+          and reply.sender_type='ai' and reply.created_at>=r.completed_at)) order by r.initial_revision,r.operation_id)
       from (select o.*,c.label as current_label from ai.explorer_conversation_operation o join ai.explorer_conversation_compass_item c
           on c.conversation_id=o.conversation_id and c.item_id=o.compass_route_item_id and c.merged_into_item_id is null
         where o.conversation_id=pg_temp.gid(6005) and o.compass_route_kind='attention_changed'
@@ -207,7 +214,7 @@ begin
   select revision into rev from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005);
   return query select * from public.solmind_observe_explorer_conversation_fallback_v3(
     pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),pg_temp.gid(10000+slot*10),pg_temp.gid(10004+slot*10),
-    rev,methodology.hash_json(jsonb_build_array('synthetic-command',slot)),'explorer-safety-reply.v1',
+    rev,methodology.hash_json(jsonb_build_array('synthetic-command',slot)),'explorer-safety-reply.v2',
     'synthetic-fallback.v1','synthetic-model-policy.v1',repeat('A',64),lvl::smallint,minor_flag);
 end $$;
 create function pg_temp.prepare_private(slot_n integer,lvl integer default 0,minor_flag boolean default false,
@@ -241,22 +248,23 @@ begin
     upper(encode(extensions.digest(convert_to(saved.serialization,'UTF8'),'sha256'),'hex')),saved.source_ids,saved.authority,
     pg_temp.gid(52),pg_temp.gid(1001),'synthetic-prompt.v1','synthetic-policy.v1','synthetic-behavior.v1','synthetic-crisis.v1',
     'synthetic-role.v1','synthetic-instruction.v1',methodology.hash_json(jsonb_build_array('synthetic-command',slot_n)),
-    pg_temp.gid(10004+slot_n*10),pg_temp.gid(1000),saved.methodology_sha,saved.mv,'explorer-safety-reply.v1',saved.mode,
+    pg_temp.gid(10004+slot_n*10),pg_temp.gid(1000),saved.methodology_sha,saved.mv,'explorer-safety-reply.v2',saved.mode,
     repeat('A',64),'synthetic-fallback.v1','synthetic-model-policy.v1','synthetic-trusted.v1','synthetic-resources.v1',
     saved.safety_version,saved.fallback,saved.minor,selected_model);
 end $$;
 create function pg_temp.settle_private(slot_n integer,model integer default 0,minor_flag boolean default false,
   kind text default 'ordinary',body text default 'Synthetic saved reply.',status_name text default 'completed',
-  interested boolean default true,fallback_override integer default null)
+  interested boolean default true,fallback_override integer default null,attention_n integer default null,choices jsonb default null)
 returns table(outcome text,conversation_state jsonb,policy_state jsonb,saved_reply boolean)
 language sql as $$
-  select * from public.solmind_settle_explorer_conversation_turn_v3(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),
+  select * from public.solmind_settle_explorer_conversation_turn_v4(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),
     pg_temp.gid(10000+slot_n*10),status_name,case when kind='none' then null else pg_temp.gid(10005+slot_n*10) end,
-    kind,case when kind='none' then null else body end,model::smallint,minor_flag,'explorer-safety-reply.v1',
+    kind,case when kind='none' then null else body end,model::smallint,minor_flag,'explorer-safety-reply.v2',
     (select mode from lifecycle_intent where slot=slot_n),repeat('A',64),'synthetic-fallback.v1',
     'synthetic-model-policy.v1','synthetic-trusted.v1','synthetic-resources.v1',
     coalesce(fallback_override,(select fallback from lifecycle_intent where slot=slot_n))::smallint,
-    (select minor from lifecycle_intent where slot=slot_n),interested)
+    (select minor from lifecycle_intent where slot=slot_n),interested,
+    case when attention_n is null then null else pg_temp.gid(attention_n) end,choices)
 $$;
 
 -- Establish the existing synthetic governed source fixture. No provider is called;
@@ -373,29 +381,29 @@ select ok(not exists(select 1 from content.waypoint where waypoint_id=pg_temp.gi
  'failed audit leaves no partial successor, clarification or operation');
 select set_config('solmind.fixture.fail_revision_audit','no',true);
 select is((select outcome from pg_temp.revise_waypoint(31001,30001,'revise_waypoint',
- pg_temp.answer('destination','Choose one focus')||pg_temp.answer('meaning','A calmer ðŸ§­ week'))),'ok',
+ pg_temp.answer('destination','Choose one focus')||pg_temp.answer('meaning',U&'A calmer \00f0\0178\00a7\00ad week'))),'ok',
  'Explorer confirms a conversational meaning answer while preserving an unchanged destination');
 select is((select to_jsonb(w) from content.waypoint w where waypoint_id=pg_temp.gid(30001)),
  (select value from original_waypoint),'confirmed successor never changes the original definition, source, chosen time or history');
 select ok((select predecessor_waypoint_id=pg_temp.gid(30001) and creation_reason='revision'
- and destination='Choose one focus' and why_it_matters='A calmer ðŸ§­ week' and arrival_signal='One focus is written down'
+ and destination='Choose one focus' and why_it_matters=U&'A calmer \00f0\0178\00a7\00ad week' and arrival_signal='One focus is written down'
  and source_message_id=pg_temp.gid(10011) and lifecycle_status='chosen' and reached_at is null and reached_evidence is null
  and released_at is null from content.waypoint where waypoint_id=pg_temp.gid(31001)),
  'changed component is new, omitted components derive from predecessor and no historical success/release carries forward');
 select ok((select count(*)=1 and bool_and(component='meaning' and question_key='waypoint.meaning.v1'
- and answer_text='A calmer ðŸ§­ week' and source_actor_user_account_id=pg_temp.gid(1) and retention_class='sensitive_content')
+ and answer_text=U&'A calmer \00f0\0178\00a7\00ad week' and source_actor_user_account_id=pg_temp.gid(1) and retention_class='sensitive_content')
  from content.waypoint_clarification where waypoint_id=pg_temp.gid(31001)),
  'only actually changed exact Explorer answers create server-keyed source records');
 select ok((select value->>'creationReason'='revision' and value->>'predecessorWaypointId'=pg_temp.gid(30001)::text
  and jsonb_array_length(value->'clarifications')=1
- and value#>>'{clarifications,0,answer}'='A calmer ðŸ§­ week'
+ and value#>>'{clarifications,0,answer}'=U&'A calmer \00f0\0178\00a7\00ad week'
  and (select count(*) from jsonb_object_keys(value->'clarifications'->0))=4
  from jsonb_array_elements(pg_temp.read_state()->'waypoints') x(value0)
  cross join lateral (select value0->'lifecycle' value) y where value0->>'id'=pg_temp.gid(31001)::text),
  'closed source history exposes exact component/question/answer/time and predecessor, never actor authority');
 create temp table first_revision_state as select pg_temp.read_state() value;
 select is((select outcome from pg_temp.revise_waypoint(31001,30001,'revise_waypoint',
- pg_temp.answer('destination','Choose one focus')||pg_temp.answer('meaning','A calmer ðŸ§­ week'))),'exact_replay','identical confirmed revision replays without another successor');
+ pg_temp.answer('destination','Choose one focus')||pg_temp.answer('meaning',U&'A calmer \00f0\0178\00a7\00ad week'))),'exact_replay','identical confirmed revision replays without another successor');
 select is(pg_temp.read_state(),(select value from first_revision_state),'exact retry is a no-write state read');
 select is((select count(*)::integer from audit.audit_event where event_type='waypoint_revised' and target_entity_id=pg_temp.gid(31001)),1,
  'same confirmed revision emits one content-free audit');
@@ -409,10 +417,10 @@ select throws_ok($$select * from pg_temp.release_waypoint(32001,30001)$$,
  'P0001','solmind_explorer_private_immutable','superseded definition cannot receive a new release capture');
 select is((select outcome from pg_temp.revise_waypoint(31002,31001,'revise_waypoint',pg_temp.answer('arrivalSignal','A selected next step exists'))),
  'ok','a further Explorer-confirmed answer creates a linear current successor');
-select ok((select predecessor_waypoint_id=pg_temp.gid(31001) and why_it_matters='A calmer ðŸ§­ week'
+select ok((select predecessor_waypoint_id=pg_temp.gid(31001) and why_it_matters=U&'A calmer \00f0\0178\00a7\00ad week'
  from content.waypoint where waypoint_id=pg_temp.gid(31002)),'unchanged meaning inherits the exact previous clarification');
 select is((select answer_text from content.waypoint_clarification where waypoint_id=pg_temp.gid(31001) and component='meaning'),
- 'A calmer ðŸ§­ week','earlier clarification remains available through predecessor history');
+ U&'A calmer \00f0\0178\00a7\00ad week','earlier clarification remains available through predecessor history');
 select throws_ok($$update content.waypoint_clarification set answer_text='Rewritten' where waypoint_id=pg_temp.gid(31001)$$,
  'P0001','solmind_explorer_private_immutable','source answers cannot be overwritten');
 select throws_ok($$delete from content.waypoint_clarification where waypoint_id=pg_temp.gid(31001)$$,
@@ -468,13 +476,13 @@ select is((select outcome from pg_temp.observe(99,3,false)),'ok','synthetic rest
 select throws_ok($$select * from pg_temp.revise_waypoint(35003,33002,'revise_waypoint',pg_temp.answer('meaning','Blocked'))$$,
  'P0001','solmind_explorer_private_denied','restricted policy refuses a new conversational successor');
 select is((select outcome from pg_temp.revise_waypoint(31001,30001,'revise_waypoint',
- pg_temp.answer('destination','Choose one focus')||pg_temp.answer('meaning','A calmer ðŸ§­ week'))),'exact_replay','existing revision replay precedes new-reflection policy checks');
+ pg_temp.answer('destination','Choose one focus')||pg_temp.answer('meaning',U&'A calmer \00f0\0178\00a7\00ad week'))),'exact_replay','existing revision replay precedes new-reflection policy checks');
 select is((select outcome from public.solmind_end_explorer_conversation_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),pg_temp.gid(36001),
  (select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005)),pg_temp.request_sha(36001))),'ok','ending remains a separate explicit closure');
 select throws_ok($$select * from pg_temp.revise_waypoint(36002,33002,'revise_waypoint',pg_temp.answer('meaning','No ended edit'))$$,
  'P0001',null,'ended conversation history cannot create a revision or reactivate a lifecycle');
 select ok((select exists(select 1 from jsonb_array_elements(conversation_state->'waypoints') w
- where w->>'id'=pg_temp.gid(31001)::text and w#>>'{lifecycle,clarifications,0,answer}'='A calmer ðŸ§­ week')
+ where w->>'id'=pg_temp.gid(31001)::text and w#>>'{lifecycle,clarifications,0,answer}'=U&'A calmer \00f0\0178\00a7\00ad week')
  from public.solmind_read_ended_explorer_conversations_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005))),
  'owned ended review retains actual lineage and application-question/Explorer-answer history');
 -- Unknown policy remains held for new reflection; a fixture row supplies no

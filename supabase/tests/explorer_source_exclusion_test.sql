@@ -58,6 +58,7 @@ insert into ai.explorer_conversation_state(conversation_id,actor_user_account_id
 -- Independent rebuild of the saved Compass and Waypoint section (chat step slice S3, 2026-11-03) from the
 -- fixture rows: current points in display order, the saved Priority and attention, the last five needle moves
 -- on a current point (oldest first, each with the point's current label), the current Waypoint heads, no drafts.
+-- S4 adds the actor and whether the latest Explorer move still awaits its first saved reply.
 create function pg_temp.compass() returns jsonb language sql stable as $$
   select jsonb_build_object('version','explorer-compass-context.v1',
     'points',coalesce((select jsonb_agg(jsonb_build_object('id',c.item_id,'label',ai.solmind_exclusion_normalize_v3(c.label),
@@ -67,7 +68,14 @@ create function pg_temp.compass() returns jsonb language sql stable as $$
     'priorityId',(select s.priority_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.xid(51)),
     'attentionId',(select s.attention_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.xid(51)),
     'recentRoute',coalesce((select jsonb_agg(jsonb_build_object('kind',r.compass_route_kind,'pointId',r.compass_route_item_id,
-      'label',ai.solmind_exclusion_normalize_v3(r.current_label)) order by r.initial_revision,r.operation_id)
+      'label',ai.solmind_exclusion_normalize_v3(r.current_label),
+      'actor',case when r.kind='follow_attention' then 'virtual_guide' else 'explorer' end,
+      'awaitingReply',r.kind='set_attention'
+        and r.operation_id=(select latest.operation_id from ai.explorer_conversation_operation latest
+          where latest.conversation_id=pg_temp.xid(51) and latest.compass_route_kind='attention_changed'
+          order by latest.initial_revision desc,latest.operation_id desc limit 1)
+        and not exists(select 1 from ai.ai_interaction_message reply where reply.ai_interaction_session_id=pg_temp.xid(51)
+          and reply.sender_type='ai' and reply.created_at>=r.completed_at)) order by r.initial_revision,r.operation_id)
       from (select o.*,c.label as current_label from ai.explorer_conversation_operation o join ai.explorer_conversation_compass_item c
           on c.conversation_id=o.conversation_id and c.item_id=o.compass_route_item_id and c.merged_into_item_id is null
         where o.conversation_id=pg_temp.xid(51) and o.compass_route_kind='attention_changed'
@@ -365,6 +373,7 @@ rollback to savepoint source_identity_cross_kind_collision;
 -- Chat step slice S3 (2026-11-03): the saved Compass and Waypoint section is rebuilt exactly from the rows.
 -- The same synthetic rows are the state in src/lib/solmind/virtual-guide/explorerConversationContext.test.ts
 -- ("S3 golden vector"); the TypeScript serialization of the section is the literal below (compared here as jsonb).
+-- S4 extends that same vector with actor and awaitingReply; the fixture has no saved AI reply.
 savepoint compass_context;
 insert into ai.explorer_conversation_compass_item(item_id,conversation_id,source_message_id,label,display_order,compass_anchor,relative_emphasis)
   values(pg_temp.xid(401),pg_temp.xid(51),pg_temp.xid(70),'  Money worries ',1,'apex',3),
@@ -412,7 +421,7 @@ insert into content.waypoint(waypoint_id,guide_explorer_relationship_id,source_a
       'Screens keep me awake','I read on three nights','chosen',pg_temp.xid(1),timestamptz '2026-11-03 10:04:00+00',
       null,null,null,null,null,null,pg_temp.xid(424),'revision',timestamptz '2026-11-03 10:04:00+00');
 create temp table s3_golden(section jsonb) on commit drop;
-insert into s3_golden values('{"version":"explorer-compass-context.v1","points":[{"id":"f5120000-0000-4000-8000-000000000401","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},{"id":"f5120000-0000-4000-8000-000000000402","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},{"id":"f5120000-0000-4000-8000-000000000404","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],"priorityId":"f5120000-0000-4000-8000-000000000401","attentionId":"f5120000-0000-4000-8000-000000000402","recentRoute":[{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family"},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000401","label":"Money worries"},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep"},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family"},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep"}],"waypoints":[{"id":"f5120000-0000-4000-8000-000000000421","title":"Find a calmer morning","destination":"Find a calmer morning","meaning":"Mornings set\nmy whole day","arrivalSignal":"I start two mornings a week without rushing","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000422","title":"Walk after dinner","destination":"Walk after dinner","meaning":"It clears my head","arrivalSignal":"I walk three evenings in one week","stage":"reached","reachedEvidence":"I walked four evenings last week"},{"id":"f5120000-0000-4000-8000-000000000423","title":"Call my sister","destination":"Call my sister","meaning":"We have drifted apart","arrivalSignal":"We talk once a week for a month","stage":"released","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000425","title":"Read before bed","destination":"Read before bed","meaning":"Screens keep me awake","arrivalSignal":"I read on three nights","stage":"formed","reachedEvidence":null}],"drafts":[]}');
+insert into s3_golden values('{"version":"explorer-compass-context.v1","points":[{"id":"f5120000-0000-4000-8000-000000000401","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},{"id":"f5120000-0000-4000-8000-000000000402","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},{"id":"f5120000-0000-4000-8000-000000000404","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],"priorityId":"f5120000-0000-4000-8000-000000000401","attentionId":"f5120000-0000-4000-8000-000000000402","recentRoute":[{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000401","label":"Money worries","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":true}],"waypoints":[{"id":"f5120000-0000-4000-8000-000000000421","title":"Find a calmer morning","destination":"Find a calmer morning","meaning":"Mornings set\nmy whole day","arrivalSignal":"I start two mornings a week without rushing","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000422","title":"Walk after dinner","destination":"Walk after dinner","meaning":"It clears my head","arrivalSignal":"I walk three evenings in one week","stage":"reached","reachedEvidence":"I walked four evenings last week"},{"id":"f5120000-0000-4000-8000-000000000423","title":"Call my sister","destination":"Call my sister","meaning":"We have drifted apart","arrivalSignal":"We talk once a week for a month","stage":"released","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000425","title":"Read before bed","destination":"Read before bed","meaning":"Screens keep me awake","arrivalSignal":"I read on three nights","stage":"formed","reachedEvidence":null}],"drafts":[]}');
 create function pg_temp.with_compass(section jsonb) returns jsonb language sql stable as $$
   select jsonb_set(pg_temp.context(),'{compassContext}',section)
 $$;
@@ -463,11 +472,13 @@ insert into ai.explorer_conversation_operation(actor_user_account_id,operation_i
 select is(pg_temp.compass(),(select section from s3_golden),
   'S3: a sixth, older needle move on a current point is capped away (the rebuild still equals the golden section)');
 select is((select outcome from pg_temp.inspect_json(jsonb_insert(pg_temp.context(),'{compassContext,recentRoute,0}',jsonb_build_object(
-  'kind','attention_changed','pointId',pg_temp.xid(402),'label','Sleep')))),'unavailable','S3: only the last five needle moves are given');
+  'kind','attention_changed','pointId',pg_temp.xid(402),'label','Sleep','actor','explorer','awaitingReply',false)))),
+  'unavailable','S3: only the last five needle moves are given');
 rollback to savepoint compass_cap;
 -- Round 2 (2026-11-03): the combined-away filter comes before the cap of five, and Priority changes are not given.
-create function pg_temp.needle(n integer,label text) returns jsonb language sql immutable as $$
-  select jsonb_build_object('kind','attention_changed','pointId',pg_temp.xid(n),'label',label)
+create function pg_temp.needle(n integer,label text,awaiting_reply boolean default false) returns jsonb language sql immutable as $$
+  select jsonb_build_object('kind','attention_changed','pointId',pg_temp.xid(n),'label',label,
+    'actor','explorer','awaitingReply',awaiting_reply)
 $$;
 select ok((select bool_or(x.compass_route_item_id=pg_temp.xid(403)) from (select o.compass_route_item_id from ai.explorer_conversation_operation o
     where o.conversation_id=pg_temp.xid(51) and o.compass_route_kind='attention_changed' order by o.initial_revision desc limit 5) x),
@@ -477,19 +488,19 @@ select is((select jsonb_agg(e->'pointId' order by i) from jsonb_array_elements(p
   'S3: the rebuild omits the combined-away needle move and fills the five from the next older one (revision 1, on 404)');
 select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,recentRoute}',jsonb_build_array(
   pg_temp.needle(401,'Money worries'),pg_temp.needle(402,'Sleep'),pg_temp.needle(403,'Work stress'),pg_temp.needle(404,'Family'),
-  pg_temp.needle(402,'Sleep'))))),'unavailable','S3: a needle move on a combined-away point is not given');
+  pg_temp.needle(402,'Sleep',true))))),'unavailable','S3: a needle move on a combined-away point is not given');
 select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,recentRoute}',jsonb_build_array(
-  pg_temp.needle(401,'Money worries'),pg_temp.needle(402,'Sleep'),pg_temp.needle(404,'Family'),pg_temp.needle(402,'Sleep'))))),
+  pg_temp.needle(401,'Money worries'),pg_temp.needle(402,'Sleep'),pg_temp.needle(404,'Family'),pg_temp.needle(402,'Sleep',true))))),
   'unavailable','S3: the five are counted after the combined-away filter, so four is too few');
 select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,recentRoute}',jsonb_build_array(
   pg_temp.needle(401,'Money worries'),pg_temp.needle(402,'Sleep'),
-  jsonb_build_object('kind','priority_reoriented','pointId',pg_temp.xid(401),'label','Money worries'),
-  pg_temp.needle(404,'Family'),pg_temp.needle(402,'Sleep'))))),'unavailable',
+  jsonb_build_object('kind','priority_reoriented','pointId',pg_temp.xid(401),'label','Money worries','actor','explorer','awaitingReply',false),
+  pg_temp.needle(404,'Family'),pg_temp.needle(402,'Sleep',true))))),'unavailable',
   'S3: Priority changes are not given (the round-1 window of all single-point events is unavailable)');
 select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,recentRoute,0,kind}','"priority_confirmed"'))),
   'unavailable','S3: a needle move cannot be relabelled as a Priority change');
 select is((select outcome from pg_temp.inspect_json(jsonb_insert(pg_temp.context(),'{compassContext,recentRoute,5}',jsonb_build_object(
-  'kind','category_confirmed','pointId',pg_temp.xid(401),'label','Work stress')))),'unavailable',
+  'kind','category_confirmed','pointId',pg_temp.xid(401),'label','Work stress','actor','explorer','awaitingReply',false)))),'unavailable',
   'S3: a category event and its before-label never enter the section');
 select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,recentRoute,1,label}','"Money"'))),
   'unavailable','S3: a tampered needle-move label is unavailable');
@@ -530,7 +541,7 @@ select ok((select o.compass_route_label='Sleep' from ai.explorer_conversation_op
   and (select o.compass_category_change->'beforeItems'->0->>'label'='Sleep' from ai.explorer_conversation_operation o
     where o.operation_id=pg_temp.xid(442)),'S3 rename: the saved rows keep the old wording as captured history');
 select is(pg_temp.compass()->'recentRoute',jsonb_build_array(pg_temp.needle(401,'Money worries'),pg_temp.needle(402,'Evening rest'),
-  pg_temp.needle(404,'Family'),pg_temp.needle(402,'Evening rest'),pg_temp.needle(402,'Evening rest')),
+  pg_temp.needle(404,'Family'),pg_temp.needle(402,'Evening rest'),pg_temp.needle(402,'Evening rest',true)),
   'S3 rename: every needle move on the renamed point carries its current label');
 select is(strpos(pg_temp.compact(pg_temp.context()),'Sleep'),0,'S3 rename: the old wording appears nowhere in the context');
 select is((select outcome from pg_temp.inspect()),'clear','S3 rename: the context with only the current label inspects clear');

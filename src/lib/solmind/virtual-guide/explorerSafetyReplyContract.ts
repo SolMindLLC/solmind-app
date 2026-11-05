@@ -2,10 +2,11 @@ import "server-only";
 import { createHash } from "node:crypto";
 
 export const EXPLORER_SAFETY_REQUEST_VERSION = "explorer-safety-request.v2" as const;
-export const EXPLORER_SAFETY_REPLY_PROTOCOL = "explorer-safety-reply.v1" as const;
+export const EXPLORER_SAFETY_REPLY_PROTOCOL = "explorer-safety-reply.v2" as const;
 export const EXPLORER_SAFETY_REPLY_LIMITS = Object.freeze({
   contextUtf8Bytes: 524_288, modelBodyUtf8Bytes: 262_144,
   candidateUtf16Units: 8_192, candidateWords: 300,
+  choices: 3, choiceLabelCharacters: 40,
   minimumTimeoutMilliseconds: 10, maximumTimeoutMilliseconds: 60_000,
 });
 export type ExplorerSafetyLevel = 0 | 1 | 2 | 3 | 4;
@@ -21,8 +22,11 @@ export type ExplorerSafetyCandidate =
   | Readonly<{ kind: "usable"; content: string }>
   | Readonly<{ kind: "unusable" }>
   | Readonly<{ kind: "not_requested" }>;
+export type ExplorerSafetyCompass = Readonly<{ attention: string | null }>;
+export type ExplorerSafetyChoice = Readonly<{ label: string }>;
 export type ExplorerSafetyReplyObservation = Readonly<{
   classification: ExplorerSafetyClassification; candidate: ExplorerSafetyCandidate;
+  compass?: ExplorerSafetyCompass; choices?: readonly ExplorerSafetyChoice[];
 }>;
 export type ExplorerSafetyReplyErrorCode =
   | "explorer_safety_invalid_request" | "explorer_safety_invalid_response"
@@ -106,15 +110,45 @@ function candidate(input: unknown): ExplorerSafetyCandidate {
   }
   return Object.freeze({ kind: "usable", content });
 }
+function compass(input: unknown): ExplorerSafetyCompass | undefined {
+  try {
+    if (!dataObject(input, ["attention"]) || (input.attention !== null &&
+      (typeof input.attention !== "string" || input.attention.length !== 36 || !UUID.test(input.attention)))) return undefined;
+    return Object.freeze({ attention: input.attention as string | null });
+  } catch { return undefined; }
+}
+function choices(input: unknown): readonly ExplorerSafetyChoice[] | undefined {
+  try {
+    if (!Array.isArray(input) || input.length < 1 || input.length > EXPLORER_SAFETY_REPLY_LIMITS.choices) return undefined;
+    const result: ExplorerSafetyChoice[] = [];
+    for (const item of input) {
+      if (!dataObject(item, ["label"]) || typeof item.label !== "string" || !explorerSafetyUnicodeValid(item.label)) return undefined;
+      // Reject hidden/control characters before trimming; normalization must not
+      // hide a forbidden input. Bounds count Unicode scalars like SQL char_length.
+      if (/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/u.test(item.label)) return undefined;
+      const label = item.label.trim();
+      if (!label || Array.from(label).length > EXPLORER_SAFETY_REPLY_LIMITS.choiceLabelCharacters) return undefined;
+      result.push(Object.freeze({ label }));
+    }
+    return Object.freeze(result);
+  } catch { return undefined; }
+}
 export function parseExplorerSafetyReplyBody(rawText: unknown, mode: ExplorerSafetyRequestMode): ExplorerSafetyReplyObservation {
   if (mode !== "classification_only" && mode !== "classification_and_reply") fail("explorer_safety_invalid_request");
   if (typeof rawText !== "string") fail("explorer_safety_invalid_response");
   if (Buffer.byteLength(rawText, "utf8") > EXPLORER_SAFETY_REPLY_LIMITS.modelBodyUtf8Bytes) fail("explorer_safety_limit_exceeded");
   let body: unknown;
   try { body = JSON.parse(rawText) as unknown; } catch { fail("explorer_safety_invalid_response"); }
-  if (!dataObject(body, ["protocol", "classification", "candidateReply"]) || body.protocol !== EXPLORER_SAFETY_REPLY_PROTOCOL) fail("explorer_safety_invalid_response");
+  const required = ["protocol", "classification", "candidateReply"];
+  if ((!dataObject(body, required) && !dataObject(body, [...required, "compass"]) &&
+    !dataObject(body, [...required, "choices"]) && !dataObject(body, [...required, "compass", "choices"])) ||
+    body.protocol !== EXPLORER_SAFETY_REPLY_PROTOCOL) fail("explorer_safety_invalid_response");
   const classification = parseExplorerSafetyClassification(body.classification);
   if (classification === null) fail("explorer_safety_invalid_response");
-  // Candidate defects cannot erase the already-accepted bounded signal.
-  return Object.freeze({ classification, candidate: mode === "classification_only" ? NOT_REQUESTED : candidate(body.candidateReply) });
+  // Optional proposal defects cannot erase the accepted signal or usable prose.
+  if (mode === "classification_only") return Object.freeze({ classification, candidate: NOT_REQUESTED });
+  const parsedCompass = compass(body.compass); const parsedChoices = choices(body.choices);
+  return Object.freeze({ classification, candidate: candidate(body.candidateReply),
+    ...(parsedCompass === undefined ? {} : { compass: parsedCompass }),
+    ...(parsedChoices === undefined ? {} : { choices: parsedChoices }) });
 }

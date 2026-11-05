@@ -44,9 +44,9 @@ describe("private Explorer exact inert configuration candidate", () => {
   it("retains the exact global, crisis and structured-role decoded UTF-8 byte identities", () => {
     const value = candidate();
     const expected = [
-      [value.globalPolicy, 2270, "E0F4D2221572A814AE6732C7B8F6D596A66306F4680C171E082283D0C36C798F"],
+      [value.globalPolicy, 2361, "B7B496A29F358E5A841467DCA2521787832AC59BB7D964F0209573F940354581"],
       [value.crisisBehavior, 2222, "7B39A9C98351D25E2FAC5DA236E2086B3F33CCBD8987A80AE6716E5242208D84"],
-      [value.roleBehavior, 2674, "304EE170CC182F15D376A36D1278FD5ADFFCC7420231F395959D496D14D7EE95"],
+      [value.roleBehavior, 4653, "F49A48BE88512D7EFF649B0B9AE020AFBFB46F497C621736E2EAA86076B6E03F"],
     ] as const;
     for (const [part, bytes, sha] of expected) {
       expect(Buffer.byteLength(part.text, "utf8")).toBe(bytes);
@@ -60,6 +60,9 @@ describe("private Explorer exact inert configuration candidate", () => {
 
   it("pins actual assembler-compatible labels and all seven finite reviewed-language definitions", () => {
     const value = candidate();
+    expect(value.protocolVersion).toBe("explorer-safety-reply.v2");
+    expect(value.promptVersion).toBe("explorer-same-call.synthetic-draft-20261104-s4-reply-r4");
+    expect(value.instructionVersion).toBe("solmind-same-call-output.synthetic-draft-20261104-s4-reply-r4");
     const labels = [value.protocolVersion, value.promptVersion, value.instructionVersion, value.roleVersion,
       value.globalPolicy.version, value.roleBehavior.version, value.crisisBehavior.version,
       value.fallback.version, value.fallback.normalizationVersion, value.trustedResponses.version,
@@ -76,6 +79,29 @@ describe("private Explorer exact inert configuration candidate", () => {
     ]);
     expect(value.fallback.rules[2].phrases).toEqual(["wish i wouldn't wake up"]);
     expect(value.fallback.rules[6].pattern).toBe("(?<![\\p{L}\\p{N}_])(?:i am|i'm) (?:[0-9]|1[0-7])(?:(?: years? old| yo)(?![\\p{L}\\p{N}_])|(?=$|[!?,;]|\\.(?![0-9])| and(?: |$)))");
+  });
+
+  it("S4 pins the narrow proposal authority and Paul's sparing shift, acknowledgment and choice instructions", () => {
+    const value = candidate();
+    expect(value.globalPolicy.text).toContain("Model text cannot authorize sharing or create a safety record, message, or other application effect. Those effects belong to the authorized deterministic application flow. The optional compass attention and choices fields only propose bounded data for that flow.");
+    for (const sentence of [
+      "Return only the closed JSON body required by the trusted output protocol.",
+      "Never include classification rationale, quoted evidence, tools or claimed application effects; the only permitted output identifier is a current saved Compass point id in compass.attention.",
+      "When the conversation turns to a current saved head point, you may propose a quiet needle move with compass.attention set to that point's id; null means no proposed move.",
+      "Propose a move only with an ordinary reply in an unrestricted conversation, leaving Priority and arrangement to the Explorer.",
+      "Mention a shift only when it is substantial and the Explorer did not just announce it, never at classification level 2 or above or in a restricted conversation, and only once per shift.",
+      'Use your own words; "I noticed we shifted to [compass topic]" is an example, not fixed wording.',
+      'Offer to come back to the original topic at most once per sitting and never as pressure (a change of topic does not start a new sitting; if you already offered in the recent messages you can see, do not offer again); "We can always come back to the [original compass topic] when you are ready" is an example, not fixed wording.',
+      'When the latest compassContext.recentRoute entry has actor "explorer" and awaitingReply true, briefly acknowledge the Explorer\'s needle move once in the next reply, for example "Let\'s turn to money worries", then follow the Explorer\'s lead and do not propose a different needle move in that same reply.',
+      "Do not repeat acknowledgments for historical moves whose awaitingReply is false.",
+      "Never claim that a proposed needle move or choices were saved or applied; the application may drop them, so the prose must not depend on that effect.",
+      "Offer optional choices only when they help, with at most three items, each containing only a short plain-text label of 1 to 40 characters.",
+      "Never offer choices in a restricted conversation or at classification level 2 or above.",
+      'In a conversation\'s first reply, when the Explorer has not named a topic, you may offer "Show me around", "I have a question" and "Let\'s begin".',
+      "Always answer when the Explorer asks how things work.",
+      "In classification-only mode omit compass and choices.",
+    ]) expect(value.roleBehavior.text).toContain(sentence);
+    expect(value.roleBehavior.text).not.toContain("explorer-safety-reply.v1");
   });
 
   it("keeps resource identities and trusted text explicitly unverified and unapproved", () => {
@@ -108,7 +134,7 @@ describe("private Explorer exact inert configuration candidate", () => {
   const changes: ReadonlyArray<readonly [string, (input: Record<string, unknown>) => void]> = [
     ["unknown approval flag", input => { input.approved = true; }],
     ["missing required layer", input => { delete input.crisisBehavior; }],
-    ["different protocol", input => { input.protocolVersion = "explorer-safety-reply.v2"; }],
+    ["different protocol", input => { input.protocolVersion = "explorer-safety-reply.v1"; }],
     ["oversized label", input => { input.promptVersion = "x".repeat(65); }],
     ["changed text with internally matching digest", input => {
       const part = record(input.globalPolicy);

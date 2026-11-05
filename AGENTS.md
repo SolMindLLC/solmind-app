@@ -542,7 +542,7 @@ Keep these owners direct-import, server-only and off shared/client barrels:
   validates and returns a copied frozen projection. Neither its parser nor getter
   supplies operational readiness, an approved methodology pack or verified resources.
 - `src/lib/solmind/virtual-guide/explorerSafetyReplyContract.ts` owns the closed
-  `explorer-safety-request.v2` request and `explorer-safety-reply.v1` result.
+  `explorer-safety-request.v2` request and `explorer-safety-reply.v2` result.
   `src/lib/solmind/virtual-guide/explorerSafetyReplyInvocation.ts` admits one
   bounded injected invocation and retains valid classification independently of
   unusable candidate prose or canceled delivery. Missing observation is not zero.
@@ -559,13 +559,13 @@ Keep these owners direct-import, server-only and off shared/client barrels:
   human-notification claim. A no-op signal or inert resource candidate cannot
   satisfy an operational prerequisite.
 - `src/lib/solmind/supabase/explorerPrivateConversationRepository.ts` accepts an
-  injected server client and exposes only six exact v3 methods, with closed
+  injected server client and exposes only six exact lifecycle methods (settle v4; the others v3), with closed
   scalar arguments/results and no generic table reader or public RPC executor:
   `public.solmind_read_explorer_conversation_v3`,
   `public.solmind_ensure_explorer_conversation_v3`,
   `public.solmind_observe_explorer_conversation_fallback_v3`,
   `public.solmind_prepare_explorer_conversation_turn_v3`,
-  `public.solmind_settle_explorer_conversation_turn_v3` and
+  `public.solmind_settle_explorer_conversation_turn_v4` and
   `public.solmind_mutate_explorer_conversation_v3`.
 
 The existing `src/lib/solmind/virtual-guide/explorerConversationContext.ts`
@@ -583,7 +583,7 @@ entries keep): the same layers plus one section, `compassContext`, after
 limits, and the rule that this revision requires the section and every other revision
 forbids it) and filled from the read state by `explorerConversationContext.ts`:
 `{version:"explorer-compass-context.v1", points:[{id,label,order,formation:"saved",anchor,emphasis}],
-priorityId, attentionId, recentRoute:[{kind,pointId,label}],
+priorityId, attentionId, recentRoute:[{kind,pointId,label,actor?,awaitingReply?}],
 waypoints:[{id,title,destination,meaning,arrivalSignal,stage,reachedEvidence}], drafts:[]}`.
 Points are the current (not combined-away) points in saved display order; Priority and
 attention are the saved values, and attention may be on an unplaced point; the Route gives
@@ -598,10 +598,11 @@ evidence only when reached, and the title is the saved title (every writer store
 destination there; the state carries no title). `formation` stays "saved" and `drafts`
 stays empty until later slices. The current point and Waypoint ids join the snapshot
 source ids. `explorerSafeGuardrail` stays null. Output protocol/mode/configuration bindings
-are recorded separately on v3 evidence; the output protocol is unchanged
-(`explorer-safety-reply.v1`). The transport instructions name the section and treat its
-text as untrusted data; the approved global policy, role and crisis texts are unchanged
-(their order-of-authority list does not name the section). Use actual governed methodology resolution
+are recorded separately on evidence; S4 (2026-11-04) changes new output to
+`explorer-safety-reply.v2`, while existing v1 evidence remains valid. The transport
+instructions name the section and treat its text as untrusted data. S4 narrowly amends
+the approved global policy and role text; crisis text stays unchanged. See the S4
+boundary below. Use actual governed methodology resolution
 and immutable bindings, never a fabricated UUID, reviewer or candidate-ready flag.
 
 `supabase/migrations/20261025010000_explorer_source_exclusion.sql` owns ungranted
@@ -1782,3 +1783,57 @@ parser/adapter/composition/replay behavior; no late drain, safety-state/policy,
 SQL/default/provider/dependency change. Characters/Rootformalreview/application/
 live/publication/checked banking remain gates; final banking only at
 PUBLICATION_TRANSPORT_RETURN_R10/STATUS_CLOSEOUT.json PASS. No outcome credit.
+
+## Chat slice S4: reply v2 construction - 2026-11-04
+
+Paul approved the corrected S4 scope on 2026-11-04 (decision queue 09:57:20 and
+10:22:18 CST). New provider replies use the closed explorer-safety-reply.v2 body:
+protocol, classification, candidateReply, optional compass {attention: saved point
+UUID or null}, and optional choices [{label}] (one to three, 1 to 40 Unicode scalar
+characters per plain-text label). Malformed optional groups are absent independently;
+they never discard valid classification or candidate prose. Classification-only mode
+requests neither optional group nor candidate prose. The request remains
+explorer-safety-request.v2. Existing v1 evidence and saved messages remain valid.
+
+explorerSafetyReplyContract.ts owns parsing; explorerPrivateConversationComposition.ts
+passes proposals only for ordinary replies with delivery still wanted. Attention must
+name a current saved head; unplaced heads remain eligible. Choices require level 0 or
+1. SQL rechecks current authority, ownership, unrestricted state and successful reply
+persistence. A null, missing, foreign or merged attention is ignored, never a request
+to clear attention or fail the reply. The pending-turn guard keeps formation stable.
+The closed repository now calls public.solmind_settle_explorer_conversation_turn_v4
+with the previous 20 arguments plus p_attention_item_id and p_choices. Service-role
+execute on settle v3 is revoked; its definition and old evidence are retained.
+Prepare keeps its exact 37 arguments and one-count-per-Send hard-stop behavior.
+The forward migration is
+`supabase/migrations/20261104000000_explorer_reply_protocol_v2.sql`.
+
+Choices are an insert-time nullable column on the saved Virtual Guide message,
+protected by the message guard for both v1 and v2, and returned as optional choices
+in the closed browser state. S4 renders no choice controls. A real automatic move
+adds one completed follow_attention operation, with an immutable origin_operation_id
+link to its Send and an attention_changed Route event. The optional Route actor is
+explorer or virtual_guide; no origin identifier enters browser or model context.
+The existing AV3 compass-v1 section keeps its revision and adds an optional actor /
+awaitingReply pair to recentRoute. New assembly and SQL exact rederivation supply
+both; only the latest Explorer needle move after the last saved Virtual Guide reply
+has awaitingReply true. This prevents repeated acknowledgments without a persistent
+marker. Priority changes remain excluded. AV2 stays unchanged.
+
+The global policy and role text change only for the v2 proposals and approved shift,
+acknowledgment and choice guidance; prompt/instruction labels and integrity pins
+change together. Never claim a proposed move was saved. Mention only substantial,
+unannounced shifts, once, below level 2 and outside restricted conversations; offer
+a return to the earlier topic at most once without pressure. Acknowledge an Explorer
+move awaiting a reply briefly once, then follow their lead. Offer choices only when
+helpful; a first reply without a named topic may offer Show me around, I have a
+question and Let's begin. Always answer questions about how the screen works.
+
+This is source construction, not demo approval or provider evidence. Paul must read
+the exact changed wording before demo use; his decision on retaining Compass context
+in crisis-classification calls is still pending (S4 leaves those calls unchanged).
+The independent AI-provider/database review and two-round rule remain Executor
+work. SQL/pgTAP, browser validation and any approved demo migration are Executor
+work; no database, provider or server was run by the builder. Daily repeated tour
+offers, remembered feature-use evidence, the Admin duration setting, forming points
+and Waypoints, S6 buttons, and Key Insights remain later slices.

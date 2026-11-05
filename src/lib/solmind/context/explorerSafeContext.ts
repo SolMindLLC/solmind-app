@@ -254,6 +254,9 @@ type CompassRouteEvent = {
   kind: (typeof EXPLORER_COMPASS_CONTEXT_ROUTE_KINDS)[number];
   pointId: string;
   label: string;
+  // S4 pairs these keys. Historical S3 contexts keep their original bytes.
+  actor?: "explorer" | "virtual_guide";
+  awaitingReply?: boolean;
 };
 
 type CompassWaypoint = {
@@ -954,10 +957,18 @@ function parseCompassContext(value: unknown): ExplorerCompassContext {
   const pointIds = new Set(points.map((point) => point.id));
   const priorityId = parseNullablePointId(object.priorityId, pointIds);
   const attentionId = parseNullablePointId(object.attentionId, pointIds);
-  const recentRoute = object.recentRoute.map((candidate): CompassRouteEvent => {
+  const routeCount = object.recentRoute.length;
+  const recentRoute = object.recentRoute.map((candidate, index): CompassRouteEvent => {
     const event = parsePlainObject(candidate);
-    assertExactKeys(event, ["kind", "pointId", "label"]);
+    const hasActor = Object.prototype.hasOwnProperty.call(event, "actor");
+    const hasAwaitingReply = Object.prototype.hasOwnProperty.call(event, "awaitingReply");
+    assertExactKeys(event, ["kind", "pointId", "label"], ["actor", "awaitingReply"]);
     if (!EXPLORER_COMPASS_CONTEXT_ROUTE_KINDS.includes(event.kind as never)) {
+      fail("explorer_context_invalid_envelope");
+    }
+    if (hasActor !== hasAwaitingReply || (hasActor &&
+        (!["explorer", "virtual_guide"].includes(event.actor as string) || typeof event.awaitingReply !== "boolean" ||
+          (event.awaitingReply && (event.actor !== "explorer" || index !== routeCount - 1))))) {
       fail("explorer_context_invalid_envelope");
     }
     const pointId = parseNullablePointId(event.pointId, pointIds);
@@ -968,6 +979,7 @@ function parseCompassContext(value: unknown): ExplorerCompassContext {
       kind: event.kind as CompassRouteEvent["kind"],
       pointId,
       label: parseText(event.label, EXPLORER_SAFE_CONTEXT_LIMITS.compassLabelCharacters),
+      ...(hasActor ? { actor: event.actor as "explorer" | "virtual_guide", awaitingReply: event.awaitingReply as boolean } : {}),
     };
   });
   const waypointIds = new Set<string>();

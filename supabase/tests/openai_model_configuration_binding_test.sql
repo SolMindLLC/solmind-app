@@ -7,7 +7,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions,pg_catalog,pg_temp;
 set local statement_timeout='120s';
-select no_plan();
+select plan(98);
 
 create function pg_temp.gid(n integer) returns uuid language sql immutable as $$
   select ('f4290000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid
@@ -151,7 +151,14 @@ create function pg_temp.compass_context() returns jsonb language sql stable as $
     'priorityId',(select s.priority_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.gid(6005)),
     'attentionId',(select s.attention_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.gid(6005)),
     'recentRoute',coalesce((select jsonb_agg(jsonb_build_object('kind',r.compass_route_kind,'pointId',r.compass_route_item_id,
-      'label',ai.solmind_exclusion_normalize_v3(r.current_label)) order by r.initial_revision,r.operation_id)
+      'label',ai.solmind_exclusion_normalize_v3(r.current_label),
+      'actor',case when r.kind='follow_attention' then 'virtual_guide' else 'explorer' end,
+      'awaitingReply',r.kind='set_attention'
+        and r.operation_id=(select last_move.operation_id from ai.explorer_conversation_operation last_move
+          where last_move.conversation_id=pg_temp.gid(6005) and last_move.compass_route_kind='attention_changed'
+          order by last_move.initial_revision desc,last_move.operation_id desc limit 1)
+        and not exists(select 1 from ai.ai_interaction_message reply where reply.ai_interaction_session_id=pg_temp.gid(6005)
+          and reply.sender_type='ai' and reply.created_at>=r.completed_at)) order by r.initial_revision,r.operation_id)
       from (select o.*,c.label as current_label from ai.explorer_conversation_operation o join ai.explorer_conversation_compass_item c
           on c.conversation_id=o.conversation_id and c.item_id=o.compass_route_item_id and c.merged_into_item_id is null
         where o.conversation_id=pg_temp.gid(6005) and o.compass_route_kind='attention_changed'
@@ -209,7 +216,7 @@ begin
   select revision into rev from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005);
   return query select * from public.solmind_observe_explorer_conversation_fallback_v3(
     pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),pg_temp.gid(10000+slot*10),pg_temp.gid(10004+slot*10),
-    rev,methodology.hash_json(jsonb_build_array('synthetic-command',slot)),'explorer-safety-reply.v1',
+    rev,methodology.hash_json(jsonb_build_array('synthetic-command',slot)),'explorer-safety-reply.v2',
     'synthetic-fallback.v1','synthetic-model-policy.v1',repeat('A',64),lvl::smallint,minor_flag);
 end $$;
 create function pg_temp.prepare_private(slot_n integer,lvl integer default 0,minor_flag boolean default false,
@@ -243,7 +250,7 @@ begin
     upper(encode(extensions.digest(convert_to(saved.serialization,'UTF8'),'sha256'),'hex')),saved.source_ids,saved.authority,
     pg_temp.gid(52),pg_temp.gid(1001),'synthetic-prompt.v1','synthetic-policy.v1','synthetic-behavior.v1','synthetic-crisis.v1',
     'synthetic-role.v1','synthetic-instruction.v1',methodology.hash_json(jsonb_build_array('synthetic-command',slot_n)),
-    pg_temp.gid(10004+slot_n*10),pg_temp.gid(1000),saved.methodology_sha,saved.mv,'explorer-safety-reply.v1',saved.mode,
+    pg_temp.gid(10004+slot_n*10),pg_temp.gid(1000),saved.methodology_sha,saved.mv,'explorer-safety-reply.v2',saved.mode,
     repeat('A',64),'synthetic-fallback.v1','synthetic-model-policy.v1','synthetic-trusted.v1','synthetic-resources.v1',
     saved.safety_version,saved.fallback,saved.minor,selected_model);
 end $$;
@@ -283,6 +290,20 @@ begin
     saved.safety_version,saved.fallback,saved.minor);
 end $$;
 create function pg_temp.settle_private(slot_n integer,model integer default 0,minor_flag boolean default false,
+  kind text default 'ordinary',body text default 'Synthetic saved reply.',status_name text default 'completed',
+  interested boolean default true,fallback_override integer default null,attention_n integer default null,choices jsonb default null)
+returns table(outcome text,conversation_state jsonb,policy_state jsonb,saved_reply boolean)
+language sql as $$
+  select * from public.solmind_settle_explorer_conversation_turn_v4(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),
+    pg_temp.gid(10000+slot_n*10),status_name,case when kind='none' then null else pg_temp.gid(10005+slot_n*10) end,
+    kind,case when kind='none' then null else body end,model::smallint,minor_flag,'explorer-safety-reply.v2',
+    (select mode from lifecycle_intent where slot=slot_n),repeat('A',64),'synthetic-fallback.v1',
+    'synthetic-model-policy.v1','synthetic-trusted.v1','synthetic-resources.v1',
+    coalesce(fallback_override,(select fallback from lifecycle_intent where slot=slot_n))::smallint,
+    (select minor from lifecycle_intent where slot=slot_n),interested,
+    case when attention_n is null then null else pg_temp.gid(attention_n) end,choices)
+$$;
+create function pg_temp.settle_private_legacy(slot_n integer,model integer default 0,minor_flag boolean default false,
   kind text default 'ordinary',body text default 'Synthetic saved reply.',status_name text default 'completed',
   interested boolean default true,fallback_override integer default null)
 returns table(outcome text,conversation_state jsonb,policy_state jsonb,saved_reply boolean)
@@ -404,12 +425,256 @@ select ok((select outcome='ok' and dispatch_permitted from pg_temp.prepare_priva
 select ok((select model_name is null from ai.explorer_conversation_operation
   where actor_user_account_id=pg_temp.gid(1) and operation_id=pg_temp.gid(10030)),
   'legacy operation remains null without fabricated model backfill');
-select ok((select outcome='exact_replay' and not dispatch_permitted from pg_temp.prepare_private(3)),
-  'new overload can recognize exact historical Luna replay without redispatch');
+select ok((select outcome='exact_replay' and not dispatch_permitted from pg_temp.prepare_private_legacy(3)),
+  'owner-only historical preparation recognizes its exact v1 replay without redispatch');
+select throws_ok($$select * from pg_temp.prepare_private(3)$$,
+  'P0001','solmind_explorer_private_operation_conflict','v2 preparation cannot relabel a historical v1 operation');
 select throws_ok($$select * from pg_temp.prepare_private(3,0,false,null,'synthetic-compatible:model_2')$$,
   'P0001','solmind_explorer_private_operation_conflict','legacy replay does not accept a changed selected model');
-select ok((select outcome='ok' and saved_reply from pg_temp.settle_private(3)),
+select ok((select outcome='ok' and saved_reply from pg_temp.settle_private_legacy(3)),
   'legacy-null settlement retains its captured historical Luna meaning');
+
+-- S4 protocol, immutable saved choices and the separate needle operation.
+select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  where n.nspname='public' and p.proname='solmind_settle_explorer_conversation_turn_v4' and p.pronargs=22
+    and p.prosecdef and has_function_privilege('service_role',p.oid,'EXECUTE')
+    and not has_function_privilege('anon',p.oid,'EXECUTE') and not has_function_privilege('authenticated',p.oid,'EXECUTE')),1,
+  'only one exact 22-argument v4 settlement is an API capability');
+select ok(not exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  cross join (values('anon'),('authenticated'),('service_role')) role_row(name)
+  where n.nspname='public' and p.proname='solmind_settle_explorer_conversation_turn_v3'
+    and has_function_privilege(role_row.name,p.oid,'EXECUTE')),
+  'retained v3 settlement has no API execute privilege');
+select ok(ai.solmind_explorer_reply_choices_valid_v2('[{"label":"Show me around"},{"label":"I have a question"},{"label":"Let''s begin"}]')
+  and ai.solmind_explorer_reply_choices_valid_v2(jsonb_build_array(jsonb_build_object('label',repeat(U&'\+01F642',40))))
+  and not ai.solmind_explorer_reply_choices_valid_v2(jsonb_build_array(jsonb_build_object('label',repeat(U&'\+01F642',41))))
+  and not ai.solmind_explorer_reply_choices_valid_v2('[{"label":" Leading space"}]')
+  and not ai.solmind_explorer_reply_choices_valid_v2(jsonb_build_array(jsonb_build_object('label',U&'hidden\200Blabel')))
+  and not ai.solmind_explorer_reply_choices_valid_v2('[{"label":"A","extra":true}]')
+  and not ai.solmind_explorer_reply_choices_valid_v2('[]')
+  and not ai.solmind_explorer_reply_choices_valid_v2('null'),
+  'choices have 1-3 exact plain labels, Unicode scalar bounds and no invisible/extra fields');
+select throws_ok($$update ai.ai_interaction_message set content_text='Changed v2 Explorer message' where ai_interaction_message_id=pg_temp.gid(10011)$$,
+  'P0001','solmind_explorer_private_immutable','v2 guard protects the saved Explorer message');
+select throws_ok($$delete from ai.ai_interaction_message where ai_interaction_message_id=pg_temp.gid(10015)$$,
+  'P0001','solmind_explorer_private_immutable','v2 guard protects a saved reply even without choices');
+select throws_ok($$update ai.ai_interaction_message set content_text='Changed old reply' where ai_interaction_message_id=pg_temp.gid(10035)$$,
+  'P0001','solmind_explorer_private_immutable','the same guard still protects historical v1 messages');
+select throws_ok($$update ai.ai_interaction_message set explorer_reply_choices='[{"label":"Invented later"}]' where ai_interaction_message_id=pg_temp.gid(10015)$$,
+  'P0001','solmind_explorer_private_immutable','choices cannot enrich a saved message after insert');
+select throws_ok($$select * from public.solmind_observe_explorer_conversation_fallback_v3(
+  pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),pg_temp.gid(19990),pg_temp.gid(19994),
+  (select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005)),repeat('F',64),
+  'explorer-safety-reply.v1','synthetic-fallback.v1','synthetic-model-policy.v1',repeat('A',64),0::smallint,false)$$,
+  'P0001','solmind_explorer_private_invalid_input','new fallback observations reject the retired v1 protocol');
+create function pg_temp.s4_mutate(op_n integer,kind_name text,source_n integer default null,item_n integer default null,label_text text default null)
+returns text language sql as $$
+  select outcome from public.solmind_mutate_explorer_conversation_v3(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),
+    pg_temp.gid(op_n),(select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005)),
+    kind_name,pg_temp.request_sha(op_n),case when source_n is null then null else pg_temp.gid(source_n) end,
+    case when item_n is null then null else pg_temp.gid(item_n) end,null,label_text)
+$$;
+create function pg_temp.s4_send(slot_n integer,model integer default 0,kind text default 'ordinary',attention_n integer default null,
+  choices jsonb default null,interested boolean default true)
+returns table(outcome text,conversation_state jsonb,policy_state jsonb,saved_reply boolean) language plpgsql as $$
+begin
+  if not exists(select 1 from pg_temp.prepare_private(slot_n) prepared where prepared.outcome='ok' and prepared.dispatch_permitted)
+    then raise exception 'synthetic_s4_prepare_failed'; end if;
+  return query select * from pg_temp.settle_private(slot_n,model,false,kind,'Synthetic saved reply.','completed',interested,null,attention_n,choices);
+end $$;
+select is(pg_temp.s4_mutate(24001,'add_compass',10011,null,'First saved point'),'ok','S4 adds its first saved point');
+select is(pg_temp.s4_mutate(24101,'confirm_priority',null,24001),'ok','Priority remains an explicit Explorer confirmation');
+select is((select outcome from public.solmind_confirm_explorer_compass_arrangement_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),
+  pg_temp.gid(24102),(select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005)),pg_temp.request_sha(24102),
+  pg_temp.gid(24001),jsonb_build_array(jsonb_build_object('compassItemId',pg_temp.gid(24001),'anchor','apex','emphasis',3)))),
+  'ok','S4 fixture has an actual saved arrangement');
+select is(pg_temp.s4_mutate(24002,'add_compass',10015,null,'Unplaced current point'),'ok','new current point stays unplaced');
+select is(pg_temp.s4_mutate(24003,'add_compass',10021,null,'Combined-away fixture point'),'ok','third original point retained for stale-target proof');
+update ai.explorer_conversation_compass_item set merged_into_item_id=pg_temp.gid(24001) where item_id=pg_temp.gid(24003);
+select ok((select outcome='ok' and saved_reply from pg_temp.s4_send(4,0,'ordinary',24002,
+  '[{"label":"Show me around"},{"label":"I have a question"},{"label":"Let''s begin"}]')),
+  'ordinary saved v2 reply accepts three choices and quietly points to a current unplaced head');
+select ok((select attention_id=pg_temp.gid(24002) and priority_id=pg_temp.gid(24001) from ai.explorer_conversation_state
+  where conversation_id=pg_temp.gid(6005)) and (select compass_anchor is null from ai.explorer_conversation_compass_item where item_id=pg_temp.gid(24002)),
+  'the needle moves to an unplaced point without changing Priority or arrangement');
+select ok((select count(*)=1 and bool_and(status='completed' and kind='follow_attention'
+    and compass_route_kind='attention_changed' and compass_route_item_id=pg_temp.gid(24002)
+    and operation_id<>origin_operation_id and initial_revision+1=(select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005)))
+  from ai.explorer_conversation_operation where origin_operation_id=pg_temp.gid(10040)),
+  'one separate completed operation links the needle move to its Send and final revision');
+select is((select explorer_reply_choices from ai.ai_interaction_message where ai_interaction_message_id=pg_temp.gid(10045)),
+  '[{"label":"Show me around"},{"label":"I have a question"},{"label":"Let''s begin"}]'::jsonb,'choices are stored with the exact saved reply');
+select ok(exists(select 1 from jsonb_array_elements(ai.solmind_conversation_state_json(pg_temp.gid(6005))->'messages') m
+  where m->>'id'=pg_temp.gid(10045)::text and jsonb_array_length(m->'choices')=3)
+  and exists(select 1 from jsonb_array_elements(ai.solmind_conversation_state_json(pg_temp.gid(6005))->'route') r
+    where r->>'actor'='virtual_guide' and r->>'compassItemId'=pg_temp.gid(24002)::text),
+  'owned state returns optional choices and the attention actor without origin-operation authority');
+select ok((select outcome='exact_replay' and saved_reply from pg_temp.settle_private(4,0,false,'ordinary','Synthetic saved reply.','completed',true,null,24002,
+  '[{"label":"Show me around"},{"label":"I have a question"},{"label":"Let''s begin"}]')),
+  'exact v4 replay retains the same saved reply, choices and single Route move');
+select throws_ok($$select * from pg_temp.settle_private(4,0,false,'ordinary','Synthetic saved reply.','completed',true,null,24001,
+  '[{"label":"Show me around"},{"label":"I have a question"},{"label":"Let''s begin"}]')$$,
+  'P0001','solmind_explorer_private_operation_conflict','v4 replay with a different needle conflicts');
+select throws_ok($$select * from pg_temp.settle_private(4,0,false,'ordinary','Synthetic saved reply.','completed',true,null,24002,'[{"label":"Changed choice"}]')$$,
+  'P0001','solmind_explorer_private_operation_conflict','v4 replay with different choices conflicts');
+select throws_ok($$update ai.ai_interaction_message set explorer_reply_choices='[{"label":"Changed choice"}]' where ai_interaction_message_id=pg_temp.gid(10045)$$,
+  'P0001','solmind_explorer_private_immutable','saved v2 choices are immutable');
+select throws_ok($$update ai.explorer_conversation_operation set origin_operation_id=pg_temp.gid(10020) where origin_operation_id=pg_temp.gid(10040)$$,
+  'P0001','solmind_explorer_private_immutable','the follow operation origin is insert-only');
+select throws_ok($$delete from ai.explorer_conversation_operation where origin_operation_id=pg_temp.gid(10040)$$,
+  'P0001','solmind_explorer_private_immutable','the completed follow operation cannot be deleted');
+select ok((select saved_reply from pg_temp.s4_send(5,0,'ordinary',24002,'[{"label":"1"},{"label":"2"},{"label":"3"},{"label":"4"}]')),
+  'too many choices are absent and do not erase an ordinary reply');
+select ok((select explorer_reply_choices is null from ai.ai_interaction_message where ai_interaction_message_id=pg_temp.gid(10055))
+  and not exists(select 1 from ai.explorer_conversation_operation where origin_operation_id=pg_temp.gid(10050)),
+  'invalid choices are not stored and the same current needle adds no Route event');
+select ok((select saved_reply from pg_temp.s4_send(6,0,'ordinary',24999,jsonb_build_array(jsonb_build_object('label',repeat('x',41))))),
+  'unknown needle and overlong choices are ignored while the reply is saved');
+select ok((select explorer_reply_choices is null from ai.ai_interaction_message where ai_interaction_message_id=pg_temp.gid(10065))
+  and not exists(select 1 from ai.explorer_conversation_operation where origin_operation_id=pg_temp.gid(10060)),
+  'unknown needle never fabricates a point or a move');
+select ok((select saved_reply from pg_temp.s4_send(7,0,'ordinary',24003,'{"label":"Wrong group shape"}')),
+  'combined-away target and malformed choices never roll back a valid reply');
+select ok(not exists(select 1 from ai.explorer_conversation_operation where origin_operation_id=pg_temp.gid(10070))
+  and (select explorer_reply_choices is null from ai.ai_interaction_message where ai_interaction_message_id=pg_temp.gid(10075)),
+  'non-head target and malformed group stay absent');
+select ok((select saved_reply from pg_temp.s4_send(8,2,'ordinary',24001,'[{"label":"Do not offer at level two"}]')),
+  'ordinary level-two reply still saves and can quietly follow its saved topic');
+select ok(exists(select 1 from ai.explorer_conversation_operation where origin_operation_id=pg_temp.gid(10080))
+  and (select explorer_reply_choices is null from ai.ai_interaction_message where ai_interaction_message_id=pg_temp.gid(10085)),
+  'level two keeps the quiet needle move but suppresses choices');
+select ok((select not saved_reply from pg_temp.s4_send(9,0,'ordinary',24002,'[{"label":"Withheld"}]',false)),
+  'lost delivery interest withholds the reply and its optional effects');
+select ok(not exists(select 1 from ai.ai_interaction_message where ai_interaction_message_id=pg_temp.gid(10095))
+  and not exists(select 1 from ai.explorer_conversation_operation where origin_operation_id=pg_temp.gid(10090)),
+  'no orphan choices or needle move survive a withheld reply');
+select is(pg_temp.s4_mutate(24103,'set_attention',null,24002),'ok','Explorer can still explicitly point the needle');
+select ok(exists(select 1 from jsonb_array_elements(pg_temp.compass_context()->'recentRoute') r
+  where r->>'pointId'=pg_temp.gid(24002)::text and r->>'actor'='explorer' and r->>'awaitingReply'='true'),
+  'latest Explorer move after every saved reply carries the once-only acknowledgment cue');
+select ok((select saved_reply from pg_temp.s4_send(10)), 'next saved reply clears the prior acknowledgment window');
+select ok(not exists(select 1 from jsonb_array_elements(pg_temp.compass_context()->'recentRoute') r where r->>'awaitingReply'='true'),
+  'saved reply prevents repeated acknowledgment of the same Explorer move');
+select is((select outcome from pg_temp.ensure_anchor(6105,4,54)),'created',
+  'separate Explorer owns the foreign-target fixture conversation');
+insert into ai.ai_interaction_message(ai_interaction_message_id,ai_interaction_session_id,sequence_number,
+  sender_type,sender_user_account_id,sender_role_context,content_text)
+  values(pg_temp.gid(25001),pg_temp.gid(6105),1,'user',pg_temp.gid(4),'explorer','Synthetic other Explorer source.');
+insert into ai.explorer_conversation_compass_item(item_id,conversation_id,source_message_id,label,display_order)
+  values(pg_temp.gid(25002),pg_temp.gid(6105),pg_temp.gid(25001),'Foreign current point',1);
+select ok((select saved_reply from pg_temp.s4_send(13,0,'ordinary',25002,'[{"label":"Valid own choice"}]')),
+  'a foreign current head is ignored while the owned ordinary reply still saves');
+select ok(not exists(select 1 from ai.explorer_conversation_operation where origin_operation_id=pg_temp.gid(10130))
+  and (select attention_id=pg_temp.gid(24002) from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005))
+  and (select explorer_reply_choices='[{"label":"Valid own choice"}]'::jsonb from ai.ai_interaction_message where ai_interaction_message_id=pg_temp.gid(10135)),
+  'foreign needle does not cross conversations or erase independent valid choices');
+-- Exercise the adult stop without a restricted-level hold, then restore the
+-- existing fixture through the probe's deliberate subtransaction rollback.
+select lives_ok($adult_stop$do $probe$
+declare observed record; prepared record; settled record;
+begin
+  begin
+    select * into observed from pg_temp.observe(14,0,true);
+    if observed.outcome is distinct from 'ok'
+      or observed.policy_state->>'adultReflectionStopped' is distinct from 'true'
+      or observed.policy_state->>'restrictedLevel' is not null
+      then raise exception 'synthetic_s4_adult_stop_observation_failed'; end if;
+    select * into prepared from pg_temp.prepare_private(14,0,true);
+    if prepared.outcome is distinct from 'ok' or prepared.dispatch_permitted is distinct from true
+      then raise exception 'synthetic_s4_adult_stop_prepare_failed'; end if;
+    select * into settled from pg_temp.settle_private(14,0,true,'adult_only','Synthetic adults-only reply.',
+      'completed',true,null,24001,'[{"label":"Suppressed by adult stop"}]');
+    if settled.outcome is distinct from 'ok' or settled.saved_reply is distinct from true
+      or settled.policy_state->>'adultReflectionStopped' is distinct from 'true'
+      or settled.policy_state->>'restrictedLevel' is not null
+      then raise exception 'synthetic_s4_adult_stop_settle_failed'; end if;
+    if not exists(select 1 from ai.ai_interaction_message
+        where ai_interaction_message_id=pg_temp.gid(10145) and explorer_reply_choices is null)
+      or exists(select 1 from ai.explorer_conversation_operation where origin_operation_id=pg_temp.gid(10140))
+      or (select attention_id from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005))
+        is distinct from pg_temp.gid(24002)
+      then raise exception 'synthetic_s4_adult_stop_optional_effect'; end if;
+    raise exception 'synthetic_s4_adult_stop_probe_rolled_back';
+  exception when raise_exception then
+    if sqlerrm<>'synthetic_s4_adult_stop_probe_rolled_back' then raise; end if;
+  end;
+end $probe$;$adult_stop$,
+  'an adult-stopped conversation saves its adults-only reply without choices or a needle move (probe rolled back)');
+
+select ok((select not saved_reply and policy_state->>'restrictedLevel'='3' from pg_temp.s4_send(11,3,'none',24001,'[{"label":"Unsafe optional effect"}]')),
+  'positive classification survives without a reply and creates no optional application effects');
+select ok(not exists(select 1 from ai.explorer_conversation_operation where origin_operation_id=pg_temp.gid(10110))
+  and not exists(select 1 from ai.ai_interaction_message where ai_interaction_message_id=pg_temp.gid(10115)),
+  'classification-only result has neither needle move nor choices');
+select ok((select saved_reply from pg_temp.s4_send(12,0,'restricted',24001,'[{"label":"Suppressed in restriction"}]')),
+  'restricted follow-up may save its trusted response');
+select ok((select explorer_reply_choices is null from ai.ai_interaction_message where ai_interaction_message_id=pg_temp.gid(10125))
+  and not exists(select 1 from ai.explorer_conversation_operation where origin_operation_id=pg_temp.gid(10120))
+  and (select attention_id=pg_temp.gid(24002) from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005)),
+  'classification-only restricted turn never stores choices or follows attention');
+
+-- Owner-only INSERT guard probes. Each attempt supplies the same valid Route
+-- shape; only the origin eligibility or its conversation/session binding changes.
+-- Send 1 has a saved v2 reply and no follow row, Send 3 is v1, and Send 9
+-- completed without a saved reply. The existing second conversation owns 25002.
+select ok((select outcome='ok' and dispatch_permitted from pg_temp.prepare_private(15)),
+  'origin-guard fixture leaves a real v2 Send started');
+-- A historical session preserves the one-active-session-per-account invariant.
+insert into identity.user_session(user_session_id,user_account_id,active_role_context,created_at,expires_at,session_status,ended_at)
+  values(pg_temp.gid(60),pg_temp.gid(1),'explorer',now()-interval '1 hour',now()+interval '1 hour','revoked',now());
+select throws_ok($$insert into ai.explorer_conversation_operation(actor_user_account_id,operation_id,application_session_id,
+  conversation_id,kind,request_fingerprint,command_fingerprint,initial_revision,status,completed_at,
+  compass_route_kind,compass_route_item_id,compass_route_label,origin_operation_id)
+  values(pg_temp.gid(1),pg_temp.gid(26001),pg_temp.gid(50),pg_temp.gid(6005),'follow_attention',
+    pg_temp.request_sha(26001),pg_temp.request_sha(26001),0,'completed',clock_timestamp(),
+    'attention_changed',pg_temp.gid(24002),'Unplaced current point',pg_temp.gid(10030))$$,
+  'P0001','solmind_explorer_private_operation_conflict','direct follow_attention INSERT rejects a v1 Send origin');
+select throws_ok($$insert into ai.explorer_conversation_operation(actor_user_account_id,operation_id,application_session_id,
+  conversation_id,kind,request_fingerprint,command_fingerprint,initial_revision,status,completed_at,
+  compass_route_kind,compass_route_item_id,compass_route_label,origin_operation_id)
+  values(pg_temp.gid(1),pg_temp.gid(26002),pg_temp.gid(50),pg_temp.gid(6005),'follow_attention',
+    pg_temp.request_sha(26002),pg_temp.request_sha(26002),0,'completed',clock_timestamp(),
+    'attention_changed',pg_temp.gid(24002),'Unplaced current point',pg_temp.gid(10150))$$,
+  'P0001','solmind_explorer_private_operation_conflict','direct follow_attention INSERT rejects a still-started Send origin');
+select throws_ok($$insert into ai.explorer_conversation_operation(actor_user_account_id,operation_id,application_session_id,
+  conversation_id,kind,request_fingerprint,command_fingerprint,initial_revision,status,completed_at,
+  compass_route_kind,compass_route_item_id,compass_route_label,origin_operation_id)
+  values(pg_temp.gid(1),pg_temp.gid(26003),pg_temp.gid(50),pg_temp.gid(6005),'follow_attention',
+    pg_temp.request_sha(26003),pg_temp.request_sha(26003),0,'completed',clock_timestamp(),
+    'attention_changed',pg_temp.gid(24002),'Unplaced current point',pg_temp.gid(10090))$$,
+  'P0001','solmind_explorer_private_operation_conflict','direct follow_attention INSERT rejects a completed Send with no saved reply');
+select throws_ok($$insert into ai.explorer_conversation_operation(actor_user_account_id,operation_id,application_session_id,
+  conversation_id,kind,request_fingerprint,command_fingerprint,initial_revision,status,completed_at,
+  compass_route_kind,compass_route_item_id,compass_route_label,origin_operation_id)
+  values(pg_temp.gid(1),pg_temp.gid(26004),pg_temp.gid(50),pg_temp.gid(6105),'follow_attention',
+    pg_temp.request_sha(26004),pg_temp.request_sha(26004),0,'completed',clock_timestamp(),
+    'attention_changed',pg_temp.gid(25002),'Foreign current point',pg_temp.gid(10010))$$,
+  'P0001','solmind_explorer_private_operation_conflict','direct follow_attention INSERT rejects another conversation''s Send origin');
+select throws_ok($$insert into ai.explorer_conversation_operation(actor_user_account_id,operation_id,application_session_id,
+  conversation_id,kind,request_fingerprint,command_fingerprint,initial_revision,status,completed_at,
+  compass_route_kind,compass_route_item_id,compass_route_label,origin_operation_id)
+  values(pg_temp.gid(1),pg_temp.gid(26005),pg_temp.gid(60),pg_temp.gid(6005),'follow_attention',
+    pg_temp.request_sha(26005),pg_temp.request_sha(26005),0,'completed',clock_timestamp(),
+    'attention_changed',pg_temp.gid(24002),'Unplaced current point',pg_temp.gid(10010))$$,
+  'P0001','solmind_explorer_private_operation_conflict','direct follow_attention INSERT rejects a Send from a different application session');
+select throws_ok($$insert into ai.explorer_conversation_operation(actor_user_account_id,operation_id,application_session_id,
+  conversation_id,kind,request_fingerprint,command_fingerprint,initial_revision,status,completed_at,
+  compass_route_kind,compass_route_item_id,compass_route_label,origin_operation_id)
+  values(pg_temp.gid(1),pg_temp.gid(26006),pg_temp.gid(50),pg_temp.gid(6005),'follow_attention',
+    pg_temp.request_sha(26006),pg_temp.request_sha(26006),0,'completed',clock_timestamp(),
+    'attention_changed',pg_temp.gid(24002),'Unplaced current point',pg_temp.gid(24103))$$,
+  'P0001','solmind_explorer_private_operation_conflict','direct follow_attention INSERT rejects an origin that is not a Send');
+select lives_ok($$insert into ai.explorer_conversation_operation(actor_user_account_id,operation_id,application_session_id,
+  conversation_id,kind,request_fingerprint,command_fingerprint,initial_revision,status,completed_at,
+  compass_route_kind,compass_route_item_id,compass_route_label,origin_operation_id)
+  values(pg_temp.gid(1),pg_temp.gid(26007),pg_temp.gid(50),pg_temp.gid(6005),'follow_attention',
+    pg_temp.request_sha(26007),pg_temp.request_sha(26007),0,'completed',clock_timestamp(),
+    'attention_changed',pg_temp.gid(24002),'Unplaced current point',pg_temp.gid(10010))$$,
+  'direct follow_attention INSERT accepts a completed v2 Send with a saved reply in the same conversation and session');
+select ok(exists(select 1 from ai.explorer_conversation_operation
+  where actor_user_account_id=pg_temp.gid(1) and operation_id=pg_temp.gid(26007)
+    and kind='follow_attention' and status='completed' and origin_operation_id=pg_temp.gid(10010)),
+  'the valid direct follow_attention INSERT persists its exact Send origin');
 
 set local role service_role;
 select lives_ok($$set constraints all immediate$$,'all new/legacy pairs stay coherent at deferred caller boundary');

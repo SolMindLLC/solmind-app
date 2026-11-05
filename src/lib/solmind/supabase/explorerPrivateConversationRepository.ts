@@ -18,9 +18,9 @@ const PORTS = Object.freeze({
     "p_context_source_ids", "p_authorization_version", "p_intake_response_set_id", "p_prompt_version", "p_policy_version", "p_behavior_version", "p_crisis_version", "p_role_version", "p_instruction_version",
     "p_message_id", "p_snapshot_id", "p_invocation_id", "p_body", "p_context_serialization", "p_context_fingerprint_sha256", "p_request_mode", "p_trusted_response_version", "p_resource_policy_version", "p_expected_safety_version", "p_model_name"],
     columns: ["outcome", "conversation_state", "dispatch_permitted", "policy_state"] }),
-  settle: Object.freeze({ name: "solmind_settle_explorer_conversation_turn_v3", parameters: [...ACTOR, "p_conversation_id", "p_operation_id", "p_status", "p_reply_message_id", "p_reply_kind", "p_reply_body",
+  settle: Object.freeze({ name: "solmind_settle_explorer_conversation_turn_v4", parameters: [...ACTOR, "p_conversation_id", "p_operation_id", "p_status", "p_reply_message_id", "p_reply_kind", "p_reply_body",
     "p_model_level", "p_model_minor_indicated", "p_protocol_version", "p_request_mode", "p_configuration_fingerprint", "p_fallback_policy_version", "p_model_policy_version", "p_trusted_response_version", "p_resource_policy_version",
-    "p_fallback_level", "p_fallback_minor_indicated", "p_delivery_interested"], columns: ["outcome", "conversation_state", "policy_state", "saved_reply"] }),
+    "p_fallback_level", "p_fallback_minor_indicated", "p_delivery_interested", "p_attention_item_id", "p_choices"], columns: ["outcome", "conversation_state", "policy_state", "saved_reply"] }),
   mutate: Object.freeze({ name: "solmind_mutate_explorer_conversation_v3", parameters: [...ACTOR, "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint", "p_kind", "p_source_message_id", "p_item_id", "p_waypoint_id", "p_label", "p_destination", "p_meaning", "p_arrival_signal", "p_evidence"],
     columns: ["outcome", "conversation_state"] }),
   arrange: Object.freeze({ name: "solmind_confirm_explorer_compass_arrangement_v1", parameters: [...ACTOR,
@@ -68,6 +68,23 @@ function parameters(input: object, expected: readonly string[]): Readonly<Record
     if (!property?.enumerable || !("value" in property)) throw new Error(FAILURE);
     const value: unknown = property.value;
     if ((key === "p_items" || key === "p_member_item_ids" || key === "p_answers") && !Array.isArray(value)) throw new Error(FAILURE);
+    if (key === "p_choices" && value !== null) {
+      if (!Array.isArray(value) || types.isProxy(value) || Object.getPrototypeOf(value) !== Array.prototype ||
+          value.length < 1 || value.length > 3 || Reflect.ownKeys(value).length !== value.length + 1) throw new Error(FAILURE);
+      const choices: Readonly<{ label: string }>[] = [];
+      for (let index = 0; index < value.length; index++) {
+        const entry = Object.getOwnPropertyDescriptor(value, String(index));
+        if (!entry?.enumerable || !("value" in entry) || !object(entry.value) || Reflect.ownKeys(entry.value).length !== 1) throw new Error(FAILURE);
+        const field = Object.getOwnPropertyDescriptor(entry.value, "label");
+        if (!field?.enumerable || !("value" in field) || typeof field.value !== "string") throw new Error(FAILURE);
+        const label = field.value;
+        if (!label || label !== label.trim() || [...label].length > 40 ||
+            /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/u.test(label) ||
+            /[\uD800-\uDFFF]/u.test(label)) throw new Error(FAILURE);
+        choices.push(Object.freeze({ label }));
+      }
+      copied[key] = Object.freeze(choices); continue;
+    }
     if (Array.isArray(value)) {
       if (key === "p_answers") {
         if (types.isProxy(value) || Object.getPrototypeOf(value) !== Array.prototype || value.length > 3 ||

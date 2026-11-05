@@ -731,7 +731,7 @@ describe("Explicit held private AV3 context entry points", () => {
 // where the database rebuild must equal GOLDEN's content, compared as jsonb, and that content, set into the
 // context, must inspect clear.
 const sx = (n: number) => `f5120000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-const GOLDEN = '{"version":"explorer-compass-context.v1","points":[{"id":"f5120000-0000-4000-8000-000000000401","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},{"id":"f5120000-0000-4000-8000-000000000402","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},{"id":"f5120000-0000-4000-8000-000000000404","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],"priorityId":"f5120000-0000-4000-8000-000000000401","attentionId":"f5120000-0000-4000-8000-000000000402","recentRoute":[{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family"},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000401","label":"Money worries"},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep"},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family"},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep"}],"waypoints":[{"id":"f5120000-0000-4000-8000-000000000421","title":"Find a calmer morning","destination":"Find a calmer morning","meaning":"Mornings set\\nmy whole day","arrivalSignal":"I start two mornings a week without rushing","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000422","title":"Walk after dinner","destination":"Walk after dinner","meaning":"It clears my head","arrivalSignal":"I walk three evenings in one week","stage":"reached","reachedEvidence":"I walked four evenings last week"},{"id":"f5120000-0000-4000-8000-000000000423","title":"Call my sister","destination":"Call my sister","meaning":"We have drifted apart","arrivalSignal":"We talk once a week for a month","stage":"released","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000425","title":"Read before bed","destination":"Read before bed","meaning":"Screens keep me awake","arrivalSignal":"I read on three nights","stage":"formed","reachedEvidence":null}],"drafts":[]}';
+const GOLDEN = '{"version":"explorer-compass-context.v1","points":[{"id":"f5120000-0000-4000-8000-000000000401","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},{"id":"f5120000-0000-4000-8000-000000000402","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},{"id":"f5120000-0000-4000-8000-000000000404","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],"priorityId":"f5120000-0000-4000-8000-000000000401","attentionId":"f5120000-0000-4000-8000-000000000402","recentRoute":[{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000401","label":"Money worries","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":true}],"waypoints":[{"id":"f5120000-0000-4000-8000-000000000421","title":"Find a calmer morning","destination":"Find a calmer morning","meaning":"Mornings set\\nmy whole day","arrivalSignal":"I start two mornings a week without rushing","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000422","title":"Walk after dinner","destination":"Walk after dinner","meaning":"It clears my head","arrivalSignal":"I walk three evenings in one week","stage":"reached","reachedEvidence":"I walked four evenings last week"},{"id":"f5120000-0000-4000-8000-000000000423","title":"Call my sister","destination":"Call my sister","meaning":"We have drifted apart","arrivalSignal":"We talk once a week for a month","stage":"released","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000425","title":"Read before bed","destination":"Read before bed","meaning":"Screens keep me awake","arrivalSignal":"I read on three nights","stage":"formed","reachedEvidence":null}],"drafts":[]}';
 function s3State(): ExplorerConversationState {
   const base = state(); const source = base.messages[0].id;
   const at = (minute: number) => `2026-11-03T09:${String(minute).padStart(2, "0")}:00.000Z`;
@@ -779,7 +779,63 @@ function privateFixture(history: ExplorerConversationState) {
 }
 
 describe("Chat step slice S3 saved Compass and Waypoint section (private AV3 entries)", () => {
-  it("S3 golden vector: serializes the exact section after approvedContinuity and lists every included record", async () => {
+  it("S4 marks only the latest unanswered Explorer move for one brief acknowledgment", async () => {
+    const f = privateFixture(s3State());
+    const route = assembled((await f.build(f.input)).request.authorizedContext).compassContext!.recentRoute;
+    expect(route.map(event => event.actor)).toEqual(Array(5).fill("explorer"));
+    expect(route.map(event => event.awaitingReply)).toEqual([false, false, false, false, true]);
+    const answered = s3State();
+    const next = privateFixture({ ...answered, messages: [...answered.messages, {
+      id: sx(601), role: "virtualGuide", body: "Let's turn to sleep.", createdAt: "2026-11-03T09:08:01.000Z",
+    }] });
+    expect(assembled((await next.build(next.input)).request.authorizedContext).compassContext!.recentRoute
+      .every(event => event.awaitingReply === false)).toBe(true);
+  });
+
+  it("S4 distinguishes a saved Virtual Guide move without acknowledging it as an Explorer move", async () => {
+    const history = s3State();
+    const f = privateFixture({ ...history, route: history.route!.map((event, index, all) => index === all.length - 1 &&
+      event.kind === "attention_changed" ? { ...event, actor: "virtual_guide" } : event) });
+    const route = assembled((await f.build(f.input)).request.authorizedContext).compassContext!.recentRoute;
+    expect(route.at(-1)).toMatchObject({ actor: "virtual_guide", awaitingReply: false });
+    expect(route.every(event => event.awaitingReply === false)).toBe(true);
+  });
+
+  it.each([
+    ["2026-11-03T09:08:00.000000+00:00", "2026-11-03T09:08:00.000001+00:00", true],
+    ["2026-11-03T09:08:00.000001+00:00", "2026-11-03T09:08:00.000000+00:00", false],
+    ["2026-11-03T09:08:00.000Z", "2026-11-03T09:08:00.000000+00:00", false],
+  ] as const)("S4 compares reply %s and move %s with microsecond precision", async (replyAt, moveAt, awaitingReply) => {
+    const history = s3State();
+    const f = privateFixture({ ...history,
+      messages: history.messages.map(message => message.role === "virtualGuide" ? { ...message, createdAt: replyAt } : message),
+      route: history.route!.map((event, index, all) => index === all.length - 1 ? { ...event, recordedAt: moveAt } : event),
+    });
+    expect(assembled((await f.build(f.input)).request.authorizedContext).compassContext!.recentRoute.at(-1)?.awaitingReply)
+      .toBe(awaitingReply);
+  });
+
+  it("S4 does not resurrect an older acknowledgment when the latest move is on a retired point", async () => {
+    const history = s3State();
+    const f = privateFixture({ ...history, route: [...history.route!, {
+      operationId: sx(602), revision: 10, kind: "attention_changed", compassItemId: sx(403),
+      label: "Work stress", recordedAt: "2026-11-03T09:09:00.000Z",
+    }] });
+    expect(assembled((await f.build(f.input)).request.authorizedContext).compassContext!.recentRoute
+      .every(event => event.awaitingReply === false)).toBe(true);
+  });
+
+  it("S4 marks a first reply's latest Explorer move without sending stored choice labels into history", async () => {
+    const history = s3State();
+    const noReply = privateFixture({ ...history, messages: history.messages.filter(message => message.role === "explorer") });
+    expect(assembled((await noReply.build(noReply.input)).request.authorizedContext).compassContext!.recentRoute.at(-1)?.awaitingReply)
+      .toBe(true);
+    const f = privateFixture({ ...history, messages: history.messages.map(message => message.role === "virtualGuide"
+      ? { ...message, choices: [{ label: "Synthetic stored choice" }] } : message) });
+    expect((await f.build(f.input)).request.authorizedContext).not.toContain("Synthetic stored choice");
+  });
+
+  it("S3 golden vector extended in S4: serializes actor and next-reply eligibility with exact sources", async () => {
     const f = privateFixture(s3State()); const result = await f.build(f.input);
     const serialized = result.request.authorizedContext;
     const context = assembled(serialized);
@@ -870,7 +926,8 @@ describe("Chat step slice S3 saved Compass and Waypoint section (private AV3 ent
       { kind: "attention_changed", pointId: sx(402), label: "Evening rest" },
       { kind: "attention_changed", pointId: sx(404), label: "Family" },
       { kind: "attention_changed", pointId: sx(402), label: "Evening rest" },
-      { kind: "attention_changed", pointId: sx(402), label: "Evening rest" }]);
+      { kind: "attention_changed", pointId: sx(402), label: "Evening rest" }]
+      .map((event, index, all) => ({ ...event, actor: "explorer", awaitingReply: index === all.length - 1 })));
     expect(serialized).not.toContain("Sleep");
     // The dormant matcher, given the old wording as excluded content, inspects the context clear.
     expect(inspectExplorerContextExclusions({ serializedContext: serialized, includedSourceIds: result.evidence.p_context_source_ids,

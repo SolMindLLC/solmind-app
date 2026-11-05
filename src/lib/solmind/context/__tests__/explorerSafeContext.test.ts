@@ -909,6 +909,33 @@ function at(section: Record<string, unknown>, key: string, index: number): Recor
 }
 
 describe("Chat step slice S3 saved Compass and Waypoint section", () => {
+  it("S4 preserves the paired attention actor and next-reply eligibility without changing historical bytes", () => {
+    const input = withCompass(section => {
+      Object.assign(at(section, "recentRoute", 0), { actor: "virtual_guide", awaitingReply: false });
+      Object.assign(at(section, "recentRoute", 1), { actor: "explorer", awaitingReply: true });
+    });
+    const route = assembleExplorerSafeContext(input).context.compassContext?.recentRoute;
+    expect(route).toEqual([
+      { kind: "attention_changed", pointId: COMPASS_IDS.other, label: "Family", actor: "virtual_guide", awaitingReply: false },
+      { kind: "attention_changed", pointId: COMPASS_IDS.unplaced, label: "Sleep", actor: "explorer", awaitingReply: true },
+    ]);
+    expect(Object.isFrozen(route?.[1])).toBe(true);
+    expect(assembleExplorerSafeContext(compassInput()).context.compassContext?.recentRoute[0]).not.toHaveProperty("actor");
+  });
+
+  it.each([
+    { actor: "explorer" }, { awaitingReply: false }, { actor: "admin", awaitingReply: false },
+    { actor: "explorer", awaitingReply: "true" }, { actor: "virtual_guide", awaitingReply: true },
+  ])("S4 refuses incomplete or contradictory attention provenance (%j)", extra => {
+    expectCode(withCompass(section => { Object.assign(at(section, "recentRoute", 1), extra); }), "explorer_context_invalid_envelope");
+  });
+
+  it("S4 refuses acknowledging an older move when the recent Route contains a newer one", () => {
+    expectCode(withCompass(section => {
+      Object.assign(at(section, "recentRoute", 0), { actor: "explorer", awaitingReply: true });
+    }), "explorer_context_invalid_envelope");
+  });
+
   it("S3-01 serializes the section after approvedContinuity with exact key order and normalized text", () => {
     const result = assembleExplorerSafeContext(compassInput());
     expect(Object.keys(result.context)).toEqual([

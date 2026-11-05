@@ -148,7 +148,14 @@ create function pg_temp.compass_context() returns jsonb language sql stable as $
     'priorityId',(select s.priority_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.gid(6005)),
     'attentionId',(select s.attention_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.gid(6005)),
     'recentRoute',coalesce((select jsonb_agg(jsonb_build_object('kind',r.compass_route_kind,'pointId',r.compass_route_item_id,
-      'label',ai.solmind_exclusion_normalize_v3(r.current_label)) order by r.initial_revision,r.operation_id)
+      'label',ai.solmind_exclusion_normalize_v3(r.current_label),
+      'actor',case when r.kind='follow_attention' then 'virtual_guide' else 'explorer' end,
+      'awaitingReply',r.kind='set_attention'
+        and r.operation_id=(select last_move.operation_id from ai.explorer_conversation_operation last_move
+          where last_move.conversation_id=pg_temp.gid(6005) and last_move.compass_route_kind='attention_changed'
+          order by last_move.initial_revision desc,last_move.operation_id desc limit 1)
+        and not exists(select 1 from ai.ai_interaction_message reply where reply.ai_interaction_session_id=pg_temp.gid(6005)
+          and reply.sender_type='ai' and reply.created_at>=r.completed_at)) order by r.initial_revision,r.operation_id)
       from (select o.*,c.label as current_label from ai.explorer_conversation_operation o join ai.explorer_conversation_compass_item c
           on c.conversation_id=o.conversation_id and c.item_id=o.compass_route_item_id and c.merged_into_item_id is null
         where o.conversation_id=pg_temp.gid(6005) and o.compass_route_kind='attention_changed'
@@ -206,7 +213,7 @@ begin
   select revision into rev from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005);
   return query select * from public.solmind_observe_explorer_conversation_fallback_v3(
     pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),pg_temp.gid(10000+slot*10),pg_temp.gid(10004+slot*10),
-    rev,methodology.hash_json(jsonb_build_array('synthetic-command',slot)),'explorer-safety-reply.v1',
+    rev,methodology.hash_json(jsonb_build_array('synthetic-command',slot)),'explorer-safety-reply.v2',
     'synthetic-fallback.v1','synthetic-model-policy.v1',repeat('A',64),lvl::smallint,minor_flag);
 end $$;
 create function pg_temp.prepare_private(slot_n integer,lvl integer default 0,minor_flag boolean default false,
@@ -240,22 +247,23 @@ begin
     upper(encode(extensions.digest(convert_to(saved.serialization,'UTF8'),'sha256'),'hex')),saved.source_ids,saved.authority,
     pg_temp.gid(52),pg_temp.gid(1001),'synthetic-prompt.v1','synthetic-policy.v1','synthetic-behavior.v1','synthetic-crisis.v1',
     'synthetic-role.v1','synthetic-instruction.v1',methodology.hash_json(jsonb_build_array('synthetic-command',slot_n)),
-    pg_temp.gid(10004+slot_n*10),pg_temp.gid(1000),saved.methodology_sha,saved.mv,'explorer-safety-reply.v1',saved.mode,
+    pg_temp.gid(10004+slot_n*10),pg_temp.gid(1000),saved.methodology_sha,saved.mv,'explorer-safety-reply.v2',saved.mode,
     repeat('A',64),'synthetic-fallback.v1','synthetic-model-policy.v1','synthetic-trusted.v1','synthetic-resources.v1',
     saved.safety_version,saved.fallback,saved.minor,selected_model);
 end $$;
 create function pg_temp.settle_private(slot_n integer,model integer default 0,minor_flag boolean default false,
   kind text default 'ordinary',body text default 'Synthetic saved reply.',status_name text default 'completed',
-  interested boolean default true,fallback_override integer default null)
+  interested boolean default true,fallback_override integer default null,attention_n integer default null,choices jsonb default null)
 returns table(outcome text,conversation_state jsonb,policy_state jsonb,saved_reply boolean)
 language sql as $$
-  select * from public.solmind_settle_explorer_conversation_turn_v3(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),
+  select * from public.solmind_settle_explorer_conversation_turn_v4(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),
     pg_temp.gid(10000+slot_n*10),status_name,case when kind='none' then null else pg_temp.gid(10005+slot_n*10) end,
-    kind,case when kind='none' then null else body end,model::smallint,minor_flag,'explorer-safety-reply.v1',
+    kind,case when kind='none' then null else body end,model::smallint,minor_flag,'explorer-safety-reply.v2',
     (select mode from lifecycle_intent where slot=slot_n),repeat('A',64),'synthetic-fallback.v1',
     'synthetic-model-policy.v1','synthetic-trusted.v1','synthetic-resources.v1',
     coalesce(fallback_override,(select fallback from lifecycle_intent where slot=slot_n))::smallint,
-    (select minor from lifecycle_intent where slot=slot_n),interested)
+    (select minor from lifecycle_intent where slot=slot_n),interested,
+    case when attention_n is null then null else pg_temp.gid(attention_n) end,choices)
 $$;
 
 -- Establish the existing synthetic governed source fixture. No provider is called;
@@ -359,8 +367,9 @@ select is((select outcome from pg_temp.mutate(24201,'confirm_priority',null,2300
 select is((select outcome from pg_temp.mutate(24202,'set_attention',null,23002)),'ok','old attention command may select another visible point');
 create temp table old_route as select jsonb_agg(v order by ord) value
   from jsonb_array_elements(pg_temp.read_state()->'route') with ordinality r(v,ord) where v->>'kind'<>'arrangement_confirmed';
-select ok((select bool_and((select count(*) from jsonb_object_keys(v))=6)
-  from jsonb_array_elements((select value from old_route)) v),'predecessor Priority/attention Route events keep their six-key shape');
+select ok((select bool_and((select count(*) from jsonb_object_keys(v))=case when v->>'kind'='attention_changed' then 7 else 6 end
+    and (v->>'kind'<>'attention_changed' or v->>'actor'='explorer'))
+  from jsonb_array_elements((select value from old_route)) v),'Priority Route keeps six keys and attention adds only its Explorer actor');
 create temp table reoriented_request as select jsonb_set(jsonb_set((select items from initial_request),'{0,anchor}','"upper_left"'),'{1,anchor}','"apex"') items;
 select is((select outcome from pg_temp.arrange(24102,23002,(select items from reoriented_request))),'ok',
   'explicit batch atomically swaps visible anchors and reorients Priority to the apex');
@@ -372,7 +381,7 @@ select ok((select compass_arrangement->>'previousPriorityId'=pg_temp.gid(23001):
   from ai.explorer_conversation_operation where operation_id=pg_temp.gid(24102)),
   'one meaningful arrangement snapshot records actual prior and new Priority');
 select is((select jsonb_agg(v order by ord) from jsonb_array_elements(pg_temp.read_state()->'route') with ordinality r(v,ord)
-  where v->>'kind'<>'arrangement_confirmed'),(select value from old_route),'new arrangement leaves original six-key Route facts unchanged');
+  where v->>'kind'<>'arrangement_confirmed'),(select value from old_route),'new arrangement leaves original Route facts and attention actor unchanged');
 create temp table saved_arranged_state as select pg_temp.read_state() value;
 select is(pg_temp.read_state(),(select value from saved_arranged_state),'owned reload preserves all confirmed placement and history');
 select is((select outcome from pg_temp.arrange(24102,23002,
@@ -490,7 +499,7 @@ select ok((pg_temp.read_state()->>'attentionId')::uuid=pg_temp.gid(23009)
   'pointing at an Other paths point moves only the needle, in one revision, and keeps the Priority');
 select is(pg_temp.read_state()->'route'->-1,
   (select jsonb_build_object('operationId',operation_id,'revision',initial_revision+1,'kind','attention_changed',
-    'compassItemId',pg_temp.gid(23009),'label','Saved ninth point','recordedAt',completed_at)
+    'compassItemId',pg_temp.gid(23009),'label','Saved ninth point','recordedAt',completed_at,'actor','explorer')
     from ai.explorer_conversation_operation where operation_id=pg_temp.gid(24701)),
   'the Route records the move to the Other paths point with its saved label');
 select is((select compass_route_kind||'|'||compass_route_label from ai.explorer_conversation_operation where operation_id=pg_temp.gid(24701)),
@@ -499,7 +508,7 @@ select is((select outcome from pg_temp.mutate(24702,'set_attention',null,23010))
   'the needle may point at a point not yet arranged once a Compass is arranged');
 select is(pg_temp.read_state()->'route'->-1,
   (select jsonb_build_object('operationId',operation_id,'revision',initial_revision+1,'kind','attention_changed',
-    'compassItemId',pg_temp.gid(23010),'label','Saved point 10','recordedAt',completed_at)
+    'compassItemId',pg_temp.gid(23010),'label','Saved point 10','recordedAt',completed_at,'actor','explorer')
     from ai.explorer_conversation_operation where operation_id=pg_temp.gid(24702)),
   'the Route records the move to the point not yet arranged with its saved label');
 select ok((select compass_anchor is null and relative_emphasis is null from ai.explorer_conversation_compass_item where item_id=pg_temp.gid(23010))

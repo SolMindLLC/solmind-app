@@ -21,6 +21,8 @@ export type ExplorerConversationMessage = Readonly<{
   role: "explorer" | "virtualGuide";
   body: string;
   createdAt: string;
+  // Stored reply suggestions only. S4 does not render or execute them.
+  choices?: readonly Readonly<{ label: string }>[];
 }>;
 export type ExplorerConversationCompassItem = Readonly<{
   id: string;
@@ -82,6 +84,8 @@ export type ExplorerConversationRouteEvent = Readonly<{
   compassItemId: string;
   label: string;
   recordedAt: string;
+  // Historical attention events omit this key; those were Explorer commands.
+  actor?: "explorer" | "virtual_guide";
 }> | Readonly<{
   operationId: string; revision: number; kind: "arrangement_confirmed";
   previousPriorityId: string | null; priorityId: string | null;
@@ -380,11 +384,25 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
   const messages: ExplorerConversationMessage[] = [];
   const messageIds = new Set<string>();
   for (const message of state.messages) {
-    if (!object(message) || !keys(message, ["id", "role", "body", "createdAt"]) || !id(message.id) || messageIds.has(message.id) ||
+    if (!object(message)) return null;
+    const hasChoices = Object.hasOwn(message, "choices");
+    if (!keys(message, ["id", "role", "body", "createdAt", ...(hasChoices ? ["choices"] : [])]) || !id(message.id) || messageIds.has(message.id) ||
         !["explorer", "virtualGuide"].includes(message.role as string) || !text(message.body, EXPLORER_CONVERSATION_LIMITS.messageCharacters, true) ||
         !instant(message.createdAt)) return null;
+    const choices: Readonly<{ label: string }>[] = [];
+    if (hasChoices) {
+      if (message.role !== "virtualGuide" || !Array.isArray(message.choices) ||
+          message.choices.length < 1 || message.choices.length > 3) return null;
+      for (const choice of message.choices) {
+        if (!object(choice) || !keys(choice, ["label"]) || Reflect.ownKeys(choice).length !== 1 ||
+            !text(choice.label, 80) || choice.label !== choice.label.trim() || [...choice.label].length > 40 ||
+            /[\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/.test(choice.label)) return null;
+        choices.push(Object.freeze({ label: choice.label }));
+      }
+    }
     messageIds.add(message.id);
-    messages.push(Object.freeze({ id: message.id, role: message.role as ExplorerConversationMessage["role"], body: message.body, createdAt: message.createdAt }));
+    messages.push(Object.freeze({ id: message.id, role: message.role as ExplorerConversationMessage["role"], body: message.body,
+      createdAt: message.createdAt, ...(hasChoices ? { choices: Object.freeze(choices) } : {}) }));
   }
   const compassItems: ExplorerConversationCompassItem[] = [];
   const compassIds = new Set<string>();
@@ -509,13 +527,16 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
           previousPriorityId: event.previousPriorityId as string | null, priorityId: event.priorityId as string | null,
           items: Object.freeze(items), recordedAt: event.recordedAt }));
       } else {
-        if (!keys(event, ["operationId", "revision", "kind", "compassItemId", "label", "recordedAt"]) ||
+        const hasActor = Object.hasOwn(event, "actor");
+        if (!keys(event, ["operationId", "revision", "kind", "compassItemId", "label", "recordedAt", ...(hasActor ? ["actor"] : [])]) ||
           !["priority_confirmed", "priority_reoriented", "attention_changed"].includes(event.kind as string) ||
           !id(event.compassItemId) || !compassIds.has(event.compassItemId) ||
-          !text(event.label, EXPLORER_CONVERSATION_LIMITS.labelCharacters)) return null;
+          !text(event.label, EXPLORER_CONVERSATION_LIMITS.labelCharacters) ||
+          (hasActor && (event.kind !== "attention_changed" || !["explorer", "virtual_guide"].includes(event.actor as string)))) return null;
       route.push(Object.freeze({ operationId: event.operationId, revision: event.revision,
         kind: event.kind as "priority_confirmed" | "priority_reoriented" | "attention_changed", compassItemId: event.compassItemId,
-        label: event.label, recordedAt: event.recordedAt }));
+        label: event.label, recordedAt: event.recordedAt,
+        ...(hasActor ? { actor: event.actor as "explorer" | "virtual_guide" } : {}) }));
       }
       routeIds.add(event.operationId);
       previousRevision = event.revision;

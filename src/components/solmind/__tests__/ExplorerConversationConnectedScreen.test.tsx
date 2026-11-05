@@ -214,6 +214,13 @@ beforeEach(() => {
 afterEach(() => { expect(vi.mocked(globalThis.fetch).mock.calls.length).toBe(0); vi.restoreAllMocks(); });
 
 describe("connected Explorer conversation screen", () => {
+  it("S4 keeps saved reply choices out of the screen until S6", () => {
+    const original = savedState();
+    const withChoices = savedState({ messages: original.messages.map(message => message.role === "virtualGuide"
+      ? { ...message, choices: [{ label: "Synthetic S4 hidden choice" }] } : message) });
+    expect(render(view({ state: withChoices }))).toBe(render(view({ state: original })));
+  });
+
   it("CC01 shows the saved messages in order, as plain text, with their speakers and times", () => {
     const html = render();
     const list = /<ol aria-label="Saved conversation"[^>]*>([\s\S]*?)<\/ol>/.exec(html)?.[1] ?? "";

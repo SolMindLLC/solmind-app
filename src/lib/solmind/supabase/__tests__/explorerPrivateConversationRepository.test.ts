@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 import { createExplorerPrivateConversationRepository } from "../explorerPrivateConversationRepository";
+import { parseExplorerSafetyReplyBody } from "../../virtual-guide/explorerSafetyReplyContract";
 import type { ExplorerPrivateEnsureParameters, ExplorerPrivateObserveParameters, ExplorerPrivatePrepareParameters,
   ExplorerPrivateSettleParameters, ExplorerPrivateMutateParameters, ExplorerPrivateArrangeParameters, ExplorerPrivateEndParameters, ExplorerPrivateReviewParameters } from "../../virtual-guide/explorerPrivateConversationComposition";
 
@@ -10,7 +11,7 @@ const METHODOLOGY = { p_methodology_context_pack_id: UUID, p_methodology_context
   p_methodology_content_sha256: SHA, p_methodology_authorization_version: "MV1:" + SHA };
 function ensure(): ExplorerPrivateEnsureParameters { return { ...ACTOR, ...METHODOLOGY, p_candidate_conversation_id: UUID, p_expected_revision: 0, p_configuration_fingerprint: SHA }; }
 function observe(): ExplorerPrivateObserveParameters { return { ...ACTOR, p_conversation_id: UUID, p_operation_id: UUID,
-  p_logical_operation_id: UUID, p_expected_revision: 0, p_command_fingerprint: SHA, p_protocol_version: "explorer-safety-reply.v1",
+  p_logical_operation_id: UUID, p_expected_revision: 0, p_command_fingerprint: SHA, p_protocol_version: "explorer-safety-reply.v2",
   p_fallback_policy_version: "synthetic-fallback.v1", p_model_policy_version: "synthetic-model.v1", p_configuration_fingerprint: SHA,
   p_fallback_level: 0, p_fallback_minor_indicated: false }; }
 function prepare(): ExplorerPrivatePrepareParameters { return { ...observe(), ...METHODOLOGY,
@@ -21,9 +22,9 @@ function prepare(): ExplorerPrivatePrepareParameters { return { ...observe(), ..
   p_trusted_response_version: "synthetic.v1", p_resource_policy_version: "synthetic.v1", p_expected_safety_version: 0, p_model_name: "gpt-5.6-luna" }; }
 function settle(): ExplorerPrivateSettleParameters { return { ...ACTOR, p_conversation_id: UUID, p_operation_id: UUID,
   p_status: "completed", p_reply_message_id: null, p_reply_kind: "none", p_reply_body: null, p_model_level: 0, p_model_minor_indicated: false,
-  p_protocol_version: "explorer-safety-reply.v1", p_request_mode: "classification_only", p_configuration_fingerprint: SHA,
+  p_protocol_version: "explorer-safety-reply.v2", p_request_mode: "classification_only", p_configuration_fingerprint: SHA,
   p_fallback_policy_version: "synthetic.v1", p_model_policy_version: "synthetic.v1", p_trusted_response_version: "synthetic.v1",
-  p_resource_policy_version: "synthetic.v1", p_fallback_level: 0, p_fallback_minor_indicated: false, p_delivery_interested: false }; }
+  p_resource_policy_version: "synthetic.v1", p_fallback_level: 0, p_fallback_minor_indicated: false, p_delivery_interested: false, p_attention_item_id: null, p_choices: null }; }
 function mutate(): ExplorerPrivateMutateParameters { return { ...ACTOR, p_conversation_id: UUID, p_operation_id: UUID,
   p_expected_revision: 0, p_command_fingerprint: SHA, p_kind: "set_attention", p_source_message_id: null, p_item_id: UUID,
   p_waypoint_id: null, p_label: null, p_destination: null, p_meaning: null, p_arrival_signal: null, p_evidence: null }; }
@@ -64,7 +65,7 @@ describe("Closed private Explorer RPC repository (synthetic client)", () => {
     const p = fixture({ outcome: "ok", conversation_state: null, dispatch_permitted: false, policy_state: null }); await p.repository.prepare(prepare());
     expect(p.rpc).toHaveBeenCalledWith("solmind_prepare_explorer_conversation_turn_v3", prepare());
     const s = fixture({ outcome: "ok", conversation_state: null, policy_state: null, saved_reply: false }); await s.repository.settle(settle());
-    expect(s.rpc).toHaveBeenCalledWith("solmind_settle_explorer_conversation_turn_v3", settle());
+    expect(s.rpc).toHaveBeenCalledWith("solmind_settle_explorer_conversation_turn_v4", settle());
     const m = fixture({ outcome: "ok", conversation_state: null }); await m.repository.mutate!(mutate());
     expect(m.rpc).toHaveBeenCalledWith("solmind_mutate_explorer_conversation_v3", mutate());
   });
@@ -371,5 +372,70 @@ describe("hard-stop pause outcomes and the pause read (product-limits slice 2b)"
     const lost = fixture(null); lost.abortSignal.mockRejectedValue(new Error("private database detail"));
     await expect(lost.repository.pause(ACTOR_INPUT)).rejects.toThrowError("explorer_private_repository_unavailable");
     expect(lost.rpc).toHaveBeenCalledOnce();
+  });
+});
+
+describe("S4 exact v4 settle capability", () => {
+  it("settles parser-produced choices with edge spaces, 40 supplementary characters and an interior no-break space without throwing", async () => {
+    const supplementaryLabel = "\u{1F642}".repeat(40);
+    const noBreakSpaceLabel = "Show\u00a0me around";
+    const replyBody = "Synthetic reply only.";
+    const observation = parseExplorerSafetyReplyBody(JSON.stringify({
+      protocol: "explorer-safety-reply.v2",
+      classification: { level: 0, minorIndicated: false },
+      candidateReply: { content: replyBody },
+      choices: [{ label: " Begin " }, { label: supplementaryLabel }, { label: noBreakSpaceLabel }],
+    }), "classification_and_reply");
+    expect(observation.candidate).toEqual({ kind: "usable", content: replyBody });
+    expect(observation.choices).toEqual([
+      { label: "Begin" }, { label: supplementaryLabel }, { label: noBreakSpaceLabel },
+    ]);
+    const row = { outcome: "ok", conversation_state: null, policy_state: null, saved_reply: true };
+    const f = fixture(row);
+    const input: ExplorerPrivateSettleParameters = {
+      ...settle(), p_reply_message_id: UUID, p_reply_kind: "ordinary", p_reply_body: replyBody,
+      p_model_level: observation.classification.level, p_model_minor_indicated: observation.classification.minorIndicated,
+      p_request_mode: "classification_and_reply", p_delivery_interested: true, p_choices: observation.choices ?? null,
+    };
+    await expect(f.repository.settle(input)).resolves.toEqual(row);
+    expect(f.rpc).toHaveBeenCalledExactlyOnceWith("solmind_settle_explorer_conversation_turn_v4", input);
+    expect((f.rpc.mock.calls[0][1] as ExplorerPrivateSettleParameters).p_choices).toEqual(observation.choices);
+    expect(f.abortSignal).toHaveBeenCalledOnce();
+  });
+  it("copies and freezes choices with the exact 22 arguments and optional needle", async () => {
+    const f = fixture({ outcome: "ok", conversation_state: null, policy_state: null, saved_reply: true });
+    const choices = [{ label: "Show me around" }, { label: "\u{1F642}".repeat(40) }];
+    const input = { ...settle(), p_attention_item_id: UUID, p_choices: choices };
+    await f.repository.settle(input);
+    expect(f.rpc).toHaveBeenCalledExactlyOnceWith("solmind_settle_explorer_conversation_turn_v4", input);
+    const copied = f.rpc.mock.calls[0][1] as ExplorerPrivateSettleParameters;
+    expect(Object.keys(copied)).toHaveLength(22);
+    expect(copied.p_choices).not.toBe(choices); expect(copied.p_choices?.[0]).not.toBe(choices[0]);
+    expect(Object.isFrozen(copied.p_choices)).toBe(true); expect(Object.isFrozen(copied.p_choices?.[0])).toBe(true);
+    choices[0].label = "Changed";
+    expect(copied.p_choices?.[0].label).toBe("Show me around");
+  });
+  it("rejects malformed optional arguments without calling the database", async () => {
+    for (const p_choices of [[], [{ label: "" }], [{ label: "x".repeat(41) }], [{ label: " two " }],
+      [{ label: "line\nbreak" }], [{ label: "bad\u200btext" }], [{ label: "\ud800" }],
+      [{ label: "One", action: "untrusted" }], [{ label: "One" }, { label: "Two" }, { label: "Three" }, { label: "Four" }], "not an array"]) {
+      const f = fixture(null);
+      await expect(f.repository.settle({ ...settle(), p_choices } as unknown as ExplorerPrivateSettleParameters)).rejects.toThrow("explorer_private_repository_unavailable");
+      expect(f.rpc).not.toHaveBeenCalled();
+    }
+    const f = fixture(null); const { p_attention_item_id: omitted, ...input } = settle(); void omitted;
+    await expect(f.repository.settle(input as ExplorerPrivateSettleParameters)).rejects.toThrow(); expect(f.rpc).not.toHaveBeenCalled();
+  });
+  it("rejects choice accessors and proxies without evaluating them", async () => {
+    const getter = vi.fn(() => "Synthetic label"); const label = {};
+    Object.defineProperty(label, "label", { enumerable: true, get: getter });
+    const index = [{ label: "Synthetic label" }]; Object.defineProperty(index, "0", { enumerable: true, get: getter });
+    const expanded = [{ label: "Synthetic label" }]; Object.defineProperty(expanded, "extra", { value: true });
+    for (const p_choices of [[label], index, expanded, new Array(1), new Proxy([{ label: "Synthetic label" }], { get: getter })]) {
+      const f = fixture(null);
+      await expect(f.repository.settle({ ...settle(), p_choices } as unknown as ExplorerPrivateSettleParameters)).rejects.toThrow();
+      expect(f.rpc).not.toHaveBeenCalled();
+    }
+    expect(getter).not.toHaveBeenCalled();
   });
 });

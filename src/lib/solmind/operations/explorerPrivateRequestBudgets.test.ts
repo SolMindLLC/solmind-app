@@ -28,7 +28,7 @@ const ENSURE: ExplorerPrivateEnsureParameters = Object.freeze({ ...ACTOR_PARAMET
   p_candidate_conversation_id: ID, p_expected_revision: 1, p_configuration_fingerprint: SHA });
 const OBSERVE: ExplorerPrivateObserveParameters = Object.freeze({ ...ACTOR_PARAMETERS, p_conversation_id: ID,
   p_operation_id: ID, p_logical_operation_id: ID, p_expected_revision: 1, p_command_fingerprint: SHA,
-  p_protocol_version: "explorer-safety-reply.v1", p_fallback_policy_version: "synthetic-fallback.v1",
+  p_protocol_version: "explorer-safety-reply.v2", p_fallback_policy_version: "synthetic-fallback.v1",
   p_model_policy_version: "synthetic-model.v1", p_configuration_fingerprint: SHA,
   p_fallback_level: 0, p_fallback_minor_indicated: false });
 const EVIDENCE = Object.freeze({ p_context_source_ids: [ID], p_authorization_version: "AV3:" + SHA,
@@ -42,11 +42,11 @@ const PREPARE: ExplorerPrivatePrepareParameters = Object.freeze({ ...OBSERVE, ..
   p_resource_policy_version: "synthetic-resources.v1", p_expected_safety_version: 0, p_model_name: "gpt-5.6-luna" });
 const SETTLE: ExplorerPrivateSettleParameters = Object.freeze({ ...ACTOR_PARAMETERS, p_conversation_id: ID,
   p_operation_id: ID, p_status: "completed", p_reply_message_id: null, p_reply_kind: "none", p_reply_body: null,
-  p_model_level: 4, p_model_minor_indicated: true, p_protocol_version: "explorer-safety-reply.v1",
+  p_model_level: 4, p_model_minor_indicated: true, p_protocol_version: "explorer-safety-reply.v2",
   p_request_mode: "classification_only", p_configuration_fingerprint: SHA,
   p_fallback_policy_version: "synthetic-fallback.v1", p_model_policy_version: "synthetic-model.v1",
   p_trusted_response_version: "synthetic-trusted.v1", p_resource_policy_version: "synthetic-resources.v1",
-  p_fallback_level: 3, p_fallback_minor_indicated: false, p_delivery_interested: false });
+  p_fallback_level: 3, p_fallback_minor_indicated: false, p_delivery_interested: false, p_attention_item_id: null, p_choices: null });
 const MUTATE: ExplorerPrivateMutateParameters = Object.freeze({ ...ACTOR_PARAMETERS, p_conversation_id: ID,
   p_operation_id: ID, p_expected_revision: 1, p_command_fingerprint: SHA, p_kind: "confirm_reached",
   p_source_message_id: null, p_item_id: null, p_waypoint_id: ID, p_label: null, p_destination: null,

@@ -74,7 +74,8 @@ select ok(
   (select bool_and(has_function_privilege('service_role', fn_oid, 'EXECUTE') =
       (proname not in ('solmind_prepare_virtual_guide_predispatch',
         'solmind_prepare_explorer_conversation_turn','solmind_prepare_governed_explorer_conversation_turn',
-        'solmind_complete_explorer_conversation_turn','solmind_mutate_explorer_conversation')
+        'solmind_complete_explorer_conversation_turn','solmind_mutate_explorer_conversation',
+        'solmind_settle_explorer_conversation_turn_v3')
        and fn_oid not in (
          'public.solmind_prepare_explorer_conversation_turn_v3(uuid,uuid,uuid,uuid,integer,uuid,uuid,uuid,text,text,text,uuid[],text,uuid,uuid,text,text,text,text,text,text,text,uuid,uuid,text,text,text,text,text,text,text,text,text,bigint,smallint,boolean)'::regprocedure,
          'public.solmind_prepare_methodology_screen(uuid,uuid,uuid,uuid,uuid,uuid,text,text,text,text)'::regprocedure)))

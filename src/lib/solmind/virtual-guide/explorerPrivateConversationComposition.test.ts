@@ -17,7 +17,7 @@ const ID = { actor: "00000000-0000-4000-8000-000000000001", app: "00000000-0000-
 const SHA = "A".repeat(64);
 const ACTOR = { accountId: ID.actor, applicationSessionId: ID.app };
 const POLICY = { known: true, contractVersion: "explorer-conversation-safety.v1", restrictedLevel: null, adultReflectionStopped: false, version: 0 };
-const RAW = JSON.stringify({ protocol: "explorer-safety-reply.v1", classification: { level: 0, minorIndicated: false }, candidateReply: { content: "One saved synthetic reply." } });
+const RAW = JSON.stringify({ protocol: "explorer-safety-reply.v2", classification: { level: 0, minorIndicated: false }, candidateReply: { content: "One saved synthetic reply." } });
 function state(conversationId: string | null): ExplorerConversationState {
   return { version: "explorer-conversation.v1", conversationId, revision: 0, pendingTurn: false, providerState: "unavailable",
     messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] };
@@ -39,7 +39,7 @@ function fixture(contextVersion: string = PRIVATE_CONTEXT_VERSION) {
   const observe = vi.fn(async (): Promise<ExplorerPrivateRpcRow> => { order.push("observe"); return { outcome: "ok", policy_state: policy }; });
   const prepare = vi.fn(async (parameters: ExplorerPrivatePrepareParameters): Promise<ExplorerPrivateRpcRow> => {
     order.push("prepare"); prepared = parameters; current = { ...current, revision: 1, pendingTurn: true,
-      messages: [{ id: parameters.p_message_id, role: "explorer", body: parameters.p_body, createdAt: "2026-10-25T18:00:00Z" }] };
+      messages: [...current.messages, { id: parameters.p_message_id, role: "explorer", body: parameters.p_body, createdAt: "2026-10-25T18:00:00Z" }] };
     return { outcome: "ok", conversation_state: current, dispatch_permitted: true, policy_state: policy }; });
   const settle = vi.fn(async (parameters: ExplorerPrivateSettleParameters): Promise<ExplorerPrivateRpcRow> => {
     order.push("settle"); current = { ...current, revision: 2, pendingTurn: false,
@@ -142,7 +142,7 @@ describe("Held private Explorer controller: explicit synthetic ports only", () =
     expect(output.result.ok && output.result.state.pendingTurn).toBe(true);
   });
   it("valid model classification survives unusable prose as one completed/none terminal", async () => {
-    const f = fixture(); f.generate.mockResolvedValue(JSON.stringify({ protocol: "explorer-safety-reply.v1", classification: { level: 2, minorIndicated: false }, candidateReply: { content: "\ud800" } }));
+    const f = fixture(); f.generate.mockResolvedValue(JSON.stringify({ protocol: "explorer-safety-reply.v2", classification: { level: 2, minorIndicated: false }, candidateReply: { content: "\ud800" } }));
     await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
     expect(f.settle).toHaveBeenCalledOnce(); expect(f.settle.mock.calls[0][0]).toMatchObject({ p_status: "completed", p_reply_kind: "none", p_model_level: 2,
       p_reply_message_id: null, p_reply_body: null });
@@ -154,7 +154,7 @@ describe("Held private Explorer controller: explicit synthetic ports only", () =
     const dependencies = { ...f.dependencies, provider: { generate: vi.fn((_request: unknown, signal: AbortSignal) => { ownedSignal = signal; started(); return pending; }) } };
     const run = commandExplorerPrivateConversation({ command: send(), dependencies, signal: controller.signal });
     await startedPromise; controller.abort(); expect(ownedSignal.aborted).toBe(false);
-    resolve(JSON.stringify({ protocol: "explorer-safety-reply.v1", classification: { level: 4, minorIndicated: true }, candidateReply: null }));
+    resolve(JSON.stringify({ protocol: "explorer-safety-reply.v2", classification: { level: 4, minorIndicated: true }, candidateReply: null }));
     const output = await run;
     expect(f.settle).toHaveBeenCalledOnce(); expect(f.settle.mock.calls[0][0]).toMatchObject({ p_status: "completed", p_model_level: 4,
       p_model_minor_indicated: true, p_delivery_interested: false, p_reply_kind: "none" });
@@ -167,7 +167,7 @@ describe("Held private Explorer controller: explicit synthetic ports only", () =
     expect(f.settle).toHaveBeenCalledOnce(); expect(output.assistance?.kind).toBe("support"); expect(JSON.stringify(output)).not.toContain("One saved synthetic reply.");
   });
   it("retains a model-only critical observation even when logout prevents private state return", async () => {
-    const f = fixture(); f.generate.mockResolvedValue(JSON.stringify({ protocol: "explorer-safety-reply.v1", classification: { level: 4, minorIndicated: false }, candidateReply: null }));
+    const f = fixture(); f.generate.mockResolvedValue(JSON.stringify({ protocol: "explorer-safety-reply.v2", classification: { level: 4, minorIndicated: false }, candidateReply: null }));
     f.settle.mockResolvedValue({ outcome: "ok", conversation_state: null, policy_state: null, saved_reply: false });
     const authenticate = vi.fn().mockResolvedValueOnce(ACTOR).mockResolvedValue(null);
     const output = await commandExplorerPrivateConversation({ command: send(), dependencies: { ...f.dependencies, authenticate } });
@@ -217,7 +217,7 @@ describe("Held private Explorer controller: explicit synthetic ports only", () =
     });
   it("a hung renderer is canceled by request and cannot prevent actual positive settlement", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
-    const f = fixture(); f.generate.mockResolvedValue(JSON.stringify({ protocol: "explorer-safety-reply.v1", classification: { level: 3, minorIndicated: false }, candidateReply: null }));
+    const f = fixture(); f.generate.mockResolvedValue(JSON.stringify({ protocol: "explorer-safety-reply.v2", classification: { level: 3, minorIndicated: false }, candidateReply: null }));
     type Rendered = Awaited<ReturnType<NonNullable<ExplorerPrivateConversationDependencies["renderer"]>["render"]>>;
     let started!: () => void; let finish!: (value: Rendered) => void; let rendererSignal!: AbortSignal;
     const startedPromise = new Promise<void>((yes) => { started = yes; });
@@ -262,7 +262,7 @@ describe("Root cycle1 pinned policy and remembered facts", () => {
   it.each([[4, false, "support"], [null, true, "adult_policy"], [4, true, "support"]] as const)(
     "retains prior floor%s/adult%s through authority-loss null projection", async (floor, adult, kind) => {
       const f = fixture(); f.setPolicy({ ...POLICY, restrictedLevel: floor, adultReflectionStopped: adult, version: 1 });
-      f.generate.mockResolvedValue(JSON.stringify({ protocol: "explorer-safety-reply.v1", classification: { level: 0, minorIndicated: false }, candidateReply: null }));
+      f.generate.mockResolvedValue(JSON.stringify({ protocol: "explorer-safety-reply.v2", classification: { level: 0, minorIndicated: false }, candidateReply: null }));
       f.settle.mockResolvedValue({ outcome: "ok", conversation_state: null, policy_state: null, saved_reply: false });
       const authenticate = vi.fn().mockResolvedValueOnce(ACTOR).mockResolvedValue(null);
       const output = await commandExplorerPrivateConversation({ command: send(), dependencies: { ...f.dependencies, authenticate } });
@@ -275,7 +275,7 @@ describe("Root cycle1 pinned policy and remembered facts", () => {
 
 it("a caller canceled during trusted rendering admits no outward terminal body", async () => {
   const f = fixture(); const controller = new AbortController();
-  f.generate.mockResolvedValue(JSON.stringify({ protocol: "explorer-safety-reply.v1", classification: { level: 3, minorIndicated: false }, candidateReply: null }));
+  f.generate.mockResolvedValue(JSON.stringify({ protocol: "explorer-safety-reply.v2", classification: { level: 3, minorIndicated: false }, candidateReply: null }));
   const renderer = { ...f.dependencies.renderer!, render: async (_plan: ExplorerSafetyReplyPlan, ready: ExplorerPrivateOperationalReadiness) => {
     controller.abort();
     return { kind: "urgent" as const, body: "Synthetic trusted rendering after known caller cancellation.",
@@ -1154,5 +1154,77 @@ describe("hard-stop pause notices: the repeated read's denial, marker timeout an
     f.read.mockImplementation(async (...args) => { reads += 1; if (reads === 3) controller.abort(); return read(...args); });
     const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies, signal: controller.signal });
     expect(output).toEqual({ result: { ok: false, state: null, error: "unavailable" }, assistance: null }); expect(reads).toBe(3);
+  });
+});
+
+describe("S4 optional reply proposals keep settlement and safety separate", () => {
+  const sourceId = "00000000-0000-4000-8000-000000000010";
+  const pointId = "00000000-0000-4000-8000-000000000011";
+  const otherId = "00000000-0000-4000-8000-000000000012";
+  const mergedId = "00000000-0000-4000-8000-000000000013";
+  const choices = [{ label: "Show me around" }, { label: "I have a question" }, { label: "Let's begin" }];
+  function withPoints() {
+    const f = fixture();
+    const current: ExplorerConversationState = { ...state(ID.conversation),
+      messages: [{ id: sourceId, role: "explorer", body: "Synthetic saved topic.", createdAt: "2026-10-25T17:00:00Z" }],
+      compassItems: [
+        { id: pointId, sourceMessageId: sourceId, label: "Synthetic priority", anchor: "apex", emphasis: 2, mergedIntoItemId: null },
+        { id: otherId, sourceMessageId: sourceId, label: "Synthetic unplaced topic", anchor: null, emphasis: null, mergedIntoItemId: null },
+        { id: mergedId, sourceMessageId: sourceId, label: "Synthetic merged topic", anchor: null, emphasis: null, mergedIntoItemId: pointId },
+      ], priorityId: pointId, attentionId: pointId };
+    f.setCurrent(current);
+    f.ensure.mockImplementation(async () => ({ outcome: "reused", conversation_state: current, policy_state: POLICY }));
+    return f;
+  }
+  function reply(attention: unknown, labels: unknown = choices, level = 0) {
+    return JSON.stringify({ protocol: "explorer-safety-reply.v2", classification: { level, minorIndicated: false },
+      candidateReply: { content: "A synthetic reflective reply without any saved-action claim." }, compass: { attention }, choices: labels });
+  }
+  it("passes an owned unplaced current head and three choices to the one terminal intent", async () => {
+    const f = withPoints(); f.generate.mockResolvedValue(reply(otherId));
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(output.result.ok).toBe(true); expect(output.assistance).toBeNull();
+    expect(f.settle).toHaveBeenCalledOnce();
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_reply_kind: "ordinary", p_attention_item_id: otherId, p_choices: choices });
+  });
+  it.each([null, mergedId, "00000000-0000-4000-8000-000000000099", "invalid", { unsafe: true }])(
+    "ignores a null, merged, foreign or malformed needle without losing the reply: %j", async attention => {
+      const f = withPoints(); f.generate.mockResolvedValue(reply(attention));
+      const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+      expect(output.assistance).toBeNull(); expect(f.settle).toHaveBeenCalledOnce();
+      expect(f.settle.mock.calls[0][0]).toMatchObject({ p_reply_kind: "ordinary", p_attention_item_id: null, p_choices: choices });
+    });
+  it("keeps a level-two ordinary needle proposal but suppresses choices", async () => {
+    const f = withPoints(); f.generate.mockResolvedValue(reply(otherId, choices, 2));
+    await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_reply_kind: "ordinary", p_attention_item_id: otherId, p_choices: null });
+  });
+  it.each([3, 4])("suppresses needle and choices on level %i trusted replies", async level => {
+    const f = withPoints(); f.generate.mockResolvedValue(reply(otherId, choices, level));
+    await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_reply_kind: level === 3 ? "urgent" : "crisis", p_attention_item_id: null, p_choices: null });
+  });
+  it("ignores both proposals in an already restricted classification-only turn", async () => {
+    const f = withPoints(); f.setPolicy({ ...POLICY, restrictedLevel: 3 }); f.generate.mockResolvedValue(reply(otherId));
+    await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_request_mode: "classification_only", p_reply_kind: "restricted", p_attention_item_id: null, p_choices: null });
+  });
+  it("keeps a reply and valid needle when choices are unusable", async () => {
+    const f = withPoints(); f.generate.mockResolvedValue(reply(otherId, [...choices, { label: "Too many" }]));
+    await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_reply_kind: "ordinary", p_attention_item_id: otherId, p_choices: null });
+  });
+  it("sends neither proposal after caller cancellation without losing the observation", async () => {
+    const f = withPoints(); const abort = new AbortController();
+    f.generate.mockImplementation(async () => { abort.abort(); return reply(otherId); });
+    await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies, signal: abort.signal });
+    expect(f.settle).toHaveBeenCalledOnce();
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_reply_kind: "none", p_attention_item_id: null, p_choices: null, p_delivery_interested: false });
+  });
+  it("does not repost optional proposals after an unknown settlement", async () => {
+    const f = withPoints(); f.generate.mockResolvedValue(reply(otherId)); f.settle.mockRejectedValue(new Error("Synthetic lost acknowledgement"));
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.settle).toHaveBeenCalledOnce(); expect(f.generate).toHaveBeenCalledOnce();
+    expect(output.assistance).not.toBeNull();
   });
 });

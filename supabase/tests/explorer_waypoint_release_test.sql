@@ -149,7 +149,14 @@ create function pg_temp.compass_context() returns jsonb language sql stable as $
     'priorityId',(select s.priority_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.gid(6005)),
     'attentionId',(select s.attention_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.gid(6005)),
     'recentRoute',coalesce((select jsonb_agg(jsonb_build_object('kind',r.compass_route_kind,'pointId',r.compass_route_item_id,
-      'label',ai.solmind_exclusion_normalize_v3(r.current_label)) order by r.initial_revision,r.operation_id)
+      'label',ai.solmind_exclusion_normalize_v3(r.current_label),
+      'actor',case when r.kind='follow_attention' then 'virtual_guide' else 'explorer' end,
+      'awaitingReply',r.kind='set_attention'
+        and r.operation_id=(select last_move.operation_id from ai.explorer_conversation_operation last_move
+          where last_move.conversation_id=pg_temp.gid(6005) and last_move.compass_route_kind='attention_changed'
+          order by last_move.initial_revision desc,last_move.operation_id desc limit 1)
+        and not exists(select 1 from ai.ai_interaction_message reply where reply.ai_interaction_session_id=pg_temp.gid(6005)
+          and reply.sender_type='ai' and reply.created_at>=r.completed_at)) order by r.initial_revision,r.operation_id)
       from (select o.*,c.label as current_label from ai.explorer_conversation_operation o join ai.explorer_conversation_compass_item c
           on c.conversation_id=o.conversation_id and c.item_id=o.compass_route_item_id and c.merged_into_item_id is null
         where o.conversation_id=pg_temp.gid(6005) and o.compass_route_kind='attention_changed'
@@ -207,7 +214,7 @@ begin
   select revision into rev from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005);
   return query select * from public.solmind_observe_explorer_conversation_fallback_v3(
     pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),pg_temp.gid(10000+slot*10),pg_temp.gid(10004+slot*10),
-    rev,methodology.hash_json(jsonb_build_array('synthetic-command',slot)),'explorer-safety-reply.v1',
+    rev,methodology.hash_json(jsonb_build_array('synthetic-command',slot)),'explorer-safety-reply.v2',
     'synthetic-fallback.v1','synthetic-model-policy.v1',repeat('A',64),lvl::smallint,minor_flag);
 end $$;
 create function pg_temp.prepare_private(slot_n integer,lvl integer default 0,minor_flag boolean default false,
@@ -241,22 +248,23 @@ begin
     upper(encode(extensions.digest(convert_to(saved.serialization,'UTF8'),'sha256'),'hex')),saved.source_ids,saved.authority,
     pg_temp.gid(52),pg_temp.gid(1001),'synthetic-prompt.v1','synthetic-policy.v1','synthetic-behavior.v1','synthetic-crisis.v1',
     'synthetic-role.v1','synthetic-instruction.v1',methodology.hash_json(jsonb_build_array('synthetic-command',slot_n)),
-    pg_temp.gid(10004+slot_n*10),pg_temp.gid(1000),saved.methodology_sha,saved.mv,'explorer-safety-reply.v1',saved.mode,
+    pg_temp.gid(10004+slot_n*10),pg_temp.gid(1000),saved.methodology_sha,saved.mv,'explorer-safety-reply.v2',saved.mode,
     repeat('A',64),'synthetic-fallback.v1','synthetic-model-policy.v1','synthetic-trusted.v1','synthetic-resources.v1',
     saved.safety_version,saved.fallback,saved.minor,selected_model);
 end $$;
 create function pg_temp.settle_private(slot_n integer,model integer default 0,minor_flag boolean default false,
   kind text default 'ordinary',body text default 'Synthetic saved reply.',status_name text default 'completed',
-  interested boolean default true,fallback_override integer default null)
+  interested boolean default true,fallback_override integer default null,attention_n integer default null,choices jsonb default null)
 returns table(outcome text,conversation_state jsonb,policy_state jsonb,saved_reply boolean)
 language sql as $$
-  select * from public.solmind_settle_explorer_conversation_turn_v3(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),
+  select * from public.solmind_settle_explorer_conversation_turn_v4(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),
     pg_temp.gid(10000+slot_n*10),status_name,case when kind='none' then null else pg_temp.gid(10005+slot_n*10) end,
-    kind,case when kind='none' then null else body end,model::smallint,minor_flag,'explorer-safety-reply.v1',
+    kind,case when kind='none' then null else body end,model::smallint,minor_flag,'explorer-safety-reply.v2',
     (select mode from lifecycle_intent where slot=slot_n),repeat('A',64),'synthetic-fallback.v1',
     'synthetic-model-policy.v1','synthetic-trusted.v1','synthetic-resources.v1',
     coalesce(fallback_override,(select fallback from lifecycle_intent where slot=slot_n))::smallint,
-    (select minor from lifecycle_intent where slot=slot_n),interested)
+    (select minor from lifecycle_intent where slot=slot_n),interested,
+    case when attention_n is null then null else pg_temp.gid(attention_n) end,choices)
 $$;
 
 -- Establish the existing synthetic governed source fixture. No provider is called;
