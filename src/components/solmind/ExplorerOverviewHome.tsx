@@ -1,7 +1,6 @@
 import { EXPLORER_OVERVIEW, OVERVIEW_HEADING_ID } from "@/lib/solmind/explorerOverviewHome";
 
 import { PRIMARY_BUTTON, QUIET_BUTTON, SECONDARY_BUTTON, UnwiredControl, joinClasses } from "./ExplorerConversationScreenNotYetImplemented";
-import { ExplorerHomeNavigation } from "./ExplorerHomeNavigation";
 import { ExplorerWorkspaceFrame } from "./ExplorerWorkspaceFrame";
 import { HomeCard, HomeCardLink, HomeHeader, HomeSessionWarning, HomeSignOut } from "./WorkspaceHomeParts";
 
@@ -12,7 +11,8 @@ import { HomeCard, HomeCardLink, HomeHeader, HomeSessionWarning, HomeSignOut } f
 // shows, and the sign-out action. The header, card, warning and sign-out parts
 // are shared with the Guide Dashboard (WorkspaceHomeParts.tsx). While a
 // sign-out is pending every link on the page shows in its non-link form, as
-// before.
+// before. The collapsed "Design previews" list below the cards was removed
+// (Paul, decision queue 2026-11-04 21:44:03 CST).
 
 type OverviewProps = Readonly<{ pending: boolean; warning: boolean; onSignOut: () => void }>;
 
@@ -54,7 +54,6 @@ export function ExplorerOverviewHome({ pending, warning, onSignOut }: OverviewPr
           </HomeCard>
         </div>
         <HomeSessionWarning shown={warning} />
-        <ExplorerHomeNavigation navigationDisabled={pending} />
         <HomeSignOut
           label={EXPLORER_OVERVIEW.signOut}
           onSignOut={onSignOut}

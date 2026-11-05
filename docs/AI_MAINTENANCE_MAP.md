@@ -296,8 +296,9 @@ is the thin Explorer wrapper over the frozen data in
 `src/lib/solmind/explorerWorkspaceFrame.ts`. Overview on `/explorer/home` is
 `src/components/solmind/ExplorerOverviewHome.tsx` (wording in
 `src/lib/solmind/explorerOverviewHome.ts`), the Option A home mockup's cards
-without names or counts, with the session warning, the collapsed "Design
-previews" (`ExplorerHomeNavigation.tsx`, now only that fold) and Sign out;
+without names or counts, with the session warning and Sign out (the
+collapsed "Design previews", `ExplorerHomeNavigation.tsx`, was removed on
+2026-11-04, Paul's decision, decision queue 2026-11-04 21:44:03 CST);
 `ExplorerHome.tsx` keeps every session and sign-out rule. The conversation
 list (`ExplorerConversationReview.tsx`, Conversations current), the Waypoint
 inbox (`ExplorerSuggestedWaypointInbox.tsx`, Waypoints current, its teal
@@ -604,7 +605,6 @@ src/
       BackLink.tsx
       ConversationPreview.tsx
       DashboardCard.tsx
-      ExplorerExperiencePrototype.tsx
       ExplorerResponseComposer.tsx
       ExplorerTopicList.tsx
       MiniProfileCard.tsx
@@ -661,9 +661,8 @@ the current exact import allowlists or imply that completed proof is pending.
 | Area | Files | Responsibility |
 |---|---|---|
 | Routes | `src/app/**/page.tsx` | Page composition only |
-| Explorer S01 composition | `src/app/explorer/page.tsx` | Thin Server Component composing the single S01 client boundary |
-| Explorer S01 orchestration | `src/components/solmind/ExplorerExperiencePrototype.tsx` | Transient browser-memory state and events; no provider or persistence |
-| Compass presentation | `src/components/solmind/SessionCompass.tsx` | Controlled fixed-frame Compass rendering; no policy or state ownership |
+| Explorer address | `src/app/explorer/page.tsx` | Thin Server Component that redirects to the Explorer Overview; the S01 prototype it composed was removed on 2026-11-04 (Paul's decision, decision queue 2026-11-04 21:44:03 CST) |
+| Compass presentation | `src/components/solmind/SessionCompass.tsx` | Controlled fixed-frame Compass rendering; no policy or state ownership; no page uses it since 2026-11-04 |
 | Explorer S01 domain | `src/lib/solmind/explorerExperience.ts` | Pure deterministic Compass, Route, Waypoint, summary, snapshot, and narrow Guide-projection transitions |
 | Suggested Waypoint pure domain | `src/lib/solmind/suggestedWaypoints.ts` | Immutable Guide authoring, shared-channel, Explorer-private engagement, replay, timing, and role-projection rules |
 | Explorer Suggested Waypoint fixture UI | `src/components/solmind/ExplorerSuggestedWaypointWorkspace.tsx`; `src/lib/solmind/suggestedWaypointFixtures.ts` | Retained deterministic detail/private-comparison design fixture over one synthetic delivered suggestion; no production route owner, persistence, provider, or authenticated runtime |
@@ -1058,7 +1057,6 @@ banking.
 | src/lib/solmind/passwordRoleSignInBrowserContract.ts, guideSignInBrowserTransport.ts, guideSignInFlowController.ts; src/components/solmind/GuideSignIn.tsx | Guide-only requests/results and private attempt state; no password on send, storage/logging or request-selected authority |
 | src/components/solmind/PasswordRoleSignInView.tsx | Shared Guide/Admin view over SignInPreviewView (approved A3/A3A and A4); password read at Send my code and held in a private ref until verify, cleared on every exit; one uniform help line after every A4 refusal (Paul, 2026-11-02); no new request, route or authority |
 | src/lib/solmind/auth/guideHomeAccess.ts; src/app/guide/home/page.tsx; src/components/solmind/GuideHome.tsx | Current principal/session/role/binding guard, raw-cookie ambiguity, minimal time projection, finite reminder and shared logout/Guide re-entry |
-| src/components/solmind/ExplorerHomeNavigation.tsx | Presentational collapsed fixed-script previews and the interim conversation screen design review link on Overview (since 2026-11-02 the Explorer workspace destinations are in the workspace menu and the Overview cards); each feature retains its own authorization; no provider/session authority |
 | src/components/solmind/WorkspaceFrame.tsx; src/components/solmind/ExplorerWorkspaceFrame.tsx; src/components/solmind/ExplorerOverviewHome.tsx; src/lib/solmind/explorerWorkspaceFrame.ts; src/lib/solmind/explorerOverviewHome.ts | Role-neutral presentation-only signed-in workspace frame (layout state only), its Explorer wrapper and data, and the Overview home with its fixed wording (Paul's 2026-11-02 decisions); no reads, session or provider authority |
 | src/components/solmind/GuideWorkspaceFrame.tsx; src/components/solmind/GuideDashboardHome.tsx; src/components/solmind/WorkspaceHomeParts.tsx; src/components/solmind/GuideWaypointSuggestionsPage.tsx; src/lib/solmind/guideWorkspaceFrame.ts; src/lib/solmind/guideDashboardHome.ts | The Guide wrapper and data for the same frame (August Guide menu), the Guide Dashboard with its fixed wording, the home parts shared with Overview, and the frame around the Guide Waypoint Suggestions pages (Paul's 2026-11-02 decisions); GuideHome passes only pending/warning flags and sign-out; no reads, session or provider authority |
 | src/lib/solmind/auth/adminLoginIdentifierNormalizer.ts | Shared approved Admin parser, unused by Guide; consumed by the separate Admin connection; no first-Admin setup |

@@ -2,7 +2,6 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createExplorerHomeViewBinding, ExplorerHome, ExplorerSessionOutcome } from "../ExplorerHome";
-import { ExplorerHomeNavigation } from "../ExplorerHomeNavigation";
 import { ExplorerOverviewHome } from "../ExplorerOverviewHome";
 import { NOT_YET_IMPLEMENTED, NOT_YET_IMPLEMENTED_PREFIX } from "../../../lib/solmind/explorerConversationScreen";
 import { SESSION_WARNING, SIGNED_OUT_PRIVACY, SIGN_OUT_UNCERTAINTY } from "../../../lib/solmind/explorerLoginJourney";
@@ -205,30 +204,26 @@ it("shows local absence without claiming remote sign-out and keeps fixed Explore
   unsubscribe();
 });
 
-describe("Explorer home design previews", () => {
-  it("H16 links the conversation screen design review with its own honest line", () => {
-    const html = renderToStaticMarkup(createElement(ExplorerHomeNavigation));
-    expect(html.includes('href="/explorer/conversation-preview"')).toBe(true);
-    expect(html.includes("Conversation screen design review")).toBe(true);
-    expect(html.includes("Design review only: sample content and working layout controls; conversation features are not connected.")).toBe(true);
-    expect(html.includes("nothing on this screen works yet")).toBe(false);
-    // Paul approved this wording on 2026-10-31 at 01:36 ("yes to 1-4", item 4).
-    expect(html.includes("These previews use a fixed local script.")).toBe(false);
-    expect(html.includes(
-      "The older previews use a fixed local script. The conversation design review shows sample messages and cannot reply.",
-    )).toBe(true);
-    expect(html.includes('href="/explorer/compass-comparison"') && html.includes('href="/explorer"')).toBe(true);
-  });
-  it("H17 a pending home disables the design review link like the other previews", () => {
-    const html = renderToStaticMarkup(createElement(ExplorerHomeNavigation, { navigationDisabled: true }));
-    expect(html.includes('href="/explorer/conversation-preview"')).toBe(false);
-    // The same non-link form, in the dark and amber look of the Overview home (2026-11-02).
-    expect(html.includes('<span aria-disabled="true" class="block rounded-xl border border-amber-200/15 bg-white/[0.03] p-4 text-stone-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 opacity-60">Conversation screen design review</span>')).toBe(true);
-    expect(html.includes("<a ")).toBe(false);
-  });
-  it("H18 the signed-in home renders the design review link", () => {
-    const html = renderToStaticMarkup(createElement(ExplorerHome, { session }));
-    expect(html.includes('href="/explorer/conversation-preview"')).toBe(true);
+// Paul's decision (decision queue 2026-11-04 21:44:03 CST): the June onboarding mockup at /explorer and the
+// whole collapsed "Design previews" list are removed; the two older design reviews stay reachable by address.
+describe("Explorer home without the design previews", () => {
+  it("H16 the signed-in home shows no design previews list and links no mockup or design review", () => {
+    for (const html of [
+      renderToStaticMarkup(createElement(ExplorerHome, { session })),
+      renderToStaticMarkup(createElement(ExplorerOverviewHome, { pending: false, warning: true, onSignOut: () => undefined })),
+      renderToStaticMarkup(createElement(ExplorerOverviewHome, { pending: true, warning: true, onSignOut: () => undefined })),
+    ]) {
+      expect(html).not.toContain("Design previews");
+      expect(html).not.toContain("Explorer design previews");
+      expect(html).not.toContain("Conversation screen design review");
+      expect(html).not.toContain("Conversation and Compass preview");
+      expect(html).not.toContain("Onboarding and sharing preview");
+      expect(html).not.toContain("The older previews use a fixed local script.");
+      expect(html).not.toContain("<details");
+      for (const href of ['href="/explorer"', 'href="/explorer/compass-comparison"', 'href="/explorer/conversation-preview"']) {
+        expect(html, href).not.toContain(href);
+      }
+    }
   });
 });
 
@@ -277,19 +272,20 @@ describe("Explorer home as Overview", () => {
   });
   it("H22 a pending sign-out shows every link on the page in its non-link form", () => {
     const ready = overview();
-    // Overview, Conversations and Waypoints in the rail, the two card links and the three design previews.
-    expect(ready.match(/<a /g)).toHaveLength(3 + 2 + 3);
+    // Overview, Conversations and Waypoints in the rail and the two card links (the three design previews
+    // were removed on 2026-11-04).
+    expect(ready.match(/<a /g)).toHaveLength(3 + 2);
     const pending = overview(true);
     expect(pending.includes("<a ")).toBe(false);
-    for (const label of ["Overview", "Conversations", "Waypoints", "Talk with your Virtual Guide", "Open suggestions", "Conversation screen design review"]) {
+    for (const label of ["Overview", "Conversations", "Waypoints", "Talk with your Virtual Guide", "Open suggestions"]) {
       expect(pending, label).toMatch(new RegExp(`<span aria-disabled="true" class="[^"]*opacity-60">(?:<svg[\\s\\S]*?</svg><span class="flex min-w-0 flex-col"><span>)?${label}<`));
     }
     expect(pending).toContain('<nav aria-busy="true" aria-label="Explorer workspace" class="px-3">');
     expect(pending).toMatch(/<button class="[^"]*" disabled="" type="button">Signing out\.\.\.<\/button>/);
   });
-  it("H23 keeps the order cards, session warning, design previews, sign out, and names no one", () => {
+  it("H23 keeps the order cards, session warning, sign out, and names no one", () => {
     const html = overview(false, true);
-    const order = [EXPLORER_OVERVIEW.suggestions.body, `role="status">${SESSION_WARNING}</p>`, "Design previews", ">Sign out</button>"]
+    const order = [EXPLORER_OVERVIEW.suggestions.body, `role="status">${SESSION_WARNING}</p>`, ">Sign out</button>"]
       .map((text) => html.indexOf(text));
     expect(order.every((index) => index > 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);

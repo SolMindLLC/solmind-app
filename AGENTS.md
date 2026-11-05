@@ -134,11 +134,14 @@ Do not describe Guide authentication as passwordless.
 
 ## PRJ01_R-WS09-WI021-S01 Explorer Prototype Boundary
 
-The `/explorer` route contains the deterministic in-memory S01 prototype.
+The `/explorer` route held the deterministic in-memory S01 prototype (the
+June onboarding and sharing mockup) until 2026-11-04, when it was removed
+(Paul's decision, decision queue 2026-11-04 21:44:03 CST). `src/app/explorer/page.tsx` stays a
+thin Server Component that only redirects to the Explorer Overview
+(`EXPLORER_HOME_ROUTE`, `/explorer/home`), which keeps its own sign-in check;
+`ExplorerExperiencePrototype.tsx` is deleted. The S01 files below remain, and
+no page uses the first two any more:
 
-- `src/app/explorer/page.tsx` stays a thin Server Component.
-- `src/components/solmind/ExplorerExperiencePrototype.tsx` is the interactive
-  client boundary.
 - `src/components/solmind/SessionCompass.tsx` is controlled and
   presentational.
 - `src/lib/solmind/explorerExperience.ts` owns pure deterministic transitions,
@@ -147,7 +150,8 @@ The `/explorer` route contains the deterministic in-memory S01 prototype.
 - `src/lib/solmind/onboarding.ts` owns the exact structured-form definitions
   and distinct required-form/optional-First-Compass states.
 
-S01 must not call an AI provider or imply a model or human Guide is live. It
+These S01 rules still bind the retained review surfaces that inherit them
+(below). S01 must not call an AI provider or imply a model or human Guide is live. It
 must not use a database, route handler, cookie, `localStorage`,
 `sessionStorage`, URL state, or another persistence mechanism. It must not
 hard-code or simulate the future 1-100 day sendability setting, describe an
@@ -368,10 +372,12 @@ cards, no names"); the wording is in `src/lib/solmind/explorerOverviewHome.ts`.
 "Talk with your Virtual Guide" links `/explorer/conversation` and "Open
 suggestions" `/explorer/waypoints`; "Learn what your Virtual Guide can see" is
 not connected yet and explains itself with its review sentence. Below the
-cards come the session warning, the collapsed "Design previews" (wording and
-links unchanged) and Sign out; the earlier "Your Explorer workspace" list is
-gone. While a sign-out is pending every link on the page (menu, cards and
-previews) shows as a non-link `<span aria-disabled="true">`.
+cards come the session warning and Sign out; the earlier "Your Explorer
+workspace" list is gone, and so, since 2026-11-04, is the collapsed "Design
+previews" list (Paul's decision, decision queue 2026-11-04 21:44:03 CST); its two older design
+reviews, `/explorer/compass-comparison` and `/explorer/conversation-preview`,
+stay reachable by address. While a sign-out is pending every link on the page
+(menu and cards) shows as a non-link `<span aria-disabled="true">`.
 `ExplorerSessionOutcome` takes the dark look only, with no menu, and keeps its
 text and re-entry link. The conversation list (`ExplorerConversationReview.tsx`)
 and the Waypoint inbox and detail sit in the frame in the dark and amber look
@@ -388,7 +394,8 @@ optional dark surface for these pages and the signed-in Guide Waypoint pages;
 the fixture review surfaces keep the light pills.
 `/explorer/home` cannot be opened in a browser test without a sign-in, so
 `ExplorerWorkspaceFrame.test.tsx` and `ExplorerHome.test.tsx` prove the static
-markup of its frame and Overview; interaction and contrast on the signed-in
+markup of its frame and Overview (`tests/browser/explorerAddress.pw.ts` checks
+only that `/explorer` opens that address, signed out); interaction and contrast on the signed-in
 Overview are checked on the local demo only by Paul.
 
 The first provider-dispatch increment for the server-side Virtual Guide
@@ -1038,8 +1045,7 @@ design evidence for private comparison, response, and acknowledgement flows.
 It does not own `/explorer/waypoints`: that route now composes the separately
 reviewed authenticated S03 inbox and detail reads. Since 2026-11-02 both are
 drawn in the Explorer workspace frame with Waypoints current, in place of the
-inbox's teal sidebar; their reads and commands are unchanged. Do not add
-cross-role lifecycle state to `ExplorerExperiencePrototype.tsx`.
+inbox's teal sidebar; their reads and commands are unchanged.
 
 `/guide/explorers/avery/waypoint-suggestions` is the paired deterministic Human
 Guide review surface. Keep its route thin, its client UI in
@@ -1209,7 +1215,7 @@ warning is advisory; Stay signed in remains a separate later amendment. Paul
 approved the sign-in and session reminder text on 2026-10-17; the exact messages
 are recorded in `solmind-docs/execution/25_SolMind_MVP0_Auth_RLS_Login_Session_Cookie_Security_Contract_v0_1.md`,
 under Explorer screen copy approved - 2026-10-17.
-`/explorer` stays a prototype; this home grants no Virtual Guide feature authority.
+`/explorer` opens this home (since 2026-11-04); this home grants no Virtual Guide feature authority.
 See `docs/MODULE_BOUNDARIES.md` for ownership and source/runtime evidence limits.
 
 ## Connected Guide boundary
@@ -1307,11 +1313,11 @@ proof do not replace real timing evidence or full assurance. Preserve accounts/
 private passwords; no blind reset or automatic setup. Future first-Admin setup
 must reuse the approved username rule.
 
-ExplorerHomeNavigation.tsx is presentation only: since 2026-11-02 it holds only
-the collapsed fixed-script "Design previews"; the Explorer workspace
-destinations are in the Explorer workspace menu and the Overview cards
-(`WorkspaceFrame.tsx`, `ExplorerOverviewHome.tsx`). Each feature keeps its own
-authorization; preserve Explorer session/logout and provider/privacy
+The Explorer home's collapsed fixed-script "Design previews"
+(`ExplorerHomeNavigation.tsx`) was removed on 2026-11-04 (Paul's decision, decision queue 2026-11-04 21:44:03 CST);
+the Explorer workspace destinations are in the Explorer workspace menu and the
+Overview cards (`WorkspaceFrame.tsx`, `ExplorerOverviewHome.tsx`). Each feature
+keeps its own authorization; preserve Explorer session/logout and provider/privacy
 boundaries.
 
 ## Connected Admin boundary

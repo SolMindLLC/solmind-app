@@ -110,7 +110,11 @@ Current route purpose:
 | `/guide/waypoint-suggestions/[relationshipId]/[suggestedWaypointId]` | Authenticated relationship-scoped Guide Suggested Waypoint detail with bounded pending-version Pull Back |
 | `/guide/waypoint-suggestions/[relationshipId]/commands` | Authenticated same-origin Guide command route; the current detail UI calls only Pull Back |
 
-The `/explorer` route hosts a browser-memory-only deterministic prototype. It:
+Until 2026-11-04 the `/explorer` route hosted the browser-memory-only
+deterministic prototype described below (the June onboarding and sharing
+mockup). It was removed (Paul's decision, decision queue 2026-11-04 21:44:03 CST), and
+`/explorer` now opens the Explorer Overview (`/explorer/home`). As built, the
+removed prototype:
 
 - displays the preferred-name placeholder without collecting it again;
 - submits the approved three required and three optional onboarding questions;
@@ -494,7 +498,6 @@ src/
       BackLink.tsx
       ConversationPreview.tsx
       DashboardCard.tsx
-      ExplorerExperiencePrototype.tsx
       ExplorerConversation.tsx
       ExplorerConversationFormation.tsx
       ExplorerResponseComposer.tsx
@@ -561,11 +564,12 @@ supabase/
   seed.sql
 ```
 
-The Explorer prototype boundary is intentionally narrow:
+The Explorer prototype boundary was intentionally narrow. Since 2026-11-04 the
+prototype component is removed; no page uses `SessionCompass.tsx` or
+`explorerExperience.ts` any more:
 
-- `src/app/explorer/page.tsx` is a thin Server Component.
-- `src/components/solmind/ExplorerExperiencePrototype.tsx` is the only new
-  `"use client"` entry point and owns transient interaction state.
+- `src/app/explorer/page.tsx` is a thin Server Component that redirects to
+  the Explorer Overview.
 - `src/components/solmind/SessionCompass.tsx` is controlled and
   presentational.
 - `src/lib/solmind/explorerExperience.ts` owns pure deterministic transitions,
@@ -804,8 +808,10 @@ Neither factor alone permits a session. No remembered-browser/renewal path is
 added. Provisional source timing is not constant-time proof or risk acceptance.
 
 Additive Explorer home navigation opens the existing authenticated Waypoint
-Suggestions inbox. Collapsed design previews remain explicitly fixed-script,
-not connected to an AI or human Guide, not saved/shared, and reset by refresh.
+Suggestions inbox. The collapsed design previews were removed from the home on
+2026-11-04 (Paul's decision, decision queue 2026-11-04 21:44:03 CST); the older
+fixed-script reviews stay reachable by address, not connected to an AI or human
+Guide, not saved/shared, and reset by refresh.
 The owning home retains its session/logout lifecycle. The inbox has its own
 authentication guard; fixed-script previews retain their no-auth boundary.
 Navigation activates no genuine Virtual Guide conversation.

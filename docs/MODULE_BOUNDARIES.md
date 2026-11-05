@@ -43,7 +43,6 @@ src/
       BackLink.tsx
       ConversationPreview.tsx
       DashboardCard.tsx
-      ExplorerExperiencePrototype.tsx
       ExplorerResponseComposer.tsx
       ExplorerTopicList.tsx
       MiniProfileCard.tsx
@@ -106,14 +105,14 @@ Route files should not:
 - contain long lists that belong in `src/lib/solmind`
 - contain reusable UI that belongs in `src/components/solmind`
 
-`src/app/explorer/page.tsx` remains a thin Server Component. It composes the
-interactive S01 client boundary without owning its state transitions.
+`src/app/explorer/page.tsx` remains a thin Server Component. Since 2026-11-04
+it only redirects to the Explorer Overview (`/explorer/home`); the S01 client
+boundary it composed was removed (Paul's decision, decision queue 2026-11-04 21:44:03 CST).
 
 `src/app/explorer/waypoints/page.tsx` and its suggestion-scoped detail page are
 thin Server Components for the authenticated S03 Explorer inbox and detail.
 The detail's explicit engagement actions use a separate same-origin command
-Route Handler; the Server Components own no command state or authority. They
-must not import or extend `ExplorerExperiencePrototype.tsx`.
+Route Handler; the Server Components own no command state or authority.
 
 `src/app/guide/explorers/avery/waypoint-suggestions/page.tsx` is the paired thin
 Server Component for the deterministic Human Guide review surface. It composes
@@ -145,9 +144,10 @@ Avoid placing core product rules inside components. If a component needs product
 
 ### Explorer S01 components
 
-- `ExplorerExperiencePrototype.tsx` is the only new S01 `"use client"` entry
-  point. It orchestrates transient browser-memory stages and event handling.
-- `SessionCompass.tsx` is a controlled presentational component. It renders a
+- `ExplorerExperiencePrototype.tsx`, the S01 `"use client"` entry point, was
+  removed on 2026-11-04 (Paul's decision, decision queue 2026-11-04 21:44:03 CST).
+- `SessionCompass.tsx` is a controlled presentational component (no page uses
+  it since 2026-11-04). It renders a
   fixed Priority-up frame, readable zone labels, current attention, zero
   through eight visible points, and `Other paths`.
 
@@ -2751,17 +2751,16 @@ re-entry, confirmed-only signed-out state, honest uncertainty and fresh server
 check after cached-page restoration. No GET cleanup, retry, renewal or client
 credential clearing.
 
-src/components/solmind/ExplorerHomeNavigation.tsx is presentation only: since
-2026-11-02 it holds only the collapsed fixed-script "Design previews" on
-Overview; the Explorer workspace destinations moved to the Explorer workspace
-menu and the Overview cards (`WorkspaceFrame.tsx`, `ExplorerOverviewHome.tsx`).
-Each destination retains its own authorization and data
-boundary; the previews remain unconnected. Navigation grants no persistence,
-AI/human Guide/provider or session authority. ExplorerHome retains its
-session/logout lifecycle and passes its presentation only the pending and
-warning flags and the sign-out action. The Design previews fold also links the interim
-`/explorer/conversation-preview` design review with its own "Design review
-only" line; the fold's older fixed-script sentence is unchanged.
+The collapsed fixed-script "Design previews" on Overview
+(src/components/solmind/ExplorerHomeNavigation.tsx) was removed on 2026-11-04
+(Paul's decision, decision queue 2026-11-04 21:44:03 CST); its older design reviews,
+`/explorer/compass-comparison` and `/explorer/conversation-preview`, stay
+reachable by address. The Explorer workspace destinations are in the Explorer
+workspace menu and the Overview cards (`WorkspaceFrame.tsx`,
+`ExplorerOverviewHome.tsx`). Each destination retains its own authorization and
+data boundary. Navigation grants no persistence, AI/human Guide/provider or
+session authority. ExplorerHome retains its session/logout lifecycle and passes
+its presentation only the pending and warning flags and the sign-out action.
 
 Four issuance/four redemption slots are per loaded module/process, not
 distributed/per-account. October 21 R04 genuine functional/contention

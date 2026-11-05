@@ -1,15 +1,10 @@
-import { BackLink } from "@/components/solmind/BackLink";
-import { ExplorerExperiencePrototype } from "@/components/solmind/ExplorerExperiencePrototype";
-import { PageShell } from "@/components/solmind/PageShell";
+import { redirect } from "next/navigation";
 
-export default function ExplorerPage() {
-  return (
-    <PageShell>
-      <BackLink />
+import { EXPLORER_HOME_ROUTE } from "@/lib/solmind/routeAccess";
 
-      <div className="mt-10">
-        <ExplorerExperiencePrototype />
-      </div>
-    </PageShell>
-  );
+// The address /explorer opens the Explorer Overview. The June onboarding and
+// sharing mockup that used to be here was removed (Paul, decision queue
+// 2026-11-04 21:44:03 CST). The Overview keeps its own sign-in check.
+export default function ExplorerPage(): never {
+  redirect(EXPLORER_HOME_ROUTE);
 }

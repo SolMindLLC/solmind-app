@@ -20,7 +20,7 @@ import {
 //
 // Review version: every entry is unwired and its "Not yet implemented:" note
 // sits under it. Signed-in screens: a built entry is a plain full-document link
-// (as in ExplorerHomeNavigation.tsx, full document navigation retires this
+// (full document navigation retires this
 // authenticated view and requests fresh server access); an entry that is not
 // connected yet shows a blue "Not connected yet" build-note label and, when activated, one
 // sentence under it saying what it will do.
@@ -39,7 +39,7 @@ const SPACE_CURRENT = "bg-amber-300/10 text-amber-100";
 const SPACE_OTHER = "text-stone-300 hover:bg-white/[0.03] hover:text-stone-100";
 const EXPLANATION_SPACING = "mt-1 px-3";
 // While a sign-out is pending, a link shows in this non-link form, as on the
-// Explorer home (ExplorerHomeNavigation.tsx).
+// Explorer home (ExplorerOverviewHome.tsx).
 const LINK_DISABLED = "opacity-60";
 
 function explanationId(scope: MenuScope, id: string): string {
