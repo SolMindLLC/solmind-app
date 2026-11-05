@@ -106,7 +106,7 @@ describe("provider-held pure Explorer exclusion matcher (synthetic data)", () =>
 
   it("S3: inspects the saved Compass and Waypoint section's strings and refuses unknown root keys", () => {
     const base = JSON.parse(fixture().serializedContext) as Record<string, unknown>;
-    const section = { version: "explorer-compass-context.v1",
+    const section = { version: "explorer-compass-context.v2",
       points: [{ id: id(8), label: "A saved synthetic point", order: 0, formation: "saved", anchor: null, emphasis: null }],
       priorityId: null, attentionId: id(8), recentRoute: [{ kind: "attention_changed", pointId: id(8), label: "A saved synthetic point" }],
       waypoints: [{ id: id(9), title: "Synthetic", destination: "Synthetic", meaning: "Synthetic meaning", arrivalSignal: "Synthetic signal",
@@ -114,7 +114,7 @@ describe("provider-held pure Explorer exclusion matcher (synthetic data)", () =>
     const withSection = (value: unknown) => {
       const ordered: Record<string, unknown> = {};
       for (const [key, part] of Object.entries(base)) { ordered[key] = part; if (key === "approvedContinuity") ordered.compassContext = value; }
-      return JSON.stringify({ ...ordered, contractVersion: "wi007-v0.1+onboarding-fields-v2+compass-v1" });
+      return JSON.stringify({ ...ordered, contractVersion: "wi007-v0.1+onboarding-fields-v2+compass-v2" });
     };
     const clean = fixture(); clean.serializedContext = withSection(section);
     expect(inspectExplorerContextExclusions(clean)).toEqual({ status: "clear" });
@@ -127,7 +127,7 @@ describe("provider-held pure Explorer exclusion matcher (synthetic data)", () =>
     const other = fixture(); other.serializedContext = JSON.stringify({ ...base, otherContext: section });
     unavailable(other);
     // Round 2 (2026-11-03): the section is accepted only under its own contract version.
-    for (const contractVersion of ["wi007-v0.1+onboarding-fields-v2", "wi007-v0.1+onboarding-fields-v2+compass-v2"]) {
+    for (const contractVersion of ["wi007-v0.1+onboarding-fields-v2", "wi007-v0.1+onboarding-fields-v2+compass-v1"]) {
       const wrongVersion = fixture();
       wrongVersion.serializedContext = JSON.stringify({ ...JSON.parse(withSection(section)), contractVersion });
       unavailable(wrongVersion);

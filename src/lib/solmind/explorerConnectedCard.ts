@@ -68,6 +68,7 @@ export type CardCompassPoint = Readonly<{
   dialAnchor: ExplorerCompassAnchor | null;
   isPriority: boolean;
   isAttention: boolean;
+  isForming: boolean;
   needle: CardNeedleChoice;
 }>;
 
@@ -95,7 +96,7 @@ export function connectedCompass(state: ExplorerConversationState): CardCompass 
     const isAttention = item.id === state.attentionId;
     const dialAnchor = place === "unarranged" || place === "otherPaths" ? (isPriority ? "apex" : null) : place;
     const needle: CardNeedleChoice = isAttention ? "current" : "available";
-    return freeze({ id: item.id, label: item.label, place, dialAnchor, isPriority, isAttention, needle });
+    return freeze({ id: item.id, label: item.label, place, dialAnchor, isPriority, isAttention, isForming: item.formation === "forming", needle });
   });
   const rank = (point: CardCompassPoint) =>
     point.dialAnchor !== null
@@ -214,13 +215,13 @@ export function describeConnectedCompass(compass: CardCompass): string {
   const parts: string[] = [];
   for (const point of dialPoints(compass)) {
     if (point.dialAnchor === null) continue;
-    parts.push(`${point.isPriority ? "Priority" : COMPASS_POSITION_NAMES[point.dialAnchor]}: ${point.label}.`);
+    parts.push(`${point.isPriority ? "Priority" : COMPASS_POSITION_NAMES[point.dialAnchor]}: ${point.label}${point.isForming ? " (Forming)" : ""}.`);
   }
   if (compass.priority === null) parts.push("No Priority is confirmed yet.");
   for (const entry of bottomRow(compass)) {
     parts.push(
       entry.kind === "point"
-        ? `${compassPlaceText(entry.point)}: ${entry.point.label}.`
+        ? `${compassPlaceText(entry.point)}: ${entry.point.label}${entry.point.isForming ? " (Forming)" : ""}.`
         : `${entry.count} more ${entry.count === 1 ? "point is" : "points are"} listed in the Compact view.`,
     );
   }
@@ -322,6 +323,7 @@ export const CONNECTED_COMPASS_WORDING = freeze({
   unarrangedGroup: "Not yet arranged",
   otherPathsGroup: "Other paths",
   needleHere: "The needle points here",
+  forming: "Forming",
   apexNotPriority: "Not your Priority until you confirm it",
   // The view switch: its visible label names the view it switches to, and
   // screen readers hear " of the Compass" after it.

@@ -23,7 +23,7 @@ function state(conversationId: string | null): ExplorerConversationState {
     messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] };
 }
 // Since chat step slice S3 (2026-11-03) the private context revision carries the saved Compass section.
-const PRIVATE_CONTEXT_VERSION = "wi007-v0.1+onboarding-fields-v2+compass-v1";
+const PRIVATE_CONTEXT_VERSION = "wi007-v0.1+onboarding-fields-v2+compass-v2";
 function fixture(contextVersion?: string) {
   const configuration = getExplorerPrivateConfigurationCandidate(); if (!configuration) throw new Error("synthetic_candidate_missing");
   const readiness: ExplorerPrivateOperationalReadiness = { configuration, configurationFingerprint: SHA, modelName: "gpt-5.6-luna", modelPolicyVersion: "synthetic-model.v1",
@@ -79,9 +79,9 @@ function fixture(contextVersion?: string) {
         globalPolicy: { version: configuration.globalPolicy.version, text: configuration.globalPolicy.text.replace(/\r\n?/g, "\n").trim() },
         roleBehavior: { version: configuration.roleBehavior.version, text: configuration.roleBehavior.text.replace(/\r\n?/g, "\n").trim() },
         crisisBehavior: { version: configuration.crisisBehavior.version, text: configuration.crisisBehavior.text.replace(/\r\n?/g, "\n").trim() },
-        ...(includeCompass ? { compassContext: { version: "explorer-compass-context.v1",
+        ...(includeCompass ? { compassContext: { version: "explorer-compass-context.v2",
           points: input.state.compassItems.map((point, order) => ({ id: point.id, label: point.label, order,
-            formation: "saved", anchor: point.anchor ?? null, emphasis: point.emphasis ?? null })),
+            formation: point.formation ?? "saved", anchor: point.anchor ?? null, emphasis: point.emphasis ?? null })),
           priorityId: input.state.priorityId, attentionId: input.state.attentionId, recentRoute: [],
           waypoints: input.state.waypoints.map(point => ({ id: point.id, title: point.destination, destination: point.destination,
             meaning: point.meaning, arrivalSignal: point.arrivalSignal, stage: "formed", reachedEvidence: null })), drafts: [] } } : {}),
@@ -211,7 +211,7 @@ describe("Held private Explorer controller: explicit synthetic ports only", () =
     await commandExplorerPrivateConversation({ command: send(), dependencies: { ...old.dependencies, buildContext: adaptPrivateGovernedExplorerContextBuilder(av2) } });
     expect(old.prepare).not.toHaveBeenCalled(); expect(old.generate).not.toHaveBeenCalled();
   });
-  it.each(["wi007-v0.1+onboarding-fields-v2", "wi007-v0.1+onboarding-fields-v2+compass-v2"])(
+  it.each(["wi007-v0.1+onboarding-fields-v2", "wi007-v0.1+onboarding-fields-v2+compass-v1"])(
     "S3: refuses a private context of another revision (%s) before preparation or a provider call", async (version) => {
       const f = fixture(version);
       const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
@@ -1171,13 +1171,14 @@ describe("S4 optional reply proposals keep settlement and safety separate", () =
   const otherId = "00000000-0000-4000-8000-000000000012";
   const mergedId = "00000000-0000-4000-8000-000000000013";
   const choices = [{ label: "Show me around" }, { label: "I have a question" }, { label: "Let's begin" }];
-  function withPoints() {
+  function withPoints(formation?: "saved" | "forming") {
     const f = fixture();
     const current: ExplorerConversationState = { ...state(ID.conversation),
       messages: [{ id: sourceId, role: "explorer", body: "Synthetic saved topic.", createdAt: "2026-10-25T17:00:00Z" }],
       compassItems: [
         { id: pointId, sourceMessageId: sourceId, label: "Synthetic priority", anchor: "apex", emphasis: 2, mergedIntoItemId: null },
-        { id: otherId, sourceMessageId: sourceId, label: "Synthetic unplaced topic", anchor: null, emphasis: null, mergedIntoItemId: null },
+        { id: otherId, sourceMessageId: sourceId, label: "Synthetic unplaced topic", anchor: null, emphasis: null, mergedIntoItemId: null,
+          ...(formation === undefined ? {} : { formation }) },
         { id: mergedId, sourceMessageId: sourceId, label: "Synthetic merged topic", anchor: null, emphasis: null, mergedIntoItemId: pointId },
       ], priorityId: pointId, attentionId: pointId };
     f.setCurrent(current);
@@ -1188,6 +1189,65 @@ describe("S4 optional reply proposals keep settlement and safety separate", () =
     return JSON.stringify({ protocol: "explorer-safety-reply.v2", classification: { level, minorIndicated: false },
       candidateReply: { content: "A synthetic reflective reply without any saved-action claim." }, compass: { attention }, choices: labels });
   }
+  function suggestedReply(suggestions: unknown, level = 0) {
+    const body = JSON.parse(reply(otherId, choices, level));
+    body.compass.suggestions = suggestions;
+    return JSON.stringify(body);
+  }
+  it("S5 passes new and owned forming suggestions with the ordinary reply in one terminal intent", async () => {
+    const f = withPoints("forming");
+    const suggestions = [{ label: "A new topic" }, { label: "Updated forming topic", pointId: otherId }];
+    f.generate.mockResolvedValue(suggestedReply(suggestions));
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(output.result.ok).toBe(true); expect(output.assistance).toBeNull();
+    expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_reply_kind: "ordinary", p_attention_item_id: otherId,
+      p_compass_suggestions: suggestions, p_choices: choices });
+  });
+  it.each([pointId, mergedId, "00000000-0000-4000-8000-000000000099"])(
+    "S5 drops an update to saved, merged or foreign point %s independently", async pointId => {
+      const f = withPoints("forming");
+      f.generate.mockResolvedValue(suggestedReply([{ label: "New topic" }, { label: "Invalid update", pointId },
+        { label: "Valid update", pointId: otherId }]));
+      await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+      expect(f.settle.mock.calls[0][0]).toMatchObject({ p_reply_kind: "ordinary",
+        p_compass_suggestions: [{ label: "New topic" }, { label: "Valid update", pointId: otherId }] });
+    });
+  it.each(["saved", undefined] as const)("S5 never overwrites %s Explorer wording from a suggestion", async formation => {
+    const f = withPoints(formation); f.generate.mockResolvedValue(suggestedReply([{ label: "Replacement", pointId: otherId }]));
+    await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_reply_kind: "ordinary", p_compass_suggestions: null });
+  });
+  it.each([2, 3, 4])("S5 drops suggestions at classification level %i without discarding the reply", async level => {
+    const f = withPoints("forming"); f.generate.mockResolvedValue(suggestedReply([{ label: "Topic" }], level));
+    await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_reply_kind: level === 2 ? "ordinary" : level === 3 ? "urgent" : "crisis",
+      p_compass_suggestions: null });
+    expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
+  });
+  it.each(["restricted", "adult_stopped", "canceled"])("S5 drops suggestions when %s", async condition => {
+    const f = withPoints("forming"); const abort = new AbortController();
+    if (condition === "restricted") f.setPolicy({ ...POLICY, restrictedLevel: 3 });
+    if (condition === "adult_stopped") f.setPolicy({ ...POLICY, adultReflectionStopped: true });
+    f.generate.mockImplementation(async () => {
+      if (condition === "canceled") abort.abort();
+      return suggestedReply([{ label: "Topic" }]);
+    });
+    await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies, signal: abort.signal });
+    expect(f.settle).toHaveBeenCalledOnce();
+    expect(f.settle.mock.calls[0][0].p_compass_suggestions).toBeNull();
+    if (condition === "canceled") expect(f.settle.mock.calls[0][0]).toMatchObject({ p_reply_kind: "none", p_delivery_interested: false });
+    else expect(f.settle.mock.calls[0][0].p_request_mode).toBe("classification_only");
+  });
+  it("S5 retains a reply with individually bad suggestions and never reposts after unknown settlement", async () => {
+    const f = withPoints("forming");
+    f.generate.mockResolvedValue(suggestedReply([{ label: "Valid" }, { label: "" }, { label: "Other" }]));
+    f.settle.mockRejectedValue(new Error("Synthetic lost acknowledgement"));
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.settle).toHaveBeenCalledOnce(); expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_reply_kind: "ordinary", p_compass_suggestions: [{ label: "Valid" }, { label: "Other" }] });
+    expect(output.assistance).not.toBeNull();
+  });
   it("passes an owned unplaced current head and three choices to the one terminal intent", async () => {
     const f = withPoints(); f.generate.mockResolvedValue(reply(otherId));
     const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });

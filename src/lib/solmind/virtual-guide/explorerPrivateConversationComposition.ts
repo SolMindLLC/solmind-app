@@ -13,7 +13,7 @@ import { explorerConversationCommandFingerprint, type ExplorerConversationActor,
 import { parseExplorerPrivateConfigurationCandidate, type ExplorerPrivateConfigurationCandidate } from "./explorerPrivateConfiguration";
 import {
   EXPLORER_SAFETY_REQUEST_VERSION, EXPLORER_SAFETY_REPLY_PROTOCOL, explorerSafetyUnicodeValid, parseExplorerSafetyReplyRequest,
-  type ExplorerSafetyReplyRequest, type ExplorerSafetyClassification,
+  type ExplorerSafetyReplyRequest, type ExplorerSafetyClassification, type ExplorerSafetyCompassSuggestion,
 } from "./explorerSafetyReplyContract";
 import { invokeExplorerSafetyReply, type ExplorerSafetyReplyTransport } from "./explorerSafetyReplyInvocation";
 import type { ExplorerPrivateAssistance } from "../explorerPrivateConversationResponse";
@@ -47,7 +47,8 @@ export type ExplorerPrivateSettleParameters = ActorParameters & Readonly<{
   p_request_mode: string; p_configuration_fingerprint: string; p_fallback_policy_version: string;
   p_model_policy_version: string; p_trusted_response_version: string; p_resource_policy_version: string;
   p_fallback_level: number; p_fallback_minor_indicated: boolean; p_delivery_interested: boolean;
-  p_attention_item_id: string | null; p_choices: readonly Readonly<{ label: string }>[] | null }>;
+  p_attention_item_id: string | null; p_choices: readonly Readonly<{ label: string }>[] | null;
+  p_compass_suggestions: readonly ExplorerSafetyCompassSuggestion[] | null }>;
 export type ExplorerPrivateMutateParameters = ActorParameters & Readonly<{
   p_conversation_id: string; p_operation_id: string; p_expected_revision: number; p_command_fingerprint: string;
   p_kind: string; p_source_message_id: string | null; p_item_id: string | null; p_waypoint_id: string | null;
@@ -684,6 +685,10 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
         ? proposedAttention : null;
       const choices = ordinaryExtras && safety.currentLevel !== null && safety.currentLevel < 2
         ? observedModel?.observation?.choices ?? null : null;
+      const proposedPoints = ordinaryExtras && safety.currentLevel !== null && safety.currentLevel < 2
+        ? observedModel?.observation?.compass?.suggestions?.filter((suggestion) => suggestion.pointId === undefined ||
+          builderState.state.compassItems.some((item) => item.id === suggestion.pointId &&
+            item.formation === "forming" && !item.mergedIntoItemId)) : undefined;
       const settlement: ExplorerPrivateSettleParameters = { ...base(actor), p_conversation_id: ids.conversationId,
         p_operation_id: command.operationId, p_status: model !== null ? "completed" : terminalDeliveryInterested ? "failed" : "canceled",
         p_reply_message_id: replyKind === "none" ? null : ids.replyId, p_reply_kind: replyKind, p_reply_body: replyBody,
@@ -692,7 +697,8 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
         p_fallback_policy_version: fallback.policyVersion, p_model_policy_version: readiness.modelPolicyVersion,
         p_trusted_response_version: readiness.configuration.trustedResponses.version, p_resource_policy_version: readiness.resourcePolicyVersion,
         p_fallback_level: fallback.classification.level, p_fallback_minor_indicated: fallback.classification.minorIndicated,
-        p_delivery_interested: terminalDeliveryInterested, p_attention_item_id: attentionItemId, p_choices: choices };
+        p_delivery_interested: terminalDeliveryInterested, p_attention_item_id: attentionItemId, p_choices: choices,
+        p_compass_suggestions: proposedPoints?.length ? Object.freeze(proposedPoints) : null };
       let settled: ExplorerPrivateRpcRow;
       try { settled = await dependencies.repository.settle(settlement); }
       catch { policy = safety.policyKnown ? { status: "known", restrictedLevel: safety.restrictedLevel, adultReflectionStopped: safety.adultReflectionStopped,

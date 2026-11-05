@@ -42,6 +42,7 @@ import {
 import { EXPLORER_CONVERSATION_SPACES, EXPLORER_MENU } from "../../../lib/solmind/workspaceMenus";
 import { WORKSPACE_NOT_CONNECTED_LABEL } from "../../../lib/solmind/workspaceNavigation";
 import { ConnectedCompassCard } from "../ExplorerConnectedCompassCard";
+import { ExplorerConversationFormation } from "../ExplorerConversationFormation";
 import {
   ExplorerConversationConnectedScreen,
   type ConnectedConversationActions,
@@ -214,6 +215,48 @@ beforeEach(() => {
 afterEach(() => { expect(vi.mocked(globalThis.fetch).mock.calls.length).toBe(0); vi.restoreAllMocks(); });
 
 describe("connected Explorer conversation screen", () => {
+  it("S5 keeps forming points out of the old tools' saved-point review controls while showing current attention", () => {
+    const original = cardState();
+    const state = cardState({ attentionId: CARD_POINTS.unarranged,
+      compassItems: original.compassItems.map(item => item.id === CARD_POINTS.unarranged
+        ? { ...item, formation: "forming" } : item) });
+    const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state, busy: false, onCommand: () => {} }));
+    expect(textOf(html)).toContain(`Current attention: ${CARD_LABELS.unarranged}`);
+    expect(textOf(html)).not.toContain(`Review Priority: ${CARD_LABELS.unarranged}`);
+    expect(textOf(html)).not.toContain(`Review wording or combine: ${CARD_LABELS.unarranged}`);
+    expect(textOf(html)).toContain(`Review Priority: ${CARD_LABELS.detour}`);
+    expect(textOf(html)).toContain(`Review wording or combine: ${CARD_LABELS.detour}`);
+  });
+
+  it("S5 shows forming points dashed and named Forming in Full, Compact and drawer views", () => {
+    const original = cardState();
+    const state = cardState({ compassItems: original.compassItems.map(item => ({ ...item,
+      formation: item.id === CARD_POINTS.detour || item.id === CARD_POINTS.unarranged ? "forming" : "saved" })) });
+    for (const scope of ["panel", "drawer"]) {
+      const full = cardMarkup({ scope, state, view: "full" });
+      const compact = cardMarkup({ scope, state, view: "compact" });
+      for (const html of [full, compact]) {
+        expect(pointButtons(html).filter(button => button.text.includes("Forming")).map(button => button.text)).toEqual([
+          "Money worries Detour, left Forming", "Asking for help Not yet arranged Forming",
+        ]);
+        expect(pointButtons(html)).toHaveLength(pointButtons(cardMarkup({ scope, view: "full" })).length);
+        expect(html).not.toContain("data-build-note");
+        expect(html).not.toContain("That's right");
+      }
+      expect(full.match(/<circle[^>]*stroke-dasharray="4 3"/g)).toHaveLength(1);
+      expect(full.match(/<rect[^>]*stroke-dasharray="4 3"/g)).toHaveLength(1);
+      expect(full.match(/<text[^>]*>Forming<\/text>/g)).toHaveLength(2);
+      expect(full).toContain("Detour, left: Money worries (Forming).");
+      expect(full).toContain("Not yet arranged: Asking for help (Forming).");
+      for (const button of pointButtons(compact)) {
+        expect((attribute(button.attrs, "class") ?? "").includes("border-dashed")).toBe(button.text.includes("Forming"));
+      }
+      const confirmed = cardState({ compassItems: state.compassItems.map(item => ({ ...item, formation: "saved" })) });
+      expect(cardMarkup({ scope, state: confirmed, view: "full" })).toBe(cardMarkup({ scope, state: original, view: "full" }));
+      expect(cardMarkup({ scope, state: confirmed, view: "compact" })).toBe(cardMarkup({ scope, state: original, view: "compact" }));
+    }
+  });
+
   it("S4 keeps saved reply choices out of the screen until S6", () => {
     const original = savedState();
     const withChoices = savedState({ messages: original.messages.map(message => message.role === "virtualGuide"

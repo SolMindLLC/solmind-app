@@ -17,6 +17,7 @@ import {
   buildWaypointFormationIntent,
   findFormationSource,
   currentCompassHeads,
+  savedCompassHeads,
   compassCategorySources,
   type ExplorerConversationFormationIntent,
   type FormationIntentResult,
@@ -40,11 +41,11 @@ const compassPositions: readonly Readonly<{ anchor: ExplorerCompassAnchor; label
   { anchor: "apex", label: "Top position", className: "col-start-2 row-start-1" },
   { anchor: "upper_left", label: "Upper left", className: "col-start-1 row-start-2" },
   { anchor: "upper_right", label: "Upper right", className: "col-start-3 row-start-2" },
-  { anchor: "side_left", label: "Detour — left", className: "col-start-1 row-start-3" },
-  { anchor: "side_right", label: "Detour — right", className: "col-start-3 row-start-3" },
-  { anchor: "lower_left", label: "Excursion — lower left", className: "col-start-1 row-start-4" },
-  { anchor: "lower_center", label: "Excursion — lower center", className: "col-start-2 row-start-4" },
-  { anchor: "lower_right", label: "Excursion — lower right", className: "col-start-3 row-start-4" },
+  { anchor: "side_left", label: "Detour \u2014 left", className: "col-start-1 row-start-3" },
+  { anchor: "side_right", label: "Detour \u2014 right", className: "col-start-3 row-start-3" },
+  { anchor: "lower_left", label: "Excursion \u2014 lower left", className: "col-start-1 row-start-4" },
+  { anchor: "lower_center", label: "Excursion \u2014 lower center", className: "col-start-2 row-start-4" },
+  { anchor: "lower_right", label: "Excursion \u2014 lower right", className: "col-start-3 row-start-4" },
 ];
 const emphasisLabels = { 1: "Light", 2: "Regular", 3: "Strong" } as const;
 function placementLabel(anchor: ExplorerCompassAnchor | null) {
@@ -81,7 +82,7 @@ function SavedSource({ state, sourceMessageId }: Readonly<{
   const source = findFormationSource(state, sourceMessageId);
   return source ? (
     <blockquote className="mt-3 max-h-64 overflow-y-auto whitespace-pre-wrap break-words border-l-2 border-cyan-400 pl-3 text-sm text-slate-300">
-      <p className="mb-2 text-xs font-semibold text-cyan-200">Exact saved source — {source.role === "explorer" ? "You" : "SolMind Virtual Guide"}</p>
+      <p className="mb-2 text-xs font-semibold text-cyan-200">Exact saved source {"\u2014"} {source.role === "explorer" ? "You" : "SolMind Virtual Guide"}</p>
       {source.body}
     </blockquote>
   ) : null;
@@ -98,7 +99,7 @@ function SourceSelect({ id, state, value, onChange }: Readonly<{
         <option value="">Choose a saved message</option>
         {state.messages.map((message, index) => (
           <option key={message.id} value={message.id}>
-            {index + 1}. {message.role === "explorer" ? "You" : "SolMind Virtual Guide"}: {message.body.slice(0, 80)}{message.body.length > 80 ? "…" : ""}
+            {index + 1}. {message.role === "explorer" ? "You" : "SolMind Virtual Guide"}: {message.body.slice(0, 80)}{message.body.length > 80 ? "\u2026" : ""}
           </option>
         ))}
       </select>
@@ -126,9 +127,9 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
   const [releaseConfirmed, setReleaseConfirmed] = useState(false);
   const [clarificationReview, setClarificationReview] = useState<Omit<WaypointRevisionReview, "answers"> | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const currentPoints = currentCompassHeads(state);
+  const currentPoints = savedCompassHeads(state);
   const priority = currentPoints.find(item => item.id === state.priorityId);
-  const attention = currentPoints.find(item => item.id === state.attentionId);
+  const attention = currentCompassHeads(state).find(item => item.id === state.attentionId);
   const otherPaths = currentPoints.filter(item => item.anchor == null);
   const staleArrangement = arrangementDraft !== null &&
     (arrangementDraft.conversationId !== state.conversationId || arrangementDraft.revision !== state.revision);
@@ -149,7 +150,8 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
     if (arrangementDraft.priorityId !== null && arrangementDraft.items.find(item => item.compassItemId === arrangementDraft.priorityId)?.anchor !== "apex") {
       arrangementIssues.push("Place the proposed Priority at the top position before confirming.");
     }
-    if (state.attentionId !== null && arrangementDraft.items.find(item => item.compassItemId === state.attentionId)?.anchor == null) {
+    if (state.attentionId !== null && attention?.formation !== "forming" &&
+        arrangementDraft.items.find(item => item.compassItemId === state.attentionId)?.anchor == null) {
       arrangementIssues.push("Keep the current attention point in a visible position.");
     }
   }
@@ -277,7 +279,7 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
       {sources.length > 1 ? <details className="mt-2"><summary className="cursor-pointer text-sm text-cyan-200">Combined source points ({sources.length})</summary>
         <p className="mt-2 text-xs text-slate-300">Original points and exact saved sources remain available. The category label describes your current wording.</p>
         <ul className="mt-2 space-y-3">{sources.map(source => <li key={source.id} className="break-words text-sm text-slate-200">
-          <p>{source.label}{source.id === item.id ? " — current category" : " — retained source point"}</p>
+          <p>{source.label}{source.id === item.id ? " \u2014 current category" : " \u2014 retained source point"}</p>
           <SavedSource state={state} sourceMessageId={source.sourceMessageId} />
         </li>)}</ul>
       </details> : null}
@@ -318,7 +320,7 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
           Light, Regular and Strong express your relative emphasis, not a score. Priority stays at the top once confirmed.
         </p>
         {currentPoints.length === 0 ? (
-          <p className="mt-3 text-sm text-slate-300">Discovery mode — no topic or Priority has been invented.</p>
+          <p className="mt-3 text-sm text-slate-300">Discovery mode {"\u2014"} no topic or Priority has been invented.</p>
         ) : <>
           <section aria-label="Saved Compass arrangement" className="mt-4 overflow-x-auto">
             <div className="grid min-w-[34rem] grid-cols-3 gap-3">
@@ -327,7 +329,7 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
                 return <div key={position.anchor} className={`min-w-0 ${position.className}`}>
                   <h3 className="mb-2 text-xs font-semibold text-slate-300">{position.label}</h3>
                   {item ? pointCard(item) : <p className="rounded-2xl border border-dashed border-slate-700 p-3 text-xs text-slate-400">No point placed here</p>}
-                  {position.anchor === "apex" && item && state.priorityId === null ? <p className="mt-2 text-xs text-amber-200">No Priority confirmed — placement alone does not confirm it.</p> : null}
+                  {position.anchor === "apex" && item && state.priorityId === null ? <p className="mt-2 text-xs text-amber-200">No Priority confirmed {"\u2014"} placement alone does not confirm it.</p> : null}
                 </div>;
               })}
             </div>
@@ -343,7 +345,7 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
           <fieldset disabled={busy || staleArrangement} className="mt-4 space-y-4 rounded-2xl border border-amber-300/50 p-4">
             <legend className="px-1 font-semibold text-slate-100">Review Compass arrangement</legend>
             <p className="text-sm leading-6 text-slate-300">Choose each location and relative emphasis. Up to eight points can be visible; all remaining points stay in Other paths. No point is moved automatically.</p>
-            <p className="break-words text-sm text-cyan-200">Current attention stays on: {attention?.label ?? "No attention point chosen"}. A chosen attention point must remain visible.</p>
+            <p className="break-words text-sm text-cyan-200">Current attention stays on: {attention?.label ?? "No attention point chosen"}.{attention?.formation !== "forming" ? " A chosen attention point must remain visible." : ""}</p>
             {staleArrangement ? <p role="alert" className="text-sm text-amber-200">Your saved Compass changed. Close this review and open a new one before confirming.</p> : null}
             <label htmlFor={`${id}-arrangement-priority`} className="block text-sm text-slate-200">Priority for this arrangement
               <select id={`${id}-arrangement-priority`} className={inputClass} value={arrangementDraft.priorityId ?? ""} onChange={event => {
@@ -354,7 +356,7 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
                 {currentPoints.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
               </select>
             </label>
-            {changingPriority ? <p className="break-words rounded-xl border border-amber-300/50 p-3 text-sm text-amber-100">Priority will change from “{priority?.label ?? "No Priority confirmed"}” to “{draftPriority?.label ?? "No Priority confirmed"}”. Place the new Priority at the top and explicitly relocate any point already there. Current attention remains separate.</p> : <p className="text-sm text-slate-300">{priority ? "Your existing Priority must remain at the top and cannot be cleared here." : "A point at the top does not become Priority unless you explicitly choose and confirm it."}</p>}
+            {changingPriority ? <p className="break-words rounded-xl border border-amber-300/50 p-3 text-sm text-amber-100">Priority will change from {"\u201c"}{priority?.label ?? "No Priority confirmed"}{"\u201d"} to {"\u201c"}{draftPriority?.label ?? "No Priority confirmed"}{"\u201d"}. Place the new Priority at the top and explicitly relocate any point already there. Current attention remains separate.</p> : <p className="text-sm text-slate-300">{priority ? "Your existing Priority must remain at the top and cannot be cleared here." : "A point at the top does not become Priority unless you explicitly choose and confirm it."}</p>}
             <ul className="space-y-4">{arrangementDraft.items.map((draftItem, index) => {
               const point = currentPoints.find(item => item.id === draftItem.compassItemId);
               if (!point) return null;
@@ -393,7 +395,7 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
             {currentPoints.map(item => <label key={item.id} className="flex items-start gap-3 break-words text-sm text-slate-200">
               <input type="checkbox" className="mt-1" checked={categoryDraft.memberItemIds.includes(item.id)} disabled={item.id === categoryDraft.targetItemId} onChange={event => editCategory({ memberItemIds: event.target.checked
                 ? [...categoryDraft.memberItemIds, item.id] : categoryDraft.memberItemIds.filter(memberId => memberId !== item.id) })} />
-              <span>{item.label}{item.id === categoryDraft.targetItemId ? " — keep this point as the category" : ""}{item.id === state.priorityId ? "; confirmed Priority" : ""}{item.id === state.attentionId ? "; current attention" : ""}</span>
+              <span>{item.label}{item.id === categoryDraft.targetItemId ? " \u2014 keep this point as the category" : ""}{item.id === state.priorityId ? "; confirmed Priority" : ""}{item.id === state.attentionId ? "; current attention" : ""}</span>
             </label>)}
           </fieldset>
           <p className="break-words rounded-xl border border-cyan-300/40 p-3 text-sm text-cyan-100">Proposed wording: {categoryDraft.label.trim() || "Enter wording above"}. Keep {categoryTarget?.anchor == null ? "Other paths" : placementLabel(categoryTarget.anchor)}; relative emphasis: {categoryTarget?.emphasis == null ? "not recorded" : emphasisLabels[categoryTarget.emphasis]}.</p>
@@ -403,7 +405,7 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
           <details className="rounded-xl border border-slate-700 p-3" open>
             <summary className="cursor-pointer text-sm font-semibold text-cyan-200">Review all contributing saved sources ({categorySources.length})</summary>
             <ul className="mt-3 space-y-3">{categorySources.map(item => <li key={item.id} className="break-words text-sm text-slate-200">
-              <p>{item.label}{categoryDraft.memberItemIds.includes(item.id) ? " — selected current point" : " — retained source point"}</p>
+              <p>{item.label}{categoryDraft.memberItemIds.includes(item.id) ? " \u2014 selected current point" : " \u2014 retained source point"}</p>
               <SavedSource state={state} sourceMessageId={item.sourceMessageId} />
             </li>)}</ul>
           </details>
@@ -425,17 +427,17 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
                   {entry.kind === "arrangement_confirmed" ? <>
                     <p className="font-semibold text-slate-200">Compass arrangement confirmed</p>
                     <p className="mt-1">{entry.previousPriorityId !== entry.priorityId
-                      ? `Priority changed from “${entry.items.find(item => item.compassItemId === entry.previousPriorityId)?.label ?? "No Priority confirmed"}” to “${entry.items.find(item => item.compassItemId === entry.priorityId)?.label ?? "No Priority confirmed"}”.`
+                      ? `Priority changed from \u201c${entry.items.find(item => item.compassItemId === entry.previousPriorityId)?.label ?? "No Priority confirmed"}\u201d to \u201c${entry.items.find(item => item.compassItemId === entry.priorityId)?.label ?? "No Priority confirmed"}\u201d.`
                       : entry.priorityId === null ? "No Priority confirmed." : `Priority retained: ${entry.items.find(item => item.compassItemId === entry.priorityId)?.label ?? "Recorded Priority"}.`}</p>
                     <details className="mt-2"><summary className="cursor-pointer text-cyan-200">Review recorded placement and emphasis</summary>
-                      <ul className="mt-2 space-y-2">{entry.items.map(item => <li key={item.compassItemId} className="break-words">{item.label} — {placementLabel(item.anchor)}; {emphasisLabels[item.emphasis]}.</li>)}</ul>
+                      <ul className="mt-2 space-y-2">{entry.items.map(item => <li key={item.compassItemId} className="break-words">{item.label} {"\u2014"} {placementLabel(item.anchor)}; {emphasisLabels[item.emphasis]}.</li>)}</ul>
                     </details>
                   </> : entry.kind === "category_confirmed" ? <>
                     <p className="font-semibold text-slate-200">{entry.change.memberItemIds.length > 1 ? "Categories combined" : "Category wording updated"}</p>
                     <p className="mt-1">Confirmed wording: {entry.change.label}</p>
                     <details className="mt-2"><summary className="cursor-pointer text-cyan-200">Review recorded wording and sources</summary>
                       <ul className="mt-2 space-y-3">{entry.change.beforeItems.map(item => <li key={item.compassItemId} className="break-words">
-                        <p>{item.label}{entry.change.memberItemIds.includes(item.compassItemId) ? " — selected point before this change" : " — retained contributing point"}; {placementLabel(item.anchor)}; {item.emphasis === null ? "relative emphasis not recorded" : emphasisLabels[item.emphasis]}.</p>
+                        <p>{item.label}{entry.change.memberItemIds.includes(item.compassItemId) ? " \u2014 selected point before this change" : " \u2014 retained contributing point"}; {placementLabel(item.anchor)}; {item.emphasis === null ? "relative emphasis not recorded" : emphasisLabels[item.emphasis]}.</p>
                         <SavedSource state={state} sourceMessageId={item.sourceMessageId} />
                       </li>)}</ul>
                     </details>
@@ -472,14 +474,14 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
           <ul className="mt-4 space-y-4">{state.waypoints.map(waypoint => (
             <li key={waypoint.id} id={`${id}-waypoint-${waypoint.id}`} className="rounded-2xl border border-slate-700 p-4">
               <h3 className="break-words font-semibold text-slate-100">{waypoint.destination}</h3>
-              <p className="mt-1 text-xs font-semibold text-cyan-200">{waypointSuccessors.has(waypoint.id) ? waypoint.release !== undefined ? "Earlier version - Released" : waypoint.status === "reached" ? "Earlier version - Reached" : "Earlier version - Formed" : waypoint.release !== undefined ? "Released — kept in your private history" : waypoint.status === "reached" ? "Reached — confirmed by you" : "In progress — chosen by you"}</p>
+              <p className="mt-1 text-xs font-semibold text-cyan-200">{waypointSuccessors.has(waypoint.id) ? waypoint.release !== undefined ? "Earlier version - Released" : waypoint.status === "reached" ? "Earlier version - Reached" : "Earlier version - Formed" : waypoint.release !== undefined ? "Released \u2014 kept in your private history" : waypoint.status === "reached" ? "Reached \u2014 confirmed by you" : "In progress \u2014 chosen by you"}</p>
               <dl className="mt-3 space-y-3 text-sm"><div><dt className="font-semibold text-slate-200">Why it matters</dt><dd className="mt-1 whitespace-pre-wrap break-words text-slate-300">{waypoint.meaning}</dd></div><div><dt className="font-semibold text-slate-200">Arrival signal</dt><dd className="mt-1 whitespace-pre-wrap break-words text-slate-300">{waypoint.arrivalSignal}</dd></div></dl>
               {waypoint.lifecycle !== undefined ? <details className="mt-3 rounded-xl border border-slate-700 p-3">
                 <summary className="cursor-pointer text-sm text-cyan-200">Review this {waypoint.lifecycle.creationReason === "revision" ? "revision" : "new lifecycle"} and its clarification sources</summary>
                 <p className="mt-3 text-sm text-slate-300">{waypoint.lifecycle.creationReason === "revision" ? "You confirmed a revised understanding. The earlier definition remains in history." : "You confirmed a new current lifecycle. Earlier Reached evidence or release history does not count as current arrival."}</p>
                 <a href={`#${id}-waypoint-${waypoint.lifecycle.predecessorWaypointId}`} className="mt-2 inline-block text-sm text-cyan-200 underline">Review the earlier saved version</a>
                 {waypoint.lifecycle.clarifications.length === 0 ? <p className="mt-3 text-sm text-slate-300">You deliberately kept the earlier destination, meaning and arrival signal when confirming this new lifecycle.</p> : <ul className="mt-3 space-y-4">{waypoint.lifecycle.clarifications.map(source => <li key={source.component} className="text-sm text-slate-300">
-                  <p className="font-semibold text-slate-200">Explorer clarification in this conversation — {source.component === "arrivalSignal" ? "arrival signal" : source.component}</p>
+                  <p className="font-semibold text-slate-200">Explorer clarification in this conversation {"\u2014"} {source.component === "arrivalSignal" ? "arrival signal" : source.component}</p>
                   <p className="mt-1">Application question: {source.component === "destination" ? "Where do you want to arrive now?" : source.component === "meaning" ? "Why does reaching that place matter to you now?" : "What observable signal would help you recognize arrival now?"}</p>
                   <blockquote className="mt-2 whitespace-pre-wrap break-words border-l-2 border-cyan-400 pl-3">{source.answer}</blockquote>
                   <time dateTime={source.recordedAt} className="mt-1 block text-xs text-slate-400">{new Date(source.recordedAt).toLocaleString("en-US")}</time>

@@ -138,6 +138,61 @@ const composer = (page: Page) => page.getByLabel("Continue the conversation", { 
 const sendButton = (page: Page) => page.getByRole("button", { name: "Send", exact: true });
 const unavailableNotice = (page: Page) => page.getByText(/Virtual Guide is unavailable\. You can review saved messages/);
 
+test("S5 reply state adds and revises a dashed Forming point that survives reload and loses its marker when confirmed", async ({ page }) => {
+  const original = cardState();
+  let state = cardState({ providerState: "available",
+    compassItems: original.compassItems.filter(item => item.id !== CARD_POINTS.unarranged) });
+  let sends = 0;
+  await page.route("**/explorer/conversation/commands", async route => {
+    const command = route.request().postDataJSON() as { kind: string; body: string };
+    expect(command.kind).toBe("send");
+    sends += 1;
+    const explorerId = `20000000-0000-4000-8000-0000000000a${sends}`;
+    const replyId = `30000000-0000-4000-8000-0000000000a${sends}`;
+    const label = sends === 1 ? "Accepting help" : "Asking for support";
+    const forming = { id: CARD_POINTS.unarranged, sourceMessageId: "30000000-0000-4000-8000-0000000000a1",
+      label, formation: "forming" as const, anchor: null, emphasis: null, mergedIntoItemId: null };
+    state = { ...state, revision: state.revision + 1, messages: [...state.messages,
+      { id: explorerId, role: "explorer", body: command.body, createdAt: "2026-11-04T22:00:00.000Z" },
+      { id: replyId, role: "virtualGuide", body: `Synthetic forming reply ${sends}.`, createdAt: "2026-11-04T22:00:01.000Z" }],
+    compassItems: [...state.compassItems.filter(item => item.id !== CARD_POINTS.unarranged), forming] };
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(success(state)) });
+  });
+  await openPage(page, () => state);
+  await composer(page).fill("A synthetic topic about accepting help.");
+  await sendButton(page).click();
+  await expect(page.getByText("Synthetic forming reply 1.", { exact: true })).toBeVisible();
+  let card = await openCard(page);
+  await expect(point(needleGroup(card), "Accepting help")).toHaveAccessibleName("Accepting help Not yet arranged Forming");
+  await expect(dialOf(card).locator('rect[stroke-dasharray="4 3"]')).toHaveCount(1);
+  await expect(dialOf(card).locator("text", { hasText: /^Forming$/ })).toBeVisible();
+  await showCompact(card);
+  await expect(point(needleGroup(card), "Accepting help")).toHaveCSS("border-top-style", "dashed");
+  await expect(point(needleGroup(card), "Accepting help")).toContainText("Forming");
+  await expectNoSidewaysScroll(page);
+  await closeDrawer(page);
+
+  await composer(page).fill("A synthetic clarification about asking for support.");
+  await sendButton(page).click();
+  await expect(page.getByText("Synthetic forming reply 2.", { exact: true })).toBeVisible();
+  await page.reload();
+  card = await openCard(page);
+  await expect(point(needleGroup(card), "Asking for support")).toHaveAccessibleName("Asking for support Not yet arranged Forming");
+  await expect(point(needleGroup(card), "Accepting help")).toHaveCount(0);
+  await expect(compassOf(card).getByRole("button", { name: /That's right|That's not it/ })).toHaveCount(0);
+  await expectNoSeriousAxeViolations(page);
+  await closeDrawer(page);
+
+  // Confirmation controls are S6. A subsequent saved-state read supplies the confirmed marker here.
+  state = { ...state, compassItems: state.compassItems.map(item => item.id === CARD_POINTS.unarranged
+    ? { ...item, formation: "saved" } : item) };
+  await page.reload();
+  card = await openCard(page);
+  await expect(point(needleGroup(card), "Asking for support")).toHaveAccessibleName("Asking for support Not yet arranged");
+  await expect(dialOf(card).locator('rect[stroke-dasharray="4 3"]')).toHaveCount(0);
+  expect(sends).toBe(2);
+});
+
 test("the card draws the saved Compass and Waypoints, and tapping a point on the dial sends exactly the existing set_attention command", async ({ page }) => {
   // The Virtual Guide is unavailable in this state: pointing the needle does not need it.
   let state = cardState();

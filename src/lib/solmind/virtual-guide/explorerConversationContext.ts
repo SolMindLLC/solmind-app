@@ -56,6 +56,7 @@ type Authority = {
   onboardingStatus: "active"; adultAffirmation: true; authorizationVersion: string;
   onboarding: { responseId: string; answers: Record<string, string> };
   requiredConsentDocumentIds: string[];
+  formingAttentionMove?: { pointId: string | null; revision: number; recordedAt: string };
 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const FIELDS = EXPLORER_ONBOARDING_CONTINUITY_FIELDS;
@@ -70,8 +71,10 @@ function exact(value: Record<string, unknown>, names: readonly string[]): boolea
 function invalid(): never { throw new Error("explorer_conversation_context_unavailable"); }
 function authority(value: unknown, expectedContract: "AV2" | "AV3" = "AV2"): Authority {
   const ids = ["accountId", "explorerId", "relationshipId", "guideId", "practiceId", "organizationId", "applicationSessionId"];
+  const hasFormingMove = record(value) && Object.hasOwn(value, "formingAttentionMove");
   if (!record(value) || !exact(value, [...ids, "applicationSessionExpiresAt", "relationshipStatus", "onboardingStatus",
-    "adultAffirmation", "authorizationVersion", "onboarding", "requiredConsentDocumentIds"]) ||
+    "adultAffirmation", "authorizationVersion", "onboarding", "requiredConsentDocumentIds",
+    ...(hasFormingMove ? ["formingAttentionMove"] : [])]) ||
     !ids.every((key) => typeof value[key] === "string" && UUID.test(value[key] as string)) ||
     !["active", "paused"].includes(value.relationshipStatus as string) || value.onboardingStatus !== "active" ||
     value.adultAffirmation !== true || typeof value.authorizationVersion !== "string" ||
@@ -85,6 +88,14 @@ function authority(value: unknown, expectedContract: "AV2" | "AV3" = "AV2"): Aut
     !Array.isArray(value.requiredConsentDocumentIds) || value.requiredConsentDocumentIds.length === 0 ||
     value.requiredConsentDocumentIds.length > 16 || !value.requiredConsentDocumentIds.every((id) => typeof id === "string" && UUID.test(id)) ||
     new Set(value.requiredConsentDocumentIds).size !== value.requiredConsentDocumentIds.length) invalid();
+  if (hasFormingMove) {
+    const move = value.formingAttentionMove;
+    if (expectedContract !== "AV3" || !record(move) || !exact(move, ["pointId", "revision", "recordedAt"]) ||
+        !(move.pointId === null || (typeof move.pointId === "string" && UUID.test(move.pointId))) ||
+        typeof move.revision !== "number" || !Number.isSafeInteger(move.revision) || move.revision < 1 || move.revision > 2_147_483_647 ||
+        typeof move.recordedAt !== "string" || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?(?:Z|\+00:00)$/.test(move.recordedAt) ||
+        !Number.isFinite(Date.parse(move.recordedAt)) || new Date(move.recordedAt).toISOString().slice(0, 19) !== move.recordedAt.slice(0, 19)) invalid();
+  }
   return structuredClone(value) as Authority;
 }
 function configuration(value: ExplorerConversationContextConfiguration): ExplorerConversationContextConfiguration {
@@ -116,7 +127,7 @@ function comparableInstant(value: string): string {
 // Chat step slice S3 (Paul's decision 4, decision queue 2026-11-03 12:38:07 CST; go-ahead
 // 20:50:45 CST): the saved Compass and Waypoint section, taken from the state the final
 // read returned. The safe assembler validates it, and
-// supabase/migrations/20261103210000_explorer_context_compass.sql rebuilds it from the
+// supabase/migrations/20261105010000_explorer_forming_compass_points.sql rebuilds it from the
 // saved rows and compares it exactly before any provider call. Current points only (not
 // combined away), in saved display order; the saved Priority and attention (the needle
 // may be on an unplaced point); the last five needle moves (attention_changed) on a
@@ -125,32 +136,46 @@ function comparableInstant(value: string): string {
 // arrangement and category events and their before-labels are never model context);
 // the current Waypoint heads. The state carries no Waypoint title: every Waypoint writer
 // stores the destination as the title, and the database compares against the saved title.
-function compassContext(state: ConversationState) {
+function compassContext(state: ConversationState, formingMove: Authority["formingAttentionMove"]) {
   const points = state.compassItems.filter((item) => item.mergedIntoItemId == null);
-  const currentLabels = new Map(points.map((item) => [item.id, item.label]));
+  const currentLabels = new Map(points.filter((item) => item.formation !== "forming").map((item) => [item.id, item.label]));
   const moves = (state.route ?? []).filter(pointRouteEvent);
   const latestMove = moves.at(-1);
   const lastReplyAt = state.messages.filter((message) => message.role === "virtualGuide")
     .map((message) => comparableInstant(message.createdAt)).sort().at(-1);
+  const formingPoint = formingMove === undefined ? undefined : points.find(point => point.id === formingMove.pointId);
+  if (formingMove !== undefined) {
+    // A rejected latest move retains only its chronology, preventing an older
+    // acknowledgment from resurfacing without exposing the rejected point id.
+    if ((formingMove.pointId === null ? state.attentionId !== null || formingMove.revision >= state.revision
+      : formingPoint?.formation !== "forming" || state.attentionId !== formingMove.pointId) ||
+        formingMove.revision > state.revision || moves.some(event => event.revision >= formingMove.revision) ||
+        (lastReplyAt !== undefined && comparableInstant(formingMove.recordedAt) <= lastReplyAt)) invalid();
+  }
   // Filtered to current points before the cap, so a combined-away point's move leaves room for an older one.
   const recentRoute = moves.flatMap((event) => {
     const label = currentLabels.get(event.compassItemId);
     const actor = event.actor ?? "explorer";
     // Only the next saved reply may acknowledge the latest Explorer move. A tie
     // is deliberately ineligible, and a newer move on a retired point still wins.
-    const awaitingReply = actor === "explorer" && event === latestMove &&
+    const awaitingReply = formingMove === undefined && actor === "explorer" && event === latestMove &&
       (lastReplyAt === undefined || comparableInstant(event.recordedAt) > lastReplyAt);
     return label === undefined ? [] : [{ kind: event.kind, pointId: event.compassItemId, label, actor, awaitingReply }];
-  }).slice(-EXPLORER_SAFE_CONTEXT_LIMITS.compassRouteEventCount);
+  });
+  // Only the fresh server read can supply this label-free operation projection.
+  // The next-reply signal uses current wording without creating a saved Route event.
+  if (formingMove !== undefined && formingPoint !== undefined) recentRoute.push({ kind: "attention_changed",
+    pointId: formingPoint.id, label: formingPoint.label, actor: "explorer", awaitingReply: true });
   const successors = new Set(state.waypoints.flatMap((waypoint) =>
     waypoint.lifecycle === undefined ? [] : [waypoint.lifecycle.predecessorWaypointId]));
   const heads = state.waypoints.filter((waypoint) => !successors.has(waypoint.id));
   return {
     section: {
       version: EXPLORER_COMPASS_CONTEXT_VERSION,
-      points: points.map((item, order) => ({ id: item.id, label: item.label, order, formation: "saved",
+      points: points.map((item, order) => ({ id: item.id, label: item.label, order, formation: item.formation ?? "saved",
         anchor: item.anchor ?? null, emphasis: item.emphasis ?? null })),
-      priorityId: state.priorityId, attentionId: state.attentionId, recentRoute,
+      priorityId: state.priorityId, attentionId: state.attentionId,
+      recentRoute: recentRoute.slice(-EXPLORER_SAFE_CONTEXT_LIMITS.compassRouteEventCount),
       waypoints: heads.map((waypoint) => ({ id: waypoint.id, title: waypoint.destination,
         destination: waypoint.destination, meaning: waypoint.meaning, arrivalSignal: waypoint.arrivalSignal,
         stage: waypoint.status === "reached" ? "reached" : waypoint.release === undefined ? "formed" : "released",
@@ -186,7 +211,8 @@ function createConversationContextBuilder(input: ConversationContextBuilderInput
     const selectedFields = FIELDS.filter(field => REQUIRED_FIELDS.has(field) || facts.onboarding.answers[field].trim().length > 0);
     const recent = state.messages.slice(-24);
     // Classification-only AV3 omits the section and its sources before assembly and hashing; AV2 is unchanged.
-    const compass = authorizationContract === "AV3" && mode === "classification_and_reply" ? compassContext(state) : undefined;
+    const compass = authorizationContract === "AV3" && mode === "classification_and_reply"
+      ? compassContext(state, facts.formingAttentionMove) : undefined;
     const contextInput = {
       contractVersion: compass === undefined ? EXPLORER_CONVERSATION_CONTEXT_SELECTION_VERSION
         : EXPLORER_PRIVATE_CONVERSATION_CONTEXT_SELECTION_VERSION,

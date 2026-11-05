@@ -50,6 +50,27 @@ function bare(compassItems: ExplorerConversationCompassItem[], overrides: Partia
 }
 
 describe("connected Compass & Waypoint card mapping", () => {
+  it("ECC13 forming markers follow the saved point through both views without changing placement or needle rules", () => {
+    const original = cardState();
+    const state = cardState({ compassItems: original.compassItems.map((item) => ({ ...item,
+      formation: item.id === CARD_POINTS.detour || item.id === CARD_POINTS.unarranged ? "forming" : "saved" })) });
+    const before = connectedCompass(original);
+    const compass = connectedCompass(state);
+    expect(compass.points.filter(point => point.isForming).map(point => point.id))
+      .toEqual([CARD_POINTS.detour, CARD_POINTS.unarranged]);
+    expect(compass.points.map(point => ({ ...point, isForming: false }))).toEqual(before.points);
+    expect(before.points.every(point => !point.isForming)).toBe(true);
+    expect(dialPoints(compass).find(point => point.id === CARD_POINTS.detour)?.isForming).toBe(true);
+    expect(bottomRow(compass).some(entry => entry.kind === "point" && entry.point.id === CARD_POINTS.unarranged && entry.point.isForming)).toBe(true);
+    expect(describeConnectedCompass(compass)).toContain("Detour, left: Money worries (Forming).");
+    expect(describeConnectedCompass(compass)).toContain("Not yet arranged: Asking for help (Forming).");
+    expect(pointNeedleIntent(state, OPEN, CARD_POINTS.unarranged)).toEqual({ kind: "set_attention", itemId: CARD_POINTS.unarranged });
+    const revised = connectedCompass(cardState({ compassItems: state.compassItems.map(item => item.id === CARD_POINTS.unarranged
+      ? { ...item, label: "Accepting help", formation: "saved" } : item) }));
+    expect(revised.points.find(point => point.id === CARD_POINTS.unarranged))
+      .toMatchObject({ label: "Accepting help", isForming: false, place: "unarranged", needle: "available" });
+  });
+
   it("ECC01 the browser-test and screenshot fixture passes the closed browser parser unchanged", () => {
     const state = cardState();
     expect(parseExplorerConversationState(JSON.parse(JSON.stringify(state)))).toEqual(state);

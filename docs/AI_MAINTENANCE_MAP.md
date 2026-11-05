@@ -213,6 +213,7 @@ needle to change topic", with no instruction sentence, placement paragraph or
 line about the Compact view, and the Compass card has no "Not connected yet"
 notes (a dated exception in AGENTS.md). The SVG's acknowledgement of a move is
 a later slice (S3 and S4).
+Amendment 2026-11-04 (S5): forming points, automatic needle moves and Explorer-move acknowledgment are implemented; the Compass card still has no explanatory build-note area.
 Tests: `src/lib/solmind/__tests__/explorerConnectedCard.test.ts`,
 CC21-CC26 in
 `src/components/solmind/__tests__/ExplorerConversationConnectedScreen.test.tsx`
@@ -817,6 +818,7 @@ data stay omitted. Explorer preferences do not populate Guide guardrails.
 Source IDs and required prompt, policy, behavior, crisis, role,
 instruction and methodology bindings remain explicit. Original v1 evidence
 is not retrospectively enriched or sufficient for dispatch.
+Amendment 2026-11-04 (S5): ordinary AV3 now uses `wi007-v0.1+onboarding-fields-v2+compass-v2` with `explorer-compass-context.v2`; classification_only and AV2 keep the section-free base revision.
 
 The concrete request factory supplies neither provider nor context builder.
 It reads no runtime provider credential and sends no synthetic reply. A new
@@ -1463,6 +1465,7 @@ Chat step slice S3 (2026-11-03; Paul's decision 4 of decision queue entry 2026-1
 Guide reads of the saved Compass and Waypoints: the ordinary AV3 compact input is
 wi007-v0.1+onboarding-fields-v2+compass-v1 with one section, `compassContext`, after
 `approvedContinuity`. Change these together, or Sends become unavailable:
+Amendment 2026-11-04 (S5): the ordinary AV3 revision is now `wi007-v0.1+onboarding-fields-v2+compass-v2`, requiring `explorer-compass-context.v2` with saved or forming points; classification_only and AV2 keep the section-free base revision.
 - the section shape and limits: src/lib/solmind/context/explorerSafeContext.ts
   (`EXPLORER_COMPASS_CONTEXT_VERSION`, `EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION`,
   `EXPLORER_COMPASS_CONTEXT_ROUTE_KINDS`, `parseCompassContext`);
@@ -1473,6 +1476,7 @@ wi007-v0.1+onboarding-fields-v2+compass-v1 with one section, `compassContext`, a
   ai.solmind_inspect_explorer_context_v3, latest in
   supabase/migrations/20261105000000_explorer_crisis_context_without_compass.sql, and the key sets in
   methodology.serialized_methodology_valid (20261103210000_explorer_context_compass.sql);
+  Amendment 2026-11-04 (S5): both current SQL owners are in `20261105010000_explorer_forming_compass_points.sql`; validation accepts only the base revision without a section or compass-v2 with it, refusing compass-v1, and inspection requires the exact current mode's envelope.
 - the transport's section list and untrusted-text list in
   openAiLunaExplorerSafetyTransport.ts (code, not the approved policy, role or crisis
   texts), and the prompt and instruction version labels in
@@ -1487,6 +1491,7 @@ captured (amended 2026-11-03, S3 fix round 2: Priority changes are not sent; arr
 and category events and before-labels never); Waypoints are the current heads; the title is
 the saved title, which every writer sets to the destination. `formation` is "saved" and
 `drafts` is empty until later slices; `explorerSafeGuardrail` stays null.
+Amendment 2026-11-04 (S5): formation may now be `saved` or `forming`; `drafts` remains empty, rejected points are omitted, and an awaitingReply signal for a forming point captures no Route wording.
 
 supabase/migrations/20261025010000_explorer_source_exclusion.sql owns bounded
 current-source inspection and committed content-free exclusion accountability;
@@ -1817,6 +1822,7 @@ characters per plain-text label). Malformed optional groups are absent independe
 they never discard valid classification or candidate prose. Classification-only mode
 requests neither optional group nor candidate prose. The request remains
 explorer-safety-request.v2. Existing v1 evidence and saved messages remain valid.
+Amendment 2026-11-04 (S5): optional compass attention may also name a current forming head below level 2; its Route capture waits for confirmation.
 
 explorerSafetyReplyContract.ts owns parsing; explorerPrivateConversationComposition.ts
 passes proposals only for ordinary replies with delivery still wanted. Attention must
@@ -1830,6 +1836,7 @@ execute on settle v3 is revoked; its definition and old evidence are retained.
 Prepare keeps its exact 37 arguments and one-count-per-Send hard-stop behavior.
 The forward migration is
 `supabase/migrations/20261104000000_explorer_reply_protocol_v2.sql`.
+Amendment 2026-11-04 (S5): a current forming head is also eligible for automatic attention below level 2, and settle v4 adds p_compass_suggestions as its 23rd argument in the S5 migration.
 
 Choices are an insert-time nullable column on the saved Virtual Guide message,
 protected by the message guard for both v1 and v2, and returned as optional choices
@@ -1842,6 +1849,7 @@ awaitingReply pair to recentRoute. New assembly and SQL exact rederivation suppl
 both; only the latest Explorer needle move after the last saved Virtual Guide reply
 has awaitingReply true. This prevents repeated acknowledgments without a persistent
 marker. Priority changes remain excluded. AV2 stays unchanged.
+Amendment 2026-11-04 (S5): ordinary AV3 uses compass-v2 / explorer-compass-context.v2; the latest Explorer move onto a forming point also supplies the transient awaitingReply signal without a Route row.
 
 The global policy and role text change only for the v2 proposals and approved shift,
 acknowledgment and choice guidance; prompt/instruction labels and integrity pins
@@ -1860,6 +1868,7 @@ work. SQL/pgTAP, browser validation and any approved demo migration are Executor
 work; no database, provider or server was run by the builder. Daily repeated tour
 offers, remembered feature-use evidence, the Admin duration setting, forming points
 and Waypoints, S6 buttons, and Key Insights remain later slices.
+Amendment 2026-11-04 (S5): forming Compass points are implemented below; forming Waypoints, S6 controls and the other named later work remain outside S5.
 ## AV3 crisis-check context - 2026-11-04
 
 Paul's decision 2026-11-04 17:14:51 CST, point (d): classification_only uses
@@ -1868,6 +1877,7 @@ ids. The controller selects the mode before assembly; its adapter forwards it to
 both private builders, which omit the section before serialization and hashing.
 The controller pins mode, revision and section presence together. Ordinary
 classification_and_reply keeps the existing compass-v1 bytes; AV2 is unchanged.
+Amendment 2026-11-04 (S5): ordinary classification_and_reply now uses compass-v2 / explorer-compass-context.v2; classification_only and AV2 keep the section-free base revision.
 
 The inspector replacement in
 supabase/migrations/20261105000000_explorer_crisis_context_without_compass.sql
@@ -1877,3 +1887,92 @@ policy fails closed. Its existing SECURITY INVOKER setting, owner and grants,
 prepare's 37 arguments, immutable snapshots and historical replay are unchanged.
 Keep context/RPC/provider limits at 30/10/60 seconds and preserve cancellation,
 one-call and counting rules. SQL and browser execution remain Executor work.
+
+## Chat step S5: forming Compass points - 2026-11-04
+
+Paul's decisions of 2026-11-03 12:38:07 and 2026-11-04 21:44:03 allow
+conversation-derived Compass wording to appear immediately as Forming. Only the
+Explorer confirms a point, Priority or arrangement. S5 adds no reply buttons or
+typed-confirmation interpretation; those remain S6. Existing tools stay mounted.
+
+The single forward migration is
+`supabase/migrations/20261105010000_explorer_forming_compass_points.sql`.
+The app change and this migration must reach a database together; out of step in either direction every ordinary Send fails closed before the provider is called.
+`ai.explorer_conversation_compass_item.formation_status` is NULL for existing
+Explorer-saved rows (no backfill), or proposed, confirmed or rejected.
+`wording_message_id` points to the saved Virtual Guide reply that last supplied
+forming wording. Only settlement may overwrite a proposed label. Refining a
+proposal overwrites that label and pointer without a Compass wording snapshot;
+confirmed category/wording history remains immutable. Existing immutable context
+evidence retains fingerprints, source ids and version bindings, not serialized
+context text. S5 adds no hidden snapshot of forming wording.
+
+The existing 24-row limit counts every non-rejected row, including merged
+originals and forming points. Rejected rows have a separate fixed limit of 24
+per conversation; reaching it refuses another rejection without deleting earlier
+rows or silently freeing a slot. Rejected rows never appear in state or model
+context and cannot be heads, selectors, arrangement entries or category targets.
+Total storage is therefore at most 48 rows; display order can be 1 through 48.
+One-way combination still releases no slot. The eight visible positions and
+explicit Explorer control of Priority and arrangement remain unchanged.
+
+The service-role-only `public.solmind_settle_explorer_conversation_turn_v4`
+adds `p_compass_suggestions` to its previous 22 arguments. Each optional entry
+has a label and optionally pointId naming an owned current forming point. Only
+the first three submitted entries are considered; invalid entries are dropped
+independently, preserving valid siblings and the reply. A label with leading or
+trailing spaces is dropped, not trimmed. Labels must be single-line text within
+the existing 160-unit browser/context and SQL label bounds. Suggestions require
+a successfully saved ordinary reply, delivery still wanted,
+unrestricted/adult-allowed state and classification below level 2.
+They cannot rewrite a confirmed or Explorer-saved point, choose Priority or
+arrange points. An unchanged label does not create a new history entry.
+
+An Explorer or automatic Virtual Guide move onto a forming point changes
+attention but creates no Route entry or captured label. Immutable set_attention
+or Send facts keep only the target id. Confirming the point records every
+deferred move once as attention_changed, in operation order, with the confirmed
+wording, the revision and time the move would have had, and actor explorer or
+virtual_guide, even if attention has since moved elsewhere. Rejection never
+creates those Route entries. No later move captures an unconfirmed prior label.
+The latest Explorer needle move after the last saved Virtual Guide reply still
+supplies recentRoute's awaitingReply signal, including a move onto a forming
+point, with its current label and actor explorer. TypeScript and SQL build the
+same transient signal without writing a Route event; a later Explorer move
+supersedes it and the next saved Virtual Guide reply clears it.
+Amendment 2026-11-04 (S5): the read uses `ai.solmind_forming_attention_move_v1` to supply optional, server-only, label-free `authority_context.formingAttentionMove` as `{pointId,revision,recordedAt}`; a rejected latest move uses `pointId:null` and chronology only to suppress an older acknowledgment, with no browser field or Route event added.
+The private confirmation/rejection helper is groundwork
+for S6, with no new public execute grant or browser command; it requires current
+Explorer authority, exact wording/revision, unrestricted active state and no
+pending turn. Proposed points must be confirmed before Priority, arrangement or
+category operations can capture their wording.
+
+The additive optional `compass.suggestions` field keeps explorer-safety-reply.v2.
+The private ordinary context revision becomes
+wi007-v0.1+onboarding-fields-v2+compass-v2, with
+explorer-compass-context.v2 and formation saved or forming. SQL rederives the
+same section exactly. methodology.serialized_methodology_valid accepts v2 with
+its section and the base revision without a section, and refuses compass-v1;
+exact replay returns before this check. Classification-only context still has no
+Compass section or its exclusive source ids, using wi007-v0.1+onboarding-fields-v2. AV2 and
+historical evidence remain unchanged. Prepare still has 37 arguments; context,
+RPC and provider await limits remain 30/10/60 seconds, with the same cancellation,
+one-call, exact replay and one-count-per-Send rules.
+
+The browser contract accepts optional formation saved or forming so old fixtures
+remain valid. The connected Compass card marks forming points with a dashed
+outline and the word Forming, in Full and Compact views. Existing tool reviews
+exclude forming points from Priority, arrangement and category captures while
+keeping attention available. Ending on a forming point uses the label-free
+sentence "Current attention was still forming." Global policy,
+role text and output instructions permit bounded tentative suggestions without
+claims of saving or confirmation; their version labels and integrity pins move
+together. Paul must read the exact changed sentences before demo use.
+
+This is isolated source construction, not integration or demo approval. Builder
+checks are limited to TypeScript, ESLint and Vitest. SQL/pgTAP and browser suites,
+the standing Executor-launched independent Claude review, integration and any
+database/demo update remain Executor work. The builder may not access the
+sibling solmind-docs repository: its Data Model 03, Orchestration 04 section 12.6
+and Blueprint section 7.6 updates are an explicit outstanding handoff, not a
+claim that canonical documentation was updated.

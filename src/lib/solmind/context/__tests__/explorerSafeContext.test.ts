@@ -945,7 +945,7 @@ describe("Chat step slice S3 saved Compass and Waypoint section", () => {
     ]);
     const section = JSON.stringify(result.context.compassContext);
     expect(section).toBe(
-      '{"version":"explorer-compass-context.v1","points":[' +
+      '{"version":"explorer-compass-context.v2","points":[' +
       '{"id":"c0000000-0000-4000-8000-000000000001","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},' +
       '{"id":"c0000000-0000-4000-8000-000000000002","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},' +
       '{"id":"c0000000-0000-4000-8000-000000000003","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],' +
@@ -989,9 +989,10 @@ describe("Chat step slice S3 saved Compass and Waypoint section", () => {
   it.each([
     ["an extra section key", (s: Record<string, unknown>) => { s.extra = []; }, "explorer_context_unknown_key"],
     ["a missing section key", (s: Record<string, unknown>) => { delete s.drafts; }, "explorer_context_missing_required_layer"],
-    ["another section version", (s: Record<string, unknown>) => { s.version = "explorer-compass-context.v2"; }, "explorer_context_invalid_envelope"],
+    ["another section version", (s: Record<string, unknown>) => { s.version = "explorer-compass-context.v3"; }, "explorer_context_invalid_envelope"],
     ["a reserved draft", (s: Record<string, unknown>) => { s.drafts = [{ label: "Draft" }]; }, "explorer_context_invalid_envelope"],
-    ["a forming point", (s: Record<string, unknown>) => { at(s, "points", 0).formation = "forming"; }, "explorer_context_invalid_envelope"],
+    ["an arranged forming point", (s: Record<string, unknown>) => { at(s, "points", 1).formation = "forming";
+      at(s, "points", 1).anchor = "upper_left"; at(s, "points", 1).emphasis = 1; s.recentRoute = []; }, "explorer_context_invalid_envelope"],
     ["an unknown anchor", (s: Record<string, unknown>) => { at(s, "points", 1).anchor = "center"; at(s, "points", 1).emphasis = 1; }, "explorer_context_invalid_envelope"],
     ["an anchor without emphasis", (s: Record<string, unknown>) => { at(s, "points", 1).anchor = "lower_center"; }, "explorer_context_invalid_envelope"],
     ["a duplicate anchor", (s: Record<string, unknown>) => { at(s, "points", 2).anchor = "apex"; }, "explorer_context_invalid_envelope"],
@@ -1023,5 +1024,53 @@ describe("Chat step slice S3 saved Compass and Waypoint section", () => {
     ["a tab in Waypoint text", (s: Record<string, unknown>) => { at(s, "waypoints", 0).meaning = "Mornings\tset"; }, "explorer_context_invalid_text"],
   ])("S3-05 refuses %s", (_name, change, code) => {
     expectCode(withCompass(change), code);
+  });
+});
+
+describe("S5 forming Compass context", () => {
+  it("preserves forming separately from saved and accepts attention on an unplaced forming point", () => {
+    const input = withCompass(section => {
+      at(section, "points", 1).formation = "forming";
+      section.recentRoute = [];
+    });
+    const section = assembleExplorerSafeContext(input).context.compassContext!;
+    expect(section.version).toBe("explorer-compass-context.v2");
+    expect(section.points.map(point => point.formation)).toEqual(["saved", "forming", "saved"]);
+    expect(section.attentionId).toBe(COMPASS_IDS.unplaced);
+    expect(section.points[1].anchor).toBeNull();
+  });
+  it("refuses a recent Route entry that would represent unconfirmed forming wording", () => {
+    expectCode(withCompass(section => { at(section, "points", 1).formation = "forming"; }), "explorer_context_invalid_envelope");
+  });
+  it("accepts only the latest Explorer acknowledgment with the forming attention's current wording", () => {
+    const input = withCompass(section => {
+      at(section, "points", 1).formation = "forming";
+      Object.assign(at(section, "recentRoute", 1), { actor: "explorer", awaitingReply: true });
+    });
+    expect(assembleExplorerSafeContext(input).context.compassContext!.recentRoute.at(-1)).toEqual({
+      kind: "attention_changed", pointId: COMPASS_IDS.unplaced, label: "Sleep", actor: "explorer", awaitingReply: true,
+    });
+  });
+  it.each(["already answered", "Virtual Guide move", "earlier wording", "another attention", "older move"])(
+    "refuses a forming acknowledgment with %s", invalid => {
+      expectCode(withCompass(section => {
+        at(section, "points", 1).formation = "forming";
+        Object.assign(at(section, "recentRoute", 1), { actor: "explorer", awaitingReply: true });
+        if (invalid === "already answered") at(section, "recentRoute", 1).awaitingReply = false;
+        if (invalid === "Virtual Guide move") Object.assign(at(section, "recentRoute", 1), { actor: "virtual_guide", awaitingReply: false });
+        if (invalid === "earlier wording") at(section, "recentRoute", 1).label = "Earlier rest";
+        if (invalid === "another attention") section.attentionId = COMPASS_IDS.other;
+        if (invalid === "older move") (section.recentRoute as unknown[]).push({ kind: "attention_changed",
+          pointId: COMPASS_IDS.other, label: "Family", actor: "explorer", awaitingReply: false });
+      }), "explorer_context_invalid_envelope");
+    },
+  );
+  it("refuses a forming Priority before the Explorer confirms the wording", () => {
+    expectCode(withCompass(section => {
+      at(section, "points", 1).formation = "forming"; section.priorityId = COMPASS_IDS.unplaced; section.recentRoute = [];
+    }), "explorer_context_invalid_envelope");
+  });
+  it.each(["proposed", "confirmed", "rejected", null, undefined])("refuses storage or unknown formation status %s", formation => {
+    expectCode(withCompass(section => { at(section, "points", 1).formation = formation; }), "explorer_context_invalid_envelope");
   });
 });

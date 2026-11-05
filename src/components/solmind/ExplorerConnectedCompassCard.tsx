@@ -239,7 +239,7 @@ function Dial({ scope, compass, row, children }: DialProps) {
         {[...byAnchor].map(([anchor, point]) => {
           const at = positionOf(anchor);
           const lines = dialLabelLines(point.label);
-          const top = lines.length === 1 ? at.y + 3 : at.y - 3;
+          const top = (lines.length === 1 ? at.y + 3 : at.y - 3) - (point.isForming ? 5 : 0);
           return (
             <g key={point.id}>
               <circle
@@ -250,6 +250,7 @@ function Dial({ scope, compass, row, children }: DialProps) {
                 cx={at.x}
                 cy={at.y}
                 r={BUBBLE_RADIUS}
+                strokeDasharray={point.isForming ? "4 3" : undefined}
                 strokeWidth={point.isAttention || point.isPriority ? 2.5 : 1.2}
               />
               <text className="fill-stone-100 text-[9px] font-medium" textAnchor="middle" x={at.x} y={top}>
@@ -259,6 +260,9 @@ function Dial({ scope, compass, row, children }: DialProps) {
                   </tspan>
                 ))}
               </text>
+              {point.isForming ? (
+                <text className="fill-stone-300 text-[8px]" textAnchor="middle" x={at.x} y={at.y + 18}>{W.forming}</text>
+              ) : null}
             </g>
           );
         })}
@@ -268,13 +272,19 @@ function Dial({ scope, compass, row, children }: DialProps) {
           const x = places[index];
           return entry.kind === "point" ? (
             <Fragment key={entry.point.id}>
+              {entry.point.isForming ? (
+                <rect className="fill-none stroke-stone-500" height={35} rx={6} strokeDasharray="4 3" width={108} x={x - 54} y={299} />
+              ) : null}
               {entry.point.isAttention ? (
                 <circle className="fill-none stroke-orange-300" cx={x} cy={ROW_SYMBOL_Y} r={8.5} strokeWidth={1.5} />
               ) : null}
               <SymbolMark at={{ x, y: ROW_SYMBOL_Y }} />
-              <text className="fill-stone-400 text-[9px]" textAnchor="middle" x={x} y={ROW_TEXT_Y}>
+              <text className="fill-stone-400 text-[9px]" textAnchor="middle" x={x} y={entry.point.isForming ? ROW_TEXT_Y - 5 : ROW_TEXT_Y}>
                 {bottomRowLabel(entry.point.label)}
               </text>
+              {entry.point.isForming ? (
+                <text className="fill-stone-300 text-[8px]" textAnchor="middle" x={x} y={331}>{W.forming}</text>
+              ) : null}
             </Fragment>
           ) : (
             <text className="fill-stone-400 text-[9px]" key="more" textAnchor="middle" x={x} y={ROW_TEXT_Y}>
@@ -384,6 +394,12 @@ function PointName({ point, symbol = false }: Readonly<{ point: CardCompassPoint
         label
       )}{" "}
       <span className="text-[11px] text-stone-300">{compassPlaceText(point)}</span>
+      {point.isForming ? (
+        <>
+          {" "}
+          <span className="text-[11px] text-stone-300">{W.forming}</span>
+        </>
+      ) : null}
       {point.dialAnchor === "apex" && !point.isPriority ? (
         <>
           {" "}
@@ -429,6 +445,7 @@ function PointList({ points, labelId, label, hold, ids, onPoint }: PointListProp
                 aria-pressed={point.isAttention}
                 className={joinClasses(
                   "flex w-full flex-col items-start gap-0.5 rounded-xl border px-3 py-2 text-left text-sm disabled:cursor-not-allowed",
+                  point.isForming ? "border-dashed" : null,
                   point.isAttention
                     ? "border-orange-300/70 bg-orange-300/10 text-orange-50"
                     : joinClasses(

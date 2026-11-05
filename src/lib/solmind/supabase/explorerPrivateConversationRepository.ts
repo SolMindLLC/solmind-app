@@ -20,7 +20,7 @@ const PORTS = Object.freeze({
     columns: ["outcome", "conversation_state", "dispatch_permitted", "policy_state"] }),
   settle: Object.freeze({ name: "solmind_settle_explorer_conversation_turn_v4", parameters: [...ACTOR, "p_conversation_id", "p_operation_id", "p_status", "p_reply_message_id", "p_reply_kind", "p_reply_body",
     "p_model_level", "p_model_minor_indicated", "p_protocol_version", "p_request_mode", "p_configuration_fingerprint", "p_fallback_policy_version", "p_model_policy_version", "p_trusted_response_version", "p_resource_policy_version",
-    "p_fallback_level", "p_fallback_minor_indicated", "p_delivery_interested", "p_attention_item_id", "p_choices"], columns: ["outcome", "conversation_state", "policy_state", "saved_reply"] }),
+    "p_fallback_level", "p_fallback_minor_indicated", "p_delivery_interested", "p_attention_item_id", "p_choices", "p_compass_suggestions"], columns: ["outcome", "conversation_state", "policy_state", "saved_reply"] }),
   mutate: Object.freeze({ name: "solmind_mutate_explorer_conversation_v3", parameters: [...ACTOR, "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint", "p_kind", "p_source_message_id", "p_item_id", "p_waypoint_id", "p_label", "p_destination", "p_meaning", "p_arrival_signal", "p_evidence"],
     columns: ["outcome", "conversation_state"] }),
   arrange: Object.freeze({ name: "solmind_confirm_explorer_compass_arrangement_v1", parameters: [...ACTOR,
@@ -68,6 +68,33 @@ function parameters(input: object, expected: readonly string[]): Readonly<Record
     if (!property?.enumerable || !("value" in property)) throw new Error(FAILURE);
     const value: unknown = property.value;
     if ((key === "p_items" || key === "p_member_item_ids" || key === "p_answers") && !Array.isArray(value)) throw new Error(FAILURE);
+    if (key === "p_compass_suggestions" && value !== null) {
+      if (!Array.isArray(value) || types.isProxy(value) || Object.getPrototypeOf(value) !== Array.prototype ||
+          value.length < 1 || value.length > 3 || Reflect.ownKeys(value).length !== value.length + 1) throw new Error(FAILURE);
+      const suggestions: Readonly<{ label: string; pointId?: string }>[] = [];
+      for (let index = 0; index < value.length; index++) {
+        const entry = Object.getOwnPropertyDescriptor(value, String(index));
+        if (!entry?.enumerable || !("value" in entry) || !object(entry.value)) throw new Error(FAILURE);
+        const item = entry.value;
+        const hasPoint = Object.hasOwn(item, "pointId");
+        if (Reflect.ownKeys(item).length !== (hasPoint ? 2 : 1)) throw new Error(FAILURE);
+        const labelField = Object.getOwnPropertyDescriptor(item, "label");
+        if (!labelField?.enumerable || !("value" in labelField) || typeof labelField.value !== "string") throw new Error(FAILURE);
+        const label = labelField.value;
+        if (!label.trim() || label !== label.trim() || label.length > 160 ||
+            /[\u0000-\u001f\u007f-\u009f\u200b-\u200d\u2028-\u202e\u2060\u2066-\u2069\ufeff]/u.test(label) ||
+            /[\uD800-\uDFFF]/u.test(label)) throw new Error(FAILURE);
+        let pointId: string | undefined;
+        if (hasPoint) {
+          const field = Object.getOwnPropertyDescriptor(item, "pointId");
+          if (!field?.enumerable || !("value" in field) || typeof field.value !== "string" || field.value.length !== 36 ||
+              !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(field.value)) throw new Error(FAILURE);
+          pointId = field.value;
+        }
+        suggestions.push(Object.freeze({ label, ...(pointId === undefined ? {} : { pointId }) }));
+      }
+      copied[key] = Object.freeze(suggestions); continue;
+    }
     if (key === "p_choices" && value !== null) {
       if (!Array.isArray(value) || types.isProxy(value) || Object.getPrototypeOf(value) !== Array.prototype ||
           value.length < 1 || value.length > 3 || Reflect.ownKeys(value).length !== value.length + 1) throw new Error(FAILURE);

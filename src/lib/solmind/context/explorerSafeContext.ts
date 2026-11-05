@@ -52,11 +52,11 @@ export const EXPLORER_SAFE_CONTEXT_LIMITS = Object.freeze({
 // his go-ahead at 20:50:45 CST): the saved Compass and Waypoint section. It is tied to
 // its own contract version both ways: that version requires the section and every
 // other version forbids it, so the older twelve-layer envelope keeps its exact bytes.
-// The database migration 20261103210000_explorer_context_compass.sql rebuilds the same
+// The S5 migration 20261105010000_explorer_forming_compass_points.sql rebuilds the same
 // section from the saved rows and compares it exactly before a Send is prepared.
-export const EXPLORER_COMPASS_CONTEXT_VERSION = "explorer-compass-context.v1" as const;
+export const EXPLORER_COMPASS_CONTEXT_VERSION = "explorer-compass-context.v2" as const;
 export const EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION =
-  "wi007-v0.1+onboarding-fields-v2+compass-v1" as const;
+  "wi007-v0.1+onboarding-fields-v2+compass-v2" as const;
 // The eight saved anchors (kept here so this module adds no import edge).
 const COMPASS_ANCHORS = Object.freeze([
   "apex", "upper_left", "upper_right", "side_left", "side_right",
@@ -245,7 +245,7 @@ type CompassPoint = {
   id: string;
   label: string;
   order: number;
-  formation: "saved";
+  formation: "saved" | "forming";
   anchor: (typeof COMPASS_ANCHORS)[number] | null;
   emphasis: 1 | 2 | 3 | null;
 };
@@ -930,7 +930,8 @@ function parseCompassContext(value: unknown): ExplorerCompassContext {
       const point = parsePlainObject(candidate);
       assertExactKeys(point, ["id", "label", "order", "formation", "anchor", "emphasis"]);
       if (
-        point.formation !== "saved" ||
+        (point.formation !== "saved" && point.formation !== "forming") ||
+        (point.formation === "forming" && (point.anchor !== null || point.emphasis !== null)) ||
         !(point.anchor === null || COMPASS_ANCHORS.includes(point.anchor as never)) ||
         !(point.emphasis === null || point.emphasis === 1 || point.emphasis === 2 || point.emphasis === 3) ||
         (point.anchor !== null && point.emphasis === null)
@@ -947,7 +948,7 @@ function parseCompassContext(value: unknown): ExplorerCompassContext {
         id: parseUuid(point.id),
         label: parseText(point.label, EXPLORER_SAFE_CONTEXT_LIMITS.compassLabelCharacters),
         order: parseOrder(point.order),
-        formation: "saved",
+        formation: point.formation,
         anchor: point.anchor as CompassPoint["anchor"],
         emphasis: point.emphasis as CompassPoint["emphasis"],
       };
@@ -956,6 +957,7 @@ function parseCompassContext(value: unknown): ExplorerCompassContext {
   );
   const pointIds = new Set(points.map((point) => point.id));
   const priorityId = parseNullablePointId(object.priorityId, pointIds);
+  if (points.find(point => point.id === priorityId)?.formation === "forming") fail("explorer_context_invalid_envelope");
   const attentionId = parseNullablePointId(object.attentionId, pointIds);
   const routeCount = object.recentRoute.length;
   const recentRoute = object.recentRoute.map((candidate, index): CompassRouteEvent => {
@@ -972,13 +974,19 @@ function parseCompassContext(value: unknown): ExplorerCompassContext {
       fail("explorer_context_invalid_envelope");
     }
     const pointId = parseNullablePointId(event.pointId, pointIds);
-    if (pointId === null) {
+    const point = points.find(point => point.id === pointId);
+    const label = parseText(event.label, EXPLORER_SAFE_CONTEXT_LIMITS.compassLabelCharacters);
+    // A forming point enters recentRoute only as the next-reply acknowledgment,
+    // rebuilt from the latest Explorer move and current wording, never saved history.
+    if (pointId === null || (point?.formation === "forming" &&
+        (event.actor !== "explorer" || event.awaitingReply !== true || index !== routeCount - 1 ||
+          pointId !== attentionId || label !== point.label))) {
       fail("explorer_context_invalid_envelope");
     }
     return {
       kind: event.kind as CompassRouteEvent["kind"],
       pointId,
-      label: parseText(event.label, EXPLORER_SAFE_CONTEXT_LIMITS.compassLabelCharacters),
+      label,
       ...(hasActor ? { actor: event.actor as "explorer" | "virtual_guide", awaitingReply: event.awaitingReply as boolean } : {}),
     };
   });

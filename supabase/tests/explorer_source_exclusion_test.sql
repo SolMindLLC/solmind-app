@@ -59,11 +59,11 @@ insert into ai.ai_interaction_session(ai_interaction_session_id,session_type,act
 -- on a current point (oldest first, each with the point's current label), the current Waypoint heads, no drafts.
 -- S4 adds the actor and whether the latest Explorer move still awaits its first saved reply.
 create function pg_temp.compass() returns jsonb language sql stable as $$
-  select jsonb_build_object('version','explorer-compass-context.v1',
+  select jsonb_build_object('version','explorer-compass-context.v2',
     'points',coalesce((select jsonb_agg(jsonb_build_object('id',c.item_id,'label',ai.solmind_exclusion_normalize_v3(c.label),
-      'order',c.ord-1,'formation','saved','anchor',c.compass_anchor,'emphasis',c.relative_emphasis) order by c.ord)
+      'order',c.ord-1,'formation',case when c.formation_status='proposed' then 'forming' else 'saved' end,'anchor',c.compass_anchor,'emphasis',c.relative_emphasis) order by c.ord)
       from (select x.*,row_number() over(order by x.display_order) as ord from ai.explorer_conversation_compass_item x
-        where x.conversation_id=pg_temp.xid(51) and x.merged_into_item_id is null) c),'[]'::jsonb),
+        where x.conversation_id=pg_temp.xid(51) and x.merged_into_item_id is null and x.formation_status is distinct from 'rejected') c),'[]'::jsonb),
     'priorityId',(select s.priority_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.xid(51)),
     'attentionId',(select s.attention_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.xid(51)),
     'recentRoute',coalesce((select jsonb_agg(jsonb_build_object('kind',r.compass_route_kind,'pointId',r.compass_route_item_id,
@@ -76,7 +76,7 @@ create function pg_temp.compass() returns jsonb language sql stable as $$
         and not exists(select 1 from ai.ai_interaction_message reply where reply.ai_interaction_session_id=pg_temp.xid(51)
           and reply.sender_type='ai' and reply.created_at>=r.completed_at)) order by r.initial_revision,r.operation_id)
       from (select o.*,c.label as current_label from ai.explorer_conversation_operation o join ai.explorer_conversation_compass_item c
-          on c.conversation_id=o.conversation_id and c.item_id=o.compass_route_item_id and c.merged_into_item_id is null
+          on c.conversation_id=o.conversation_id and c.item_id=o.compass_route_item_id and c.merged_into_item_id is null and c.formation_status is distinct from 'rejected'
         where o.conversation_id=pg_temp.xid(51) and o.compass_route_kind='attention_changed'
         order by o.initial_revision desc,o.operation_id desc limit 5) r),'[]'::jsonb),
     'waypoints',coalesce((select jsonb_agg(jsonb_build_object('id',w.waypoint_id,'title',ai.solmind_exclusion_normalize_v3(w.title),
@@ -92,7 +92,7 @@ $$;
 create function pg_temp.context(body text default 'Synthetic ordinary immediate text',classification_only boolean default false)
 returns jsonb language sql stable as $$
   select jsonb_build_object('contractVersion',case when classification_only then 'wi007-v0.1+onboarding-fields-v2'
-    else 'wi007-v0.1+onboarding-fields-v2+compass-v1' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
+    else 'wi007-v0.1+onboarding-fields-v2+compass-v2' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy',jsonb_build_object('version','synthetic-global.v1','text','Synthetic global behavior rules.'),
     'roleBehavior',jsonb_build_object('version','synthetic-role.v1','text','Synthetic role behavior rules.'),
     'crisisBehavior',jsonb_build_object('version','synthetic-crisis.v1','text','Synthetic crisis behavior rules.'),
@@ -120,7 +120,7 @@ create function pg_temp.source_ids(classification_only boolean default false) re
     union all select m.ai_interaction_message_id from (select * from ai.ai_interaction_message
       where ai_interaction_session_id=pg_temp.xid(51) order by sequence_number desc limit 24) m
     union all select c.item_id from ai.explorer_conversation_compass_item c
-      where not classification_only and c.conversation_id=pg_temp.xid(51) and c.merged_into_item_id is null
+      where not classification_only and c.conversation_id=pg_temp.xid(51) and c.merged_into_item_id is null and c.formation_status is distinct from 'rejected'
     union all select w.waypoint_id from content.waypoint w where not classification_only and w.source_ai_interaction_session_id=pg_temp.xid(51)
       and not exists(select 1 from content.waypoint s where s.predecessor_waypoint_id=w.waypoint_id)) x
 $$;
@@ -183,7 +183,7 @@ select is((select outcome from pg_temp.inspect_json(pg_temp.context()||'{"contra
   'unavailable','S3: the section under the previous contract version is refused');
 select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,drafts}','[{"label":"Synthetic draft"}]'))),
   'unavailable','S3: the reserved drafts slot must stay empty');
-select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,version}','"explorer-compass-context.v2"'))),
+select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,version}','"explorer-compass-context.v3"'))),
   'unavailable','S3: the section version is exact');
 select is((select outcome from pg_temp.inspect_json(pg_temp.context()||jsonb_build_object('compassContext',pg_temp.compass()||'{"extra":[]}'::jsonb))),
   'unavailable','S3: an extra section key is unavailable');
@@ -438,7 +438,7 @@ insert into content.waypoint(waypoint_id,guide_explorer_relationship_id,source_a
       'Screens keep me awake','I read on three nights','chosen',pg_temp.xid(1),timestamptz '2026-11-03 10:04:00+00',
       null,null,null,null,null,null,pg_temp.xid(424),'revision',timestamptz '2026-11-03 10:04:00+00');
 create temp table s3_golden(section jsonb) on commit drop;
-insert into s3_golden values('{"version":"explorer-compass-context.v1","points":[{"id":"f5120000-0000-4000-8000-000000000401","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},{"id":"f5120000-0000-4000-8000-000000000402","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},{"id":"f5120000-0000-4000-8000-000000000404","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],"priorityId":"f5120000-0000-4000-8000-000000000401","attentionId":"f5120000-0000-4000-8000-000000000402","recentRoute":[{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000401","label":"Money worries","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":true}],"waypoints":[{"id":"f5120000-0000-4000-8000-000000000421","title":"Find a calmer morning","destination":"Find a calmer morning","meaning":"Mornings set\nmy whole day","arrivalSignal":"I start two mornings a week without rushing","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000422","title":"Walk after dinner","destination":"Walk after dinner","meaning":"It clears my head","arrivalSignal":"I walk three evenings in one week","stage":"reached","reachedEvidence":"I walked four evenings last week"},{"id":"f5120000-0000-4000-8000-000000000423","title":"Call my sister","destination":"Call my sister","meaning":"We have drifted apart","arrivalSignal":"We talk once a week for a month","stage":"released","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000425","title":"Read before bed","destination":"Read before bed","meaning":"Screens keep me awake","arrivalSignal":"I read on three nights","stage":"formed","reachedEvidence":null}],"drafts":[]}');
+insert into s3_golden values('{"version":"explorer-compass-context.v2","points":[{"id":"f5120000-0000-4000-8000-000000000401","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},{"id":"f5120000-0000-4000-8000-000000000402","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},{"id":"f5120000-0000-4000-8000-000000000404","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],"priorityId":"f5120000-0000-4000-8000-000000000401","attentionId":"f5120000-0000-4000-8000-000000000402","recentRoute":[{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000401","label":"Money worries","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":true}],"waypoints":[{"id":"f5120000-0000-4000-8000-000000000421","title":"Find a calmer morning","destination":"Find a calmer morning","meaning":"Mornings set\nmy whole day","arrivalSignal":"I start two mornings a week without rushing","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000422","title":"Walk after dinner","destination":"Walk after dinner","meaning":"It clears my head","arrivalSignal":"I walk three evenings in one week","stage":"reached","reachedEvidence":"I walked four evenings last week"},{"id":"f5120000-0000-4000-8000-000000000423","title":"Call my sister","destination":"Call my sister","meaning":"We have drifted apart","arrivalSignal":"We talk once a week for a month","stage":"released","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000425","title":"Read before bed","destination":"Read before bed","meaning":"Screens keep me awake","arrivalSignal":"I read on three nights","stage":"formed","reachedEvidence":null}],"drafts":[]}');
 create function pg_temp.with_compass(section jsonb) returns jsonb language sql stable as $$
   select jsonb_set(pg_temp.context(),'{compassContext}',section)
 $$;
@@ -468,7 +468,7 @@ begin
       then raise exception 'classification_reduced_refused'; end if;
     if (select outcome from pg_temp.inspect_json(full_context)) is distinct from 'unavailable'
       or (select outcome from pg_temp.inspect_json(reduced||jsonb_build_object(
-        'contractVersion','wi007-v0.1+onboarding-fields-v2+compass-v1'),true)) is distinct from 'unavailable'
+        'contractVersion','wi007-v0.1+onboarding-fields-v2+compass-v2'),true)) is distinct from 'unavailable'
       or (select outcome from pg_temp.inspect_json(full_context||jsonb_build_object(
         'contractVersion','wi007-v0.1+onboarding-fields-v2'))) is distinct from 'unavailable'
       or (select outcome from pg_temp.inspect_json(reduced||'{"compassContext":null}'::jsonb,true)) is distinct from 'unavailable'
@@ -514,7 +514,7 @@ select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),
 select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,points,1,order}','2'))),
   'unavailable','S3: a wrong order number is unavailable');
 select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,points,0,formation}','"forming"'))),
-  'unavailable','S3: formation is "saved" until a later slice');
+  'unavailable','S5: an Explorer-saved row cannot be relabeled forming in model context');
 select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,points,1,anchor}','"lower_center"'))),
   'unavailable','S3: an invented position is unavailable');
 select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,priorityId}','null'))),

@@ -132,3 +132,55 @@ describe("Explorer same-call raw body contract (synthetic mechanics)", () => {
     expect(() => parseExplorerSafetyReplyBody("\u00e9".repeat(131073), "classification_and_reply")).toThrowError("explorer_safety_limit_exceeded");
   });
 });
+
+describe("S5 forming Compass suggestion proposals", () => {
+  it("keeps reply v2 and accepts independently optional attention and suggestions as frozen data", () => {
+    const suggestions = [{ label: "Money worries" }, { label: "Evening rest", pointId: POINT }];
+    for (const compass of [{ suggestions }, { attention: POINT, suggestions }]) {
+      const result = parseExplorerSafetyReplyBody(proposedBody({ compass }), "classification_and_reply");
+      expect(result.compass).toEqual(compass);
+      expect(Object.isFrozen(result.compass?.suggestions)).toBe(true);
+      expect(Object.isFrozen(result.compass?.suggestions?.[0])).toBe(true);
+      expect(result.candidate.kind).toBe("usable");
+    }
+    expect(EXPLORER_SAFETY_REPLY_PROTOCOL).toBe("explorer-safety-reply.v2");
+  });
+  it.each([null, {}, "topic", { label: "" }, { label: " " }, { label: " padded " },
+    { label: "x".repeat(161) }, { label: "Line\nbreak" }, { label: "Tab\tvalue" },
+    { label: "hidden\u200bvalue" }, { label: "hidden\u2066value" }, { label: "line\u2028break" },
+    { label: "\ud800" }, { label: "Topic", pointId: null }, { label: "Topic", pointId: "unknown" },
+    { label: "Topic", pointId: POINT + "\n" }, { label: "Topic", extra: true }])(
+    "drops only invalid entry %j while preserving its valid neighbors and the reply", (invalid) => {
+      const result = parseExplorerSafetyReplyBody(proposedBody({ compass: { attention: POINT,
+        suggestions: [{ label: "Before" }, invalid, { label: "After", pointId: POINT }] }, choices: [{ label: "Begin" }] }), "classification_and_reply");
+      expect(result.compass).toEqual({ attention: POINT, suggestions: [{ label: "Before" }, { label: "After", pointId: POINT }] });
+      expect(result.candidate.kind).toBe("usable"); expect(result.classification.level).toBe(0);
+      expect(result.choices).toEqual([{ label: "Begin" }]);
+    });
+  it("inspects at most three submitted positions and never substitutes a later entry for an invalid one", () => {
+    const suggestions = [{ label: "First" }, { label: "" }, { label: "Third" }, { label: "Ignored fourth" }];
+    expect(parseExplorerSafetyReplyBody(proposedBody({ compass: { suggestions } }), "classification_and_reply").compass)
+      .toEqual({ suggestions: [{ label: "First" }, { label: "Third" }] });
+  });
+  it("preserves valid suggestions despite invalid attention and valid attention despite invalid suggestions", () => {
+    expect(parseExplorerSafetyReplyBody(proposedBody({ compass: { attention: "invalid", suggestions: [{ label: "Topic" }] } }),
+      "classification_and_reply").compass).toEqual({ suggestions: [{ label: "Topic" }] });
+    for (const suggestions of [null, {}, [], [{ label: "" }]]) {
+      expect(parseExplorerSafetyReplyBody(proposedBody({ compass: { attention: POINT, suggestions } }), "classification_and_reply").compass)
+        .toEqual({ attention: POINT });
+    }
+  });
+  it("accepts the existing 160 UTF-16 label bound and refuses an extra scalar without truncating", () => {
+    for (const label of ["x".repeat(160), "\u{1f642}".repeat(80)]) {
+      expect(parseExplorerSafetyReplyBody(proposedBody({ compass: { suggestions: [{ label }] } }), "classification_and_reply").compass)
+        .toEqual({ suggestions: [{ label }] });
+      expect(parseExplorerSafetyReplyBody(proposedBody({ compass: { suggestions: [{ label: label + "x" }] } }), "classification_and_reply").compass)
+        .toBeUndefined();
+    }
+  });
+  it("discards suggestions together with other proposals in classification-only mode", () => {
+    const result = parseExplorerSafetyReplyBody(proposedBody({ compass: { attention: POINT,
+      suggestions: [{ label: "Topic", pointId: POINT }] } }), "classification_only");
+    expect(result).toEqual({ classification: { level: 0, minorIndicated: false }, candidate: { kind: "not_requested" } });
+  });
+});

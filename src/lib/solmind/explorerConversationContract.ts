@@ -28,6 +28,8 @@ export type ExplorerConversationCompassItem = Readonly<{
   id: string;
   sourceMessageId: string;
   label: string;
+  // Absent on retained fixtures; rejected points never enter browser state.
+  formation?: "saved" | "forming";
   anchor?: ExplorerCompassAnchor | null;
   emphasis?: 1 | 2 | 3 | null;
   mergedIntoItemId?: string | null;
@@ -411,8 +413,10 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
     if (!object(item)) return null;
     const hasLayout = Object.hasOwn(item, "anchor") || Object.hasOwn(item, "emphasis");
     const hasMerge = Object.hasOwn(item, "mergedIntoItemId");
-    if (!keys(item, ["id", "sourceMessageId", "label", ...(hasLayout ? ["anchor", "emphasis"] : []), ...(hasMerge ? ["mergedIntoItemId"] : [])]) || !id(item.id) || compassIds.has(item.id) ||
+    const hasFormation = Object.hasOwn(item, "formation");
+    if (!keys(item, ["id", "sourceMessageId", "label", ...(hasLayout ? ["anchor", "emphasis"] : []), ...(hasMerge ? ["mergedIntoItemId"] : []), ...(hasFormation ? ["formation"] : [])]) || !id(item.id) || compassIds.has(item.id) ||
         !id(item.sourceMessageId) || !messageIds.has(item.sourceMessageId) || !text(item.label, EXPLORER_CONVERSATION_LIMITS.labelCharacters)) return null;
+    if (hasFormation && item.formation !== "saved" && item.formation !== "forming") return null;
     if (hasMerge && !(item.mergedIntoItemId === null || isExplorerConversationId(item.mergedIntoItemId))) return null;
     if (hasLayout && !(item.anchor === null && item.emphasis === null) &&
         (!anchor(item.anchor) || !emphasis(item.emphasis))) return null;
@@ -423,7 +427,8 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
     compassIds.add(item.id);
     compassItems.push(Object.freeze({ id: item.id, sourceMessageId: item.sourceMessageId, label: item.label,
       ...(hasLayout ? { anchor: item.anchor as ExplorerCompassAnchor | null, emphasis: item.emphasis as 1 | 2 | 3 | null } : {}),
-      ...(hasMerge ? { mergedIntoItemId: item.mergedIntoItemId as string | null } : {}) }));
+      ...(hasMerge ? { mergedIntoItemId: item.mergedIntoItemId as string | null } : {}),
+      ...(hasFormation ? { formation: item.formation as "saved" | "forming" } : {}) }));
   }
   if (!mergeGraphValid(compassItems)) return null;
   const currentCompass = compassItems.filter(item => item.mergedIntoItemId == null);

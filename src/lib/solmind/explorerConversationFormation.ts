@@ -78,6 +78,12 @@ export function currentCompassHeads(state: ExplorerConversationState): readonly 
   return Object.freeze(state.compassItems.filter(item => item.mergedIntoItemId == null));
 }
 
+// Forming wording can still change in a later reply. It cannot enter an
+// Explorer-reviewed arrangement or category snapshot before confirmation.
+export function savedCompassHeads(state: ExplorerConversationState): readonly ExplorerConversationCompassItem[] {
+  return Object.freeze(currentCompassHeads(state).filter(item => item.formation !== "forming"));
+}
+
 // Original point/source identities remain reviewable after repeated combination.
 // The parser proves the bounded acyclic graph; the visited set also keeps direct
 // injected callers from looping while preparing a presentation-only draft.
@@ -87,7 +93,7 @@ export function compassCategorySources(
 ): readonly ExplorerConversationCompassItem[] {
   const byId = new Map(state.compassItems.map(item => [item.id, item]));
   const target = byId.get(targetItemId);
-  if (!target || target.mergedIntoItemId != null) return Object.freeze([]);
+  if (!target || target.mergedIntoItemId != null || target.formation === "forming") return Object.freeze([]);
   return Object.freeze(state.compassItems.filter(item => {
     const visited = new Set<string>();
     let current: ExplorerConversationCompassItem | undefined = item;
@@ -107,7 +113,7 @@ export function buildCompassCategoryFormationIntent(
   if (!state.conversationId || state.pendingTurn || state.sessionStatus === "ended") {
     return refuse("Reload the active saved conversation before changing its Compass categories.");
   }
-  const heads = currentCompassHeads(state);
+  const heads = savedCompassHeads(state);
   const target = heads.find(item => item.id === draft.targetItemId);
   if (!target || draft.memberItemIds.length < 1 || draft.memberItemIds.length > EXPLORER_CONVERSATION_LIMITS.compassItems ||
       new Set(draft.memberItemIds).size !== draft.memberItemIds.length || !draft.memberItemIds.includes(target.id) ||
@@ -151,7 +157,7 @@ export function buildPriorityFormationIntent(
   itemId: string,
   confirmed: boolean,
 ): FormationIntentResult {
-  const heads = currentCompassHeads(state);
+  const heads = savedCompassHeads(state);
   if (!heads.some(item => item.id === itemId)) {
     return refuse("Choose a saved Compass point before confirming Priority.");
   }
@@ -186,7 +192,7 @@ export function buildCompassArrangementFormationIntent(
   confirmed: boolean,
 ): FormationIntentResult {
   if (!state.conversationId || state.pendingTurn) return refuse("Reload the saved conversation before arranging its Compass.");
-  const heads = currentCompassHeads(state);
+  const heads = savedCompassHeads(state);
   if (!confirmed) return refuse("Review the placement, emphasis and Priority, then confirm your arrangement.");
   if (state.priorityId !== null && priorityId === null) return refuse("Keep or explicitly choose a Priority; this action does not clear it.");
   if (items.length !== heads.length || items.length > EXPLORER_CONVERSATION_LIMITS.compassItems ||
@@ -200,7 +206,8 @@ export function buildCompassArrangementFormationIntent(
   if (priorityId !== null && !items.some(item => item.compassItemId === priorityId && item.anchor === "apex")) {
     return refuse("Place the Priority you choose at the top of the Compass.");
   }
-  if (state.attentionId !== null && !visible.some(item => item.compassItemId === state.attentionId)) {
+  if (state.attentionId !== null && state.compassItems.find(item => item.id === state.attentionId)?.formation !== "forming" &&
+      !visible.some(item => item.compassItemId === state.attentionId)) {
     return refuse("Keep current attention visible; move attention explicitly before placing that point in Other paths.");
   }
   return accept({ kind: "confirm_compass_arrangement", priorityId,

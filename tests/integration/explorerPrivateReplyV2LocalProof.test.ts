@@ -23,7 +23,7 @@ const ACTOR = { accountId: id(1), applicationSessionId: id(2) };
 const POLICY = { known: true, contractVersion: "explorer-conversation-safety.v1", restrictedLevel: null, adultReflectionStopped: false, version: 0 };
 const CHOICES = [{ label: "Explore this topic" }, { label: "I have a question" }];
 const COMMAND = { kind: "send", operationId: id(8), expectedRevision: 1, body: "Synthetic message about money worries." } as const;
-const COMPASS = { version: "explorer-compass-context.v1", points: [{ id: id(9), label: "Money worries", order: 0,
+const COMPASS = { version: "explorer-compass-context.v2", points: [{ id: id(9), label: "Money worries", order: 0,
   formation: "saved", anchor: null, emphasis: null }], priorityId: null, attentionId: null, recentRoute: [],
   waypoints: [{ id: id(12), title: "Review my spending", destination: "Review my spending", meaning: "Find room for rest",
     arrivalSignal: "One review completed", stage: "formed", reachedEvidence: null }], drafts: [] };
@@ -103,7 +103,7 @@ function fixture(proposals: Record<string, unknown>, options: { restrictedLevel?
   });
   const buildContext = vi.fn<NonNullable<ExplorerPrivateConversationDependencies["buildContext"]>>(async input => {
     const authorizedContext = JSON.stringify({ contractVersion: input.mode === "classification_only"
-      ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v1",
+      ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v2",
       globalPolicy: { version: configuration.globalPolicy.version, text: configuration.globalPolicy.text },
       roleBehavior: { version: configuration.roleBehavior.version, text: configuration.roleBehavior.text },
       crisisBehavior: { version: configuration.crisisBehavior.version, text: configuration.crisisBehavior.text },
@@ -157,7 +157,7 @@ async function expectPreparedHttpInput(f: ReturnType<typeof fixture>, mode: "cla
   expect(prepared.p_context_source_ids).toEqual(built.evidence.p_context_source_ids);
   const context = JSON.parse(sent.input);
   expect(context.contractVersion).toBe(mode === "classification_only"
-    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v1");
+    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v2");
   if (mode === "classification_only") {
     expect(context).not.toHaveProperty("compassContext");
     for (const value of [id(9), id(12), "Money worries", "Review my spending", "Find room for rest", "One review completed"]) {
@@ -194,6 +194,20 @@ describe("S4 joined current private path, with injected synthetic HTTP and RPC r
     expect(f.rpc.mock.calls.filter(([name]) => name === "solmind_prepare_explorer_conversation_turn_v3")).toHaveLength(1);
   });
 
+  it("S5 passes independently validated suggestions through the one-call parser, controller and exact RPC port", async () => {
+    const f = fixture({ compass: { attention: id(9), suggestions: [{ label: "Evening rest" }, { label: "" }, { label: "Family time" }] } });
+    const result = await commandExplorerPrivateConversation({ command: COMMAND, dependencies: f.dependencies });
+    expect(result.assistance).toBeNull(); expect(result.result.ok).toBe(true);
+    await expectPreparedHttpInput(f, "classification_and_reply");
+    const terminals = f.rpc.mock.calls.filter(([name]) => name === "solmind_settle_explorer_conversation_turn_v4");
+    expect(terminals).toHaveLength(1);
+    expect(Object.keys(terminals[0][1])).toHaveLength(23);
+    expect(terminals[0][1]).toMatchObject({ p_reply_kind: "ordinary", p_attention_item_id: id(9),
+      p_compass_suggestions: [{ label: "Evening rest" }, { label: "Family time" }] });
+    const replay = await commandExplorerPrivateConversation({ command: COMMAND, dependencies: f.dependencies });
+    expect(replay.result.ok).toBe(true); expect(f.fetchImpl).toHaveBeenCalledOnce();
+    expect(f.rpc.mock.calls.filter(([name]) => name === "solmind_settle_explorer_conversation_turn_v4")).toHaveLength(1);
+  });
   it("keeps the usable reply when both optional proposal groups are malformed", async () => {
     const f = fixture({ compass: { attention: "unknown" }, choices: [{ label: "x".repeat(41) }] });
     const result = await commandExplorerPrivateConversation({ command: COMMAND, dependencies: f.dependencies });
