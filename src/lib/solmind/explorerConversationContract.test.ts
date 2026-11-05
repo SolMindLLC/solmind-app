@@ -28,6 +28,7 @@ const validCommands = [
     items: [{ compassItemId: pointId, anchor: "apex", emphasis: 2 }] },
   { ...base, kind: "end_conversation", conversationId: uuid(1) },
   { ...base, kind: "confirm_compass_category", targetItemId: pointId, memberItemIds: [pointId], label: "Broader mornings" },
+  ...(["right", "close", "not_it"] as const).map(response => ({ ...base, kind: "respond_compass_suggestion", itemId: pointId, response })),
 ];
 function without(value: Record<string, unknown>, key: string): Record<string, unknown> {
   return Object.fromEntries(Object.entries(value).filter(([name]) => name !== key));
@@ -51,6 +52,18 @@ function populatedState() {
 const success = (state: unknown) => ({ ok: true, state, error: null });
 
 describe("Explorer conversation command parser", () => {
+  it("accepts only ids and a closed suggestion response, never browser wording", () => {
+    const command = { ...base, kind: "respond_compass_suggestion", itemId: pointId, response: "right" };
+    for (const response of [null, undefined, "confirm", "RIGHT", "right ", "That's right", 1, {}]) {
+      expect(parseExplorerConversationCommand({ ...command, response })).toBeNull();
+    }
+    for (const itemId of [null, "", `${pointId}\n`, "not-an-id"]) {
+      expect(parseExplorerConversationCommand({ ...command, itemId })).toBeNull();
+    }
+    for (const label of ["Exact browser wording", "Changed browser wording"]) {
+      expect(parseExplorerConversationCommand({ ...command, label })).toBeNull();
+    }
+  });
   it.each(validCommands)("accepts only the exact disclosed %s command and snapshots its bytes", value => {
     const original = { ...value };
     const parsed = parseExplorerConversationCommand(original);
@@ -151,6 +164,48 @@ describe("Explorer conversation command parser", () => {
       expect(parseExplorerConversationCommand({ ...validCommands[5], evidence })).toBeNull();
     }
     expect(parseExplorerConversationCommand({ ...validCommands[5], evidence: "x".repeat(1_000) })).not.toBeNull();
+  });
+});
+
+describe("S6a suggestion reply display capability", () => {
+  function formingState() {
+    const original = populatedState();
+    const message = { id: uuid(9), role: "virtualGuide", body: "Refined wording.", createdAt: "2026-11-04T23:00:00Z" };
+    return { ...original, priorityId: null, messages: [...original.messages, message], compassItems: [{
+      ...original.compassItems[0], formation: "forming", wordingMessageId: message.id,
+    }] };
+  }
+  it("keeps original source and latest suggesting message separate and freezes the projection", () => {
+    const state = formingState(); const parsed = parseExplorerConversationState(state);
+    expect(parsed).toEqual(state);
+    expect(parsed?.compassItems[0].sourceMessageId).toBe(sourceId);
+    expect(parsed?.compassItems[0].wordingMessageId).toBe(uuid(9));
+    expect(Object.isFrozen(parsed?.compassItems[0])).toBe(true);
+    state.compassItems[0].wordingMessageId = uuid(3);
+    expect(parsed?.compassItems[0].wordingMessageId).toBe(uuid(9));
+  });
+  it("accepts the historical missing pointer but rejects a foreign, Explorer or nonforming wording message", () => {
+    const state = formingState(); const point = state.compassItems[0];
+    const { wordingMessageId: omitted, ...withoutPointer } = point; void omitted;
+    expect(parseExplorerConversationState({ ...state, compassItems: [withoutPointer] })).not.toBeNull();
+    for (const wordingMessageId of [null, undefined, "", `${uuid(9)}\n`, uuid(99), sourceId]) {
+      expect(parseExplorerConversationState({ ...state, compassItems: [{ ...point, wordingMessageId }] })).toBeNull();
+    }
+    for (const formation of [undefined, "saved"]) {
+      expect(parseExplorerConversationState({ ...state, compassItems: [{ ...point, formation }] })).toBeNull();
+    }
+    const { formation: omittedFormation, ...withoutFormation } = point; void omittedFormation;
+    expect(parseExplorerConversationState({ ...state, compassItems: [withoutFormation] })).toBeNull();
+  });
+  it.each(["available", "support", "adult_policy", "unavailable"])("accepts the closed server display value %s", compassSuggestionReplies => {
+    expect(parseExplorerConversationState({ ...emptyState(), compassSuggestionReplies })).toEqual({ ...emptyState(), compassSuggestionReplies });
+  });
+  it("keeps old states valid but refuses expanded or unknown display capability", () => {
+    expect(parseExplorerConversationState(emptyState())).toEqual(emptyState());
+    for (const compassSuggestionReplies of [null, undefined, "restricted", true, { available: true }]) {
+      expect(parseExplorerConversationState({ ...emptyState(), compassSuggestionReplies })).toBeNull();
+    }
+    expect(parseExplorerConversationState({ ...emptyState(), compassSuggestionReplies: "available", restrictedLevel: 3 })).toBeNull();
   });
 });
 

@@ -35,6 +35,28 @@ const ID = Object.freeze({
   item: "70000000-0000-4000-8000-000000000001",
   waypoint: "80000000-0000-4000-8000-000000000001",
 });
+
+describe("S6a suggestion response identity", () => {
+  const command: Extract<ExplorerConversationCommand, { kind: "respond_compass_suggestion" }> = {
+    kind: "respond_compass_suggestion", operationId: ID.operation, expectedRevision: 4, itemId: ID.item, response: "right",
+  };
+  it("binds exact operation, revision, point and response without browser wording", () => {
+    const fingerprint = explorerConversationCommandFingerprint(command);
+    expect(fingerprint).toBe(createHash("sha256").update(JSON.stringify([
+      EXPLORER_CONVERSATION_VERSION, command.kind, command.operationId, 4, ID.item, "right",
+    ]), "utf8").digest("hex").toUpperCase());
+    for (const changed of [{ ...command, operationId: ID.otherAccount }, { ...command, expectedRevision: 5 },
+      { ...command, itemId: ID.otherAccount }, { ...command, response: "close" as const }, { ...command, response: "not_it" as const }]) {
+      expect(explorerConversationCommandFingerprint(changed)).not.toBe(fingerprint);
+    }
+    expect(explorerConversationCommandFingerprint({ ...command })).toBe(fingerprint);
+  });
+  it("denies the response on the legacy controller before any repository or provider effect", async () => {
+    const f = fixture();
+    expect(await commandExplorerConversation({ command, dependencies: f.dependencies })).toEqual({ ok: false, state: null, error: "denied" });
+    for (const port of [f.authenticate, f.read, f.prepare, f.complete, f.mutate, f.generate, f.buildContext]) expect(port).not.toHaveBeenCalled();
+  });
+});
 const actor: ExplorerConversationActor = Object.freeze({ accountId: ID.account, applicationSessionId: ID.applicationSession });
 const denied = { ok: false, state: null, error: "denied" };
 const unavailable = { ok: false, state: null, error: "unavailable" };

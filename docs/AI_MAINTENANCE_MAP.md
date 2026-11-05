@@ -801,7 +801,7 @@ request/browser owners are specified in the private successor section below.
 | `src/components/solmind/ExplorerConversationFormation.tsx`; `src/lib/solmind/explorerConversationFormation.ts` | Empty Discovery, exact saved sources, explicit Priority/separate attention (any current point since 2026-11-03), reviewed 24-point/eight-anchor arrangement/emphasis, captured Route, chosen Waypoint and saved Reached evidence/time. |
 | `src/lib/solmind/supabase/explorerConversationRequestDependencies.ts`; `src/lib/solmind/supabase/explorerConversationRepository.ts` | Shared src/lib/solmind/auth/readRawRequestCookies.ts preserves raw occurrences/limits and tolerates malformed unrelated pairs; fixed Explorer authority and predecessor RPCs remain. |
 | `src/lib/solmind/virtual-guide/explorerConversationComposition.ts`; `src/lib/solmind/virtual-guide/explorerConversationContext.ts` | Server-derived turn identities and exact replay preflight; real S03A/S03C context assembly with final revalidation and exact-byte fingerprint/evidence binding. |
-| `supabase/migrations/20261024000000_explorer_conversation_composition.sql`; `supabase/migrations/20261029000000_explorer_formation_route_readback.sql`; `supabase/migrations/20261029003000_explorer_compass_arrangement.sql`; `supabase/migrations/20261029020000_explorer_conversation_end_review.sql`; `supabase/migrations/20261029030000_explorer_compass_categories.sql`; `supabase/migrations/20261029100000_explorer_waypoint_release.sql`; `supabase/migrations/20261029103000_explorer_waypoint_revision.sql`; `supabase/migrations/20261103180000_explorer_attention_any_point.sql` | Private immutable Route/arrangement/category/ending/release/lineage facts; since 2026-11-03 (Paul, decision queue 18:05:33 CST) set_attention takes any current point, placed or not, with the arrangement and Priority rules unchanged; exact9arg category and revision/revisit plus7arg Release/twelve-port repository retain source/history and20stored versions. ExplorerWaypointClarification.tsx owns local app-question/full-confirmation interaction; private immutable clarification answers are separate from AI messages/context, earlier Reached/release stays historical, and no sharing or after-End reactivation follows. |
+| `supabase/migrations/20261024000000_explorer_conversation_composition.sql`; `supabase/migrations/20261029000000_explorer_formation_route_readback.sql`; `supabase/migrations/20261029003000_explorer_compass_arrangement.sql`; `supabase/migrations/20261029020000_explorer_conversation_end_review.sql`; `supabase/migrations/20261029030000_explorer_compass_categories.sql`; `supabase/migrations/20261029100000_explorer_waypoint_release.sql`; `supabase/migrations/20261029103000_explorer_waypoint_revision.sql`; `supabase/migrations/20261103180000_explorer_attention_any_point.sql`; `supabase/migrations/20261105020000_explorer_compass_suggestion_replies.sql` | Private immutable Route/arrangement/category/ending/release/lineage facts; set_attention takes any current point, placed or not. The fourteen-port private repository includes the separate eight-argument suggestion reply command; confirmation records S5's deferred forming-point moves. Category and Waypoint confirmation retain source/history and 20 stored Waypoint versions. ExplorerWaypointClarification.tsx owns local app-question/full-confirmation interaction; private immutable clarification answers stay separate from AI messages/context, earlier Reached/release stays historical, and no sharing or after-End reactivation follows. |
 | `tests/browser/explorerConversation.pw.ts` and co-located feature tests | Authored browser/fake and focused contract cases. Their existence is not passing execution, real database/provider proof or source assurance. |
 
 Context requires injected trusted versioned configuration. Its submitted intake
@@ -1763,7 +1763,7 @@ screen while the pause continues; a reload or the next Send shows it again.
 | Owner | Boundary |
 | --- | --- |
 | src/lib/solmind/explorerPrivateConversationResponse.ts | Browser-safe exact explorer-private-conversation-response.v1 envelope: version/result/assistance; bounded transient assistance with persisted:false. Imports only the closed result contract; private composition uses its erased assistance type. |
-| src/lib/solmind/supabase/explorerConversationRequestDependencies.ts | Shared bounded raw-cookie framing/unchanged auth authority; retained predecessor and explicit seven-port private factory, with no new credential lookup or operational activation. |
+| src/lib/solmind/supabase/explorerConversationRequestDependencies.ts | Shared bounded raw-cookie framing/unchanged auth authority; retained predecessor and explicit fourteen-port private factory, including respondCompassSuggestion with eight exact arguments and the existing 10-second wrapper. No new credential lookup or operational activation. |
 | src/app/explorer/conversation/state/route.ts; src/app/explorer/conversation/commands/route.ts | Private read/command composition and strict envelope validation; fresh authorization, same-origin writes and no-store remain. GET readiness requires complete injected ports/valid binding, with no ensure or evidence write. |
 | src/components/solmind/ExplorerConversation.tsx | Strict envelope decoding; transient assistance outside saved history; assistance-bearing confirmed state retains the send draft and suppresses saved-reply confirmation. Authority loss still clears private state. |
 
@@ -1976,3 +1976,72 @@ database/demo update remain Executor work. The builder may not access the
 sibling solmind-docs repository: its Data Model 03, Orchestration 04 section 12.6
 and Blueprint section 7.6 updates are an explicit outstanding handoff, not a
 claim that canonical documentation was updated.
+
+## Chat step S6a: replies on forming Compass suggestions - 2026-11-05
+
+The connected screen now offers one row per current forming Compass point,
+inside the list item of the Virtual Guide message that last supplied its wording.
+S6a projects wording_message_id as optional forming-only wordingMessageId,
+while sourceMessageId retains the original source. The closed browser parser
+requires a present wordingMessageId to name a saved Virtual Guide message;
+older projections without it show no reply row. This display pointer is absent
+from provider context, whose source IDs and bytes are unchanged. The row offers
+"That's right", "Close, not quite" and "That's not it"; these labels and the
+reason sentences remain drafts for Paul's wording read. Confirmed, rejected,
+combined-away and ended points have no reply row. The review mockup is unchanged.
+
+The closed browser command respond_compass_suggestion carries only itemId,
+response (right, close or not_it), operationId and expectedRevision. Its separate
+eight-argument service-role-only RPC is
+public.solmind_respond_explorer_compass_suggestion_v1, introduced only by
+supabase/migrations/20261105020000_explorer_compass_suggestion_replies.sql.
+The existing generic mutate whitelist is unchanged. SQL reads the stored wording
+under current-authority, active-session, ownership, known-clear-policy,
+pending-turn and revision checks. Right confirms using S5's transition rules,
+including recording each deferred needle move once with confirmed wording;
+not_it privately rejects with the separate 24-row rejection limit; close records
+the answer and leaves the point unchanged. Exact operation/fingerprint replay
+changes nothing; a stale revision conflicts. No response command calls a provider
+or counts as a Send. The private immutable operation receipt adds only
+compass_suggestion_item_id and compass_suggestion_response; it retains no
+snapshot of forming wording.
+
+A pending turn, the turned-down limit and invalid forming-point selections use
+the existing definite-conflict path: the browser requires a refresh and starts
+no follow-up Send.
+
+explorerConversationContract.ts owns the closed command and optional UI-only
+compassSuggestionReplies availability (available, support, adult_policy or
+unavailable). explorerPrivateConversationComposition.ts derives that value from
+server policy, routes the command and refuses restricted/adult-stopped changes.
+This is a deliberate, coarse display value derived from private policy for
+only the Explorer's own screen; it includes no level, version or evidence.
+explorerConversationComposition.ts owns its fingerprint.
+explorerPrivateConversationRepository.ts owns the exact
+respondCompassSuggestion port, wrapped by explorerPrivateRequestBudgets.ts with
+the same 10-second budget as the other ports.
+
+ExplorerCompassSuggestionReplies.tsx is presentation only; its labels and
+current-source filtering live in explorerCompassSuggestionReplies.ts.
+ExplorerConversationConnectedScreen.tsx places it in the existing transcript
+list item. Busy, pending, uncertain and End-review states hold replies; close
+and not_it also require ordinary Send availability and message capacity.
+Restricted/adults-only states hide the controls and show one reason sentence;
+an absent or unknown availability also fails closed. These are connected
+controls, not build notes; existing build-note behavior is unchanged.
+
+ExplorerConversation.tsx owns the sequence: after a confirmed close or not_it,
+a separate suggestion_follow_up intent prepares one ordinary Send with the
+button label followed by a colon, a space and the point's current wording in
+straight double quotes, at the returned revision. Right makes no Send. The follow-up
+retains the Explorer's typed draft, including across identical-byte uncertain
+retry. Each phase has its own operation identity; no failure or uncertain
+response command starts a follow-up. Existing authority-loss clearing, Send
+counting, hard stops, cancellation and context/RPC/provider limits remain.
+Typed confirmation interpretation remains S6b.
+
+This is isolated source construction. SQL/pgTAP and browser execution,
+independent review, canonical solmind-docs updates and any integration or demo
+publication remain Executor work. The builder was limited to the clone and
+the three named package files; no sibling product documentation was read or
+written. Paul must read the new wording before anything reaches the app or demo.

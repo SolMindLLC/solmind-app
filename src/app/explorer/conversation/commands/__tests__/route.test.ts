@@ -80,6 +80,12 @@ describe("POST Explorer conversation commands boundary", () => {
     { ...command, applicationSessionId: "a browser session" },
     { ...command, operationId: "not-a-uuid" },
     { ...command, expectedRevision: -1 },
+    { kind: "respond_compass_suggestion", operationId: command.operationId, expectedRevision: 0,
+      itemId: command.operationId, response: "right", label: "Browser supplied wording" },
+    { kind: "respond_compass_suggestion", operationId: command.operationId, expectedRevision: 0,
+      itemId: command.operationId, response: "right", actorAccountId: command.operationId },
+    { kind: "respond_compass_suggestion", operationId: command.operationId, expectedRevision: 0,
+      itemId: command.operationId, response: "confirm" },
   ])("P04 rejects browser authority or malformed command before factory (%j)", async body => {
     expect(await invoke(request({ body }))).toEqual(denied);
     expect(mocks.factory).not.toHaveBeenCalled(); expect(mocks.command).not.toHaveBeenCalled();
@@ -89,6 +95,14 @@ describe("POST Explorer conversation commands boundary", () => {
     const next = request(); const body = vi.spyOn(next, "body", "get");
     expect(await invoke(next)).toEqual(unavailable);
     expect(body).not.toHaveBeenCalled(); expect(mocks.factory).not.toHaveBeenCalled(); expect(mocks.command).not.toHaveBeenCalled();
+  });
+  it.each(["right", "close", "not_it"])("forwards only the closed suggestion reply command (%s)", async response => {
+    const body = { kind: "respond_compass_suggestion", operationId: command.operationId, expectedRevision: 2,
+      itemId: command.operationId, response };
+    const next = request({ body });
+    await invoke(next);
+    expect(mocks.command).toHaveBeenCalledExactlyOnceWith({ command: body, dependencies, signal: next.signal });
+    expect(Object.isFrozen(mocks.command.mock.calls[0][0].command)).toBe(true);
   });
   it.each(["factory", "engine"] as const)("P06 %s failure emits no private details", async source => {
     if (source === "factory") mocks.factory.mockImplementation(() => { throw new Error("private_actor_cookie_or_key"); });

@@ -52,7 +52,7 @@ describe("S5 optional browser Compass formation", () => {
     expect(parsed?.compassItems[6].label).toBe(original.compassItems[6].label);
   });
 
-  it("rejects private statuses, malformed markers and internal wording provenance", () => {
+  it("rejects private statuses, malformed markers and raw internal wording provenance", () => {
     const original = cardState();
     const withItem = (extra: Record<string, unknown>) => ({ ...original,
       compassItems: original.compassItems.map((item, index) => index === 6 ? { ...item, ...extra } : item) });
@@ -62,7 +62,6 @@ describe("S5 optional browser Compass formation", () => {
     for (const extra of [
       { formation_status: "proposed" },
       { wording_message_id: original.messages[1].id },
-      { formation: "forming", wordingMessageId: original.messages[1].id },
     ]) expect(parseExplorerConversationState(withItem(extra))).toBeNull();
   });
 

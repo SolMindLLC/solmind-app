@@ -1086,6 +1086,24 @@ describe("S5 current forming context", () => {
     };
   }
 
+  it("S6a display wording message leaves provider bytes, fingerprint and source identities unchanged", async () => {
+    const history = formingState();
+    const wordingMessageId = history.messages.find(message => message.role === "virtualGuide")!.id;
+    const withDisplayPointer: ExplorerConversationState = { ...history, compassItems: history.compassItems.map(item =>
+      item.id === formingMove.pointId ? { ...item, wordingMessageId } : item) };
+    expect(parseExplorerConversationState(withDisplayPointer)).not.toBeNull();
+    const original = privateFixture(history, formingMove);
+    const displayed = privateFixture(withDisplayPointer, formingMove);
+    const before = await original.build(original.input);
+    const after = await displayed.build(displayed.input);
+    expect(after.request.authorizedContext).toBe(before.request.authorizedContext);
+    expect(after.request.contextFingerprint).toBe(before.request.contextFingerprint);
+    expect(after.evidence.p_context_source_ids).toEqual(before.evidence.p_context_source_ids);
+    expect(after.request.authorizedContext).not.toContain("wordingMessageId");
+    expect(withDisplayPointer.compassItems.find(item => item.id === formingMove.pointId)?.sourceMessageId)
+      .toBe(history.compassItems.find(item => item.id === formingMove.pointId)?.sourceMessageId);
+  });
+
   it("acknowledges an Explorer forming move with current wording without a saved Route row", async () => {
     const history = formingState();
     const beforeRoute = JSON.stringify(history.route);

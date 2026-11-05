@@ -11,6 +11,7 @@ import { parseExplorerPrivateConversationResponse, type ExplorerPrivateConversat
   type ExplorerPrivateAssistance } from "@/lib/solmind/explorerPrivateConversationResponse";
 import { ExplorerConversationConnectedScreen } from "./ExplorerConversationConnectedScreen";
 import type { ExplorerConversationFormationIntent } from "./ExplorerConversationFormation";
+import { COMPASS_SUGGESTION_REPLY_LABELS } from "@/lib/solmind/explorerCompassSuggestionReplies";
 
 const STATE_PATH = "/explorer/conversation/state";
 const COMMAND_PATH = "/explorer/conversation/commands";
@@ -19,8 +20,22 @@ const RESULT_CHARACTER_LIMIT = 1_200_000;
 const REQUEST_BYTE_LIMIT = 16_384;
 
 type CommandIntent = ExplorerConversationFormationIntent | Readonly<{ kind: "send"; body: string }> |
-  Readonly<{ kind: "end_conversation"; conversationId: string }>;
-type PendingCommand = Readonly<{ command: ExplorerConversationCommand; body: string }>;
+  Readonly<{ kind: "end_conversation"; conversationId: string }> |
+  Readonly<{ kind: "suggestion_follow_up"; response: "close" | "not_it"; wording: string }>;
+type PendingCommand = Readonly<{ command: ExplorerConversationCommand; body: string; intent: CommandIntent;
+  suggestionWording: string | null }>;
+
+function prepareCommand(intent: CommandIntent, expectedRevision: number, suggestionWording: string | null = null): PendingCommand | null {
+  const wireIntent = intent.kind === "suggestion_follow_up"
+    ? { kind: "send" as const, body: `${COMPASS_SUGGESTION_REPLY_LABELS[intent.response]}: "${intent.wording}"` }
+    : intent;
+  const command: ExplorerConversationCommand = Object.freeze({
+    ...wireIntent, operationId: crypto.randomUUID(), expectedRevision,
+  });
+  const body = JSON.stringify(command);
+  return new TextEncoder().encode(body).byteLength > REQUEST_BYTE_LIMIT ? null
+    : Object.freeze({ command, body, intent, suggestionWording });
+}
 
 /** Decode before rendering; a malformed or non-success HTTP success is uncertain. */
 async function readResult(response: Response): Promise<ExplorerPrivateConversationResponse | null> {
@@ -145,7 +160,7 @@ export function ExplorerConversation() {
     };
   }, [replaceState]);
 
-  const dispatch = useCallback(async (pending: PendingCommand) => {
+  const dispatch = useCallback(async function dispatchPending(pending: PendingCommand) {
     if (busyRef.current || pendingRef.current !== pending) return;
     busyRef.current = true;
     setBusy(true);
@@ -156,6 +171,7 @@ export function ExplorerConversation() {
     const controller = new AbortController();
     activeRef.current = controller;
     const timer = setTimeout(() => controller.abort(), RESPONSE_BUDGET_MS);
+    let followUp: PendingCommand | null = null;
     try {
       const response = await fetch(COMMAND_PATH, {
         method: "POST", credentials: "same-origin", cache: "no-store", redirect: "error",
@@ -201,7 +217,24 @@ export function ExplorerConversation() {
           : Object.freeze({ ...result.state, providerState: previous.providerState }));
         setError(null);
         setNotice(output?.assistance === null ? "Your saved conversation is up to date." : "");
-        if (pending.command.kind === "send" && output?.assistance === null) setDraft("");
+        // A button's ordinary Send has its own intent. It never consumes the
+        // Explorer's composer draft, including after an exact uncertain retry.
+        if (pending.intent.kind === "send" && output?.assistance === null) setDraft("");
+        if (pending.command.kind === "respond_compass_suggestion" && pending.command.response !== "right" &&
+            pending.suggestionWording !== null) {
+          const current = stateRef.current;
+          if (current !== null && !current.pendingTurn && current.sessionStatus !== "ended" &&
+              current.providerState === "available" && current.compassSuggestionReplies === "available" &&
+              current.messages.length <= EXPLORER_CONVERSATION_LIMITS.messages - 2) {
+            try {
+              followUp = prepareCommand({ kind: "suggestion_follow_up", response: pending.command.response,
+                wording: pending.suggestionWording }, current.revision);
+              if (followUp === null) setDraftError("This change is too long to send. Please shorten the text.");
+            } catch {
+              setDraftError("This change could not be prepared. Please reload and try again.");
+            }
+          }
+        }
       } else {
         setError(result.error);
         if (result.error === "denied" || result.error === "refresh_required") replaceState(null);
@@ -215,7 +248,7 @@ export function ExplorerConversation() {
           replaceState(Object.freeze({ ...kept, providerState: "unavailable" }));
         }
       }
-      pendingRef.current = null;
+      pendingRef.current = followUp;
     } catch {
       if (mountedRef.current && generation === generationRef.current && pendingRef.current === pending) setUncertain(true);
     } finally {
@@ -224,6 +257,9 @@ export function ExplorerConversation() {
         activeRef.current = null;
         busyRef.current = false;
         setBusy(false);
+        // This is the next, separately counted ordinary Send only after a
+        // confirmed response command. Uncertain outcomes keep their exact bytes.
+        if (followUp !== null) void dispatchPending(followUp);
       }
     }
   }, [replaceState]);
@@ -233,16 +269,22 @@ export function ExplorerConversation() {
     if (busyRef.current || pendingRef.current !== null || current === null || current.pendingTurn || current.sessionStatus === "ended") return;
     if (intent.kind === "end_conversation" && (current.conversationId === null || intent.conversationId !== current.conversationId)) return;
     if (intent.kind === "send" && current.providerState !== "available") return;
+    const suggestion = intent.kind === "respond_compass_suggestion"
+      ? current.compassItems.find(item => item.id === intent.itemId && item.formation === "forming" && item.mergedIntoItemId == null)
+      : undefined;
+    if (intent.kind === "respond_compass_suggestion" &&
+        (current.compassSuggestionReplies !== "available" ||
+         suggestion === undefined ||
+         (intent.response !== "right" && (current.providerState !== "available" ||
+          current.messages.length > EXPLORER_CONVERSATION_LIMITS.messages - 2)))) return;
     try {
-      const stamped: ExplorerConversationCommand = Object.freeze({
-        ...intent, operationId: crypto.randomUUID(), expectedRevision: current.revision,
-      });
-      const body = JSON.stringify(stamped);
-      if (new TextEncoder().encode(body).byteLength > REQUEST_BYTE_LIMIT) {
+      // Keep the displayed wording pinned to this reply's revision, even when
+      // rejection removes the point or the exact response needs a later retry.
+      const pending = prepareCommand(intent, current.revision, suggestion?.label ?? null);
+      if (pending === null) {
         setDraftError("This change is too long to send. Please shorten the text.");
         return;
       }
-      const pending = Object.freeze({ command: stamped, body });
       pendingRef.current = pending;
       setDraftError("");
       void dispatch(pending);

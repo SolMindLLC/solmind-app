@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { createExplorerPrivateConversationRepository } from "../explorerPrivateConversationRepository";
 import { parseExplorerSafetyReplyBody } from "../../virtual-guide/explorerSafetyReplyContract";
 import type { ExplorerPrivateEnsureParameters, ExplorerPrivateObserveParameters, ExplorerPrivatePrepareParameters,
-  ExplorerPrivateSettleParameters, ExplorerPrivateMutateParameters, ExplorerPrivateArrangeParameters, ExplorerPrivateEndParameters, ExplorerPrivateReviewParameters } from "../../virtual-guide/explorerPrivateConversationComposition";
+  ExplorerPrivateSettleParameters, ExplorerPrivateMutateParameters, ExplorerPrivateArrangeParameters, ExplorerPrivateEndParameters, ExplorerPrivateReviewParameters,
+  ExplorerPrivateCompassSuggestionParameters } from "../../virtual-guide/explorerPrivateConversationComposition";
 
 const UUID = "00000000-0000-4000-8000-000000000001"; const SHA = "A".repeat(64);
 const ACTOR = { p_actor_user_account_id: UUID, p_user_session_id: UUID };
@@ -41,9 +42,9 @@ function fixture(row: unknown) {
   return { repository, rpc, abortSignal };
 }
 describe("Closed private Explorer RPC repository (synthetic client)", () => {
-  it("exposes thirteen closed ports including category formation, End, ended review and the pause read, without generic access", () => {
+  it("exposes fourteen closed ports including suggestion replies, End, ended review and the pause read, without generic access", () => {
     const f = fixture(null);
-    expect(Object.keys(f.repository).sort()).toEqual(["arrange", "category", "end", "ensure", "mutate", "observe", "pause", "prepare", "read", "release", "review", "settle", "waypointRevision"]);
+    expect(Object.keys(f.repository).sort()).toEqual(["arrange", "category", "end", "ensure", "mutate", "observe", "pause", "prepare", "read", "release", "respondCompassSuggestion", "review", "settle", "waypointRevision"]);
     expect(Object.isFrozen(f.repository)).toBe(true);
   });
   it("read derives exact actor fields and paired operation selectors", async () => {
@@ -105,6 +106,60 @@ describe("Closed private Explorer RPC repository (synthetic client)", () => {
     const f = fixture(null); f.abortSignal.mockRejectedValue(new Error("private database detail"));
     await expect(f.repository.settle(settle())).rejects.toThrowError("explorer_private_repository_unavailable");
     expect(f.rpc).toHaveBeenCalledOnce(); expect(f.abortSignal).toHaveBeenCalledOnce();
+  });
+});
+
+describe("S6a closed suggestion response RPC", () => {
+  function suggestion(): ExplorerPrivateCompassSuggestionParameters {
+    return { ...ACTOR, p_conversation_id: UUID, p_operation_id: UUID, p_expected_revision: 3,
+      p_command_fingerprint: SHA, p_item_id: UUID, p_response: "right" };
+  }
+  it.each(["right", "close", "not_it"] as const)("uses the exact eight-argument capability once for %s", async p_response => {
+    const row = { outcome: "ok", conversation_state: null };
+    const f = fixture(row); const input = { ...suggestion(), p_response };
+    expect(await f.repository.respondCompassSuggestion!(input)).toEqual(row);
+    expect(f.rpc).toHaveBeenCalledExactlyOnceWith("solmind_respond_explorer_compass_suggestion_v1", input);
+    expect(Object.keys(f.rpc.mock.calls[0][1] as object)).toHaveLength(8);
+    expect(f.rpc.mock.calls[0][1]).not.toBe(input);
+    expect(Object.isFrozen(f.rpc.mock.calls[0][1])).toBe(true);
+    expect(f.abortSignal).toHaveBeenCalledOnce(); expect(f.abortSignal.mock.calls[0][0]).toBeInstanceOf(AbortSignal);
+  });
+  it("rejects widened, missing or invalid parameters and accessors without calling RPC", async () => {
+    const { p_item_id: omitted, ...missing } = suggestion(); void omitted;
+    const getter = vi.fn(() => "right"); const accessor = suggestion();
+    Object.defineProperty(accessor, "p_response", { enumerable: true, get: getter });
+    for (const input of [missing, accessor, { ...suggestion(), p_label: "Browser wording" },
+      { ...suggestion(), p_response: "confirm" }, { ...suggestion(), p_response: null }]) {
+      const f = fixture(null);
+      await expect(f.repository.respondCompassSuggestion!(input as ExplorerPrivateCompassSuggestionParameters))
+        .rejects.toThrow("explorer_private_repository_unavailable");
+      expect(f.rpc).not.toHaveBeenCalled();
+    }
+    expect(getter).not.toHaveBeenCalled();
+  });
+  it.each(["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"])("accepts only the closed result columns for %s", async outcome => {
+    const row = { outcome, conversation_state: null }; const f = fixture(row);
+    expect(await f.repository.respondCompassSuggestion!(suggestion())).toEqual(row);
+  });
+  it.each([
+    ["solmind_explorer_private_operation_conflict", "operation_conflict"],
+    ["solmind_explorer_private_denied", "denied"],
+    ["solmind_explorer_private_invalid_input", "denied"],
+  ])("maps the definite suggestion refusal %s without retrying", async (message, outcome) => {
+    const f = fixture(null); f.abortSignal.mockResolvedValue({ data: [], error: { code: "P0001", message } });
+    expect(await f.repository.respondCompassSuggestion!(suggestion())).toEqual({ outcome });
+    expect(f.rpc).toHaveBeenCalledOnce(); expect(f.abortSignal).toHaveBeenCalledOnce();
+  });
+  it("refuses result widening and never retries an unknown acknowledgement", async () => {
+    for (const row of [{ outcome: "ok", conversation_state: null, policy_state: null },
+      { outcome: "paused", conversation_state: null }, { outcome: "ok" }]) {
+      const f = fixture(row);
+      await expect(f.repository.respondCompassSuggestion!(suggestion())).rejects.toThrow("explorer_private_repository_unavailable");
+      expect(f.rpc).toHaveBeenCalledOnce();
+    }
+    const f = fixture(null); f.abortSignal.mockRejectedValue(new Error("Private detail"));
+    await expect(f.repository.respondCompassSuggestion!(suggestion())).rejects.toThrow("explorer_private_repository_unavailable");
+    expect(f.rpc).toHaveBeenCalledOnce();
   });
 });
 

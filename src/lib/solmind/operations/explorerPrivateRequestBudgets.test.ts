@@ -6,6 +6,7 @@ import type {
   ExplorerPrivateOperationalReadiness, ExplorerPrivateReadRow, ExplorerPrivatePauseRow,
   ExplorerPrivateEnsureParameters, ExplorerPrivateObserveParameters,
   ExplorerPrivatePrepareParameters, ExplorerPrivateSettleParameters, ExplorerPrivateMutateParameters, ExplorerPrivateArrangeParameters, ExplorerPrivateEndParameters, ExplorerPrivateReviewParameters,
+  ExplorerPrivateCompassSuggestionParameters,
 } from "../virtual-guide/explorerPrivateConversationComposition";
 
 // Explicit synthetic ports only. Local timeout outcome is not remote rollback,
@@ -59,6 +60,8 @@ const ARRANGE: ExplorerPrivateArrangeParameters = Object.freeze({ ...ACTOR_PARAM
 const END: ExplorerPrivateEndParameters = Object.freeze({ ...ACTOR_PARAMETERS, p_conversation_id: ID,
   p_operation_id: ID, p_expected_revision: 1, p_command_fingerprint: SHA });
 const REVIEW: ExplorerPrivateReviewParameters = Object.freeze({ ...ACTOR_PARAMETERS, p_conversation_id: null });
+const SUGGESTION: ExplorerPrivateCompassSuggestionParameters = Object.freeze({ ...ACTOR_PARAMETERS, p_conversation_id: ID,
+  p_operation_id: ID, p_expected_revision: 1, p_command_fingerprint: SHA, p_item_id: ID, p_response: "right" });
 
 type BuildContext = NonNullable<ExplorerPrivateConversationDependencies["buildContext"]>;
 function contextInput(signal?: AbortSignal, mode: Parameters<BuildContext>[0]["mode"] = "classification_and_reply"): Parameters<BuildContext>[0] {
@@ -99,6 +102,7 @@ function fixture() {
     pause: vi.fn<ExplorerPrivateConversationRepository["pause"]>(async () => PAUSE_ROW),
     mutate: vi.fn<NonNullable<ExplorerPrivateConversationRepository["mutate"]>>(async () => ROW),
     arrange: vi.fn<NonNullable<ExplorerPrivateConversationRepository["arrange"]>>(async () => ROW),
+    respondCompassSuggestion: vi.fn<NonNullable<ExplorerPrivateConversationRepository["respondCompassSuggestion"]>>(async () => ROW),
     end: vi.fn<NonNullable<ExplorerPrivateConversationRepository["end"]>>(async () => ROW),
     review: vi.fn<NonNullable<ExplorerPrivateConversationRepository["review"]>>(async () => ROW),
   };
@@ -116,12 +120,13 @@ function repositoryCalls(dependencies: ExplorerPrivateConversationDependencies) 
     pause: () => dependencies.repository.pause(ACTOR),
     mutate: () => dependencies.repository.mutate!(MUTATE),
     arrange: () => dependencies.repository.arrange!(ARRANGE),
+    respondCompassSuggestion: () => dependencies.repository.respondCompassSuggestion!(SUGGESTION),
     end: () => dependencies.repository.end!(END),
     review: () => dependencies.repository.review!(REVIEW),
   };
 }
 const EXPECTED_ARGUMENTS = { read: [ACTOR, OPERATION], ensure: [ENSURE], observe: [OBSERVE],
-  prepare: [PREPARE], settle: [SETTLE], pause: [ACTOR], mutate: [MUTATE], arrange: [ARRANGE], end: [END], review: [REVIEW] };
+  prepare: [PREPARE], settle: [SETTLE], pause: [ACTOR], mutate: [MUTATE], arrange: [ARRANGE], respondCompassSuggestion: [SUGGESTION], end: [END], review: [REVIEW] };
 
 beforeEach(() => { vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] }); });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -136,6 +141,7 @@ describe("private request port budgets with explicit synthetic dependencies", ()
     expect(Object.keys(wrapped.repository).sort()).toEqual(["ensure", "observe", "pause", "prepare", "read", "settle"]);
     expect(Object.isFrozen(wrapped)).toBe(true); expect(Object.isFrozen(wrapped.repository)).toBe(true);
     expect(wrapped.repository).not.toHaveProperty("arrange");
+    expect(wrapped.repository).not.toHaveProperty("respondCompassSuggestion");
     expect(wrapped.repository).not.toHaveProperty("end"); expect(wrapped.repository).not.toHaveProperty("review");
     expect(await wrapped.authenticate()).toBe(ACTOR);
     expect(await wrapped.repository.read(ACTOR, OPERATION)).toBe(ROW);
@@ -144,7 +150,7 @@ describe("private request port budgets with explicit synthetic dependencies", ()
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it.each(["read", "ensure", "observe", "prepare", "settle", "pause", "mutate", "arrange", "end", "review"] as const)(
+  it.each(["read", "ensure", "observe", "prepare", "settle", "pause", "mutate", "arrange", "respondCompassSuggestion", "end", "review"] as const)(
     "bounds a stalled %s once with exact arguments and ignores a late success", async method => {
       const f = fixture(); const held = deferred<ExplorerPrivateReadRow>();
       f.repository[method].mockImplementation(() => held.promise);
@@ -261,7 +267,7 @@ describe("private request port budgets with explicit synthetic dependencies", ()
 it("propagates the supplied arrangement capability and exact arguments without reaching any other port", async () => {
   const f = fixture();
   const wrapped = withExplorerPrivateRequestBudgets(f.dependencies);
-  expect(Object.keys(wrapped.repository).sort()).toEqual(["arrange", "end", "ensure", "mutate", "observe", "pause", "prepare", "read", "review", "settle"]);
+  expect(Object.keys(wrapped.repository).sort()).toEqual(["arrange", "end", "ensure", "mutate", "observe", "pause", "prepare", "read", "respondCompassSuggestion", "review", "settle"]);
   expect(await wrapped.repository.arrange!(ARRANGE)).toBe(ROW);
   expect(f.repository.arrange).toHaveBeenCalledExactlyOnceWith(ARRANGE);
   expect(f.repository.arrange.mock.calls[0][0]).toBe(ARRANGE);

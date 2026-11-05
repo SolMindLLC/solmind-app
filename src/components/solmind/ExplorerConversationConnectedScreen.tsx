@@ -33,6 +33,7 @@ import { SPEAKER_LABEL_STYLE, speakerLabelClass } from "@/lib/solmind/explorerSp
 import { SOLMIND_TERMS } from "@/lib/solmind/terms";
 
 import { ConnectedCompassCard } from "./ExplorerConnectedCompassCard";
+import { ExplorerCompassSuggestionReplies } from "./ExplorerCompassSuggestionReplies";
 import { ConnectedWaypointCard } from "./ExplorerConnectedWaypointCard";
 import {
   ExplorerConversationFormation,
@@ -351,7 +352,11 @@ function MessageBubble({ message }: Readonly<{ message: ExplorerConversationMess
 
 // The saved messages, oldest first, in the designed transcript box. The box
 // scrolls to the newest message whenever the saved count changes.
-function SavedTranscript({ state, ended }: Readonly<{ state: ExplorerConversationState; ended: boolean }>) {
+function SavedTranscript({ state, view, actions }: Readonly<{
+  state: ExplorerConversationState;
+  view: ConnectedConversationView;
+  actions: ConnectedConversationActions;
+}>) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const count = state.messages.length;
 
@@ -375,7 +380,7 @@ function SavedTranscript({ state, ended }: Readonly<{ state: ExplorerConversatio
         {count === 0 ? (
           <>
             <p className="text-sm text-stone-300">There are no saved messages yet.</p>
-            {ended ? null : (
+            {view.ended ? null : (
               <PlaceholderSlot title="Ways to begin">
                 <NotYetImplementedNote id={noteId("chat", "choiceGroup")} noteKey="choiceGroup" standalone />
                 <NotYetImplementedNote id={noteId("chat", "earlierCompass")} noteKey="earlierCompass" standalone />
@@ -385,8 +390,15 @@ function SavedTranscript({ state, ended }: Readonly<{ state: ExplorerConversatio
         ) : (
           <ol aria-label="Saved conversation" className="grid gap-3">
             {state.messages.map((message) => (
-              <li className="grid" key={message.id}>
+              <li className={joinClasses("grid", FOCUS_RING)} key={message.id} tabIndex={-1}>
                 <MessageBubble message={message} />
+                <ExplorerCompassSuggestionReplies
+                  followUpHeld={view.sendUnavailable || view.atMessageCapacity}
+                  held={view.held}
+                  messageId={message.id}
+                  onCommand={actions.onCommand}
+                  state={state}
+                />
               </li>
             ))}
           </ol>
@@ -721,7 +733,7 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
                           the composer are marked busy; the status line, alerts,
                           Reload, Retry and End stay outside it. */}
                       <div aria-busy={view.busy}>
-                        <SavedTranscript ended={view.ended} state={state} />
+                        <SavedTranscript actions={actions} state={state} view={view} />
                         {/* Outside the scrolling transcript, beside the composer, so it
                             stays in view however long the saved history is. */}
                         {state.pendingTurn ? (
