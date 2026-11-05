@@ -8,7 +8,13 @@ import {
 } from "../openAiLunaExplorerSafetyTransport";
 
 function request(mode: "classification_and_reply" | "classification_only" = "classification_and_reply") {
-  const authorizedContext = JSON.stringify({ contractVersion: "wi007-v0.1+onboarding-fields-v2",
+  const authorizedContext = JSON.stringify({ contractVersion: mode === "classification_only"
+    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v1",
+    ...(mode === "classification_only" ? {} : { compassContext: { version: "explorer-compass-context.v1",
+      points: [{ id: "00000000-0000-4000-8000-000000000005", label: "Saved point", order: 0,
+        formation: "saved", anchor: null, emphasis: null }], priorityId: null, attentionId: null, recentRoute: [],
+      waypoints: [{ id: "00000000-0000-4000-8000-000000000006", title: "Saved destination", destination: "Saved destination",
+        meaning: "Saved meaning", arrivalSignal: "Saved arrival", stage: "formed", reachedEvidence: null }], drafts: [] } }),
     immediateExplorerMessage: { content: "Synthetic fixture only." }, outputRequirements: { format: "plain_text" } });
   return parseExplorerSafetyReplyRequest({ contractVersion: EXPLORER_SAFETY_REQUEST_VERSION,
     invocationId: "00000000-0000-4000-8000-000000000001", explorerId: "00000000-0000-4000-8000-000000000002",
@@ -25,14 +31,26 @@ function envelope(raw: string, overrides: Record<string, unknown> = {}) {
 const RAW = '{"protocol":"explorer-safety-reply.v2","classification":{"level":4,"minorIndicated":false},"candidateReply":{"content":"\\ud800"}}';
 function adapter(fetchImpl: typeof fetch) { return createOpenAiLunaExplorerSafetyTransport({ apiKey: "synthetic-never-transmitted-key", fetchImpl }); }
 describe("Dormant injected Explorer same-call HTTP transport", () => {
-  it("sends one exact unchanged compact input with default model and fixed effort/no-store/no-tools and JSON outer instructions", async () => {
-    const fetchImpl = vi.fn(async () => new Response(JSON.stringify(envelope(RAW)))); const input = request();
+  it.each(["classification_and_reply", "classification_only"] as const)(
+    "sends one exact unchanged compact input with default model and fixed effort/no-store/no-tools and JSON outer instructions (%s)", async mode => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify(envelope(RAW)))); const input = request(mode);
     const raw = await adapter(fetchImpl as typeof fetch).generate(input, new AbortController().signal);
     expect(raw).toBe(RAW); expect(fetchImpl).toHaveBeenCalledOnce();
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe(OPENAI_LUNA_EXPLORER_SAFETY_ENDPOINT); expect(init.method).toBe("POST"); expect(init.redirect).toBe("error");
     const sent = JSON.parse(init.body as string);
     expect(sent.input).toBe(input.authorizedContext); expect(sent.model).toBe("gpt-5.6-luna");
+    expect(createHash("sha256").update(sent.input).digest("hex").toUpperCase()).toBe(input.contextFingerprint);
+    const context = JSON.parse(sent.input);
+    expect(context.contractVersion).toBe(mode === "classification_only"
+      ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v1");
+    if (mode === "classification_only") {
+      expect(context).not.toHaveProperty("compassContext");
+      for (const text of ["Saved point", "Saved destination", "Saved meaning", "Saved arrival",
+        "00000000-0000-4000-8000-000000000005", "00000000-0000-4000-8000-000000000006"]) expect(sent.input).not.toContain(text);
+    } else {
+      expect(context.compassContext.points).toHaveLength(1); expect(context.compassContext.waypoints).toHaveLength(1);
+    }
     expect(sent.reasoning).toEqual({ effort: "medium" }); expect(sent.store).toBe(false); expect(sent.max_output_tokens).toBe(4096);
     expect(Object.keys(sent).sort()).toEqual(["input", "instructions", "max_output_tokens", "model", "reasoning", "store"]);
     expect(sent.instructions).toContain("OUTER response"); expect(sent.instructions).toContain("ONLY to candidateReply.content");

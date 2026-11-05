@@ -23,8 +23,12 @@ const ACTOR = { accountId: id(1), applicationSessionId: id(2) };
 const POLICY = { known: true, contractVersion: "explorer-conversation-safety.v1", restrictedLevel: null, adultReflectionStopped: false, version: 0 };
 const CHOICES = [{ label: "Explore this topic" }, { label: "I have a question" }];
 const COMMAND = { kind: "send", operationId: id(8), expectedRevision: 1, body: "Synthetic message about money worries." } as const;
+const COMPASS = { version: "explorer-compass-context.v1", points: [{ id: id(9), label: "Money worries", order: 0,
+  formation: "saved", anchor: null, emphasis: null }], priorityId: null, attentionId: null, recentRoute: [],
+  waypoints: [{ id: id(12), title: "Review my spending", destination: "Review my spending", meaning: "Find room for rest",
+    arrivalSignal: "One review completed", stage: "formed", reachedEvidence: null }], drafts: [] };
 
-function fixture(proposals: Record<string, unknown>) {
+function fixture(proposals: Record<string, unknown>, options: { restrictedLevel?: 3 | 4; adultReflectionStopped?: boolean; body?: string } = {}) {
   const configuration = getExplorerPrivateConfigurationCandidate();
   if (!configuration) throw new Error("synthetic_configuration_missing");
   const readiness: ExplorerPrivateOperationalReadiness = { configuration, configurationFingerprint: SHA,
@@ -35,7 +39,12 @@ function fixture(proposals: Record<string, unknown>) {
   let current: ExplorerConversationState = { version: "explorer-conversation.v1", conversationId: id(3),
     revision: 1, pendingTurn: false, providerState: "unavailable",
     messages: [{ id: id(10), role: "explorer", body: "Synthetic source about money worries.", createdAt: "2026-11-04T12:00:00Z" }],
-    compassItems: [{ id: id(9), sourceMessageId: id(10), label: "Money worries" }], priorityId: null, attentionId: null, waypoints: [] };
+    compassItems: [{ id: id(9), sourceMessageId: id(10), label: "Money worries" }], priorityId: null, attentionId: null,
+    waypoints: [{ id: id(12), sourceMessageId: id(10), destination: "Review my spending", meaning: "Find room for rest",
+      arrivalSignal: "One review completed", status: "chosen" }] };
+  let policy = { ...POLICY, restrictedLevel: options.restrictedLevel ?? null,
+    adultReflectionStopped: options.adultReflectionStopped ?? false };
+  const command = { ...COMMAND, body: options.body ?? COMMAND.body };
   let settled = false; let fingerprint: string | null = null;
   const authority = { explorerId: id(4), authorizationVersion: "AV3:" + SHA };
   const rpc = vi.fn((name: string, parameters: Readonly<Record<string, unknown>>) => ({
@@ -44,22 +53,27 @@ function fixture(proposals: Record<string, unknown>) {
       let row: Record<string, unknown>;
       if (name === "solmind_read_explorer_conversation_v3") {
         const exact = settled && parameters.p_operation_id === COMMAND.operationId && parameters.p_command_fingerprint === fingerprint;
-        row = { outcome: exact ? "exact_replay" : "ok", conversation_state: current, authority_context: authority, policy_state: POLICY };
+        row = { outcome: exact ? "exact_replay" : "ok", conversation_state: current, authority_context: authority, policy_state: policy };
       } else if (name === "solmind_read_explorer_ai_use_pause_v1") {
         row = { outcome: "ok", notice_kind: null, crisis: false, adults_only: false };
       } else if (name === "solmind_ensure_explorer_conversation_v3") {
-        row = { outcome: "reused", conversation_state: current, authority_context: authority, policy_state: POLICY };
+        row = { outcome: "reused", conversation_state: current, authority_context: authority, policy_state: policy };
       } else if (name === "solmind_observe_explorer_conversation_fallback_v3") {
-        row = { outcome: "ok", policy_state: POLICY };
+        const level = parameters.p_fallback_level;
+        const restrictedLevel = level === 3 || level === 4 ? level : policy.restrictedLevel;
+        const adultReflectionStopped = policy.adultReflectionStopped || parameters.p_fallback_minor_indicated === true;
+        policy = { ...policy, restrictedLevel, adultReflectionStopped,
+          version: policy.version + Number(restrictedLevel !== policy.restrictedLevel || adultReflectionStopped !== policy.adultReflectionStopped) };
+        row = { outcome: "ok", policy_state: policy };
       } else if (name === "solmind_prepare_explorer_conversation_turn_v3") {
         fingerprint = parameters.p_command_fingerprint as string;
         current = { ...current, revision: 2, pendingTurn: true,
           messages: [...current.messages, { id: parameters.p_message_id as string, role: "explorer",
             body: parameters.p_body as string, createdAt: "2026-11-04T12:00:01Z" }] };
-        row = { outcome: "ok", conversation_state: current, dispatch_permitted: true, policy_state: POLICY };
+        row = { outcome: "ok", conversation_state: current, dispatch_permitted: true, policy_state: policy };
       } else if (name === "solmind_settle_explorer_conversation_turn_v4") {
         const terminal = parameters as ExplorerPrivateSettleParameters;
-        if (terminal.p_reply_kind !== "ordinary" || terminal.p_reply_body === null || terminal.p_reply_message_id === null) {
+        if (terminal.p_reply_kind === "none" || terminal.p_reply_body === null || terminal.p_reply_message_id === null) {
           throw new Error("synthetic_unexpected_terminal");
         }
         settled = true;
@@ -69,7 +83,7 @@ function fixture(proposals: Record<string, unknown>) {
             recordedAt: "2026-11-04T12:00:02Z", actor: "virtual_guide" }] }),
           messages: [...current.messages, { id: terminal.p_reply_message_id, role: "virtualGuide", body: terminal.p_reply_body,
             createdAt: "2026-11-04T12:00:02Z", ...(terminal.p_choices === null ? {} : { choices: terminal.p_choices }) }] };
-        row = { outcome: "ok", conversation_state: current, policy_state: POLICY, saved_reply: true };
+        row = { outcome: "ok", conversation_state: current, policy_state: policy, saved_reply: true };
       } else throw new Error("synthetic_unexpected_rpc");
       return { data: [row], error: null };
     },
@@ -77,7 +91,35 @@ function fixture(proposals: Record<string, unknown>) {
   const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ object: "response", status: "completed", error: null,
     incomplete_details: null, model: "gpt-5.6-luna", output: [{ type: "message", role: "assistant", status: "completed",
       content: [{ type: "output_text", text: JSON.stringify({ protocol: "explorer-safety-reply.v2",
-        classification: { level: 0, minorIndicated: false }, candidateReply: { content: "We can explore what matters about that topic." }, ...proposals }) }] }] })));
+        classification: { level: 0, minorIndicated: false },
+        candidateReply: policy.restrictedLevel !== null || policy.adultReflectionStopped ? null
+          : { content: "We can explore what matters about that topic." }, ...proposals }) }] }] })));
+  const render = vi.fn<NonNullable<ExplorerPrivateConversationDependencies["renderer"]>["render"]>(async plan => {
+    if (plan.kind !== "restricted_followup" && plan.kind !== "adult_only" && plan.kind !== "crisis" && plan.kind !== "urgent") {
+      throw new Error("synthetic_ordinary_reply_must_not_render_trusted_support");
+    }
+    return { kind: plan.kind === "restricted_followup" ? "restricted" : plan.kind, body: "Synthetic reviewed support reply.",
+      trustedResponseVersion: configuration.trustedResponses.version, resourcePolicyVersion: readiness.resourcePolicyVersion };
+  });
+  const buildContext = vi.fn<NonNullable<ExplorerPrivateConversationDependencies["buildContext"]>>(async input => {
+    const authorizedContext = JSON.stringify({ contractVersion: input.mode === "classification_only"
+      ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v1",
+      globalPolicy: { version: configuration.globalPolicy.version, text: configuration.globalPolicy.text },
+      roleBehavior: { version: configuration.roleBehavior.version, text: configuration.roleBehavior.text },
+      crisisBehavior: { version: configuration.crisisBehavior.version, text: configuration.crisisBehavior.text },
+      ...(input.mode === "classification_only" ? {} : { compassContext: COMPASS }),
+      immediateExplorerMessage: { messageId: input.ids.messageId, content: input.command.body }, outputRequirements: { format: "plain_text" } });
+    return { request: { contractVersion: EXPLORER_SAFETY_REQUEST_VERSION, invocationId: input.ids.invocationId,
+      explorerId: id(4), sessionId: input.ids.conversationId, contextSnapshotId: input.ids.snapshotId,
+      contextFingerprint: createHash("sha256").update(authorizedContext).digest("hex").toUpperCase(), authorizedContext,
+      mode: input.mode, classificationPolicyVersion: readiness.modelPolicyVersion,
+      fallbackPolicyVersion: configuration.fallback.version, instructionVersion: configuration.instructionVersion },
+    evidence: { p_context_source_ids: [input.ids.messageId, id(5), id(7), id(10),
+      ...(input.mode === "classification_only" ? [] : [id(9), id(12)])].sort(), p_authorization_version: "AV3:" + SHA,
+      p_intake_response_set_id: id(5), p_prompt_version: configuration.promptVersion, p_policy_version: configuration.globalPolicy.version,
+      p_behavior_version: configuration.roleBehavior.version, p_crisis_version: configuration.crisisBehavior.version,
+      p_role_version: configuration.roleVersion, p_instruction_version: configuration.instructionVersion } };
+  });
   const dependencies: ExplorerPrivateConversationDependencies = {
     authenticate: async () => ACTOR,
     repository: createExplorerPrivateConversationRepository({ rpc } as unknown as SupabaseClient),
@@ -87,28 +129,45 @@ function fixture(proposals: Record<string, unknown>) {
     renderer: { verificationReceiptSha256: SHA,
       failureAssistance: { support: "Synthetic support assistance.", adultPolicy: "Synthetic adult assistance.",
         supportAndAdultPolicy: "Synthetic combined assistance.", temporarilyUnavailable: "Synthetic unavailable assistance." },
-      render: async () => { throw new Error("synthetic_ordinary_reply_must_not_render_trusted_support"); },
+      render,
       pauseNotice: () => "Synthetic pause notice." },
-    buildContext: async (input) => {
-      const authorizedContext = JSON.stringify({ contractVersion: "wi007-v0.1+onboarding-fields-v2+compass-v1",
-        globalPolicy: { version: configuration.globalPolicy.version, text: configuration.globalPolicy.text },
-        roleBehavior: { version: configuration.roleBehavior.version, text: configuration.roleBehavior.text },
-        crisisBehavior: { version: configuration.crisisBehavior.version, text: configuration.crisisBehavior.text },
-        compassContext: { version: "explorer-compass-context.v1", points: [{ id: id(9), label: "Money worries", order: 0,
-          formation: "saved", anchor: null, emphasis: null }], priorityId: null, attentionId: null, recentRoute: [], waypoints: [], drafts: [] },
-        immediateExplorerMessage: { messageId: input.ids.messageId, content: input.command.body }, outputRequirements: { format: "plain_text" } });
-      return { request: { contractVersion: EXPLORER_SAFETY_REQUEST_VERSION, invocationId: input.ids.invocationId,
-        explorerId: id(4), sessionId: input.ids.conversationId, contextSnapshotId: input.ids.snapshotId,
-        contextFingerprint: createHash("sha256").update(authorizedContext).digest("hex").toUpperCase(), authorizedContext,
-        mode: input.mode, classificationPolicyVersion: readiness.modelPolicyVersion,
-        fallbackPolicyVersion: configuration.fallback.version, instructionVersion: configuration.instructionVersion },
-      evidence: { p_context_source_ids: [input.ids.messageId, id(5), id(7), id(9), id(10)].sort(), p_authorization_version: "AV3:" + SHA,
-        p_intake_response_set_id: id(5), p_prompt_version: configuration.promptVersion, p_policy_version: configuration.globalPolicy.version,
-        p_behavior_version: configuration.roleBehavior.version, p_crisis_version: configuration.crisisBehavior.version,
-        p_role_version: configuration.roleVersion, p_instruction_version: configuration.instructionVersion } };
-    },
+    buildContext,
   };
-  return { dependencies, rpc, fetchImpl };
+  return { dependencies, rpc, fetchImpl, command, buildContext, render };
+}
+
+async function expectPreparedHttpInput(f: ReturnType<typeof fixture>, mode: "classification_and_reply" | "classification_only") {
+  expect(f.buildContext).toHaveBeenCalledOnce();
+  expect(f.buildContext.mock.calls[0][0].mode).toBe(mode);
+  expect(f.buildContext.mock.calls[0][0].state.compassItems).toHaveLength(1);
+  expect(f.buildContext.mock.calls[0][0].state.waypoints).toHaveLength(1);
+  const built = await f.buildContext.mock.results[0].value;
+  const preparations = f.rpc.mock.calls.filter(([name]) => name === "solmind_prepare_explorer_conversation_turn_v3");
+  expect(preparations).toHaveLength(1);
+  const prepared = preparations[0][1];
+  expect(Object.keys(prepared)).toHaveLength(37);
+  expect(f.fetchImpl).toHaveBeenCalledOnce();
+  const [, init] = f.fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+  const sent = JSON.parse(init.body as string);
+  expect(sent.input).toBe(prepared.p_context_serialization);
+  expect(sent.input).toBe(built.request.authorizedContext);
+  expect(createHash("sha256").update(sent.input).digest("hex").toUpperCase()).toBe(prepared.p_context_fingerprint_sha256);
+  expect(prepared.p_context_fingerprint_sha256).toBe(built.request.contextFingerprint);
+  expect(prepared.p_request_mode).toBe(mode);
+  expect(prepared.p_context_source_ids).toEqual(built.evidence.p_context_source_ids);
+  const context = JSON.parse(sent.input);
+  expect(context.contractVersion).toBe(mode === "classification_only"
+    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v1");
+  if (mode === "classification_only") {
+    expect(context).not.toHaveProperty("compassContext");
+    for (const value of [id(9), id(12), "Money worries", "Review my spending", "Find room for rest", "One review completed"]) {
+      expect(sent.input).not.toContain(value);
+    }
+    expect(prepared.p_context_source_ids).toEqual([prepared.p_message_id, id(5), id(7), id(10)].sort());
+  } else {
+    expect(context.compassContext).toEqual(COMPASS);
+    expect(prepared.p_context_source_ids).toEqual([prepared.p_message_id, id(5), id(7), id(9), id(10), id(12)].sort());
+  }
 }
 
 describe("S4 joined current private path, with injected synthetic HTTP and RPC results", () => {
@@ -116,6 +175,7 @@ describe("S4 joined current private path, with injected synthetic HTTP and RPC r
     const f = fixture({ compass: { attention: id(9) }, choices: CHOICES });
     const result = await commandExplorerPrivateConversation({ command: COMMAND, dependencies: f.dependencies });
     expect(result.assistance).toBeNull(); expect(result.result.ok).toBe(true); expect(f.fetchImpl).toHaveBeenCalledOnce();
+    await expectPreparedHttpInput(f, "classification_and_reply"); expect(f.render).not.toHaveBeenCalled();
     const preparations = f.rpc.mock.calls.filter(([name]) => name === "solmind_prepare_explorer_conversation_turn_v3");
     expect(preparations).toHaveLength(1); expect(Object.keys(preparations[0][1])).toHaveLength(37);
     const terminals = f.rpc.mock.calls.filter(([name]) => name === "solmind_settle_explorer_conversation_turn_v4");
@@ -144,5 +204,32 @@ describe("S4 joined current private path, with injected synthetic HTTP and RPC r
     expect(browser?.result.ok && browser.result.state.messages.at(-1)?.body).toBe("We can explore what matters about that topic.");
     expect(browser?.result.ok && browser.result.state.messages.at(-1)).not.toHaveProperty("choices");
     expect(f.fetchImpl).toHaveBeenCalledOnce();
+    expect(f.render).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { cause: "existing level 3", options: { restrictedLevel: 3 }, kind: "restricted" },
+    { cause: "existing level 4", options: { restrictedLevel: 4 }, kind: "restricted" },
+    { cause: "existing adult stop", options: { adultReflectionStopped: true }, kind: "adult_only" },
+    { cause: "current fallback level 3", options: { body: "I am being abused" }, kind: "urgent" },
+    { cause: "current fallback level 4", options: { body: "I want to kill myself" }, kind: "crisis" },
+    { cause: "current fallback minor", options: { body: "I am a minor" }, kind: "adult_only" },
+  ] as const)("keeps reduced prepared bytes through HTTP and never redispatches for $cause", async ({ options, kind }) => {
+    const f = fixture({ compass: { attention: id(9) }, choices: CHOICES }, options);
+    const result = await commandExplorerPrivateConversation({ command: f.command, dependencies: f.dependencies });
+    expect(result.assistance).toBeNull(); expect(result.result.ok).toBe(true);
+    await expectPreparedHttpInput(f, "classification_only");
+    expect(f.render).toHaveBeenCalledOnce();
+    const terminal = f.rpc.mock.calls.find(([name]) => name === "solmind_settle_explorer_conversation_turn_v4");
+    expect(terminal?.[1]).toMatchObject({ p_request_mode: "classification_only", p_reply_kind: kind,
+      p_attention_item_id: null, p_choices: null, p_status: "completed", p_delivery_interested: true });
+    const browser = parseExplorerPrivateConversationResponse(JSON.parse(JSON.stringify({ version: EXPLORER_PRIVATE_RESPONSE_VERSION, ...result })));
+    expect(browser?.result.ok && browser.result.state.messages.at(-1)?.body).toBe("Synthetic reviewed support reply.");
+    const replay = await commandExplorerPrivateConversation({ command: f.command, dependencies: f.dependencies });
+    expect(replay.assistance).toBeNull();
+    expect(replay.result.ok && replay.result.state.messages).toEqual(result.result.ok && result.result.state.messages);
+    expect(f.fetchImpl).toHaveBeenCalledOnce(); expect(f.buildContext).toHaveBeenCalledOnce();
+    expect(f.rpc.mock.calls.filter(([name]) => name === "solmind_prepare_explorer_conversation_turn_v3")).toHaveLength(1);
+    expect(f.rpc.mock.calls.filter(([name]) => name === "solmind_settle_explorer_conversation_turn_v4")).toHaveLength(1);
   });
 });

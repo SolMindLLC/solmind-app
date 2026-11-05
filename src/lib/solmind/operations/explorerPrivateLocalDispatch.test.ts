@@ -12,6 +12,11 @@ import { explorerPrivateLocalLedgerDay } from "./explorerPrivateLocalCallLedger"
 const uuid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const SHA = "A".repeat(64), AV3 = "AV3:" + SHA, MV1 = "MV1:" + SHA;
 type Build = NonNullable<ExplorerPrivateConversationDependencies["buildContext"]>;
+const MODE_CASES = [
+  { cause: "ordinary", options: {} },
+  { cause: "restricted", options: { restricted: true } },
+  { cause: "adult stop", options: { adultStopped: true } },
+] as const;
 // A synthetic stand-in for the shared daily ledger; several bound requests may share one.
 function fakeLedger(limit: number) {
   let reserved = 0;
@@ -24,7 +29,7 @@ function fakeLedger(limit: number) {
   return { reserve, take, used: () => reserved, available: () => reserved < limit,
     usage: () => ({ day: day(), reserved, limit }), limit };
 }
-function fixture(options: { body?: string; ledger?: ReturnType<typeof fakeLedger>; restricted?: boolean } = {}) {
+function fixture(options: { body?: string; ledger?: ReturnType<typeof fakeLedger>; restricted?: boolean; adultStopped?: boolean } = {}) {
   const actor = { accountId: uuid(1), applicationSessionId: uuid(2) };
   const command = { kind: "send" as const, operationId: uuid(3), expectedRevision: 0, body: options.body ?? "A simple synthetic reflection." };
   const ids = deriveExplorerPrivateTurnIds(actor, uuid(4), command.operationId);
@@ -45,7 +50,8 @@ function fixture(options: { body?: string; ledger?: ReturnType<typeof fakeLedger
       supportAndAdultPolicy: "Synthetic.", temporarilyUnavailable: "Synthetic." },
     available: ledger.available, usage: ledger.usage, reserve };
   const policy = { contractVersion: "explorer-conversation-safety.v1", known: true, version: 1,
-    restrictedLevel: options.restricted ? 4 : null, adultReflectionStopped: false };
+    restrictedLevel: options.restricted ? 4 : null, adultReflectionStopped: options.adultStopped ?? false };
+  const mode = options.restricted || options.adultStopped ? "classification_only" as const : "classification_and_reply" as const;
   const initial = { version: "explorer-conversation.v1" as const, conversationId: ids.conversationId,
     revision: 0, pendingTurn: false, providerState: "available" as const, messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] };
   const authority = { accountId: actor.accountId, applicationSessionId: actor.applicationSessionId, explorerId: profile.explorerId,
@@ -53,11 +59,15 @@ function fixture(options: { body?: string; ledger?: ReturnType<typeof fakeLedger
   const row = { outcome: "ok", authority_context: authority, policy_state: policy,
     conversation_state: { ...initial, revision: 1, pendingTurn: true,
       messages: [{ id: ids.messageId, role: "explorer", body: command.body, createdAt: new Date().toISOString() }] } };
-  const serialized = JSON.stringify({ immediateExplorerMessage: { content: command.body } });
+  const serialized = JSON.stringify({ contractVersion: mode === "classification_only"
+    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v1",
+    ...(mode === "classification_only" ? {} : { compassContext: { version: "explorer-compass-context.v1",
+      points: [], priorityId: null, attentionId: null, recentRoute: [], waypoints: [], drafts: [] } }),
+    immediateExplorerMessage: { content: command.body } });
   const request = { contractVersion: "explorer-safety-request.v2" as const, invocationId: ids.invocationId, explorerId: profile.explorerId,
     sessionId: ids.conversationId, contextSnapshotId: ids.snapshotId, authorizedContext: serialized,
     contextFingerprint: createHash("sha256").update(serialized).digest("hex").toUpperCase(),
-    mode: options.restricted ? "classification_only" as const : "classification_and_reply" as const,
+    mode,
     classificationPolicyVersion: profile.modelPolicyVersion, fallbackPolicyVersion: "synthetic-fallback", instructionVersion: "synthetic-instructions" };
   const evidence = { p_authorization_version: AV3, p_context_source_ids: [ids.messageId], p_intake_response_set_id: uuid(10),
     p_prompt_version: "synthetic-prompt", p_policy_version: "synthetic-policy", p_behavior_version: "synthetic-role",
@@ -78,12 +88,16 @@ function fixture(options: { body?: string; ledger?: ReturnType<typeof fakeLedger
   const generate = vi.fn(async () => "synthetic-model-result");
   const credentialReady = vi.fn(() => true);
   const bound = withExplorerPrivateLocalDispatch({ run, authenticate, repository, methodologySource, buildContext, credentialReady, generate });
-  return { actor, args, request, row, selection, caller, profile, reserve, ledger, authenticate, read, methodologySource, credentialReady, generate, bound };
+  return { actor, args, request, row, selection, caller, profile, reserve, ledger, authenticate, read, methodologySource, credentialReady, generate, bound, buildContext };
 }
 async function prepared(options?: Parameters<typeof fixture>[0]) { const f = fixture(options); await f.bound.buildContext(f.args); return f; }
 describe("finite local dispatch authority", () => {
-  it("forwards once after actual preflight ports; a duplicate attempt never reaches transport", async () => {
-    const f = await prepared(); expect(await f.bound.provider.generate(f.request, f.caller.signal)).toBe("synthetic-model-result");
+  it.each(MODE_CASES)("forwards once after actual preflight ports; a duplicate attempt never reaches transport ($cause)", async ({ options }) => {
+    const f = await prepared(options); expect(await f.bound.provider.generate(f.request, f.caller.signal)).toBe("synthetic-model-result");
+    expect(f.buildContext).toHaveBeenCalledExactlyOnceWith(f.args);
+    expect(f.buildContext.mock.calls[0][0].mode).toBe(f.request.mode);
+    expect(f.generate).toHaveBeenCalledExactlyOnceWith(f.request, expect.any(AbortSignal));
+    expect(createHash("sha256").update(f.request.authorizedContext).digest("hex").toUpperCase()).toBe(f.request.contextFingerprint);
     await expect(f.bound.provider.generate(f.request, f.caller.signal)).rejects.toThrow();
     expect(f.read).toHaveBeenCalledTimes(2); expect(f.reserve).toHaveBeenCalledTimes(1); expect(f.generate).toHaveBeenCalledTimes(1);
   });
@@ -107,25 +121,25 @@ describe("finite local dispatch authority", () => {
     expect(f.read).toHaveBeenCalledTimes(2); expect(f.credentialReady).toHaveBeenCalledOnce();
     expect(f.reserve).toHaveBeenCalledOnce(); expect(f.generate).not.toHaveBeenCalled();
   });
-  it("keeps a reserved place counted when cancellation lands after reserving, and never forwards", async () => {
+  it.each(MODE_CASES)("keeps a reserved place counted when cancellation lands after reserving, and never forwards ($cause)", async ({ options }) => {
     const ledger = fakeLedger(1);
-    const f = await prepared({ ledger }); f.reserve.mockImplementationOnce(() => { const place = ledger.take(); f.caller.abort(); return place; });
+    const f = await prepared({ ...options, ledger }); f.reserve.mockImplementationOnce(() => { const place = ledger.take(); f.caller.abort(); return place; });
     await expect(f.bound.provider.generate(f.request, f.caller.signal)).rejects.toThrow();
     expect(ledger.used()).toBe(1); expect(f.reserve).toHaveBeenCalledOnce(); expect(f.generate).not.toHaveBeenCalled();
     // The place is gone for everyone: an independently bound request sees no capacity left.
-    const g = await prepared({ ledger });
+    const g = await prepared({ ...options, ledger });
     await expect(g.bound.provider.generate(g.request, g.caller.signal)).rejects.toThrow("synthetic_allowance_used");
     expect(g.generate).not.toHaveBeenCalled();
   });
-  it("reserves at most once per bound request, even if a later call arrives with a fresh signal", async () => {
-    const f = await prepared(); const first = new AbortController();
+  it.each(MODE_CASES)("reserves at most once per bound request, even if a later call arrives with a fresh signal ($cause)", async ({ options }) => {
+    const f = await prepared(options); const first = new AbortController();
     f.reserve.mockImplementationOnce(() => { const place = f.ledger.take(); first.abort(); return place; });
     await expect(f.bound.provider.generate(f.request, first.signal)).rejects.toThrow();
     await expect(f.bound.provider.generate(f.request, new AbortController().signal)).rejects.toThrow();
     expect(f.reserve).toHaveBeenCalledOnce(); expect(f.ledger.used()).toBe(1); expect(f.generate).not.toHaveBeenCalled();
   });
-  it("refuses a later call on a request that already reserved, before any further read", async () => {
-    const f = await prepared(); const first = new AbortController();
+  it.each(MODE_CASES)("refuses a later call on a request that already reserved, before any further read ($cause)", async ({ options }) => {
+    const f = await prepared(options); const first = new AbortController();
     f.reserve.mockImplementationOnce(() => { const place = f.ledger.take(); first.abort(); return place; });
     await expect(f.bound.provider.generate(f.request, first.signal)).rejects.toThrow();
     const reads = f.read.mock.calls.length, authentications = f.authenticate.mock.calls.length;
@@ -135,9 +149,9 @@ describe("finite local dispatch authority", () => {
     expect(f.methodologySource.read).toHaveBeenCalledTimes(methodologyReads); expect(f.credentialReady).toHaveBeenCalledOnce();
     expect(f.reserve).toHaveBeenCalledOnce(); expect(f.generate).not.toHaveBeenCalled();
   });
-  it("keeps one reservation per request when a second call overlaps a first that reserved and was cancelled", async () => {
+  it.each(MODE_CASES)("keeps one reservation per request when a second call overlaps a first that reserved and was cancelled ($cause)", async ({ options }) => {
     // Both calls pass the early check before either reserves; only the one-reservation latch stops the second.
-    const f = await prepared(); const a = new AbortController(), b = new AbortController();
+    const f = await prepared(options); const a = new AbortController(), b = new AbortController();
     f.reserve.mockImplementationOnce(() => { const place = f.ledger.take(); a.abort(); return place; });
     const outcomes = await Promise.allSettled([f.bound.provider.generate(f.request, a.signal), f.bound.provider.generate(f.request, b.signal)]);
     expect(outcomes.map(outcome => outcome.status)).toEqual(["rejected", "rejected"]);
@@ -148,14 +162,14 @@ describe("finite local dispatch authority", () => {
     await expect(f.bound.provider.generate(f.request, f.caller.signal)).rejects.toThrow("explorer_private_local_dispatch_unavailable");
     expect(f.ledger.used()).toBe(1); expect(f.generate).not.toHaveBeenCalled();
   });
-  it("does not invoke the transport again after a failed or unknown provider outcome", async () => {
-    const f = await prepared(); f.generate.mockRejectedValueOnce(new Error("synthetic_unknown_outcome"));
+  it.each(MODE_CASES)("does not invoke the transport again after a failed or unknown provider outcome ($cause)", async ({ options }) => {
+    const f = await prepared(options); f.generate.mockRejectedValueOnce(new Error("synthetic_unknown_outcome"));
     await expect(f.bound.provider.generate(f.request, f.caller.signal)).rejects.toThrow("synthetic_unknown_outcome");
     await expect(f.bound.provider.generate(f.request, f.caller.signal)).rejects.toThrow("explorer_private_local_dispatch_unavailable");
     expect(f.generate).toHaveBeenCalledOnce(); expect(f.reserve).toHaveBeenCalledOnce(); expect(f.ledger.used()).toBe(1);
   });
-  it("counts a safety-only (classification-only) send against the same allowance", async () => {
-    const f = await prepared({ restricted: true }); expect(f.request.mode).toBe("classification_only");
+  it.each(MODE_CASES.slice(1))("counts a safety-only (classification-only) send against the same allowance ($cause)", async ({ options }) => {
+    const f = await prepared(options); expect(f.request.mode).toBe("classification_only");
     expect(await f.bound.provider.generate(f.request, f.caller.signal)).toBe("synthetic-model-result");
     expect(f.reserve).toHaveBeenCalledOnce(); expect(f.ledger.used()).toBe(1);
   });
@@ -179,11 +193,11 @@ describe("finite local dispatch authority", () => {
     await expect(f.bound.provider.generate(f.request, f.caller.signal)).rejects.toThrow();
     expect(f.reserve).not.toHaveBeenCalled(); expect(f.generate).not.toHaveBeenCalled();
   });
-  it("refuses cancellation during awaited methodology and expiry before transport", async () => {
-    const f = await prepared(); f.methodologySource.read.mockImplementation(async () => { f.caller.abort(); return f.selection; });
+  it.each(MODE_CASES)("refuses cancellation during awaited methodology and expiry before transport ($cause)", async ({ options }) => {
+    const f = await prepared(options); f.methodologySource.read.mockImplementation(async () => { f.caller.abort(); return f.selection; });
     await expect(f.bound.provider.generate(f.request, f.caller.signal)).rejects.toThrow(); expect(f.generate).not.toHaveBeenCalled();
     expect(f.reserve).not.toHaveBeenCalled();
-    const g = await prepared(); g.read.mockResolvedValue({ ...g.row, authority_context: { ...g.row.authority_context, applicationSessionExpiresAt: "2000-01-01T00:00:00.000Z" } });
+    const g = await prepared(options); g.read.mockResolvedValue({ ...g.row, authority_context: { ...g.row.authority_context, applicationSessionExpiresAt: "2000-01-01T00:00:00.000Z" } });
     await expect(g.bound.provider.generate(g.request, g.caller.signal)).rejects.toThrow(); expect(g.reserve).not.toHaveBeenCalled();
   });
   it("does not accept a caller-swapped prepared identity or run two concurrent transports", async () => {

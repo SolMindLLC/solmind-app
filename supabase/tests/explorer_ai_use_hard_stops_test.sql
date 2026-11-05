@@ -5,7 +5,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions,pg_catalog,pg_temp;
 set local statement_timeout='120s';
-select plan(267);
+select plan(274);
 
 create function pg_temp.gid(n integer) returns uuid language sql immutable as $$
   select ('f5110000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid
@@ -178,8 +178,9 @@ create function pg_temp.compass_source_ids() returns uuid[] language sql stable 
     union all select w.waypoint_id from content.waypoint w where w.source_ai_interaction_session_id=pg_temp.gid(6005)
       and not exists(select 1 from content.waypoint s where s.predecessor_waypoint_id=w.waypoint_id)) x
 $$;
-create function pg_temp.context_value(msg uuid,body text) returns jsonb language sql stable as $$
-  select jsonb_build_object('contractVersion','wi007-v0.1+onboarding-fields-v2+compass-v1','aiRole','solmind_virtual_guide','actorRoleContext','explorer',
+create function pg_temp.context_value(msg uuid,body text,classification_only boolean default false) returns jsonb language sql stable as $$
+  select jsonb_build_object('contractVersion',case when classification_only then 'wi007-v0.1+onboarding-fields-v2'
+    else 'wi007-v0.1+onboarding-fields-v2+compass-v1' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy',jsonb_build_object('version','synthetic-policy.v1','text','Synthetic policy.'),
     'roleBehavior',jsonb_build_object('version','synthetic-behavior.v1','text','Synthetic behavior.'),
     'crisisBehavior',jsonb_build_object('version','synthetic-crisis.v1','text','Synthetic crisis.'),
@@ -191,7 +192,6 @@ create function pg_temp.context_value(msg uuid,body text) returns jsonb language
       'kind','onboarding_answer','field',f.name,'content',ai.solmind_exclusion_normalize_v3(i.response_json->>f.name)) order by f.ord)
       from core.intake_response_set i cross join unnest(array['supportNow','usefulOutcome','supportStyle','guideContext',
         'communicationPreference','doNotEmphasize']) with ordinality f(name,ord) where i.intake_response_set_id=pg_temp.gid(52)),
-    'compassContext',pg_temp.compass_context(),
     'currentSessionMessages',coalesce((select jsonb_agg(jsonb_build_object('messageId',h.ai_interaction_message_id,'order',h.ord-1,
       'explorerId',pg_temp.gid(24),'sessionId',pg_temp.gid(6005),
       'role',case when h.sender_type='user' then 'explorer' else 'solmind_virtual_guide' end,
@@ -201,6 +201,7 @@ create function pg_temp.context_value(msg uuid,body text) returns jsonb language
     'immediateExplorerMessage',jsonb_build_object('messageId',msg,'explorerId',pg_temp.gid(24),
       'sessionId',pg_temp.gid(6005),'role','explorer','content',body),
     'outputRequirements',jsonb_build_object('format','plain_text','includeCitations',false,'allowMarkdown',false))
+    || case when classification_only then '{}'::jsonb else jsonb_build_object('compassContext',pg_temp.compass_context()) end
   from methodology.methodology_context_pack_version v where v.methodology_context_pack_version_id=pg_temp.gid(1001)
 $$;
 create temp table lifecycle_intent (
@@ -222,24 +223,25 @@ create function pg_temp.prepare_private(slot_n integer,lvl integer default 0,min
 returns table(outcome text,conversation_state jsonb,dispatch_permitted boolean,policy_state jsonb)
 language plpgsql as $$
 declare saved lifecycle_intent%rowtype; a jsonb; policy jsonb; e jsonb; msg uuid:=pg_temp.gid(10001+slot_n*10);
-  src uuid[]; c text; b text:=coalesce(body_override,'Synthetic private message '||slot_n||'.');
+  src uuid[]; c text; classification_only boolean; b text:=coalesce(body_override,'Synthetic private message '||slot_n||'.');
 begin
   select * into saved from lifecycle_intent where slot=slot_n;
   if not found then
     select r.authority_context,r.policy_state into a,policy from public.solmind_read_explorer_conversation_v3(
       pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005)) r;
     e:=methodology.resolve_effective(pg_temp.gid(1000),pg_temp.gid(23));
-    c:=pg_temp.compact(pg_temp.context_value(msg,b));
+    classification_only:=policy->>'restrictedLevel' is not null or (policy->>'adultReflectionStopped')::boolean
+      or lvl>=3 or minor_flag;
+    c:=pg_temp.compact(pg_temp.context_value(msg,b,classification_only));
     select array_agg(distinct id order by id) into src from (
       select unnest(array[pg_temp.gid(52),msg,pg_temp.gid(1001)]) id union all
       select m.ai_interaction_message_id from (select * from ai.ai_interaction_message
         where ai_interaction_session_id=pg_temp.gid(6005) order by sequence_number desc limit 24) m
-      union all select x from unnest(pg_temp.compass_source_ids()) x
+      union all select x from unnest(pg_temp.compass_source_ids()) x where not classification_only
     ) selected;
     insert into lifecycle_intent values(slot_n,(select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005)),
       b,c,src,a->>'authorizationVersion',(policy->>'version')::bigint,
-      case when policy->>'restrictedLevel' is not null or (policy->>'adultReflectionStopped')::boolean or lvl>=3 or minor_flag
-        then 'classification_only' else 'classification_and_reply' end,lvl,minor_flag,e->>'contentSha256',e->>'methodologyAuthorizationVersion');
+      case when classification_only then 'classification_only' else 'classification_and_reply' end,lvl,minor_flag,e->>'contentSha256',e->>'methodologyAuthorizationVersion');
     select * into saved from lifecycle_intent where slot=slot_n;
   end if;
   return query select * from public.solmind_prepare_explorer_conversation_turn_v3(
@@ -697,6 +699,64 @@ do $follow_count$ declare g jsonb; begin
   end;
 end $follow_count$;
 select pass('a completed follow_attention row does not count toward the hard-stop daily allowance: the third Send reaches three (probe rolled back)');
+-- Reduced classification scope changes neither the one-count boundary nor replay.
+-- Each case uses real prepare/settle rows and saved Compass/Waypoint fixtures,
+-- then rolls back its own work so the later daily-limit proofs retain their counts.
+create function pg_temp.classification_count_probe(lvl integer,minor_flag boolean,existing_policy boolean)
+returns text language plpgsql as $$
+declare prepared record; fallback_level integer:=case when existing_policy then 0 else lvl end;
+  fallback_minor boolean:=not existing_policy and minor_flag;
+begin
+  begin
+    if not exists(select 1 from pg_temp.prepare_private(81) where outcome='ok' and dispatch_permitted)
+      then raise exception 'classification_count_seed_prepare_failed'; end if;
+    if not exists(select 1 from pg_temp.settle_private(81) where outcome='ok' and saved_reply)
+      then raise exception 'classification_count_seed_settle_failed'; end if;
+    insert into ai.explorer_conversation_compass_item(item_id,conversation_id,source_message_id,label,display_order)
+      values(pg_temp.gid(24801),pg_temp.gid(6005),pg_temp.gid(10811),'Synthetic count Compass',1);
+    insert into content.waypoint(waypoint_id,guide_explorer_relationship_id,source_ai_interaction_session_id,source_message_id,title,
+      destination,why_it_matters,arrival_signal,lifecycle_status,chosen_by_explorer_user_account_id,chosen_at)
+      values(pg_temp.gid(24802),pg_temp.gid(25),pg_temp.gid(6005),pg_temp.gid(10811),'Synthetic count destination',
+        'Synthetic count destination','Synthetic count meaning','Synthetic count arrival','chosen',pg_temp.gid(1),now());
+    if existing_policy then
+      perform ai.solmind_raise_private_policy_v3(pg_temp.gid(6005),lvl::smallint,minor_flag);
+    else
+      perform pg_temp.observe(82,lvl,minor_flag);
+    end if;
+    select * into prepared from pg_temp.prepare_private(82,fallback_level,fallback_minor);
+    if prepared.outcome is distinct from 'ok' or prepared.dispatch_permitted is distinct from true
+      or pg_temp.sends(1)<>2
+      or not exists(select 1 from lifecycle_intent i join ai.ai_context_snapshot sn
+          on sn.ai_context_snapshot_id=pg_temp.gid(10822)
+        where i.slot=82 and i.mode='classification_only'
+          and i.serialization::jsonb->>'contractVersion'='wi007-v0.1+onboarding-fields-v2'
+          and not (i.serialization::jsonb ? 'compassContext') and not (i.source_ids && pg_temp.compass_source_ids())
+          and sn.context_source_ids=i.source_ids
+          and sn.context_fingerprint_sha256=ai.solmind_exclusion_fingerprint_v3(i.serialization))
+      then raise exception 'classification_count_reduced_binding_failed'; end if;
+    if not exists(select 1 from pg_temp.prepare_private(82,fallback_level,fallback_minor)
+        where outcome='exact_replay' and not dispatch_permitted) or pg_temp.sends(1)<>2
+      then raise exception 'classification_count_replay_counted'; end if;
+    if not exists(select 1 from pg_temp.settle_private(82,null,null,'none',null,'canceled',false)
+        where outcome='ok' and not saved_reply) or pg_temp.sends(1)<>2
+      then raise exception 'classification_count_cancellation_changed_count'; end if;
+    if not exists(select 1 from pg_temp.prepare_private(82,fallback_level,fallback_minor)
+        where outcome='exact_replay' and not dispatch_permitted) or pg_temp.sends(1)<>2
+      or (select count(*) from ai.ai_model_invocation where ai_model_invocation_id=pg_temp.gid(10823))<>1
+      then raise exception 'classification_count_canceled_turn_redispatched'; end if;
+    raise exception 'classification_count_probe_rolled_back';
+  exception when raise_exception then
+    if sqlerrm<>'classification_count_probe_rolled_back' then raise; end if;
+  end;
+  return 'ok';
+end $$;
+select is(pg_temp.classification_count_probe(3,false,true),'ok','existing restriction: reduced classification counts once through replay and cancellation');
+select is(pg_temp.classification_count_probe(4,false,true),'ok','existing crisis: reduced classification counts once through replay and cancellation');
+select is(pg_temp.classification_count_probe(0,true,true),'ok','existing adult stop: reduced classification counts once through replay and cancellation');
+select is(pg_temp.classification_count_probe(3,false,false),'ok','fallback urgent: reduced classification counts once through replay and cancellation');
+select is(pg_temp.classification_count_probe(4,false,false),'ok','fallback crisis: reduced classification counts once through replay and cancellation');
+select is(pg_temp.classification_count_probe(0,true,false),'ok','fallback minor indication: reduced classification counts once through replay and cancellation');
+select is(pg_temp.sends(1),0,'classification count probes leave the original daily allowance unchanged');
 -- A real prepare that waits for a hard-stop setting beyond its 2000 ms lock timeout fails cleanly: nothing is saved
 -- or counted, and the same Send can be prepared once the lock is released. (Prepare stores the observation itself;
 -- no observe runs here, because an observe in this transaction would hold the setting rows until it ends.)

@@ -9,7 +9,7 @@ import {
   type ExplorerConversationCommand, type ExplorerConversationResult, type ExplorerConversationState, type ExplorerCompassArrangementItem, type ExplorerWaypointClarificationAnswer,
 } from "../explorerConversationContract";
 import { parseExplorerConversationReviewResult } from "../explorerConversationReviewContract";
-import { explorerConversationCommandFingerprint, type ExplorerConversationActor, type ExplorerConversationTurnIds, type ExplorerConversationDependencies } from "./explorerConversationComposition";
+import { explorerConversationCommandFingerprint, type ExplorerConversationActor, type ExplorerConversationTurnIds, type PrivateExplorerConversationContextBuilder } from "./explorerConversationComposition";
 import { parseExplorerPrivateConfigurationCandidate, type ExplorerPrivateConfigurationCandidate } from "./explorerPrivateConfiguration";
 import {
   EXPLORER_SAFETY_REQUEST_VERSION, EXPLORER_SAFETY_REPLY_PROTOCOL, explorerSafetyUnicodeValid, parseExplorerSafetyReplyRequest,
@@ -128,15 +128,15 @@ export type ExplorerPrivateConversationDependencies = Readonly<{
 // Only an explicit AV3 governed builder can satisfy this adapter. It reuses
 // exact assembled context BYTES; it never invokes the old prose-first runtime.
 export function adaptPrivateGovernedExplorerContextBuilder(
-  builder: NonNullable<ExplorerConversationDependencies["buildContext"]>,
+  builder: PrivateExplorerConversationContextBuilder,
 ): NonNullable<ExplorerPrivateConversationDependencies["buildContext"]> {
   return async (input) => {
     const built = await builder({ actor: input.actor,
       row: { ...input.row, conversation_state: input.row.conversation_state }, state: input.state,
-      command: input.command, ids: input.ids, ...(input.signal === undefined ? {} : { signal: input.signal }) });
+      command: input.command, ids: input.ids, mode: input.mode, ...(input.signal === undefined ? {} : { signal: input.signal }) });
     const evidence = built.evidence;
     if (built.request.contractVersion !== "virtual-guide-conversation.v1" ||
-      !pinnedPolicyText(built.request.authorizedContext, input.readiness.configuration) ||
+      !pinnedPolicyText(built.request.authorizedContext, input.readiness.configuration, input.mode) ||
       typeof evidence.p_authorization_version !== "string" || !/^AV3:[0-9A-F]{64}$/.test(evidence.p_authorization_version) ||
       evidence.p_methodology_context_pack_id !== input.readiness.methodology.packId ||
       evidence.p_methodology_context_pack_version_id !== input.readiness.methodology.versionId ||
@@ -162,14 +162,21 @@ export function adaptPrivateGovernedExplorerContextBuilder(
 }
 // Match the existing safe assembler's exact text normalization. Versions alone
 // cannot bind the reviewed behavior to the bytes that will actually be sent.
-// Since chat step slice S3 (2026-11-03) the private context is the revision that
-// carries the saved Compass and Waypoint section; the database inspector accepts
-// only that revision for a new Send. The version comes from the section's owner.
-function pinnedPolicyText(serialization: string, configuration: ExplorerPrivateConfigurationCandidate): boolean {
+// The selected mode fixes both the revision and section presence before prepare.
+// Classification-only input is assembled without Compass data, never stripped here.
+function pinnedPolicyText(serialization: string, configuration: ExplorerPrivateConfigurationCandidate,
+  mode: ExplorerSafetyReplyRequest["mode"]): boolean {
   try {
     const envelope: unknown = JSON.parse(serialization);
-    if (envelope === null || typeof envelope !== "object" || Array.isArray(envelope) ||
-      (envelope as Record<string, unknown>).contractVersion !== EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION) return false;
+    if (envelope === null || typeof envelope !== "object" || Array.isArray(envelope)) return false;
+    const context = envelope as Record<string, unknown>;
+    if (mode === "classification_only") {
+      if (context.contractVersion !== "wi007-v0.1+onboarding-fields-v2" || Object.hasOwn(context, "compassContext")) return false;
+    } else if (mode === "classification_and_reply") {
+      if (context.contractVersion !== EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION ||
+        !Object.hasOwn(context, "compassContext") || context.compassContext === null ||
+        typeof context.compassContext !== "object" || Array.isArray(context.compassContext)) return false;
+    } else return false;
     for (const key of ["globalPolicy", "roleBehavior", "crisisBehavior"] as const) {
       const part = (envelope as Record<string, unknown>)[key];
       if (part === null || typeof part !== "object" || Array.isArray(part) ||
@@ -617,7 +624,7 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
       const context = await dependencies.buildContext!({ actor, row: builderRow, state: builderState.state, command, ids, readiness, mode, signal: input.signal });
       const request = parseExplorerSafetyReplyRequest(context.request);
       const authority = builderRow.authority_context;
-      if (!pinnedPolicyText(request.authorizedContext, readiness.configuration) || request.invocationId !== ids.invocationId || request.sessionId !== ids.conversationId || request.contextSnapshotId !== ids.snapshotId ||
+      if (!pinnedPolicyText(request.authorizedContext, readiness.configuration, mode) || request.invocationId !== ids.invocationId || request.sessionId !== ids.conversationId || request.contextSnapshotId !== ids.snapshotId ||
         authority === null || typeof authority !== "object" || Array.isArray(authority) || request.explorerId !== (authority as Record<string, unknown>).explorerId ||
         request.mode !== mode || request.classificationPolicyVersion !== readiness.modelPolicyVersion || request.fallbackPolicyVersion !== fallback.policyVersion ||
         request.instructionVersion !== readiness.configuration.instructionVersion || !/^AV3:[0-9A-F]{64}$/.test(context.evidence.p_authorization_version) ||

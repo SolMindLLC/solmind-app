@@ -36,16 +36,22 @@ export type ExplorerConversationPreparedContext = Readonly<{
   // Only the concrete, reviewed source builder may supply these database bindings.
   evidence: Readonly<Record<string, unknown>>;
 }>;
+export type ExplorerConversationContextBuilder = (input: Readonly<{
+  actor: ExplorerConversationActor; row: ExplorerConversationRpcRow;
+  state: ExplorerConversationState; command: Extract<ExplorerConversationCommand, { kind: "send" }>;
+  ids: ExplorerConversationTurnIds; signal?: AbortSignal;
+}>) => Promise<ExplorerConversationPreparedContext>;
+// AV3 selects its context scope before assembly; AV2 keeps the original input.
+export type PrivateExplorerConversationContextBuilder = (input:
+  Parameters<ExplorerConversationContextBuilder>[0] & Readonly<{
+    mode: "classification_only" | "classification_and_reply";
+  }>) => ReturnType<ExplorerConversationContextBuilder>;
 export type ExplorerConversationDependencies = Readonly<{
   authenticate: () => Promise<ExplorerConversationActor | null>;
   repository: ExplorerConversationRepository;
   // Deliberately absent in the shipped composition root until separate runtime activation.
   provider?: VirtualGuideConversationTransport;
-  buildContext?: (input: Readonly<{
-    actor: ExplorerConversationActor; row: ExplorerConversationRpcRow;
-    state: ExplorerConversationState; command: Extract<ExplorerConversationCommand, { kind: "send" }>;
-    ids: ExplorerConversationTurnIds; signal?: AbortSignal;
-  }>) => Promise<ExplorerConversationPreparedContext>;
+  buildContext?: ExplorerConversationContextBuilder;
 }>;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 function failure(error: "denied" | "unavailable" | "refresh_required" | "provider_unavailable"): ExplorerConversationResult {

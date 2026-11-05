@@ -15,7 +15,13 @@ import type {
   ExplorerConversationDependencies,
   ExplorerConversationRepository,
   ExplorerConversationRpcRow,
+  PrivateExplorerConversationContextBuilder,
 } from "./explorerConversationComposition";
+import {
+  selectExplorerSafetyRequestMode,
+  type ExplorerConversationPolicy,
+  type ExplorerFallbackObservation,
+} from "./explorerConversationSafety";
 import { EXPLORER_CONVERSATION_VERSION, parseExplorerConversationState, type ExplorerConversationState } from "../explorerConversationContract";
 import {
   EXPLORER_CONTEXT_EXCLUSION_MATCHER_VERSION,
@@ -684,7 +690,7 @@ describe("Explicit held private AV3 context entry points", () => {
   it("uses AV3 current proof with the private input envelope revision (chat step slice S3)", async () => {
     const f = fixture({ facts: { ...authority(), authorizationVersion: privateVersion } });
     const build = createPrivateExplorerConversationContextBuilder({ repository: { read: f.read }, configuration: f.config });
-    const result = await build(f.input);
+    const result = await build({ ...f.input, mode: "classification_and_reply" });
     expect(result.evidence.p_authorization_version).toBe(privateVersion);
     expect(assembled(result.request.authorizedContext).contractVersion).toBe(EXPLORER_PRIVATE_CONVERSATION_CONTEXT_SELECTION_VERSION);
     expect(assembled(result.request.authorizedContext).compassContext).toEqual({ version: "explorer-compass-context.v1",
@@ -695,7 +701,7 @@ describe("Explicit held private AV3 context entry points", () => {
   it("refuses AV2 at the private entry and AV3 at the legacy entry", async () => {
     const legacy = fixture();
     const privateBuild = createPrivateExplorerConversationContextBuilder({ repository: { read: legacy.read }, configuration: legacy.config });
-    await expect(privateBuild(legacy.input)).rejects.toThrow("explorer_conversation_context_unavailable");
+    await expect(privateBuild({ ...legacy.input, mode: "classification_and_reply" })).rejects.toThrow("explorer_conversation_context_unavailable");
     const successor = fixture({ facts: { ...authority(), authorizationVersion: privateVersion } });
     await expect(successor.build(successor.input)).rejects.toThrow("explorer_conversation_context_unavailable");
     expect(legacy.read).not.toHaveBeenCalled(); expect(successor.read).not.toHaveBeenCalled();
@@ -704,14 +710,14 @@ describe("Explicit held private AV3 context entry points", () => {
     const f = fixture({ facts: { ...authority(), authorizationVersion: privateVersion } });
     f.read.mockResolvedValueOnce({ ...f.row, authority_context: authority() });
     const build = createPrivateExplorerConversationContextBuilder({ repository: { read: f.read }, configuration: f.config });
-    await expect(build(f.input)).rejects.toThrow("authorized_virtual_guide_context_source_failed");
+    await expect(build({ ...f.input, mode: "classification_and_reply" })).rejects.toThrow("authorized_virtual_guide_context_source_failed");
     expect(f.read).toHaveBeenCalledOnce(); expect(f.prepare).not.toHaveBeenCalled();
   });
   it("resolves and revalidates actual injected methodology under explicit AV3", async () => {
     const f = governedFixture();
     (f.row.authority_context as ReturnType<typeof authority>).authorizationVersion = privateVersion;
     const build = createPrivateGovernedExplorerConversationContextBuilder(f.factoryInput);
-    const result = await build(f.input);
+    const result = await build({ ...f.input, mode: "classification_and_reply" });
     expect(result.evidence.p_authorization_version).toBe(privateVersion);
     expect(result.evidence.p_methodology_context_pack_version_id).toBe(f.selected.versionId);
     expect(assembled(result.request.authorizedContext).methodologyContext.text).toBe(f.selected.contentMarkdown);
@@ -721,7 +727,7 @@ describe("Explicit held private AV3 context entry points", () => {
   it("refuses private governed AV2 before methodology access", async () => {
     const f = governedFixture();
     const build = createPrivateGovernedExplorerConversationContextBuilder(f.factoryInput);
-    await expect(build(f.input)).rejects.toThrow("explorer_conversation_context_unavailable");
+    await expect(build({ ...f.input, mode: "classification_and_reply" })).rejects.toThrow("explorer_conversation_context_unavailable");
     expect(f.methodologyRead).not.toHaveBeenCalled(); expect(f.prepare).not.toHaveBeenCalled();
   });
 });
@@ -775,7 +781,8 @@ function s3State(): ExplorerConversationState {
 }
 function privateFixture(history: ExplorerConversationState) {
   const f = fixture({ facts: { ...authority(), authorizationVersion: `AV3:${"B".repeat(64)}` }, history });
-  return { ...f, build: createPrivateExplorerConversationContextBuilder({ repository: { read: f.read }, configuration: f.config }) };
+  return { ...f, input: { ...f.input, mode: "classification_and_reply" as const },
+    build: createPrivateExplorerConversationContextBuilder({ repository: { read: f.read }, configuration: f.config }) };
 }
 
 describe("Chat step slice S3 saved Compass and Waypoint section (private AV3 entries)", () => {
@@ -952,7 +959,7 @@ describe("Chat step slice S3 saved Compass and Waypoint section (private AV3 ent
   it("the governed private entry carries the same section and source ids", async () => {
     const f = governedFixture({ history: s3State() });
     (f.row.authority_context as ReturnType<typeof authority>).authorizationVersion = `AV3:${"B".repeat(64)}`;
-    const result = await createPrivateGovernedExplorerConversationContextBuilder(f.factoryInput)(f.input);
+    const result = await createPrivateGovernedExplorerConversationContextBuilder(f.factoryInput)({ ...f.input, mode: "classification_and_reply" });
     expect(JSON.stringify(assembled(result.request.authorizedContext).compassContext)).toBe(GOLDEN);
     expect(result.evidence.p_context_source_ids).toEqual(expect.arrayContaining([sx(401), sx(402), sx(404), sx(421), sx(422), sx(423), sx(425)]));
     // Immediate message, intake, methodology version and two saved messages, then the seven Compass records.
@@ -967,5 +974,102 @@ describe("Chat step slice S3 saved Compass and Waypoint section (private AV3 ent
     expect(result.request.authorizedContext).not.toContain("Money worries");
     expect(result.evidence.p_context_source_ids).toEqual([ids.messageId, authority().onboarding.responseId,
       f.config.methodologyContextPackVersionId, ...f.input.state.messages.map(message => message.id)].sort());
+  });
+});
+
+describe("Private AV3 classification-only context scope", () => {
+  const knownPolicy = { status: "known", restrictedLevel: null, adultReflectionStopped: false, safetyVersion: 1 } as const;
+  const clearFallback = { status: "available", policyVersion: "synthetic-fallback-v1",
+    classification: { level: 0, minorIndicated: false } } as const;
+  const causes: ReadonlyArray<Readonly<{
+    name: string; policy: ExplorerConversationPolicy; fallback: ExplorerFallbackObservation;
+  }>> = [
+    { name: "existing restricted level 3", policy: { ...knownPolicy, restrictedLevel: 3 }, fallback: clearFallback },
+    { name: "existing restricted level 4", policy: { ...knownPolicy, restrictedLevel: 4 }, fallback: clearFallback },
+    { name: "existing adult-reflection stop", policy: { ...knownPolicy, adultReflectionStopped: true }, fallback: clearFallback },
+    { name: "current fallback level 3", policy: knownPolicy,
+      fallback: { ...clearFallback, classification: { level: 3, minorIndicated: false } } },
+    { name: "current fallback level 4", policy: knownPolicy,
+      fallback: { ...clearFallback, classification: { level: 4, minorIndicated: false } } },
+    { name: "current fallback minor indication", policy: knownPolicy,
+      fallback: { ...clearFallback, classification: { level: 0, minorIndicated: true } } },
+  ];
+
+  function scopedFixture(governed: boolean, history = s3State()) {
+    const f = governedFixture({ facts: { ...authority(), authorizationVersion: `AV3:${"B".repeat(64)}` }, history });
+    const build = governed ? createPrivateGovernedExplorerConversationContextBuilder(f.factoryInput)
+      : createPrivateExplorerConversationContextBuilder({ repository: { read: f.read }, configuration: f.config });
+    const legacy = governed ? governedFixture({ history }) : fixture({ history });
+    return { ...f, build, legacy };
+  }
+
+  describe.each([false, true])("governed=%s", (governed) => {
+    it.each(causes)("omits populated saved Compass and Waypoints for $name before exact fingerprinting", async ({ policy, fallback }) => {
+      const f = scopedFixture(governed);
+      const mode = selectExplorerSafetyRequestMode(policy, fallback);
+      expect(mode).toBe("classification_only");
+      if (mode === null) throw new Error("unexpected_unknown_mode");
+      const result = await f.build({ ...f.input, mode });
+      const legacy = await f.legacy.build(f.legacy.input);
+      const serialized = result.request.authorizedContext;
+      const context = assembled(serialized);
+      expect(context.contractVersion).toBe(EXPLORER_CONVERSATION_CONTEXT_SELECTION_VERSION);
+      expect(Object.hasOwn(context, "compassContext")).toBe(false);
+      expect(serialized).toBe(legacy.request.authorizedContext);
+      expect(result.evidence.p_context_source_ids).toEqual(legacy.evidence.p_context_source_ids);
+      for (const id of [...f.input.state.compassItems, ...f.input.state.waypoints].map(item => item.id)) {
+        expect(serialized).not.toContain(id);
+        expect(result.evidence.p_context_source_ids).not.toContain(id);
+      }
+      for (const text of ["Money worries", "Sleep", "Family", "Find a calmer morning", "Mornings set", "I walked four evenings last week"]) {
+        expect(serialized).not.toContain(text);
+      }
+      expect(result.request.contextFingerprint).toBe(createHash("sha256").update(serialized, "utf8").digest("hex").toUpperCase());
+      expect(result.request.contextFingerprint).toBe(legacy.request.contextFingerprint);
+      expect(f.read).toHaveBeenCalledOnce();
+      expect(f.methodologyRead).toHaveBeenCalledTimes(governed ? 2 : 0);
+      expect(f.prepare).not.toHaveBeenCalled(); expect(f.complete).not.toHaveBeenCalled();
+    });
+
+    it("keeps ordinary golden bytes and exact source ids unchanged while each mode hashes only its own envelope", async () => {
+      const f = scopedFixture(governed);
+      const ordinary = await f.build({ ...f.input, mode: "classification_and_reply" });
+      const reduced = await f.build({ ...f.input, mode: "classification_only" });
+      const legacy = await f.legacy.build(f.legacy.input);
+      const expected = legacy.request.authorizedContext
+        .replace(`"contractVersion":"${EXPLORER_CONVERSATION_CONTEXT_SELECTION_VERSION}"`,
+          `"contractVersion":"${EXPLORER_PRIVATE_CONVERSATION_CONTEXT_SELECTION_VERSION}"`)
+        .replace(',"currentSessionMessages":', `,"compassContext":${GOLDEN},"currentSessionMessages":`);
+      expect(ordinary.request.authorizedContext).toBe(expected);
+      expect(ordinary.request.contextFingerprint).toBe(createHash("sha256").update(expected, "utf8").digest("hex").toUpperCase());
+      expect(ordinary.evidence.p_context_source_ids).toEqual([
+        ...(legacy.evidence.p_context_source_ids as string[]), sx(401), sx(402), sx(404), sx(421), sx(422), sx(423), sx(425),
+      ].sort());
+      expect(reduced.request.authorizedContext).toBe(legacy.request.authorizedContext);
+      expect(reduced.request.contextFingerprint).toBe(legacy.request.contextFingerprint);
+      expect(reduced.request.contextFingerprint).not.toBe(ordinary.request.contextFingerprint);
+    });
+
+    it.each([undefined, null, "reply_only", "classification_only ", {}, 0])("rejects malformed or absent mode %j before source reads", async (mode) => {
+      const f = scopedFixture(governed);
+      await expect(f.build({ ...f.input, mode } as Parameters<PrivateExplorerConversationContextBuilder>[0]))
+        .rejects.toThrow("explorer_conversation_context_unavailable");
+      expect(f.read).not.toHaveBeenCalled(); expect(f.methodologyRead).not.toHaveBeenCalled();
+    });
+
+    it("never assembles excluded Compass text, while ordinary mode still enforces its text checks", async () => {
+      const history = s3State();
+      const f = scopedFixture(governed, { ...history,
+        compassItems: history.compassItems.map(item => ({ ...item, label: `${item.label}\tinvalid` })) });
+      const reduced = await f.build({ ...f.input, mode: "classification_only" });
+      expect(reduced.request.authorizedContext).toBe((await f.legacy.build(f.legacy.input)).request.authorizedContext);
+      await expect(f.build({ ...f.input, mode: "classification_and_reply" })).rejects.toThrow();
+    });
+
+    it.each(["classification_only", "classification_and_reply"] as const)("preserves caller cancellation in %s mode", async (mode) => {
+      const f = scopedFixture(governed); const cancellation = new AbortController(); cancellation.abort();
+      await expect(f.build({ ...f.input, mode, signal: cancellation.signal })).rejects.toThrow("explorer_conversation_context_unavailable");
+      expect(f.read).not.toHaveBeenCalled(); expect(f.methodologyRead).not.toHaveBeenCalled();
+    });
   });
 });

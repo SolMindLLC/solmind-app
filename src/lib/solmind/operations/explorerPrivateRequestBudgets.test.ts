@@ -61,7 +61,7 @@ const END: ExplorerPrivateEndParameters = Object.freeze({ ...ACTOR_PARAMETERS, p
 const REVIEW: ExplorerPrivateReviewParameters = Object.freeze({ ...ACTOR_PARAMETERS, p_conversation_id: null });
 
 type BuildContext = NonNullable<ExplorerPrivateConversationDependencies["buildContext"]>;
-function contextInput(signal?: AbortSignal): Parameters<BuildContext>[0] {
+function contextInput(signal?: AbortSignal, mode: Parameters<BuildContext>[0]["mode"] = "classification_and_reply"): Parameters<BuildContext>[0] {
   const configuration = getExplorerPrivateConfigurationCandidate();
   if (!configuration) throw new Error("synthetic_configuration_missing");
   const readiness: ExplorerPrivateOperationalReadiness = {
@@ -70,10 +70,12 @@ function contextInput(signal?: AbortSignal): Parameters<BuildContext>[0] {
     resourceVerificationReceiptSha256: SHA, rendererVerificationReceiptSha256: SHA, signalVerificationReceiptSha256: SHA,
     methodology: { packId: ID, versionId: ID, contentSha256: SHA, authorizationVersion: "MV1:" + SHA },
   };
-  return Object.freeze({ actor: ACTOR, row: ROW, state: STATE,
+  return Object.freeze({ actor: ACTOR, row: mode === "classification_only" ? { ...ROW,
+    policy_state: { known: true, contractVersion: "explorer-conversation-safety.v1", restrictedLevel: null,
+      adultReflectionStopped: true, version: 1 } } : ROW, state: STATE,
     command: { kind: "send" as const, operationId: ID, expectedRevision: 1, body: "Synthetic message." },
     ids: { conversationId: ID, logicalOperationId: ID, messageId: ID, snapshotId: ID, invocationId: ID, replyId: ID },
-    readiness, mode: "classification_and_reply" as const, ...(signal === undefined ? {} : { signal }) });
+    readiness, mode, ...(signal === undefined ? {} : { signal }) });
 }
 const CONTEXT: Awaited<ReturnType<BuildContext>> = Object.freeze({
   request: { contractVersion: "explorer-safety-request.v2" as const, invocationId: ID, explorerId: ID,
@@ -187,15 +189,18 @@ describe("private request port budgets with explicit synthetic dependencies", ()
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("bounds context at thirty seconds and aborts the owned signal without changing its inputs", async () => {
+  it.each(["classification_and_reply", "classification_only"] as const)(
+    "bounds context at thirty seconds and aborts the owned signal without changing its inputs (%s)", async mode => {
     const f = fixture(); const held = deferred<Awaited<ReturnType<BuildContext>>>();
     let owned!: AbortSignal;
     const build = vi.fn<BuildContext>(input => { owned = input.signal!; return held.promise; });
     const wrapped = withExplorerPrivateRequestBudgets({ ...f.dependencies, buildContext: build });
-    const input = contextInput(); const pending = wrapped.buildContext!(input);
+    const input = contextInput(undefined, mode); const pending = wrapped.buildContext!(input);
     const observed = pending.catch(error => error as Error);
     expect(owned).toBeInstanceOf(AbortSignal); expect(owned.aborted).toBe(false);
     expect(build.mock.calls[0][0]).toEqual({ ...input, signal: owned });
+    expect(build.mock.calls[0][0].mode).toBe(mode);
+    expect(build.mock.calls[0][0].row).toBe(input.row);
     await vi.advanceTimersByTimeAsync(29_999); expect(owned.aborted).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     expect((await observed as Error).message).toBe(FAILURE); expect(owned.aborted).toBe(true);
@@ -203,15 +208,19 @@ describe("private request port budgets with explicit synthetic dependencies", ()
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("combines caller cancellation with the context owner and preserves a normal context return", async () => {
+  it.each(["classification_and_reply", "classification_only"] as const)(
+    "combines caller cancellation with the context owner and preserves a normal context return (%s)", async mode => {
     const f = fixture(); const caller = new AbortController();
+    const context = { ...CONTEXT, request: { ...CONTEXT.request, mode } };
     let combined!: AbortSignal;
-    const build = vi.fn<BuildContext>(async input => { combined = input.signal!; caller.abort(); return CONTEXT; });
+    const build = vi.fn<BuildContext>(async input => { combined = input.signal!; caller.abort(); return context; });
     const wrapped = withExplorerPrivateRequestBudgets({ ...f.dependencies, buildContext: build });
-    const input = contextInput(caller.signal);
-    expect(await wrapped.buildContext!(input)).toBe(CONTEXT);
+    const input = contextInput(caller.signal, mode);
+    expect(await wrapped.buildContext!(input)).toBe(context);
     expect(combined).not.toBe(caller.signal); expect(combined.aborted).toBe(true);
     expect(build.mock.calls[0][0]).toEqual({ ...input, signal: combined });
+    expect(build.mock.calls[0][0].mode).toBe(mode);
+    expect(build.mock.calls[0][0].row).toBe(input.row);
     expect(build).toHaveBeenCalledOnce(); expect(vi.getTimerCount()).toBe(0);
   });
 

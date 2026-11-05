@@ -1,14 +1,14 @@
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getExplorerPrivateConfigurationCandidate } from "./explorerPrivateConfiguration";
-import { EXPLORER_SAFETY_REQUEST_VERSION } from "./explorerSafetyReplyContract";
+import { EXPLORER_SAFETY_REQUEST_VERSION, type ExplorerSafetyReplyRequest } from "./explorerSafetyReplyContract";
 import { adaptPrivateGovernedExplorerContextBuilder, readExplorerPrivateConversation, readEndedExplorerConversations, commandExplorerPrivateConversation, deriveExplorerPrivateTurnIds, parseExplorerPrivatePolicy,
   type ExplorerPrivateConversationDependencies, type ExplorerPrivateOperationalReadiness, type ExplorerPrivateRpcRow, type ExplorerPrivateReadRow,
   type ExplorerPrivateEnsureParameters, type ExplorerPrivatePrepareParameters, type ExplorerPrivateSettleParameters, type ExplorerPrivateArrangeParameters, type ExplorerPrivateEndParameters, type ExplorerPrivateReviewParameters,
   type ExplorerPrivatePauseRow, type ExplorerPrivatePauseNotice } from "./explorerPrivateConversationComposition";
 import type { ExplorerConversationState, ExplorerConversationCommand } from "../explorerConversationContract";
 import type { ExplorerSafetyReplyPlan } from "./explorerConversationSafety";
-import { explorerConversationCommandFingerprint, type ExplorerConversationDependencies } from "./explorerConversationComposition";
+import { explorerConversationCommandFingerprint, type PrivateExplorerConversationContextBuilder } from "./explorerConversationComposition";
 
 const ID = { actor: "00000000-0000-4000-8000-000000000001", app: "00000000-0000-4000-8000-000000000002",
   conversation: "00000000-0000-4000-8000-000000000003", explorer: "00000000-0000-4000-8000-000000000004",
@@ -24,7 +24,7 @@ function state(conversationId: string | null): ExplorerConversationState {
 }
 // Since chat step slice S3 (2026-11-03) the private context revision carries the saved Compass section.
 const PRIVATE_CONTEXT_VERSION = "wi007-v0.1+onboarding-fields-v2+compass-v1";
-function fixture(contextVersion: string = PRIVATE_CONTEXT_VERSION) {
+function fixture(contextVersion?: string) {
   const configuration = getExplorerPrivateConfigurationCandidate(); if (!configuration) throw new Error("synthetic_candidate_missing");
   const readiness: ExplorerPrivateOperationalReadiness = { configuration, configurationFingerprint: SHA, modelName: "gpt-5.6-luna", modelPolicyVersion: "synthetic-model.v1",
     resourcePolicyVersion: "synthetic-reviewed-resources.v1", sourceVerificationReceiptSha256: SHA, resourceVerificationReceiptSha256: SHA,
@@ -58,7 +58,7 @@ function fixture(contextVersion: string = PRIVATE_CONTEXT_VERSION) {
   let pauseRow: ExplorerPrivatePauseRow = { outcome: "ok", notice_kind: null, crisis: false, adults_only: false };
   const pause = vi.fn(async (): Promise<ExplorerPrivatePauseRow> => { order.push("pause"); return pauseRow; });
   const pauseNotice = vi.fn((notice: ExplorerPrivatePauseNotice) => `Synthetic pause notice ${notice.kind} ${notice.crisis ?? "ordinary"} adults=${notice.adultsOnly} refused=${notice.refused}.`);
-  const generate = vi.fn(async () => { order.push("model"); return RAW; });
+  const generate = vi.fn(async (_request: ExplorerSafetyReplyRequest) => { void _request; order.push("model"); return RAW; });
   const signal = vi.fn(async () => { order.push("signal"); });
   const resolve = vi.fn(async () => { order.push("configuration"); return readiness; });
   const dependencies: ExplorerPrivateConversationDependencies = {
@@ -74,16 +74,24 @@ function fixture(contextVersion: string = PRIVATE_CONTEXT_VERSION) {
         body: "Synthetic reviewed support rendering.", trustedResponseVersion: ready.configuration.trustedResponses.version, resourcePolicyVersion: ready.resourcePolicyVersion })),
       pauseNotice },
     buildContext: vi.fn(async (input: Parameters<NonNullable<ExplorerPrivateConversationDependencies["buildContext"]>>[0]) => {
-      order.push("context"); const authorizedContext = JSON.stringify({ contractVersion: contextVersion,
+      order.push("context"); const includeCompass = input.mode === "classification_and_reply";
+      const authorizedContext = JSON.stringify({ contractVersion: contextVersion ?? (includeCompass ? PRIVATE_CONTEXT_VERSION : "wi007-v0.1+onboarding-fields-v2"),
         globalPolicy: { version: configuration.globalPolicy.version, text: configuration.globalPolicy.text.replace(/\r\n?/g, "\n").trim() },
         roleBehavior: { version: configuration.roleBehavior.version, text: configuration.roleBehavior.text.replace(/\r\n?/g, "\n").trim() },
         crisisBehavior: { version: configuration.crisisBehavior.version, text: configuration.crisisBehavior.text.replace(/\r\n?/g, "\n").trim() },
+        ...(includeCompass ? { compassContext: { version: "explorer-compass-context.v1",
+          points: input.state.compassItems.map((point, order) => ({ id: point.id, label: point.label, order,
+            formation: "saved", anchor: point.anchor ?? null, emphasis: point.emphasis ?? null })),
+          priorityId: input.state.priorityId, attentionId: input.state.attentionId, recentRoute: [],
+          waypoints: input.state.waypoints.map(point => ({ id: point.id, title: point.destination, destination: point.destination,
+            meaning: point.meaning, arrivalSignal: point.arrivalSignal, stage: "formed", reachedEvidence: null })), drafts: [] } } : {}),
         immediateExplorerMessage: { messageId: input.ids.messageId, content: input.command.body }, outputRequirements: { format: "plain_text" } });
       return { request: { contractVersion: EXPLORER_SAFETY_REQUEST_VERSION, invocationId: input.ids.invocationId,
         explorerId: ID.explorer, sessionId: input.ids.conversationId, contextSnapshotId: input.ids.snapshotId,
         contextFingerprint: createHash("sha256").update(authorizedContext).digest("hex").toUpperCase(), authorizedContext, mode: input.mode,
         classificationPolicyVersion: readiness.modelPolicyVersion, fallbackPolicyVersion: configuration.fallback.version, instructionVersion: configuration.instructionVersion },
-        evidence: { p_context_source_ids: [input.ids.messageId, ID.intake, ID.version].sort(), p_authorization_version: "AV3:" + SHA,
+        evidence: { p_context_source_ids: [input.ids.messageId, ID.intake, ID.version, ...input.state.messages.map(message => message.id),
+          ...(includeCompass ? [...input.state.compassItems.map(point => point.id), ...input.state.waypoints.map(point => point.id)] : [])].sort(), p_authorization_version: "AV3:" + SHA,
           p_intake_response_set_id: ID.intake, p_prompt_version: configuration.promptVersion, p_policy_version: configuration.globalPolicy.version,
           p_behavior_version: configuration.roleBehavior.version, p_crisis_version: configuration.crisisBehavior.version,
           p_role_version: configuration.roleVersion, p_instruction_version: configuration.instructionVersion } };
@@ -186,8 +194,8 @@ describe("Held private Explorer controller: explicit synthetic ports only", () =
   });
   it("adapts only AV3 governed context without changing compact input bytes", async () => {
     const f = fixture(); let exactBytes = "";
-    const builder: NonNullable<ExplorerConversationDependencies["buildContext"]> = async (turn) => {
-      const built = await f.dependencies.buildContext!({ ...turn, readiness: f.readiness, mode: "classification_and_reply" });
+    const builder: PrivateExplorerConversationContextBuilder = async (turn) => {
+      const built = await f.dependencies.buildContext!({ ...turn, readiness: f.readiness, mode: turn.mode });
       exactBytes = built.request.authorizedContext;
       return { request: { contractVersion: "virtual-guide-conversation.v1", invocationId: built.request.invocationId,
         explorerId: built.request.explorerId, sessionId: built.request.sessionId, contextSnapshotId: built.request.contextSnapshotId,
@@ -1227,4 +1235,70 @@ describe("S4 optional reply proposals keep settlement and safety separate", () =
     expect(f.settle).toHaveBeenCalledOnce(); expect(f.generate).toHaveBeenCalledOnce();
     expect(output.assistance).not.toBeNull();
   });
+});
+describe("Crisis checks omit saved Compass context before preparation", () => {
+  const source = "00000000-0000-4000-8000-000000000081";
+  const point = "00000000-0000-4000-8000-000000000082";
+  const waypoint = "00000000-0000-4000-8000-000000000083";
+  it.each([
+    ["stored level 3", { restrictedLevel: 3 }, "A synthetic ordinary message."],
+    ["stored level 4", { restrictedLevel: 4 }, "A synthetic ordinary message."],
+    ["stored adult stop", { adultReflectionStopped: true }, "A synthetic ordinary message."],
+    ["fallback level 3", {}, "I am being abused"],
+    ["fallback level 4", {}, "I want to kill myself"],
+    ["fallback minor", {}, "I am a minor"],
+  ] as const)("forwards classification_only through the governed adapter for %s", async (_cause, changedPolicy, body) => {
+    const f = fixture(); const policy = { ...POLICY, ...changedPolicy };
+    f.setPolicy(policy);
+    const populated: ExplorerConversationState = { ...state(ID.conversation),
+      messages: [{ id: source, role: "explorer", body: "Synthetic saved message.", createdAt: "2026-11-04T12:00:00Z" }],
+      compassItems: [{ id: point, sourceMessageId: source, label: "Private saved point" }],
+      waypoints: [{ id: waypoint, sourceMessageId: source, destination: "Private saved destination",
+        meaning: "Private saved meaning", arrivalSignal: "Private saved signal", status: "chosen" }] };
+    f.setCurrent(populated);
+    f.ensure.mockResolvedValue({ outcome: "reused", conversation_state: populated, policy_state: policy });
+    const builder = vi.fn<PrivateExplorerConversationContextBuilder>(async turn => {
+      const built = await f.dependencies.buildContext!({ ...turn, readiness: f.readiness });
+      return { request: { ...built.request, contractVersion: "virtual-guide-conversation.v1" }, evidence: { ...built.evidence,
+        p_methodology_context_pack_id: ID.pack, p_methodology_context_pack_version_id: ID.version,
+        p_methodology_content_sha256: SHA, p_methodology_authorization_version: "MV1:" + SHA } };
+    });
+    await commandExplorerPrivateConversation({ command: send(body), dependencies: {
+      ...f.dependencies, buildContext: adaptPrivateGovernedExplorerContextBuilder(builder) } });
+    expect(builder).toHaveBeenCalledOnce(); expect(builder.mock.calls[0][0].mode).toBe("classification_only");
+    expect(builder.mock.calls[0][0].state.compassItems).toHaveLength(1);
+    expect(builder.mock.calls[0][0].state.waypoints).toHaveLength(1);
+    expect(f.prepare).toHaveBeenCalledOnce(); expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
+    const prepared = f.getPrepared()!; const captured = f.generate.mock.calls[0][0];
+    const envelope = JSON.parse(prepared.p_context_serialization);
+    expect(envelope.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2"); expect(envelope).not.toHaveProperty("compassContext");
+    expect(prepared.p_context_source_ids).toContain(source);
+    for (const id of [point, waypoint]) { expect(prepared.p_context_source_ids).not.toContain(id); expect(prepared.p_context_serialization).not.toContain(id); }
+    expect(captured.mode).toBe("classification_only"); expect(captured.authorizedContext).toBe(prepared.p_context_serialization);
+    expect(captured.contextFingerprint).toBe(prepared.p_context_fingerprint_sha256);
+    expect(captured.contextFingerprint).toBe(createHash("sha256").update(captured.authorizedContext).digest("hex").toUpperCase());
+    f.read.mockResolvedValue({ outcome: "exact_replay", conversation_state: populated, policy_state: policy });
+    await commandExplorerPrivateConversation({ command: send(body), dependencies: f.dependencies });
+    expect(f.prepare).toHaveBeenCalledOnce(); expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
+  });
+  it.each(["classification_only", "classification_and_reply"] as const)(
+    "rejects wrong mode, revision, section or fingerprint for %s before prepare", async mode => {
+      for (const wrong of ["mode", "version", "section", "fingerprint"] as const) {
+        const f = fixture(); if (mode === "classification_only") f.setPolicy({ ...POLICY, adultReflectionStopped: true });
+        const buildContext: NonNullable<ExplorerPrivateConversationDependencies["buildContext"]> = async input => {
+          const built = await f.dependencies.buildContext!(input); const envelope = JSON.parse(built.request.authorizedContext);
+          if (wrong === "version") envelope.contractVersion = mode === "classification_only" ? PRIVATE_CONTEXT_VERSION : "wi007-v0.1+onboarding-fields-v2";
+          if (wrong === "section") {
+            if (mode === "classification_only") envelope.compassContext = null;
+            else delete envelope.compassContext;
+          }
+          const authorizedContext = JSON.stringify(envelope);
+          return { ...built, request: { ...built.request, authorizedContext,
+            mode: wrong === "mode" ? mode === "classification_only" ? "classification_and_reply" : "classification_only" : mode,
+            contextFingerprint: wrong === "fingerprint" ? SHA : createHash("sha256").update(authorizedContext).digest("hex").toUpperCase() } };
+        };
+        await commandExplorerPrivateConversation({ command: send(), dependencies: { ...f.dependencies, buildContext } });
+        expect(f.prepare).not.toHaveBeenCalled(); expect(f.generate).not.toHaveBeenCalled(); expect(f.settle).not.toHaveBeenCalled();
+      }
+    });
 });

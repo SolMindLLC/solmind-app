@@ -135,6 +135,41 @@ describe("explicit private governed capability composition with synthetic proven
     expect(f.renderer.render).not.toHaveBeenCalled(); expect(f.operationalSignal.emit).not.toHaveBeenCalled();
   });
 
+  // REV249 (2026-11-04): the shipped wiring (actual governed builder plus the actual adapter and its pinned policy
+  // text) in classification_only, with a populated saved Compass and Waypoint, so a drift between the adapter's pinned
+  // base version and the builder's constant cannot pass unnoticed.
+  it("sends crisis-check contexts through the actual wiring without the saved Compass and Waypoint section", async () => {
+    const f = fixture(); const readiness = await f.capabilities.resolveOperationalReadiness(ACTOR, f.row);
+    if (!readiness) throw new Error("synthetic_readiness_missing");
+    const source = uuid(50); const point = uuid(51); const waypoint = uuid(52);
+    const populated = { ...STATE,
+      messages: [{ id: source, role: "explorer" as const, body: "Synthetic saved message.", createdAt: "2026-11-04T09:00:00.000Z" }],
+      compassItems: [{ id: point, sourceMessageId: source, label: "Synthetic point", anchor: null, emphasis: null, mergedIntoItemId: null }],
+      priorityId: null, attentionId: point,
+      waypoints: [{ id: waypoint, sourceMessageId: source, destination: "Synthetic destination", meaning: "Synthetic meaning",
+        arrivalSignal: "Synthetic arrival", status: "chosen" as const, reachedEvidence: null, reachedAt: null }] };
+    const ids = { conversationId: STATE.conversationId, logicalOperationId: uuid(40), messageId: uuid(41),
+      snapshotId: uuid(42), invocationId: uuid(43), replyId: uuid(44) };
+    const command = { kind: "send" as const, operationId: uuid(45), expectedRevision: 0, body: "One synthetic reflective question." };
+    const reduced = await f.capabilities.buildContext({ actor: ACTOR, row: f.row, state: populated, command, ids, readiness,
+      mode: "classification_only", signal: new AbortController().signal });
+    const parsed = JSON.parse(reduced.request.authorizedContext) as { contractVersion: string };
+    expect(parsed.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2");
+    expect(Object.hasOwn(parsed, "compassContext")).toBe(false);
+    expect(reduced.request.authorizedContext).not.toContain(point);
+    expect(reduced.request.authorizedContext).not.toContain(waypoint);
+    expect(reduced.request.authorizedContext).not.toContain("Synthetic point");
+    expect(reduced.evidence.p_context_source_ids).not.toContain(point);
+    expect(reduced.evidence.p_context_source_ids).not.toContain(waypoint);
+    const ordinary = await f.capabilities.buildContext({ actor: ACTOR, row: f.row, state: populated, command, ids, readiness,
+      mode: "classification_and_reply", signal: new AbortController().signal });
+    const full = JSON.parse(ordinary.request.authorizedContext) as { contractVersion: string };
+    expect(full.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2+compass-v1");
+    expect(Object.hasOwn(full, "compassContext")).toBe(true);
+    expect(ordinary.evidence.p_context_source_ids).toContain(point);
+    expect(f.provider.generate).not.toHaveBeenCalled(); expect(f.write).not.toHaveBeenCalled();
+  });
+
   it("rejects predecessor AV2 authority through the actual builder rather than widening its contract", async () => {
     const f = fixture(); const readiness = await f.capabilities.resolveOperationalReadiness(ACTOR, f.row);
     if (!readiness) throw new Error("synthetic_readiness_missing");

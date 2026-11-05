@@ -188,8 +188,9 @@ create function pg_temp.compass_source_ids() returns uuid[] language sql stable 
     union all select w.waypoint_id from content.waypoint w where w.source_ai_interaction_session_id=pg_temp.gid(6005)
       and not exists(select 1 from content.waypoint s where s.predecessor_waypoint_id=w.waypoint_id)) x
 $$;
-create function pg_temp.context_value(msg uuid,body text) returns jsonb language sql stable as $$
-  select jsonb_build_object('contractVersion','wi007-v0.1+onboarding-fields-v2+compass-v1','aiRole','solmind_virtual_guide','actorRoleContext','explorer',
+create function pg_temp.context_value(msg uuid,body text,classification_only boolean default false) returns jsonb language sql stable as $$
+  select jsonb_build_object('contractVersion',case when classification_only then 'wi007-v0.1+onboarding-fields-v2'
+    else 'wi007-v0.1+onboarding-fields-v2+compass-v1' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy',jsonb_build_object('version','synthetic-policy.v1','text','Synthetic policy.'),
     'roleBehavior',jsonb_build_object('version','synthetic-behavior.v1','text','Synthetic behavior.'),
     'crisisBehavior',jsonb_build_object('version','synthetic-crisis.v1','text','Synthetic crisis.'),
@@ -201,7 +202,6 @@ create function pg_temp.context_value(msg uuid,body text) returns jsonb language
       'kind','onboarding_answer','field',f.name,'content',ai.solmind_exclusion_normalize_v3(i.response_json->>f.name)) order by f.ord)
       from core.intake_response_set i cross join unnest(array['supportNow','usefulOutcome','supportStyle','guideContext',
         'communicationPreference','doNotEmphasize']) with ordinality f(name,ord) where i.intake_response_set_id=pg_temp.gid(52)),
-    'compassContext',pg_temp.compass_context(),
     'currentSessionMessages',coalesce((select jsonb_agg(jsonb_build_object('messageId',h.ai_interaction_message_id,'order',h.ord-1,
       'explorerId',pg_temp.gid(24),'sessionId',pg_temp.gid(6005),
       'role',case when h.sender_type='user' then 'explorer' else 'solmind_virtual_guide' end,
@@ -211,6 +211,7 @@ create function pg_temp.context_value(msg uuid,body text) returns jsonb language
     'immediateExplorerMessage',jsonb_build_object('messageId',msg,'explorerId',pg_temp.gid(24),
       'sessionId',pg_temp.gid(6005),'role','explorer','content',body),
     'outputRequirements',jsonb_build_object('format','plain_text','includeCitations',false,'allowMarkdown',false))
+    || case when classification_only then '{}'::jsonb else jsonb_build_object('compassContext',pg_temp.compass_context()) end
   from methodology.methodology_context_pack_version v where v.methodology_context_pack_version_id=pg_temp.gid(1001)
 $$;
 create temp table lifecycle_intent (
@@ -232,24 +233,25 @@ create function pg_temp.prepare_private(slot_n integer,lvl integer default 0,min
 returns table(outcome text,conversation_state jsonb,dispatch_permitted boolean,policy_state jsonb)
 language plpgsql as $$
 declare saved lifecycle_intent%rowtype; a jsonb; policy jsonb; e jsonb; msg uuid:=pg_temp.gid(10001+slot_n*10);
-  src uuid[]; c text; b text:=coalesce(body_override,'Synthetic private message '||slot_n||'.');
+  src uuid[]; c text; classification_only boolean; b text:=coalesce(body_override,'Synthetic private message '||slot_n||'.');
 begin
   select * into saved from lifecycle_intent where slot=slot_n;
   if not found then
     select r.authority_context,r.policy_state into a,policy from public.solmind_read_explorer_conversation_v3(
       pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005)) r;
     e:=methodology.resolve_effective(pg_temp.gid(1000),pg_temp.gid(23));
-    c:=pg_temp.compact(pg_temp.context_value(msg,b));
+    classification_only:=policy->>'restrictedLevel' is not null or (policy->>'adultReflectionStopped')::boolean
+      or lvl>=3 or minor_flag;
+    c:=pg_temp.compact(pg_temp.context_value(msg,b,classification_only));
     select array_agg(distinct id order by id) into src from (
       select unnest(array[pg_temp.gid(52),msg,pg_temp.gid(1001)]) id union all
       select m.ai_interaction_message_id from (select * from ai.ai_interaction_message
         where ai_interaction_session_id=pg_temp.gid(6005) order by sequence_number desc limit 24) m
-      union all select x from unnest(pg_temp.compass_source_ids()) x
+      union all select x from unnest(pg_temp.compass_source_ids()) x where not classification_only
     ) selected;
     insert into lifecycle_intent values(slot_n,(select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005)),
       b,c,src,a->>'authorizationVersion',(policy->>'version')::bigint,
-      case when policy->>'restrictedLevel' is not null or (policy->>'adultReflectionStopped')::boolean or lvl>=3 or minor_flag
-        then 'classification_only' else 'classification_and_reply' end,lvl,minor_flag,e->>'contentSha256',e->>'methodologyAuthorizationVersion');
+      case when classification_only then 'classification_only' else 'classification_and_reply' end,lvl,minor_flag,e->>'contentSha256',e->>'methodologyAuthorizationVersion');
     select * into saved from lifecycle_intent where slot=slot_n;
   end if;
   return query select * from public.solmind_prepare_explorer_conversation_turn_v3(
@@ -393,6 +395,60 @@ select is((select outcome from public.solmind_mutate_explorer_conversation_v3(
   pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),pg_temp.gid(21500),(select revision from formation_intent),
   'add_compass',repeat('B',64),pg_temp.gid(10011),null,null,'Synthetic explicit Compass item.')),'exact_replay','exact deliberate formation replay writes nothing again');
 
+-- Both saved section kinds are present before testing any classification cause.
+insert into content.waypoint(waypoint_id,guide_explorer_relationship_id,source_ai_interaction_session_id,source_message_id,title,
+  destination,why_it_matters,arrival_signal,lifecycle_status,chosen_by_explorer_user_account_id,chosen_at)
+  values(pg_temp.gid(21510),pg_temp.gid(25),pg_temp.gid(6005),pg_temp.gid(10011),'Synthetic saved destination',
+    'Synthetic saved destination','Synthetic saved meaning','Synthetic saved arrival','chosen',pg_temp.gid(1),now());
+create function pg_temp.reduced_snapshot(slot_n integer) returns boolean language sql stable as $$
+  select i.mode='classification_only' and i.serialization::jsonb->>'contractVersion'='wi007-v0.1+onboarding-fields-v2'
+    and not (i.serialization::jsonb ? 'compassContext') and not (i.source_ids && pg_temp.compass_source_ids())
+    and sn.explorer_safety_request_mode=i.mode and sn.context_source_ids=i.source_ids
+    and sn.context_fingerprint_sha256=ai.solmind_exclusion_fingerprint_v3(i.serialization)
+    and exists(select 1 from unnest(i.source_ids) id where id=pg_temp.gid(52))
+    and exists(select 1 from unnest(i.source_ids) id where id=pg_temp.gid(1001))
+    and exists(select 1 from unnest(i.source_ids) id where id=pg_temp.gid(10001+slot_n*10))
+  from lifecycle_intent i join ai.ai_context_snapshot sn on sn.ai_context_snapshot_id=pg_temp.gid(10002+slot_n*10)
+  where i.slot=slot_n
+$$;
+create function pg_temp.classification_prepare_probe(lvl integer,minor_flag boolean,existing_policy boolean)
+returns text language plpgsql as $$
+declare prepared record; fallback_level integer:=case when existing_policy then 0 else lvl end;
+  fallback_minor boolean:=not existing_policy and minor_flag;
+begin
+  begin
+    if jsonb_array_length(pg_temp.compass_context()->'points')<>1
+      or jsonb_array_length(pg_temp.compass_context()->'waypoints')<>1
+      then raise exception 'classification_populated_fixture_missing'; end if;
+    if existing_policy then
+      perform ai.solmind_raise_private_policy_v3(pg_temp.gid(6005),lvl::smallint,minor_flag);
+    else
+      perform pg_temp.observe(90,lvl,minor_flag);
+    end if;
+    select * into prepared from pg_temp.prepare_private(90,fallback_level,fallback_minor);
+    if prepared.outcome is distinct from 'ok' or prepared.dispatch_permitted is distinct from true
+      or pg_temp.reduced_snapshot(90) is distinct from true
+      then raise exception 'classification_reduced_prepare_failed'; end if;
+    if not exists(select 1 from pg_temp.prepare_private(90,fallback_level,fallback_minor)
+      where outcome='exact_replay' and not dispatch_permitted)
+      or (select count(*) from ai.ai_model_invocation where ai_model_invocation_id=pg_temp.gid(10903))<>1
+      then raise exception 'classification_replay_redispatched'; end if;
+    raise exception 'classification_prepare_probe_rolled_back';
+  exception when raise_exception then
+    if sqlerrm<>'classification_prepare_probe_rolled_back' then raise; end if;
+  end;
+  return 'ok';
+end $$;
+select is(pg_temp.classification_prepare_probe(3,false,true),'ok','existing level 3 omits saved Compass/Waypoint sources before fingerprinting');
+select is(pg_temp.classification_prepare_probe(4,false,true),'ok','existing level 4 prepares reduced exact bytes once');
+select is(pg_temp.classification_prepare_probe(0,true,true),'ok','existing adult stop alone prepares reduced exact bytes once');
+select is(pg_temp.classification_prepare_probe(3,false,false),'ok','current fallback level 3 prepares reduced exact bytes once');
+select is(pg_temp.classification_prepare_probe(4,false,false),'ok','current fallback level 4 prepares reduced exact bytes once');
+select is(pg_temp.classification_prepare_probe(0,true,false),'ok','current fallback minor indication prepares reduced exact bytes once');
+select ok((select restricted_level is null and not adult_reflection_stopped and pending_operation_id is null
+  from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005)),
+  'classification probes roll back their policy, snapshots, messages and operations');
+
 insert into content.trigger_observation(trigger_observation_id,guide_explorer_relationship_id,trigger_label,observation_text,created_by_actor_type)
   values(pg_temp.gid(21000),pg_temp.gid(25),'Synthetic excluded label.','Synthetic excluded private trigger text.','guide');
 select ok((select outcome='blocked' and not dispatch_permitted from pg_temp.prepare_private(9,0,false,'Synthetic excluded private trigger text.')),
@@ -437,6 +493,18 @@ select ok((select outcome='ok' and conversation_state is not null and policy_sta
 select ok((select dispatch_permitted from pg_temp.prepare_private(4)), 'restricted healthy message still requires a prepared classification-only call');
 select is((select safety_request_mode from ai.explorer_conversation_operation where operation_id=pg_temp.gid(10040)),
   'classification_only','prior restriction selects classification-only mode');
+select ok(pg_temp.reduced_snapshot(4),'restricted snapshot pins only the reduced serialization fingerprint and retained source ids');
+select throws_ok($$update ai.ai_context_snapshot set context_source_ids=context_source_ids||pg_temp.gid(21510)
+  where ai_context_snapshot_id=pg_temp.gid(10042)$$,'P0001','solmind_explorer_conversation_snapshot_immutable',
+  'classification-only snapshot cannot be enriched with an omitted Waypoint source');
+select throws_ok($$update ai.ai_context_snapshot set context_fingerprint_sha256=repeat('F',64)
+  where ai_context_snapshot_id=pg_temp.gid(10042)$$,'P0001','solmind_explorer_conversation_snapshot_immutable',
+  'classification-only exact fingerprint stays immutable');
+select ok((select outcome='exact_replay' and not dispatch_permitted from pg_temp.prepare_private(1)),
+  'historical ordinary full-envelope preparation replays under current restriction without new inspection or dispatch');
+select is((select to_jsonb(sn) from ai.ai_context_snapshot sn where ai_context_snapshot_id=pg_temp.gid(10012)),
+  (select to_jsonb(sn) from first_prepared sn),'classification scope change does not rewrite historical ordinary evidence');
+
 select ok((select saved_reply from pg_temp.settle_private(4,0,false,'restricted','Synthetic reviewed support fixture.')),
   'synthetic trusted restricted response can save after required classification');
 

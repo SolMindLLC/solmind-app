@@ -850,7 +850,7 @@ omit. Only onboarding identity may use (real UUID, approved field); duplicate
 fields and cross-kind UUID reuse reject. The physical UUID appears once in source
 evidence; selection revision `wi007-v0.1+onboarding-fields-v2` is fingerprinted in
 the compact context (the AV2 entries; since 2026-11-03, chat step slice S3, the private
-AV3 entries serialize `wi007-v0.1+onboarding-fields-v2+compass-v1` with the saved Compass
+ordinary AV3 entries serialize `wi007-v0.1+onboarding-fields-v2+compass-v1` with the saved Compass
 and Waypoint section, below). Guide-authored guardrails stay separate from Explorer
 preferences. Prior conversations, Reflections, summaries and Guide-private records
 remain omitted. The last 24
@@ -3356,7 +3356,7 @@ src/lib/solmind/virtual-guide/explorerConversationContext.ts are separate from
 strict AV2 entries; the AV2 compact input remains wi007-v0.1+onboarding-fields-v2.
 
 Chat step slice S3 (2026-11-03; Paul's decision 4 of decision queue entry 2026-11-03
-12:38:07 CST and his go-ahead at 20:50:45 CST): the AV3 compact input is
+12:38:07 CST and his go-ahead at 20:50:45 CST): the ordinary AV3 compact input is
 wi007-v0.1+onboarding-fields-v2+compass-v1, the same layers plus `compassContext` after
 `approvedContinuity`. Owners: src/lib/solmind/context/explorerSafeContext.ts (the section
 shape, limits of 24 points, 5 Route events and 20 Waypoints, the label and text limits,
@@ -3386,7 +3386,7 @@ exact rebuild of the section from the saved rows, the ids in the exact source se
 3 to 103 source ids) and methodology.serialized_methodology_valid (exactly two key sets,
 each tied to its version). A saved label or Waypoint text containing a character the
 assembler refuses (a tab, or a zero-width joiner as in some emoji) makes that
-conversation's Sends unavailable, as such a character in the recent history already does.
+conversation's ordinary Sends unavailable, as such a character in the recent history already does.
 
 supabase/migrations/20261025010000_explorer_source_exclusion.sql owns bounded
 current-source inspection and committed content-free exclusion accountability;
@@ -3788,10 +3788,27 @@ helpful; a first reply without a named topic may offer Show me around, I have a
 question and Let's begin. Always answer questions about how the screen works.
 
 This is source construction, not demo approval or provider evidence. Paul must read
-the exact changed wording before demo use; his decision on retaining Compass context
-in crisis-classification calls is still pending (S4 leaves those calls unchanged).
+the exact changed wording before demo use. His later crisis-context decision is
+implemented separately below; S4 itself leaves those calls unchanged.
 The independent AI-provider/database review and two-round rule remain Executor
 work. SQL/pgTAP, browser validation and any approved demo migration are Executor
 work; no database, provider or server was run by the builder. Daily repeated tour
 offers, remembered feature-use evidence, the Admin duration setting, forming points
 and Waypoints, S6 buttons, and Key Insights remain later slices.
+## AV3 crisis-check context - 2026-11-04
+
+Paul's decision 2026-11-04 17:14:51 CST, point (d): classification_only uses
+wi007-v0.1+onboarding-fields-v2 without compassContext or its point/Waypoint source
+ids. The controller selects the mode before assembly; its adapter forwards it to
+both private builders, which omit the section before serialization and hashing.
+The controller pins mode, revision and section presence together. Ordinary
+classification_and_reply keeps the existing compass-v1 bytes; AV2 is unchanged.
+
+The inspector replacement in
+supabase/migrations/20261105000000_explorer_crisis_context_without_compass.sql
+requires the exact matching envelope and source set, deriving mode from known
+restricted/adult-stop state after prepare applies fallback under lock. Unknown
+policy fails closed. Its existing SECURITY INVOKER setting, owner and grants,
+prepare's 37 arguments, immutable snapshots and historical replay are unchanged.
+Keep context/RPC/provider limits at 30/10/60 seconds and preserve cancellation,
+one-call and counting rules. SQL and browser execution remain Executor work.

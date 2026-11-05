@@ -3,7 +3,10 @@ import {
   AUTHORIZED_VIRTUAL_GUIDE_CONTEXT_CONTRACT_VERSION,
   composeAuthorizedVirtualGuideContext,
 } from "./authorizedVirtualGuideContext";
-import type { ExplorerConversationDependencies } from "./explorerConversationComposition";
+import type {
+  ExplorerConversationContextBuilder, ExplorerConversationDependencies,
+  PrivateExplorerConversationContextBuilder,
+} from "./explorerConversationComposition";
 import {
   EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION,
   EXPLORER_COMPASS_CONTEXT_ROUTE_KINDS,
@@ -26,7 +29,7 @@ import {
 // Historical supportNow-only snapshots keep their original version and bytes.
 export const EXPLORER_CONVERSATION_CONTEXT_SELECTION_VERSION = "wi007-v0.1+onboarding-fields-v2";
 // Chat step slice S3 (2026-11-03): the private (AV3) entries add the saved Compass and
-// Waypoint section and serialize this revision; the older AV2 entries keep the one above.
+// Waypoint section for ordinary replies; classification-only turns and AV2 use the base revision.
 export const EXPLORER_PRIVATE_CONVERSATION_CONTEXT_SELECTION_VERSION = EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION;
 
 type VersionedText = Readonly<{ version: string; text: string }>;
@@ -158,15 +161,22 @@ function compassContext(state: ConversationState) {
   };
 }
 
+type SharedContextBuilder = (turn: Parameters<ExplorerConversationContextBuilder>[0] &
+  Partial<Pick<Parameters<PrivateExplorerConversationContextBuilder>[0], "mode">>) => ReturnType<ExplorerConversationContextBuilder>;
+function validatePrivateMode(authorizationContract: "AV2" | "AV3", mode: unknown): void {
+  if (authorizationContract === "AV3" && mode !== "classification_only" && mode !== "classification_and_reply") invalid();
+}
+
 type ConversationContextBuilderInput = {
   repository: Pick<ExplorerConversationDependencies["repository"], "read">;
   configuration: ExplorerConversationContextConfiguration;
 };
 function createConversationContextBuilder(input: ConversationContextBuilderInput,
   authorizationContract: "AV2" | "AV3",
-): NonNullable<ExplorerConversationDependencies["buildContext"]> {
+): SharedContextBuilder {
   const config = configuration(input.configuration);
-  return async ({ actor, row, state, command, ids, signal }) => {
+  return async ({ actor, row, state, command, ids, signal, mode }) => {
+    validatePrivateMode(authorizationContract, mode);
     const facts = authority(row.authority_context, authorizationContract);
     if (signal?.aborted || facts.accountId !== actor.accountId || facts.applicationSessionId !== actor.applicationSessionId) invalid();
     const binding = { explorerId: facts.explorerId, sessionId: ids.conversationId, continuityBindingId: facts.relationshipId };
@@ -175,8 +185,8 @@ function createConversationContextBuilder(input: ConversationContextBuilderInput
     // so the assembler rejects them; neither text nor per-answer IDs are invented.
     const selectedFields = FIELDS.filter(field => REQUIRED_FIELDS.has(field) || facts.onboarding.answers[field].trim().length > 0);
     const recent = state.messages.slice(-24);
-    // Only the private (AV3) entries carry the Compass section; AV2 stays byte-for-byte unchanged.
-    const compass = authorizationContract === "AV3" ? compassContext(state) : undefined;
+    // Classification-only AV3 omits the section and its sources before assembly and hashing; AV2 is unchanged.
+    const compass = authorizationContract === "AV3" && mode === "classification_and_reply" ? compassContext(state) : undefined;
     const contextInput = {
       contractVersion: compass === undefined ? EXPLORER_CONVERSATION_CONTEXT_SELECTION_VERSION
         : EXPLORER_PRIVATE_CONVERSATION_CONTEXT_SELECTION_VERSION,
@@ -280,13 +290,14 @@ type GovernedConversationContextBuilderInput = {
 };
 function createGovernedConversationContextBuilder(input: GovernedConversationContextBuilderInput,
   authorizationContract: "AV2" | "AV3",
-): NonNullable<ExplorerConversationDependencies["buildContext"]> {
+): SharedContextBuilder {
   const config = governedConfiguration(input.configuration);
   const expectedScope = parseEffectiveMethodologyScope(input.expectedScope);
   const packId = input.packId;
   if (typeof packId !== "string" || !UUID.test(packId)) invalid();
   return async (turn) => {
     try {
+      validatePrivateMode(authorizationContract, turn.mode);
       const facts = authority(turn.row.authority_context, authorizationContract);
       if (facts.accountId !== turn.actor.accountId || facts.applicationSessionId !== turn.actor.applicationSessionId ||
           expectedScope.id !== facts.guideId || effectiveMethodologySignalAborted(turn.signal)) invalid();
@@ -330,21 +341,21 @@ function createGovernedConversationContextBuilder(input: GovernedConversationCon
 // accepting it here grants neither readiness nor a provider capability.
 export function createExplorerConversationContextBuilder(
   input: ConversationContextBuilderInput,
-): NonNullable<ExplorerConversationDependencies["buildContext"]> {
+): ExplorerConversationContextBuilder {
   return createConversationContextBuilder(input, "AV2");
 }
 export function createGovernedExplorerConversationContextBuilder(
   input: GovernedConversationContextBuilderInput,
-): NonNullable<ExplorerConversationDependencies["buildContext"]> {
+): ExplorerConversationContextBuilder {
   return createGovernedConversationContextBuilder(input, "AV2");
 }
 export function createPrivateExplorerConversationContextBuilder(
   input: ConversationContextBuilderInput,
-): NonNullable<ExplorerConversationDependencies["buildContext"]> {
+): PrivateExplorerConversationContextBuilder {
   return createConversationContextBuilder(input, "AV3");
 }
 export function createPrivateGovernedExplorerConversationContextBuilder(
   input: GovernedConversationContextBuilderInput,
-): NonNullable<ExplorerConversationDependencies["buildContext"]> {
+): PrivateExplorerConversationContextBuilder {
   return createGovernedConversationContextBuilder(input, "AV3");
 }

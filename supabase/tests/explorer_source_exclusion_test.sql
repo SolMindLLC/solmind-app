@@ -53,7 +53,6 @@ insert into ai.ai_interaction_session(ai_interaction_session_id,session_type,act
   guide_profile_id,explorer_profile_id,guide_explorer_relationship_id,practice_id,metadata)
   values(pg_temp.xid(51),'explorer_reflection',pg_temp.xid(1),'explorer',pg_temp.xid(23),pg_temp.xid(24),pg_temp.xid(25),pg_temp.xid(22),
     '{"restricted_mode":false}');
-insert into ai.explorer_conversation_state(conversation_id,actor_user_account_id) values(pg_temp.xid(51),pg_temp.xid(1));
 
 -- Independent rebuild of the saved Compass and Waypoint section (chat step slice S3, 2026-11-03) from the
 -- fixture rows: current points in display order, the saved Priority and attention, the last five needle moves
@@ -90,8 +89,10 @@ create function pg_temp.compass() returns jsonb language sql stable as $$
         and not exists(select 1 from content.waypoint s where s.predecessor_waypoint_id=w.waypoint_id)),'[]'::jsonb),
     'drafts','[]'::jsonb)
 $$;
-create function pg_temp.context(body text default 'Synthetic ordinary immediate text') returns jsonb language sql stable as $$
-  select jsonb_build_object('contractVersion','wi007-v0.1+onboarding-fields-v2+compass-v1','aiRole','solmind_virtual_guide','actorRoleContext','explorer',
+create function pg_temp.context(body text default 'Synthetic ordinary immediate text',classification_only boolean default false)
+returns jsonb language sql stable as $$
+  select jsonb_build_object('contractVersion',case when classification_only then 'wi007-v0.1+onboarding-fields-v2'
+    else 'wi007-v0.1+onboarding-fields-v2+compass-v1' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy',jsonb_build_object('version','synthetic-global.v1','text','Synthetic global behavior rules.'),
     'roleBehavior',jsonb_build_object('version','synthetic-role.v1','text','Synthetic role behavior rules.'),
     'crisisBehavior',jsonb_build_object('version','synthetic-crisis.v1','text','Synthetic crisis behavior rules.'),
@@ -103,7 +104,6 @@ create function pg_temp.context(body text default 'Synthetic ordinary immediate 
       'kind','onboarding_answer','field',f.name,'content',ai.solmind_exclusion_normalize_v3(i.response_json->>f.name)) order by f.ord)
       from core.intake_response_set i cross join unnest(array['supportNow','usefulOutcome','supportStyle','guideContext',
         'communicationPreference','doNotEmphasize']) with ordinality f(name,ord) where i.intake_response_set_id=pg_temp.xid(52)),
-    'compassContext',pg_temp.compass(),
     'currentSessionMessages',coalesce((select jsonb_agg(jsonb_build_object('messageId',h.ai_interaction_message_id,'order',h.ord-1,
       'explorerId',pg_temp.xid(24),'sessionId',pg_temp.xid(51),'role',case when h.sender_type='user' then 'explorer' else 'solmind_virtual_guide' end,
       'content',ai.solmind_exclusion_normalize_v3(h.content_text)) order by h.ord)
@@ -112,15 +112,16 @@ create function pg_temp.context(body text default 'Synthetic ordinary immediate 
     'immediateExplorerMessage',jsonb_build_object('messageId',pg_temp.xid(61),'explorerId',pg_temp.xid(24),
       'sessionId',pg_temp.xid(51),'role','explorer','content',ai.solmind_exclusion_normalize_v3(body)),
     'outputRequirements',jsonb_build_object('format','plain_text','includeCitations',false,'allowMarkdown',false))
+    || case when classification_only then '{}'::jsonb else jsonb_build_object('compassContext',pg_temp.compass()) end
 $$;
-create function pg_temp.source_ids() returns uuid[] language sql stable as $$
+create function pg_temp.source_ids(classification_only boolean default false) returns uuid[] language sql stable as $$
   select array_agg(distinct id order by id) from (
     select unnest(array[pg_temp.xid(52),pg_temp.xid(61),pg_temp.xid(90)]) as id
     union all select m.ai_interaction_message_id from (select * from ai.ai_interaction_message
       where ai_interaction_session_id=pg_temp.xid(51) order by sequence_number desc limit 24) m
     union all select c.item_id from ai.explorer_conversation_compass_item c
-      where c.conversation_id=pg_temp.xid(51) and c.merged_into_item_id is null
-    union all select w.waypoint_id from content.waypoint w where w.source_ai_interaction_session_id=pg_temp.xid(51)
+      where not classification_only and c.conversation_id=pg_temp.xid(51) and c.merged_into_item_id is null
+    union all select w.waypoint_id from content.waypoint w where not classification_only and w.source_ai_interaction_session_id=pg_temp.xid(51)
       and not exists(select 1 from content.waypoint s where s.predecessor_waypoint_id=w.waypoint_id)) x
 $$;
 create function pg_temp.inspect(body text default 'Synthetic ordinary immediate text')
@@ -128,10 +129,11 @@ returns table(outcome text,excluded_entity_type text,excluded_entity_id uuid) la
   select * from ai.solmind_inspect_explorer_context_v3(pg_temp.xid(1),pg_temp.xid(50),pg_temp.xid(24),pg_temp.xid(25),
     pg_temp.xid(51),pg_temp.compact(pg_temp.context(body)),pg_temp.source_ids())
 $$;
-create function pg_temp.inspect_json(value jsonb)
+create function pg_temp.inspect_json(value jsonb,classification_only boolean default false,extra_ids uuid[] default array[]::uuid[])
 returns table(outcome text,excluded_entity_type text,excluded_entity_id uuid) language sql volatile as $$
   select * from ai.solmind_inspect_explorer_context_v3(pg_temp.xid(1),pg_temp.xid(50),pg_temp.xid(24),pg_temp.xid(25),
-    pg_temp.xid(51),pg_temp.compact(value),pg_temp.source_ids())
+    pg_temp.xid(51),pg_temp.compact(value),
+    (select array_agg(id order by id) from unnest(pg_temp.source_ids(classification_only)||extra_ids) id))
 $$;
 create function pg_temp.record_exclusion(body text)
 returns table(outcome text,excluded_entity_type text,excluded_entity_id uuid,audit_event_id uuid) language sql volatile as $$
@@ -160,11 +162,21 @@ select is(ai.solmind_exclusion_fingerprint_v3('abc'),'BA7816BF8F01CFEA414140DE5D
 select isnt(ai.solmind_exclusion_fingerprint_v3(U&'\00E9'),ai.solmind_exclusion_fingerprint_v3(U&'e\0301'),
   'normalization does not claim NFC equivalence');
 select ok(not ai.solmind_exclusion_keys_v3('{"a":1,"a":2}'::json,array['a']),'duplicate JSON keys are not erased before validation');
+-- A legacy unknown policy supplies no authority for either request envelope.
+savepoint unknown_policy;
+insert into ai.explorer_conversation_state(conversation_id,actor_user_account_id) values(pg_temp.xid(51),pg_temp.xid(1));
+select is((select outcome from pg_temp.inspect()),'unavailable','unknown policy rejects the ordinary Compass envelope');
+select is((select outcome from pg_temp.inspect_json(pg_temp.context(classification_only=>true),true)),
+  'unavailable','unknown policy also rejects the reduced classification-only envelope');
+rollback to savepoint unknown_policy;
+insert into ai.explorer_conversation_state(conversation_id,actor_user_account_id,safety_contract_version,
+  adult_reflection_stopped,safety_version)
+  values(pg_temp.xid(51),pg_temp.xid(1),'explorer-conversation-safety.v1',false,0);
 select is((select outcome from pg_temp.inspect()),'clear','real owned empty conversation and exact submitted sources inspect clear');
 select ok((select excluded_entity_type is null and excluded_entity_id is null from pg_temp.inspect()),'clear carries no private references');
 select is((select outcome from pg_temp.inspect_json(pg_temp.context()||'{"unknown":true}'::jsonb)),'unavailable','extra input envelope field is unavailable');
 select is((select outcome from pg_temp.inspect_json((pg_temp.context()-'compassContext')||'{"contractVersion":"wi007-v0.1+onboarding-fields-v2"}'::jsonb)),
-  'unavailable','S3: the previous twelve-key envelope and contract version are no longer accepted');
+  'unavailable','ordinary mode rejects the reduced twelve-key classification-only envelope');
 select is((select outcome from pg_temp.inspect_json(pg_temp.context()-'compassContext')),
   'unavailable','S3: the new contract version requires the Compass and Waypoint section');
 select is((select outcome from pg_temp.inspect_json(pg_temp.context()||'{"contractVersion":"wi007-v0.1+onboarding-fields-v2"}'::jsonb)),
@@ -360,8 +372,13 @@ select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),
   'unavailable','caller cannot substitute saved history content');
 select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{currentSessionMessages}','[]'))),
   'unavailable','caller cannot omit actual selected history');
+savepoint policy_incoherent;
 update ai.ai_interaction_session set metadata='{"restricted_mode":true}' where ai_interaction_session_id=pg_temp.xid(51);
-select is((select outcome from pg_temp.inspect()),'clear','internal source inspection does not wrongly reuse old restricted-reflection authority');
+select is((select outcome from pg_temp.inspect()),'unavailable','incoherent restriction metadata cannot authorize the ordinary mode');
+select is((select outcome from pg_temp.inspect_json(pg_temp.context(classification_only=>true),true)),
+  'unavailable','incoherent restriction metadata cannot authorize classification-only mode either');
+rollback to savepoint policy_incoherent;
+select is((select outcome from pg_temp.inspect()),'clear','restored known policy keeps owned history inspection available');
 savepoint source_identity_cross_kind_collision;
 insert into ai.ai_interaction_message(ai_interaction_message_id,ai_interaction_session_id,sequence_number,sender_type,
   sender_user_account_id,sender_role_context,content_text)
@@ -431,6 +448,51 @@ select is((select outcome from pg_temp.inspect()),'clear','S3: saved points, Pri
 select is((select outcome from pg_temp.inspect_json(pg_temp.with_compass((select section from s3_golden)))),'clear',
   'S3: the TypeScript section content, set into the context as jsonb, inspects clear');
 select is((select cardinality(pg_temp.source_ids())),11,'S3: the three points and four Waypoint heads join the source ids');
+-- Classification scope is decided from the protected policy, never an input mode.
+-- Every probe starts with the same populated saved points and Waypoints, then
+-- rolls back only its policy change; the ordinary golden section remains intact.
+create function pg_temp.classification_scope_probe(lvl smallint,adult_stop boolean) returns text language plpgsql as $$
+declare reduced jsonb; full_context jsonb; stray uuid;
+begin
+  begin
+    full_context:=pg_temp.context();
+    reduced:=pg_temp.context(classification_only=>true);
+    if reduced is distinct from ((full_context-'compassContext')
+      || jsonb_build_object('contractVersion','wi007-v0.1+onboarding-fields-v2'))
+      or cardinality(pg_temp.source_ids(true))<>4
+      or jsonb_array_length(full_context->'compassContext'->'points')<>3
+      or jsonb_array_length(full_context->'compassContext'->'waypoints')<>4
+      then raise exception 'classification_fixture_shape'; end if;
+    perform ai.solmind_raise_private_policy_v3(pg_temp.xid(51),lvl,adult_stop);
+    if (select outcome from pg_temp.inspect_json(reduced,true)) is distinct from 'clear'
+      then raise exception 'classification_reduced_refused'; end if;
+    if (select outcome from pg_temp.inspect_json(full_context)) is distinct from 'unavailable'
+      or (select outcome from pg_temp.inspect_json(reduced||jsonb_build_object(
+        'contractVersion','wi007-v0.1+onboarding-fields-v2+compass-v1'),true)) is distinct from 'unavailable'
+      or (select outcome from pg_temp.inspect_json(full_context||jsonb_build_object(
+        'contractVersion','wi007-v0.1+onboarding-fields-v2'))) is distinct from 'unavailable'
+      or (select outcome from pg_temp.inspect_json(reduced||'{"compassContext":null}'::jsonb,true)) is distinct from 'unavailable'
+      then raise exception 'classification_wrong_envelope_accepted'; end if;
+    foreach stray in array array[pg_temp.xid(401),pg_temp.xid(402),pg_temp.xid(404),
+      pg_temp.xid(421),pg_temp.xid(422),pg_temp.xid(423),pg_temp.xid(425)] loop
+      if (select outcome from pg_temp.inspect_json(reduced,true,array[stray])) is distinct from 'unavailable'
+        then raise exception 'classification_stray_source_accepted'; end if;
+    end loop;
+    raise exception 'classification_scope_probe_rolled_back';
+  exception when raise_exception then
+    if sqlerrm<>'classification_scope_probe_rolled_back' then raise; end if;
+  end;
+  return 'ok';
+end $$;
+select is(pg_temp.classification_scope_probe(3::smallint,false),'ok',
+  'level 3 omits populated Compass/Waypoints and rejects full, wrong-version, null-section and stray-id contexts');
+select is(pg_temp.classification_scope_probe(4::smallint,false),'ok',
+  'level 4 requires the exact reduced envelope and rejects every saved point and Waypoint id');
+select is(pg_temp.classification_scope_probe(0::smallint,true),'ok',
+  'adult stop alone requires the exact reduced envelope and rejects full or malformed mode pairings');
+select is(pg_temp.compass(),(select section from s3_golden),'classification probes preserve the ordinary golden Compass section');
+select is((select outcome from pg_temp.inspect()),'clear','ordinary populated envelope still inspects clear after policy rollback');
+
 select is((select outcome from ai.solmind_inspect_explorer_context_v3(pg_temp.xid(1),pg_temp.xid(50),pg_temp.xid(24),pg_temp.xid(25),
   pg_temp.xid(51),pg_temp.compact(pg_temp.context()),array_remove(pg_temp.source_ids(),pg_temp.xid(425)))),'unavailable',
   'S3: a Waypoint head missing from the source ids is unavailable');
