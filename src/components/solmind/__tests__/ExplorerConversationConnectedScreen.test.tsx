@@ -21,6 +21,8 @@ import {
   CURRENT_TOOLS_HEADING,
   CURRENT_TOOLS_POINTER,
   CURRENT_TOOLS_REMOVAL_REASON,
+  OPENING_GREETING_LABEL,
+  OPENING_GREETING_TEXT,
 } from "../../../lib/solmind/explorerConversationConnectedScreen";
 import {
   EXPLORER_CONVERSATION_VERSION,
@@ -314,6 +316,25 @@ describe("connected Explorer conversation screen", () => {
     expect(html).toContain(`New conversation ${MIDDLE_DOT} with your Virtual Guide`);
     expect(html).toContain("Not started yet. Private to you");
     expect(html).not.toContain("Open conversation");
+  });
+
+  it("CC24 a conversation with no saved message opens with the fixed welcome, which is not a saved message", () => {
+    const html = render(view({ state: savedState({ conversationId: null, revision: 0, messages: [], sessionStatus: null }) }));
+    const transcript = html.slice(html.indexOf('aria-label="Conversation transcript"'));
+    expect(transcript).toContain(`aria-label="${OPENING_GREETING_LABEL}"`);
+    expect(transcript).toContain(OPENING_GREETING_TEXT.replaceAll("'", "&#x27;"));
+    // The welcome comes first and the saved-message sentence still says nothing is saved; the welcome has no time.
+    expect(transcript.indexOf("data-opening-greeting")).toBeLessThan(transcript.indexOf("There are no saved messages yet."));
+    const greeting = transcript.slice(transcript.indexOf("data-opening-greeting"), transcript.indexOf("</article>"));
+    expect(greeting).not.toContain("<time");
+    expect(transcript).not.toContain('aria-label="Saved conversation"');
+  });
+
+  it("CC25 the welcome is absent once a message is saved, and in an ended conversation", () => {
+    expect(render(view())).not.toContain("data-opening-greeting");
+    const endedEmpty = render(view({ state: savedState({ messages: [], sessionStatus: "ended" }), ended: true, held: true }));
+    expect(endedEmpty).not.toContain("data-opening-greeting");
+    expect(endedEmpty).toContain("There are no saved messages yet.");
   });
 
   it("CC12 a pending saved turn is announced outside the scrolling transcript, beside the composer", () => {

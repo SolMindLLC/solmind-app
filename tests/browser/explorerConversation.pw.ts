@@ -125,6 +125,8 @@ test("C01 empty Discovery loads without a write or scripted message", async ({ p
   await page.route("**/explorer/conversation/commands", route => { writes += 1; return route.abort(); });
   await page.goto("/explorer/conversation");
   await expect(page.getByRole("heading", { name: "Your conversation", exact: true })).toBeFocused();
+  // The fixed opening welcome (Paul's wish 1, 2026-11-05) is shown, but it is not a saved message and makes no request.
+  await expect(page.getByRole("article", { name: "Welcome from the SolMind Virtual Guide", exact: true })).toBeVisible();
   await expect(page.getByText("There are no saved messages yet.", { exact: true })).toBeVisible();
   await expect(page.getByRole("list", { name: "Saved conversation", exact: true })).toHaveCount(0);
   expect(writes).toBe(0);

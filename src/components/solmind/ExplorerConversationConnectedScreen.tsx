@@ -13,6 +13,8 @@ import {
   CURRENT_TOOLS_INTRO,
   CURRENT_TOOLS_POINTER,
   CURRENT_TOOLS_REMOVAL_REASON,
+  OPENING_GREETING_LABEL,
+  OPENING_GREETING_TEXT,
   connectedHeaderLabel,
   connectedStatusText,
   type ConnectedConversationStatus,
@@ -358,6 +360,25 @@ function MessageBubble({ message }: Readonly<{ message: ExplorerConversationMess
   );
 }
 
+// The opening greeting: a fixed welcome drawn like a Virtual Guide message, but
+// without a time, because it is not a saved message (Paul's decision, decision
+// queue 2026-11-05 19:13:28 CST, wish 1). It makes no request.
+function OpeningGreeting() {
+  return (
+    <article
+      aria-label={OPENING_GREETING_LABEL}
+      className="mr-auto w-full max-w-[94%] rounded-2xl border border-amber-200/10 bg-[#15110d] px-4 py-3 text-stone-100"
+      data-opening-greeting=""
+    >
+      <p className={joinClasses("flex items-center gap-2 text-xs font-semibold", speakerLabelClass(SPEAKER_STYLE, "virtualGuide"))}>
+        <SpeakerBadge speaker="virtualGuide" speakerStyle={SPEAKER_STYLE} />
+        {CONNECTED_SPEAKER_LABELS.virtualGuide}
+      </p>
+      <p className="mt-2 text-sm leading-6">{OPENING_GREETING_TEXT}</p>
+    </article>
+  );
+}
+
 // The saved messages, oldest first, in the designed transcript box. The box
 // scrolls to the newest message whenever the saved count changes.
 function SavedTranscript({ state, view, actions, choicesDismissed, onSomethingElse }: Readonly<{
@@ -389,6 +410,7 @@ function SavedTranscript({ state, view, actions, choicesDismissed, onSomethingEl
       <div className="mx-auto grid max-w-3xl gap-3">
         {count === 0 ? (
           <>
+            {view.ended ? null : <OpeningGreeting />}
             <p className="text-sm text-stone-300">There are no saved messages yet.</p>
             {view.ended ? null : (
               <PlaceholderSlot title="Ways to begin">

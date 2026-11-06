@@ -70,6 +70,13 @@ export const CONNECTED_TITLE = "Your conversation";
 // The existing live sentence from the earlier connected screen.
 export const CONNECTED_INTRO = `Explore with the ${SOLMIND_TERMS.virtualGuide}. Your conversation, Compass and Waypoints stay private; nothing is shared from this screen.`;
 
+// The opening greeting (Paul's decision, decision queue 2026-11-05 19:13:28 CST,
+// wish 1): a fixed welcome in a conversation that has no saved message yet, so
+// the window is never blank. It is not a saved message, makes no AI call and
+// is not sent to the Virtual Guide. Draft wording for Paul's wording read.
+export const OPENING_GREETING_LABEL = `Welcome from the ${SOLMIND_TERMS.virtualGuide}`;
+export const OPENING_GREETING_TEXT = `Welcome. I'm your ${SOLMIND_TERMS.virtualGuide}, here to help you reflect at your own pace. To begin, write whatever is on your mind and choose Send.`;
+
 // "unknown" until an authenticated read succeeds (loading, denied, unavailable
 // or needing a refresh): the header then says nothing about the conversation.
 export type ConnectedConversationStatus = "unknown" | "notStarted" | "active" | "ended";

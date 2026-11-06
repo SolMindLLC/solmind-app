@@ -4264,3 +4264,21 @@ state only (which row is open, how many show, whether the group is open):
 nothing is saved and no command, request or AI call is added. Its screen-reader
 operation is still to be checked with a real screen reader before the pilot
 (Paul's rank, 2026-11-06 09:20:44: This Sprint Could, MVP0 Should).
+
+## Opening greeting - 2026-11-06
+
+Paul's decision of 2026-11-05 19:13:28 (wish 1 from his test: "there was no
+initial offer ... Just a blank chat window") adds a fixed, short welcome to a
+conversation that has no saved message and has not ended, so the window is
+never blank. ExplorerConversationConnectedScreen.tsx draws it above "There
+are no saved messages yet." like a Virtual Guide message, without a time,
+named "Welcome from the SolMind Virtual Guide" for screen readers
+(data-opening-greeting). Its wording is OPENING_GREETING_LABEL and
+OPENING_GREETING_TEXT in explorerConversationConnectedScreen.ts, a draft for
+Paul's wording read. It is not a saved message, makes no request or AI call,
+is not sent to the Virtual Guide and goes away once a message is saved; an
+ended conversation never shows it. The three starting choices ("Show me around",
+"I have a question", "Let's begin") keep their rule: they may appear in the
+Virtual Guide's first reply in the first conversation each day until the tour
+is taken. No instruction sentence changes. Presentation
+only: no database, context, provider or command change.
