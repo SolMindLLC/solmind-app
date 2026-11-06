@@ -15,7 +15,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions,pg_catalog,pg_temp;
 set local statement_timeout='120s';
-select plan(45);
+select plan(46);
 
 create function pg_temp.gid(n integer) returns uuid language sql immutable as $$
   select ('f42c0000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid
@@ -389,7 +389,8 @@ declare point_id uuid:=(select id from points where name='Work pressure'); slot_
 begin
   begin
     responses:=jsonb_build_array(jsonb_build_object('pointId',point_id,'response',
-      case when case_name in ('close','button_close','duplicates') then 'close' when case_name in ('not_it','limit','limit_duplicate') then 'not_it' else 'right' end));
+      case when case_name in ('close','button_close','duplicates','refine_close') then 'close'
+        when case_name in ('not_it','limit','limit_duplicate','refine_not_it') then 'not_it' else 'right' end));
     if case_name='old' then
       if not pg_temp.send_suggestions(2,'[]') then raise exception 'fixture'; end if;
       slot_n:=3;
@@ -424,7 +425,7 @@ begin
       select item_id into strict point_id from ai.explorer_conversation_compass_item
         where conversation_id=pg_temp.gid(6005) and label='Explorer saved point';
       responses:=jsonb_build_array(jsonb_build_object('pointId',point_id,'response','right'));
-    elsif case_name='refine' then
+    elsif case_name in ('refine','refine_close','refine_not_it') then
       suggestions:=jsonb_build_array(jsonb_build_object('pointId',point_id,'label','Work refined'));
     elsif case_name='same_refine' then
       suggestions:=jsonb_build_array(jsonb_build_object('pointId',point_id,'label','Work pressure'));
@@ -542,23 +543,23 @@ begin
 end $$;
 create temp table cases(name text primary key,value jsonb);
 insert into cases select name,pg_temp.typed_case(name) from unnest(array['right','close','not_it','old','button','refine',
-  'same_refine','deferred','restricted','adult','level2','classification_only','uninterested','malformed','foreign',
+  'same_refine','refine_close','refine_not_it','deferred','restricted','adult','level2','classification_only','uninterested','malformed','foreign',
   'duplicates','fourth','three','limit','limit_duplicate','button_close','button_close_refined','foreign_existing','merged',
   'explorer_saved']) name;
 
-select ok((select p.pronargs=26 and p.prosecdef and p.proowner='postgres'::regrole
+select ok((select p.pronargs=27 and p.prosecdef and p.proowner='postgres'::regrole
   and p.proconfig @> array['search_path=""','lock_timeout=2000ms','statement_timeout=5000ms']
   and p.proargnames[24]='p_compass_responses' and p.proargnames[25]='p_waypoint_suggestion' from pg_proc p
-  where p.oid='public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb)'::regprocedure),
-  'S6b: settlement has exactly 26 arguments, postgres ownership and unchanged finite limits');
+  where p.oid='public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,text)'::regprocedure),
+  'S6b: settlement has exactly 27 arguments, postgres ownership and unchanged finite limits');
 select ok(has_function_privilege('service_role',
-  'public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb)','EXECUTE')
+  'public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,text)','EXECUTE')
   and not has_function_privilege('anon',
-  'public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb)','EXECUTE')
+  'public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,text)','EXECUTE')
   and not has_function_privilege('authenticated',
-  'public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb)','EXECUTE')
+  'public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,text)','EXECUTE')
   and not exists(select 1 from pg_proc p cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
-    where p.oid='public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb)'::regprocedure
+    where p.oid='public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,text)'::regprocedure
       and acl.grantee=0 and acl.privilege_type='EXECUTE'),
   'S6b: settlement is executable by service_role only among API roles');
 select ok(to_regprocedure('public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb)') is null
@@ -589,6 +590,10 @@ select ok((select value->>'typedReceipts'='0' and value->>'formation'='proposed'
   from cases where name='refine'),'S6b: refinement wins when the reply also proposes confirmation');
 select ok((select value->>'typedReceipts'='0' and value->>'formation'='proposed' and value->>'label'='Work pressure'
   from cases where name='same_refine'),'S6b: even a same-label refinement prevents a typed confirmation');
+select ok((select bool_and(value->>'typedReceipts'='0' and value->>'formation'='proposed'
+  and value->>'label'='Work refined' and value->>'saved'='true')
+  from cases where name in ('refine_close','refine_not_it')),
+  'REV306b: raw rewording exclusions also block close and not_it without losing the reply');
 select ok((select jsonb_array_length(value#>'{state,route}')=2 and (value->>'deferredExact')::boolean
   and value#>'{state,route}' @> '[{"actor":"virtual_guide"},{"actor":"explorer"}]'::jsonb
   from cases where name='deferred'),'S6b: deferred automatic and Explorer moves materialize once with original time and revision');

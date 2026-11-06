@@ -10,10 +10,15 @@ import { cardStateAtWaypointLimit } from "../../../../tests/browser/connectedCar
 const captured = vi.hoisted(() => ({
   effects: [] as (() => void | (() => void))[],
   actions: null as ConnectedConversationActions | null,
+  updates: [] as unknown[],
 }));
 vi.mock("react", async (original) => {
   const actual = await original<typeof import("react")>();
-  return { ...actual, useEffect: (effect: () => void | (() => void)) => { captured.effects.push(effect); } };
+  return { ...actual, useEffect: (effect: () => void | (() => void)) => { captured.effects.push(effect); },
+    useState: (initial: unknown) => {
+      const [value, setValue] = actual.useState(initial);
+      return [value, (next: unknown) => { captured.updates.push(next); setValue(next); }];
+    } };
 });
 vi.mock("../ExplorerConversationConnectedScreen", () => ({
   ExplorerConversationConnectedScreen: ({ actions }: { actions: ConnectedConversationActions }) => {
@@ -36,6 +41,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   captured.effects = [];
   captured.actions = null;
+  captured.updates = [];
   vi.stubGlobal("window", { addEventListener: vi.fn(), removeEventListener: vi.fn() });
 });
 afterEach(() => {
@@ -94,6 +100,14 @@ describe("Tapped reply choice Send ownership", () => {
   const offered = (): ExplorerConversationState => ({ ...state(false), messages: [
     { ...state(false).messages[0], choices: [{ label }] },
   ] });
+
+  it("never dispatches the fixed tour label through the Send owner", async () => {
+    const f = await loaded(false, { messages: [{ ...state(false).messages[0], choices: [{ label: "Show me around" }] }] });
+    f.actions.onReplyChoice("Show me around");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.fetch).not.toHaveBeenCalled();
+    expect(captured.updates.filter(value => typeof value === "function")).toHaveLength(0);
+  });
 
   it("sends the exact offered label once with the literal marker and the saved revision", async () => {
     const f = await loaded(false, offered());
@@ -213,16 +227,15 @@ describe("S7a Waypoint draft reply command ownership", () => {
     });
     f.actions.onCommand({ kind: "respond_waypoint_draft", draftId: WAYPOINT_DRAFT.id, response });
     await vi.advanceTimersByTimeAsync(0);
-    expect(f.fetch).toHaveBeenCalledTimes(response === "right" ? 1 : 2);
+    expect(f.fetch).toHaveBeenCalledTimes(2);
     const first = JSON.parse(f.fetch.mock.calls[0][1]!.body as string);
     expect(first).toEqual({ kind: "respond_waypoint_draft", draftId: WAYPOINT_DRAFT.id,
       response, operationId: expect.any(String), expectedRevision: 3 });
-    if (response !== "right") {
-      const second = JSON.parse(f.fetch.mock.calls[1][1]!.body as string);
-      expect(second).toEqual({ kind: "send", expectedRevision: 4, operationId: expect.any(String),
-        body: `${response === "close" ? "Close, not quite" : "That's not it"}: "${WAYPOINT_DRAFT.title}"` });
-      expect(second.operationId).not.toBe(first.operationId);
-    }
+    const second = JSON.parse(f.fetch.mock.calls[1][1]!.body as string);
+    expect(second).toEqual({ kind: "send", expectedRevision: 4, operationId: expect.any(String),
+      body: `${response === "right" ? "That's right" : response === "close" ? "Close, not quite" : "That's not it"}: "${WAYPOINT_DRAFT.title}"` });
+    expect(second.operationId).not.toBe(first.operationId);
+    expect(f.fetch.mock.calls.filter(call => JSON.parse(call[1]!.body as string).kind === "send")).toHaveLength(1);
   });
 
   it("holds the follow-up after uncertain outcome and retries the identical answer bytes first", async () => {
@@ -267,5 +280,75 @@ describe("S7a Waypoint draft reply command ownership", () => {
     f.actions.onCommand({ kind: "respond_waypoint_draft", draftId: WAYPOINT_DRAFT.id, response: "right" });
     await vi.advanceTimersByTimeAsync(0);
     expect(f.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("Confirmed That's right follow-up for both suggestion kinds", () => {
+  const cases = [
+    { kind: "respond_compass_suggestion" as const, itemId: POINT, response: "right" as const },
+    { kind: "respond_waypoint_draft" as const, draftId: WAYPOINT_DRAFT.id, response: "right" as const },
+  ];
+  function confirmed(): ExplorerConversationState {
+    return { ...state(false), revision: 4, waypointDraft: null,
+      compassItems: [{ id: POINT, sourceMessageId: id(2), label: "A tentative point", formation: "saved" }],
+      waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true },
+      waypointProjection: { kind: "current_heads", limit: 20, totalHeads: 1, hasMore: false },
+      waypoints: [{ id: id(50), sourceMessageId: id(2), title: WAYPOINT_DRAFT.title,
+        destination: WAYPOINT_DRAFT.destination, meaning: WAYPOINT_DRAFT.whyItMatters,
+        arrivalSignal: WAYPOINT_DRAFT.arrivalSignal, status: "chosen", isCurrent: true, createdAt: "2026-11-06T15:00:00Z" }] };
+  }
+
+  it.each(cases)("sends once at the confirmed revision: $kind", async intent => {
+    const f = await loaded(false, { waypointDraft: WAYPOINT_DRAFT });
+    f.actions.onDraftChange("Keep my unsent thought");
+    captured.updates = [];
+    f.fetch.mockImplementation(async (_url, init) => success({ ...confirmed(),
+      revision: JSON.parse(init!.body as string).kind === "send" ? 5 : 4 }));
+    f.actions.onCommand(intent);
+    f.actions.onCommand(intent);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.fetch).toHaveBeenCalledTimes(2);
+    const commands = f.fetch.mock.calls.map(call => JSON.parse(call[1]!.body as string));
+    expect(commands[0]).toMatchObject({ ...intent, expectedRevision: 3 });
+    expect(commands[1]).toEqual({ kind: "send", expectedRevision: 4, operationId: expect.any(String),
+      body: `That's right: "${intent.kind === "respond_compass_suggestion" ? "A tentative point" : WAYPOINT_DRAFT.title}"` });
+    expect(commands[1].operationId).not.toBe(commands[0].operationId);
+    expect(commands.filter(command => command.kind === "send")).toHaveLength(1);
+  });
+
+  for (const gate of ["provider", "capacity", "pending", "support", "adult_policy"] as const) {
+    it.each(cases)(`keeps confirmation when the follow-up is held by ${gate}: $kind`, async intent => {
+      const f = await loaded(false, { waypointDraft: WAYPOINT_DRAFT,
+        ...(gate === "provider" ? { providerState: "unavailable" as const } : {}) });
+      const after = { ...confirmed(),
+        ...(gate === "capacity" ? { messages: Array.from({ length: 99 }, (_, index) => ({
+          ...state(false).messages[0], id: index === 0 ? id(2) : id(index + 100),
+        })) } : {}),
+        ...(gate === "pending" ? { pendingTurn: true } : {}),
+        ...(gate === "support" || gate === "adult_policy" ? { compassSuggestionReplies: gate } : {}),
+      };
+      f.fetch.mockResolvedValueOnce(success(after));
+      f.actions.onCommand(intent);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(f.fetch).toHaveBeenCalledOnce();
+      const saved = captured.updates.filter(value => typeof value === "object" && value !== null && "revision" in value).at(-1);
+      expect(saved).toMatchObject({ revision: 4, waypointDraft: null,
+        compassItems: [{ id: POINT, formation: "saved" }], waypoints: [{ id: id(50), status: "chosen" }] });
+    });
+  }
+
+  it.each(cases)("waits for exact confirmation retry before sending once: $kind", async intent => {
+    const f = await loaded(false, { waypointDraft: WAYPOINT_DRAFT });
+    f.fetch.mockResolvedValueOnce(new Response("malformed", { headers: { "Content-Type": "application/json" } }));
+    f.actions.onCommand(intent);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.fetch).toHaveBeenCalledOnce();
+    const bytes = f.fetch.mock.calls[0][1]!.body;
+    f.fetch.mockResolvedValue(success(confirmed()));
+    f.actions.onRetry();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.fetch).toHaveBeenCalledTimes(3);
+    expect(f.fetch.mock.calls[1][1]!.body).toBe(bytes);
+    expect(f.fetch.mock.calls.filter(call => JSON.parse(call[1]!.body as string).kind === "send")).toHaveLength(1);
   });
 });

@@ -1,4 +1,5 @@
 import type { ExplorerConversationState } from "@/lib/solmind/explorerConversationContract";
+import { EXPLORER_TOUR_CHOICE } from "@/lib/solmind/explorerConversationTour";
 import { REPLY_CHOICES_GROUP_LABEL, SOMETHING_ELSE_LABEL, latestReplyChoices } from "@/lib/solmind/explorerReplyChoices";
 import { FOCUS_RING, joinClasses } from "./ExplorerConversationScreenNotYetImplemented";
 import { CHOICE_CLASS, CHOICE_PLAIN, CHOICE_WRAP } from "./ExplorerConversationScreenTranscript";
@@ -19,9 +20,14 @@ export function ExplorerReplyChoices({ state, messageId, disabled, onChoose, onS
       {latest.labels.map((label, index) => (
         <button
           className={joinClasses(CHOICE_CLASS, CHOICE_WRAP, CHOICE_PLAIN, FOCUS_RING, "disabled:cursor-not-allowed disabled:opacity-50")}
-          disabled={disabled}
+          disabled={label === EXPLORER_TOUR_CHOICE ? false : disabled}
           key={`${index}:${label}`}
           onClick={(event) => {
+            if (label === EXPLORER_TOUR_CHOICE) {
+              event.currentTarget.focus();
+              onChoose(label);
+              return;
+            }
             onChoose(label);
             // Keep keyboard focus on the saved message when Send removes the row.
             event.currentTarget.closest("li")?.focus();

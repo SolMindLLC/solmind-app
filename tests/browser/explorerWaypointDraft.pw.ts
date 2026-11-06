@@ -54,8 +54,8 @@ test("S7a a saved Waypoint draft refines after an exact answer retry, confirms i
             title: draft.title!, destination: draft.destination!, meaning: draft.whyItMatters!,
             arrivalSignal: draft.arrivalSignal!, status: "chosen" }] };
       } else {
-        expect(command.expectedRevision).toBe(16);
-        current = { ...current, revision: 17, waypointDraft: null };
+        expect(command.expectedRevision).toBe(17);
+        current = { ...current, revision: 18, waypointDraft: null };
       }
       return fulfill(route, { ...current, providerState: "unavailable" });
     }
@@ -63,15 +63,19 @@ test("S7a a saved Waypoint draft refines after an exact answer retry, confirms i
     if (command.kind !== "send") throw new Error("unexpected_command");
     sendCount += 1;
     const close = sendCount === 1;
-    expect(command.expectedRevision).toBe(close ? 13 : 17);
-    expect(command.body).toBe(`${close ? "Close, not quite" : "That's not it"}: "${TITLE}"`);
+    const right = sendCount === 2;
+    expect(command.expectedRevision).toBe(close ? 13 : right ? 15 : 18);
+    expect(command.body).toBe(`${close ? "Close, not quite" : right ? "That's right" : "That's not it"}: "${right ? REFINED_TITLE : TITLE}"`);
+    expect(Object.hasOwn(command, "replyChoice")).toBe(false);
     expect(command.operationId).not.toBe(requests.at(-2)!.operationId);
     const replyId = `30000000-0000-4000-8000-00000000009${sendCount}`;
     current = { ...current, revision: command.expectedRevision + 1,
       messages: [...current.messages,
-        { id: `20000000-0000-4000-8000-00000000009${sendCount}`, role: "explorer", body: command.body, createdAt: close ? "2026-11-05T15:00:00Z" : "2026-11-05T15:02:00Z" },
+        { id: `20000000-0000-4000-8000-00000000009${sendCount}`, role: "explorer", body: command.body,
+          createdAt: close ? "2026-11-05T15:00:00Z" : right ? "2026-11-05T15:00:30Z" : "2026-11-05T15:02:00Z" },
         { id: replyId, role: "virtualGuide", body: close ? "Synthetic refinement after asking what to change."
-          : "Synthetic open question: what matters to you now?", createdAt: close ? "2026-11-05T15:00:01Z" : "2026-11-05T15:02:01Z" }],
+          : right ? "Synthetic acknowledgement: that Waypoint fits." : "Synthetic open question: what matters to you now?",
+          createdAt: close ? "2026-11-05T15:00:01Z" : right ? "2026-11-05T15:00:31Z" : "2026-11-05T15:02:01Z" }],
       waypointDraft: close ? { ...initial, title: REFINED_TITLE, suggestionMessageId: replyId } : null };
     return fulfill(route, current);
   });
@@ -96,7 +100,10 @@ test("S7a a saved Waypoint draft refines after an exact answer retry, confirms i
   await row(REFINED_TITLE).getByRole("button", { name: "That's right", exact: true }).click();
   await expect(row(REFINED_TITLE)).toHaveCount(0);
   await expect(transcript.getByRole("listitem").nth(5)).toBeFocused();
-  expect(sendCount).toBe(1);
+  await expect.poll(() => sendCount).toBe(2);
+  await expect(transcript.getByRole("listitem").nth(6)).toContainText(`That's right: "${REFINED_TITLE}"`);
+  await expect(transcript.getByRole("listitem").nth(7)).toContainText("Synthetic acknowledgement: that Waypoint fits.");
+  await expect(composer).toHaveValue(TYPED_DRAFT);
   if ((page.viewportSize()?.width ?? 0) < 1024) await page.locator("#conversation-preview-drawer-opener").click();
   const panel = page.locator((page.viewportSize()?.width ?? 0) < 1024 ? "#conversation-preview-drawer" : "#conversation-preview-panel");
   const waypoints = panel.getByRole("region", { name: "Waypoints", exact: true });
@@ -107,9 +114,9 @@ test("S7a a saved Waypoint draft refines after an exact answer retry, confirms i
   await waypoints.getByRole("button", { name: `${REFINED_TITLE} Formed`, exact: true }).click();
   await expect(waypoints).toContainText(initial.destination);
   if ((page.viewportSize()?.width ?? 0) < 1024) await page.keyboard.press("Escape");
-  const nextSuggestionId = "30000000-0000-4000-8000-000000000093";
-  current = { ...current, revision: 16, messages: [...current.messages,
-    { id: "20000000-0000-4000-8000-000000000093", role: "explorer", body: "Synthetic later goal", createdAt: "2026-11-05T15:01:00Z" },
+  const nextSuggestionId = "30000000-0000-4000-8000-000000000094";
+  current = { ...current, revision: 17, messages: [...current.messages,
+    { id: "20000000-0000-4000-8000-000000000094", role: "explorer", body: "Synthetic later goal", createdAt: "2026-11-05T15:01:00Z" },
     { id: nextSuggestionId, role: "virtualGuide", body: "Synthetic later Waypoint suggestion", createdAt: "2026-11-05T15:01:01Z" }],
     waypointDraft: { ...initial, id: NEXT_DRAFT_ID, suggestionMessageId: nextSuggestionId } };
   await page.getByRole("button", { name: "Reload saved conversation", exact: true }).click();
@@ -119,8 +126,8 @@ test("S7a a saved Waypoint draft refines after an exact answer retry, confirms i
   await expect(transcript).toContainText("Synthetic open question: what matters to you now?");
   await expect(composer).toHaveValue(TYPED_DRAFT);
   await expect(transcript).not.toContainText(TYPED_DRAFT);
-  expect(requests).toHaveLength(6);
-  expect(sendCount).toBe(2);
+  expect(requests).toHaveLength(7);
+  expect(sendCount).toBe(3);
 });
 
 for (const response of ["right", "not_it"] as const) {

@@ -43,6 +43,7 @@ import {
 } from "../../../lib/solmind/explorerConversationScreen";
 import { EXPLORER_CONVERSATION_SPACES, EXPLORER_MENU } from "../../../lib/solmind/workspaceMenus";
 import { WORKSPACE_NOT_CONNECTED_LABEL } from "../../../lib/solmind/workspaceNavigation";
+import { EXPLORER_FAILED_REPLY_RETRY_DRAFT } from "../../../lib/solmind/virtual-guide/explorerPrivateConversationComposition";
 import { ConnectedCompassCard } from "../ExplorerConnectedCompassCard";
 import { ExplorerConversationFormation } from "../ExplorerConversationFormation";
 import {
@@ -594,6 +595,22 @@ describe("connected Explorer conversation screen", () => {
     expect(paused).not.toContain("The SolMind Virtual Guide is unavailable.");
     const support = render(view({ assistance: { kind: "support", body: "Synthetic support.", persisted: false } }));
     expect(support).toContain("This assistance is temporary and is not a saved conversation reply.");
+  });
+
+  it("REV306 shows a failed-reply notice with the saved Explorer line, retained draft and enabled Send", () => {
+    const draft = "A synthetic saved Explorer thought.";
+    const state = savedState({ messages: [{ ...savedState().messages[0], body: draft }] });
+    const html = render(view({ state, draft, assistance: {
+      kind: "reply_failed", body: EXPLORER_FAILED_REPLY_RETRY_DRAFT, persisted: false,
+    } }));
+    expect(textOf(html)).toContain(EXPLORER_FAILED_REPLY_RETRY_DRAFT);
+    expect(html).not.toContain("This assistance is temporary and is not a saved conversation reply.");
+    expect(html).toContain('role="alert"');
+    expect(html).not.toContain("The SolMind Virtual Guide is unavailable.");
+    expect(/<textarea\b[^>]*>([^<]*)<\/textarea>/.exec(html)?.[1]).toBe(draft);
+    expect(textOf(html)).toContain(draft);
+    const send = /<button\b[^>]*type="submit"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(send).not.toBe(""); expect(/\sdisabled=""/.test(send)).toBe(false);
   });
 
   it("CC06 without a loaded state it shows only the heading, notices and placeholders", () => {

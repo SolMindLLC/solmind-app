@@ -15,6 +15,7 @@ import type { ExplorerConversationFormationIntent } from "./ExplorerConversation
 import { COMPASS_SUGGESTION_REPLY_LABELS } from "@/lib/solmind/explorerCompassSuggestionReplies";
 import { latestReplyChoices } from "@/lib/solmind/explorerReplyChoices";
 import { completeWaypointDraft, waypointLimitReached } from "@/lib/solmind/explorerWaypointDraft";
+import { EXPLORER_TOUR_CHOICE } from "@/lib/solmind/explorerConversationTour";
 
 const STATE_PATH = "/explorer/conversation/state";
 const COMMAND_PATH = "/explorer/conversation/commands";
@@ -24,7 +25,7 @@ const REQUEST_BYTE_LIMIT = 16_384;
 
 type CommandIntent = ExplorerConversationFormationIntent | Readonly<{ kind: "send"; body: string }> |
   Readonly<{ kind: "end_conversation"; conversationId: string }> |
-  Readonly<{ kind: "suggestion_follow_up"; response: "close" | "not_it"; wording: string }> |
+  Readonly<{ kind: "suggestion_follow_up"; response: "right" | "close" | "not_it"; wording: string }> |
   Readonly<{ kind: "reply_choice"; label: string }>;
 type PendingCommand = Readonly<{ command: ExplorerConversationCommand; body: string; intent: CommandIntent;
   suggestionWording: string | null }>;
@@ -229,7 +230,6 @@ export function ExplorerConversation() {
         // Explorer's composer draft, including after an exact uncertain retry.
         if (pending.intent.kind === "send" && output?.assistance === null) setDraft("");
         if ((pending.command.kind === "respond_compass_suggestion" || pending.command.kind === "respond_waypoint_draft") &&
-            pending.command.response !== "right" &&
             pending.suggestionWording !== null) {
           const current = stateRef.current;
           if (current !== null && !current.pendingTurn && current.sessionStatus !== "ended" &&
@@ -274,6 +274,8 @@ export function ExplorerConversation() {
   }, [replaceState]);
 
   const command = useCallback((intent: CommandIntent) => {
+    // The fixed tour is local presentation, never an ordinary Send.
+    if (intent.kind === "reply_choice" && intent.label === EXPLORER_TOUR_CHOICE) return;
     const current = stateRef.current;
     if (busyRef.current || pendingRef.current !== null || current === null || current.pendingTurn || current.sessionStatus === "ended") return;
     if (intent.kind === "end_conversation" && (current.conversationId === null || intent.conversationId !== current.conversationId)) return;

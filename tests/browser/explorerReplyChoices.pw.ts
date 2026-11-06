@@ -21,6 +21,69 @@ const NEXT_GUIDE = "30000000-0000-4000-8000-000000000002";
 const CHOICES = ["Show me around", "I have a question", "Let's begin"];
 const DRAFT = "Keep this unfinished typed thought exactly.";
 
+test("REV306 Show me around opens a fixed keyboard tour with no request or chat line", async ({ page }) => {
+  const current = savedState();
+  const requests: string[] = [];
+  await page.route("**/explorer/conversation/commands", route => {
+    requests.push(route.request().postData()!);
+    return route.abort();
+  });
+  await openPage(page, () => current);
+  await composer(page).fill(DRAFT);
+  const opener = choices(page).getByRole("button", { name: "Show me around", exact: true });
+  const dialog = page.getByRole("dialog", { name: "A look around your conversation", exact: true });
+  await opener.focus();
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeVisible();
+  const title = dialog.getByRole("heading", { name: "A look around your conversation", exact: true });
+  await expect(title).toBeFocused();
+  await expect(title).toHaveAttribute("aria-describedby", "conversation-tour-step");
+  await expect(dialog.getByRole("status")).toHaveCount(1);
+  await expect(dialog.getByRole("status")).toHaveAttribute("aria-live", "polite");
+  await expect(dialog.getByRole("status")).toBeEmpty();
+  await expect(dialog.locator("#conversation-tour-step")).toContainText("saved messages");
+  await expect(dialog.locator("#conversation-tour-step")).not.toContainText("A Compass point");
+  const next = dialog.getByRole("button", { name: "Next step", exact: true });
+  await next.focus();
+  await page.keyboard.press("Enter");
+  await expect(next).toBeFocused();
+  await expect(dialog.getByRole("heading", { name: "How the Compass works", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("status")).toContainText("Forming");
+  await expect(dialog.getByRole("status")).toContainText('Choose "That\'s right" to confirm');
+  await page.keyboard.press("Enter");
+  await expect(dialog.getByRole("button", { name: "Finish tour", exact: true })).toBeFocused();
+  await expect(dialog.getByRole("heading", { name: "How Waypoints work", exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "How Waypoints work", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "How Waypoints work", exact: true })).toBeFocused();
+  await expect(dialog.getByRole("status")).toContainText("why it matters");
+  await dialog.getByRole("button", { name: "How the conversation works", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "How the conversation works", exact: true })).toBeFocused();
+  await expect(dialog.getByRole("status")).toContainText("saved messages");
+  // Native modal keyboard focus stays within the tour in both directions.
+  await dialog.getByRole("button", { name: "Close tour", exact: true }).focus();
+  await page.keyboard.press("Tab");
+  await expect(dialog.getByRole("button", { name: "How the conversation works", exact: true })).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(dialog.getByRole("button", { name: "Close tour", exact: true })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(opener).toBeFocused();
+  await expect(composer(page)).toHaveValue(DRAFT);
+  await expect(transcript(page).getByRole("listitem")).toHaveCount(current.messages.length);
+  expect(requests).toHaveLength(0);
+
+  for (const closeLabel of ["Close tour", "Back to the conversation", "Finish tour"]) {
+    await opener.click();
+    if (closeLabel === "Finish tour") await dialog.getByRole("button", { name: "How Waypoints work", exact: true }).click();
+    await dialog.getByRole("button", { name: closeLabel, exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(opener).toBeFocused();
+  }
+  await expect(composer(page)).toHaveValue(DRAFT);
+  await expect(transcript(page).getByRole("listitem")).toHaveCount(current.messages.length);
+  expect(requests).toHaveLength(0);
+});
+
 function savedState(overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
   return { waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false },
     version: EXPLORER_CONVERSATION_VERSION,
@@ -123,13 +186,40 @@ test("R02 an ordinary typed Send also ends the offer", async ({ page }) => {
   await expect(choices(page)).toHaveCount(0);
 });
 
-test("R03 an unavailable Virtual Guide disables the choices and sends nothing", async ({ page }) => {
+test("R03 an unavailable Virtual Guide gates Send choices but keeps the local tour available", async ({ page }) => {
   const requests: string[] = [];
   await page.route("**/explorer/conversation/commands", route => { requests.push(route.request().method()); return route.abort(); });
   await openPage(page, () => savedState({ providerState: "unavailable" }));
   await expect(choices(page).getByRole("button")).toHaveCount(4);
   await expect(choices(page).getByRole("button", { name: "Something else", exact: true })).toBeDisabled();
-  for (const label of CHOICES) await expect(choices(page).getByRole("button", { name: label, exact: true })).toBeDisabled();
+  for (const label of CHOICES.slice(1)) await expect(choices(page).getByRole("button", { name: label, exact: true })).toBeDisabled();
+  const opener = choices(page).getByRole("button", { name: "Show me around", exact: true });
+  await expect(opener).toBeEnabled();
+  await opener.click();
+  await expect(page.getByRole("dialog", { name: "A look around your conversation", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Back to the conversation", exact: true }).click();
+  await expect(opener).toBeFocused();
+  await expect(transcript(page).getByRole("listitem")).toHaveCount(2);
+  expect(requests).toEqual([]);
+});
+
+test("REV306b the shown tour remains available during End review without changing the draft or sending", async ({ page }) => {
+  const requests: string[] = [];
+  await page.route("**/explorer/conversation/commands", route => { requests.push(route.request().method()); return route.abort(); });
+  await openPage(page, () => savedState());
+  await composer(page).fill(DRAFT);
+  await page.getByRole("button", { name: "End this conversation", exact: true }).click();
+  await expect(page.getByRole("group", { name: "Review End Session", exact: true })).toBeVisible();
+  for (const label of CHOICES.slice(1)) await expect(choices(page).getByRole("button", { name: label, exact: true })).toBeDisabled();
+  const opener = choices(page).getByRole("button", { name: "Show me around", exact: true });
+  await expect(opener).toBeEnabled();
+  await opener.click();
+  await expect(page.getByRole("dialog", { name: "A look around your conversation", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(opener).toBeFocused();
+  await expect(page.getByRole("group", { name: "Review End Session", exact: true })).toBeVisible();
+  await expect(composer(page)).toHaveValue(DRAFT);
+  await expect(transcript(page).getByRole("listitem")).toHaveCount(2);
   expect(requests).toEqual([]);
 });
 
@@ -344,7 +434,7 @@ test("R10 a failed reload followed by the same saved reply does not resurrect a 
   await composer(page).fill(DRAFT);
   await choices(page).getByRole("button", { name: "Something else", exact: true }).click();
   await expect(page.locator("#conversation-calm-prompt")).toBeVisible();
-  await choices(page).getByRole("button", { name: "Show me around", exact: true }).click();
+  await choices(page).getByRole("button", { name: "I have a question", exact: true }).click();
   await expect.poll(() => requests.length).toBe(1);
   await expect(choices(page)).toHaveCount(0);
   failedRead = true;

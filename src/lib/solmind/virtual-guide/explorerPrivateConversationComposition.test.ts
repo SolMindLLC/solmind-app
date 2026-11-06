@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getExplorerPrivateConfigurationCandidate } from "./explorerPrivateConfiguration";
 import { EXPLORER_SAFETY_REQUEST_VERSION, type ExplorerSafetyReplyRequest } from "./explorerSafetyReplyContract";
-import { adaptPrivateGovernedExplorerContextBuilder, readExplorerPrivateConversation, readEndedExplorerConversations, commandExplorerPrivateConversation, deriveExplorerPrivateTurnIds, parseExplorerPrivatePolicy,
+import { EXPLORER_FAILED_REPLY_RETRY_DRAFT, adaptPrivateGovernedExplorerContextBuilder, readExplorerPrivateConversation, readEndedExplorerConversations, commandExplorerPrivateConversation, deriveExplorerPrivateTurnIds, parseExplorerPrivatePolicy,
   type ExplorerPrivateConversationDependencies, type ExplorerPrivateOperationalReadiness, type ExplorerPrivateRpcRow, type ExplorerPrivateReadRow,
   type ExplorerPrivateEnsureParameters, type ExplorerPrivatePrepareParameters, type ExplorerPrivateSettleParameters, type ExplorerPrivateArrangeParameters, type ExplorerPrivateEndParameters, type ExplorerPrivateReviewParameters,
   type ExplorerPrivatePauseRow, type ExplorerPrivatePauseNotice, type ExplorerPrivateCompassSuggestionParameters } from "./explorerPrivateConversationComposition";
@@ -137,6 +137,204 @@ describe("CV tapped-choice preparation", () => {
   });
 });
 
+describe("REV306 failed replies", () => {
+  function failedReplay(f: ReturnType<typeof fixture>, marked = true) {
+    const ids = deriveExplorerPrivateTurnIds(ACTOR, ID.conversation, ID.operation);
+    const current: ExplorerConversationState = { ...state(ID.conversation), revision: 2,
+      messages: [{ id: ids.messageId, role: "explorer", body: send().body, createdAt: "2026-11-06T10:00:00Z" }] };
+    f.setCurrent(current);
+    const read = f.read.getMockImplementation()!;
+    f.read.mockImplementation(async () => ({ ...await read(), outcome: "exact_replay",
+      authority_context: { explorerId: ID.explorer, authorizationVersion: "AV3:" + SHA,
+        ...(marked ? { replayFailedReply: true } : {}) } }));
+    return current;
+  }
+  it.each(["invalid_response", "transport_failed"] as const)("records %s once and keeps the saved Explorer line available for retry", async reason => {
+    const f = fixture();
+    if (reason === "invalid_response") f.generate.mockResolvedValue("Synthetic unusable private reply");
+    else f.generate.mockRejectedValue(new Error("Synthetic private transport detail"));
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.prepare).toHaveBeenCalledOnce(); expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_status: "failed", p_reply_kind: "none", p_model_level: null,
+      p_failure_reason: reason });
+    expect(f.resolve).toHaveBeenCalledTimes(2);
+    expect(f.order.slice(-3)).toEqual(["read", "configuration", "read"]);
+    expect(output).toMatchObject({ result: { ok: true, state: { providerState: "available", pendingTurn: false,
+      messages: [{ role: "explorer", body: send().body }] } },
+      assistance: { kind: "reply_failed", body: EXPLORER_FAILED_REPLY_RETRY_DRAFT, persisted: false } });
+    expect(output.result.ok && output.result.state.messages).toHaveLength(1);
+    expect(JSON.stringify(output)).not.toContain("Synthetic unusable private reply");
+    expect(JSON.stringify(f.settle.mock.calls[0][0])).not.toContain("Synthetic private transport detail");
+  });
+  it("records the existing 60-second deadline and makes no second call", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    const f = fixture(); f.generate.mockImplementation(() => new Promise(() => undefined));
+    const pending = commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    await vi.advanceTimersByTimeAsync(60_000);
+    const output = await pending;
+    expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_status: "failed", p_failure_reason: "deadline" });
+    expect(output.assistance?.kind).toBe("reply_failed");
+  });
+  it("rechecks a late deadline's exact replay and offers retry without another provider call or saved line", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    const f = fixture(); f.generate.mockImplementation(() => new Promise(() => undefined));
+    const pending = commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    await vi.advanceTimersByTimeAsync(60_000);
+    await pending;
+    failedReplay(f); f.resolve.mockClear(); f.order.length = 0;
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.order).toEqual(["read", "configuration", "read"]);
+    expect(f.resolve).toHaveBeenCalledOnce(); expect(f.prepare).toHaveBeenCalledOnce();
+    expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
+    expect(output).toMatchObject({ result: { ok: true, state: { providerState: "available", pendingTurn: false,
+      messages: [{ role: "explorer", body: send().body }] } },
+      assistance: { kind: "reply_failed", body: EXPLORER_FAILED_REPLY_RETRY_DRAFT, persisted: false } });
+    expect(output.result.ok && output.result.state.messages).toHaveLength(1);
+    expect(JSON.stringify(output)).not.toContain("replayFailedReply");
+  });
+  it.each(["readiness", "readiness_error", "capacity", "unknown_policy", "lost_authority", "critical", "adult", "pending", "message_capacity", "aborted"] as const)(
+    "keeps the %s gate during failed Send replay", async reason => {
+      const f = fixture(); const saved = failedReplay(f); const controller = new AbortController();
+      f.resolve.mockImplementation(async () => {
+        if (reason === "readiness") return null as unknown as ExplorerPrivateOperationalReadiness;
+        if (reason === "readiness_error") throw new Error("private readiness detail");
+        if (reason === "unknown_policy") f.setPolicy({ ...POLICY, known: false });
+        if (reason === "lost_authority") vi.mocked(f.dependencies.authenticate).mockResolvedValue(null);
+        if (reason === "critical") f.setPolicy({ ...POLICY, restrictedLevel: 3 });
+        if (reason === "adult") f.setPolicy({ ...POLICY, adultReflectionStopped: true });
+        if (reason === "pending") f.setCurrent({ ...saved, pendingTurn: true });
+        if (reason === "message_capacity") f.setCurrent({ ...saved, messages: [...saved.messages,
+          ...Array.from({ length: 98 }, (_, index) => ({ id: `90000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+            role: "explorer" as const, body: "Synthetic saved line.", createdAt: "2026-11-06T10:01:00Z" }))] });
+        if (reason === "aborted") controller.abort();
+        return f.readiness;
+      });
+      const output = await commandExplorerPrivateConversation({ command: send(), signal: controller.signal,
+        dependencies: { ...f.dependencies, ...(reason === "capacity" ? { sendCapacityAvailable: () => false } : {}) } });
+      expect(output.assistance?.kind).not.toBe("reply_failed");
+      if (reason === "lost_authority") expect(output.result).toMatchObject({ ok: false, state: null, error: "denied" });
+      else if (reason === "aborted") expect(output.result.ok).toBe(false);
+      else expect(output.result).toMatchObject({ ok: true, state: { providerState: "unavailable" } });
+      if (reason === "critical" || reason === "adult") {
+        expect(output.assistance?.kind).toBe(reason === "critical" ? "support" : "adult_policy");
+        expect(f.signal).toHaveBeenCalledOnce();
+      }
+      expect(f.ensure).not.toHaveBeenCalled(); expect(f.prepare).not.toHaveBeenCalled();
+      expect(f.generate).not.toHaveBeenCalled(); expect(f.settle).not.toHaveBeenCalled();
+    });
+  it.each(["withheld_without_reason", "missing_message", "saved_reply", "pending"] as const)(
+    "does not infer a failed Send from a %s exact replay", async reason => {
+      const f = fixture(); const saved = failedReplay(f, reason !== "withheld_without_reason");
+      if (reason === "missing_message") f.setCurrent({ ...saved, messages: [] });
+      if (reason === "pending") f.setCurrent({ ...saved, pendingTurn: true });
+      if (reason === "saved_reply") f.setCurrent({ ...saved, messages: [...saved.messages,
+        { id: deriveExplorerPrivateTurnIds(ACTOR, ID.conversation, ID.operation).replyId,
+          role: "virtualGuide", body: "The saved reply.", createdAt: "2026-11-06T10:01:00Z" }] });
+      const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+      expect(output.assistance).toBeNull(); expect(f.resolve).not.toHaveBeenCalled();
+      expect(f.prepare).not.toHaveBeenCalled(); expect(f.generate).not.toHaveBeenCalled(); expect(f.settle).not.toHaveBeenCalled();
+    });
+  it.each(["observe", "builder", "prepare"] as const)("rechecks a failed Send exact replay found at %s without dispatching", async stage => {
+    const f = fixture(); const saved = failedReplay(f); const replayRead = f.read.getMockImplementation()!;
+    f.ensure.mockResolvedValue({ outcome: "reused", conversation_state: { ...saved, revision: 0 }, policy_state: POLICY });
+    f.read.mockImplementationOnce(async () => ({ outcome: "ok", conversation_state: saved, policy_state: POLICY }));
+    if (stage === "observe") f.observe.mockResolvedValue({ outcome: "exact_replay", policy_state: POLICY });
+    if (stage === "prepare") {
+      f.read.mockImplementationOnce(async () => ({ ...await replayRead(), outcome: "ok",
+        conversation_state: { ...saved, revision: 0 } }));
+      f.prepare.mockResolvedValue({ outcome: "exact_replay", conversation_state: saved, policy_state: POLICY });
+    }
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(output.assistance?.kind).toBe("reply_failed");
+    expect(output.result).toMatchObject({ ok: true, state: { providerState: "available" } });
+    expect(f.resolve).toHaveBeenCalledTimes(2); expect(f.generate).not.toHaveBeenCalled(); expect(f.settle).not.toHaveBeenCalled();
+    expect(f.prepare).toHaveBeenCalledTimes(stage === "prepare" ? 1 : 0);
+  });
+  it("records delivery cancellation before dispatch without calling the provider", async () => {
+    const f = fixture(); const controller = new AbortController(); const prepare = f.prepare.getMockImplementation()!;
+    f.prepare.mockImplementation(async parameters => { const row = await prepare(parameters); controller.abort(); return row; });
+    await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies, signal: controller.signal });
+    expect(f.generate).not.toHaveBeenCalled(); expect(f.settle).toHaveBeenCalledOnce();
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_status: "canceled", p_reply_kind: "none",
+      p_failure_reason: "delivery_canceled_before_dispatch" });
+  });
+  it.each(["readiness", "readiness_error", "capacity", "unknown_policy", "lost_authority"] as const)(
+    "does not offer retry when the fresh %s check fails", async reason => {
+      const f = fixture(); f.generate.mockResolvedValue("not a usable reply");
+      f.resolve.mockImplementation(async () => {
+        f.order.push("configuration");
+        if (f.resolve.mock.calls.length === 2) {
+          if (reason === "readiness") return null as unknown as ExplorerPrivateOperationalReadiness;
+          if (reason === "readiness_error") throw new Error("private readiness detail");
+          if (reason === "unknown_policy") f.setPolicy({ ...POLICY, known: false });
+          if (reason === "lost_authority") vi.mocked(f.dependencies.authenticate).mockResolvedValue(null);
+        }
+        return f.readiness;
+      });
+      const output = await commandExplorerPrivateConversation({ command: send(), dependencies: { ...f.dependencies,
+        ...(reason === "capacity" ? { sendCapacityAvailable: () => false } : {}) } });
+      expect(output.assistance?.kind).toBe("temporarily_unavailable");
+      if (reason === "lost_authority") expect(output.result).toEqual({ ok: false, state: null, error: "denied" });
+      else expect(output.result).toMatchObject({ ok: true, state: { providerState: "unavailable", messages: [{ body: send().body }] } });
+      expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
+    });
+  it("retains new critical facts from the final read and keeps support assistance", async () => {
+    const f = fixture(); f.generate.mockResolvedValue("not a usable reply");
+    f.resolve.mockImplementation(async () => {
+      if (f.resolve.mock.calls.length === 2) f.setPolicy({ ...POLICY, restrictedLevel: 3 });
+      return f.readiness;
+    });
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(output.assistance?.kind).toBe("support"); expect(f.signal).toHaveBeenCalledOnce();
+    expect(output.result).toMatchObject({ ok: true, state: { providerState: "unavailable", compassSuggestionReplies: "support" } });
+  });
+  it("does not promise a retry after a failed Send consumes the last available message place", async () => {
+    const f = fixture();
+    const current: ExplorerConversationState = { ...state(ID.conversation), messages: Array.from({ length: 98 }, (_, index) => ({
+      id: `90000000-0000-4000-8000-${String(index).padStart(12, "0")}`, role: "explorer" as const,
+      body: "Synthetic saved line.", createdAt: "2026-11-06T10:00:00Z" })) };
+    f.setCurrent(current); f.ensure.mockResolvedValue({ outcome: "reused", conversation_state: current, policy_state: POLICY });
+    f.generate.mockResolvedValue("not a usable reply");
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
+    expect(output.result.ok && output.result.state.messages).toHaveLength(99);
+    expect(output.assistance?.kind).toBe("temporarily_unavailable");
+  });
+  it("records invalid prose while retaining the accepted classification and saved Explorer message", async () => {
+    const f = fixture(); f.generate.mockResolvedValue(JSON.stringify({ protocol: "explorer-safety-reply.v2",
+      classification: { level: 0, minorIndicated: false }, candidateReply: { content: "\ud800" } }));
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_status: "completed", p_model_level: 0,
+      p_reply_kind: "none", p_failure_reason: "invalid_response" });
+    expect(output.assistance?.kind).toBe("reply_failed");
+    expect(output.result.ok && output.result.state.messages).toHaveLength(1);
+  });
+  it("keeps a successful trusted safety reply and accepted classification free of a failure reason", async () => {
+    const f = fixture(); f.generate.mockResolvedValue(JSON.stringify({ protocol: "explorer-safety-reply.v2",
+      classification: { level: 3, minorIndicated: false }, candidateReply: { content: "\ud800" } }));
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_status: "completed", p_model_level: 3,
+      p_reply_kind: "urgent", p_failure_reason: null });
+    expect(output.assistance).toBeNull(); expect(f.generate).toHaveBeenCalledOnce();
+  });
+  it("keeps SQL-withheld valid prose unavailable without inventing a failure reason or retry", async () => {
+    const f = fixture(); const settle = f.settle.getMockImplementation()!;
+    f.settle.mockImplementation(async parameters => {
+      const row = await settle({ ...parameters, p_reply_kind: "none", p_reply_body: null, p_reply_message_id: null });
+      return { ...row, outcome: "withheld" };
+    });
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.settle).toHaveBeenCalledOnce(); expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_status: "completed", p_reply_kind: "ordinary", p_failure_reason: null });
+    expect(f.resolve).toHaveBeenCalledOnce();
+    expect(output.result).toMatchObject({ ok: true, state: { providerState: "unavailable", pendingTurn: false,
+      messages: [{ role: "explorer", body: send().body }] } });
+    expect(output.assistance?.kind).toBe("temporarily_unavailable");
+    expect(JSON.stringify(output)).not.toContain("One saved synthetic reply.");
+  });
+});
+
 describe("S7a private Waypoint composition", () => {
   const wording = { title: "Calm mornings with room to breathe", destination: "An unhurried breakfast",
     whyItMatters: "Time with my family", arrivalSignal: "Two calm breakfasts" };
@@ -158,8 +356,8 @@ describe("S7a private Waypoint composition", () => {
     const result = await commandExplorerPrivateConversation({ command: send("That wording fits."), dependencies: f.dependencies });
     expect(result.result.ok).toBe(true);
     expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
-    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_reply_kind: "ordinary", p_waypoint_response: proposal });
-    expect(Object.keys(f.settle.mock.calls[0][0])).toHaveLength(26);
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_reply_kind: "ordinary", p_waypoint_response: proposal, p_failure_reason: null });
+    expect(Object.keys(f.settle.mock.calls[0][0])).toHaveLength(27);
   });
   it.each(["older", "foreign", "absent", "reworded", "unchanged_rewording", "level2", "minor", "restricted", "adult", "canceled"] as const)(
     "S7b drops the typed answer when %s without applying a browser-side transition", async reason => {
@@ -190,13 +388,14 @@ describe("S7a private Waypoint composition", () => {
     await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
     expect(f.prepare).not.toHaveBeenCalled(); expect(f.generate).not.toHaveBeenCalled();
   });
-  it("passes one valid proposal through the 26-argument terminal intent after one ordinary provider call", async () => {
+  it("passes one valid proposal through the 27-argument terminal intent after one ordinary provider call", async () => {
     const f = fixture(); f.generate.mockResolvedValue(reply());
     const result = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
     expect(result.result.ok).toBe(true);
     expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
     expect(f.settle.mock.calls[0][0].p_waypoint_suggestion).toEqual(wording);
-    expect(Object.keys(f.settle.mock.calls[0][0])).toHaveLength(26);
+    expect(f.settle.mock.calls[0][0].p_failure_reason).toBeNull();
+    expect(Object.keys(f.settle.mock.calls[0][0])).toHaveLength(27);
   });
   it.each(["level2", "level3", "minor", "restricted", "adult", "malformed", "canceled"] as const)(
     "keeps Waypoint suggestions out of %s settlement", async reason => {
@@ -311,7 +510,7 @@ describe("Held private Explorer controller: explicit synthetic ports only", () =
     const f = fixture(); f.generate.mockResolvedValue(JSON.stringify({ protocol: "explorer-safety-reply.v2", classification: { level: 2, minorIndicated: false }, candidateReply: { content: "\ud800" } }));
     await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
     expect(f.settle).toHaveBeenCalledOnce(); expect(f.settle.mock.calls[0][0]).toMatchObject({ p_status: "completed", p_reply_kind: "none", p_model_level: 2,
-      p_reply_message_id: null, p_reply_body: null });
+      p_reply_message_id: null, p_reply_body: null, p_failure_reason: "invalid_response" });
   });
   it("browser cancellation after dispatch preserves model positives and makes one terminal without output", async () => {
     const f = fixture(); const controller = new AbortController(); let resolve!: (value: string) => void; let started!: () => void;
@@ -956,7 +1155,10 @@ describe("Send capacity after a saved Send result", () => {
       const f = fixture(); const replay = { outcome: "exact_replay", conversation_state: state(ID.conversation), policy_state: POLICY };
       const original = f.read.getMockImplementation()!;
       if (stage === "observe") f.observe.mockResolvedValue({ outcome: "exact_replay", policy_state: POLICY });
-      if (stage === "prepare") f.prepare.mockResolvedValue(replay);
+      if (stage === "prepare") {
+        f.prepare.mockResolvedValue(replay);
+        f.read.mockImplementationOnce(original).mockImplementationOnce(original).mockImplementationOnce(async () => replay);
+      }
       else f.read.mockImplementationOnce(original).mockImplementationOnce(async () => replay);
       const output = await commandExplorerPrivateConversation({ command: send(), dependencies: withCapacity(f, check) });
       expect(output.result.ok && output.result.state.providerState).toBe(expected);
@@ -1433,10 +1635,14 @@ describe("S4 optional reply proposals keep settlement and safety separate", () =
   const olderReplyId = "00000000-0000-4000-8000-000000000014";
   const previousReplyId = "00000000-0000-4000-8000-000000000015";
   const choices = [{ label: "Show me around" }, { label: "I have a question" }, { label: "Let's begin" }];
-  function withPoints(formation?: "saved" | "forming", wordingSource?: "previous" | "older" | "missing") {
+  function withPoints(formation?: "saved" | "forming", wordingSource?: "previous" | "older" | "missing", priorExplorerMessages = 2) {
     const f = fixture();
     const current: ExplorerConversationState = { ...state(ID.conversation),
       messages: [{ id: sourceId, role: "explorer", body: "Synthetic saved topic.", createdAt: "2026-10-25T17:00:00Z" },
+        ...Array.from({ length: priorExplorerMessages - 1 }, (_, index) => ({
+          id: `00000000-0000-4000-8000-${String(16 + index).padStart(12, "0")}`, role: "explorer" as const,
+          body: "More of the Explorer's own words.", createdAt: "2026-10-25T17:00:01Z",
+        })),
         ...(wordingSource === undefined ? [] : [
           { id: olderReplyId, role: "virtualGuide" as const, body: "An older suggestion.", createdAt: "2026-10-25T17:00:01Z" },
           { id: previousReplyId, role: "virtualGuide" as const, body: "Does this wording fit?", createdAt: "2026-10-25T17:00:02Z" },
@@ -1518,6 +1724,33 @@ describe("S4 optional reply proposals keep settlement and safety separate", () =
     expect(f.settle.mock.calls[0][0].p_compass_responses).toBeNull();
     if (condition === "canceled") expect(f.settle.mock.calls[0][0]).toMatchObject({ p_reply_kind: "none", p_delivery_interested: false });
     else expect(f.settle.mock.calls[0][0].p_request_mode).toBe("classification_only");
+  });
+  it.each([2, 3, 4].flatMap(total => ["right", "close", "not_it"].map(response => ({ total, response }))))(
+    "REV306 gates new and refined wording at $total Explorer messages and excludes $response without losing other proposals", async ({ total, response }) => {
+    const f = withPoints("forming", "previous", total - 1);
+    const suggestions = [{ label: "A new topic" }, { label: "Updated forming topic", pointId: otherId }];
+    const waypointSuggestion = { title: "A calmer start", destination: "A calmer morning", whyItMatters: "More space", arrivalSignal: "One calm start" };
+    const body = JSON.parse(answeredReply([{ pointId: otherId, response }], 0, suggestions));
+    body.waypointSuggestion = waypointSuggestion;
+    f.generate.mockResolvedValue(JSON.stringify(body));
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(output.result.ok).toBe(true); expect(output.assistance).toBeNull();
+    expect(f.prepare).toHaveBeenCalledOnce(); expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_reply_kind: "ordinary", p_reply_body: body.candidateReply.content,
+      p_attention_item_id: otherId, p_choices: choices, p_waypoint_suggestion: waypointSuggestion,
+      p_compass_suggestions: total < 3 ? null : suggestions,
+      p_compass_responses: null });
+    if (output.result.ok) expect(output.result.state.messages.filter(message => message.role === "explorer")).toHaveLength(total);
+  });
+  it.each(["choice", "follow_up"])("REV306 counts an immediate %s as the third Explorer message", async kind => {
+    const f = withPoints("forming", "previous");
+    const suggestions = [{ label: "A new topic" }, { label: "Updated topic", pointId: otherId }];
+    f.generate.mockResolvedValue(suggestedReply(suggestions));
+    const command = kind === "choice" ? { ...send(), body: "Let's begin", replyChoice: true as const }
+      : { ...send(), body: 'That\'s right: "A confirmed topic"' };
+    await commandExplorerPrivateConversation({ command, dependencies: f.dependencies });
+    expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
+    expect(f.settle.mock.calls[0][0].p_compass_suggestions).toEqual(suggestions);
   });
   it("S5 passes new and owned forming suggestions with the ordinary reply in one terminal intent", async () => {
     const f = withPoints("forming");

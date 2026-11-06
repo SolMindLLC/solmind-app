@@ -32,12 +32,14 @@ import {
 } from "@/lib/solmind/explorerConversationContract";
 import type { ExplorerPrivateAssistance } from "@/lib/solmind/explorerPrivateConversationResponse";
 import { latestReplyChoices, nextCalmReplyPrompt } from "@/lib/solmind/explorerReplyChoices";
+import { EXPLORER_TOUR_CHOICE } from "@/lib/solmind/explorerConversationTour";
 import { SPEAKER_LABEL_STYLE, speakerLabelClass } from "@/lib/solmind/explorerSpeakerStyle";
 import { SOLMIND_TERMS } from "@/lib/solmind/terms";
 
 import { ConnectedCompassCard } from "./ExplorerConnectedCompassCard";
 import { ExplorerCompassSuggestionReplies } from "./ExplorerCompassSuggestionReplies";
 import { ExplorerReplyChoices } from "./ExplorerReplyChoices";
+import { ExplorerConversationTour } from "./ExplorerConversationTour";
 import { ExplorerWaypointDraft } from "./ExplorerWaypointDraft";
 import { ConnectedWaypointCard } from "./ExplorerConnectedWaypointCard";
 import {
@@ -288,8 +290,8 @@ function ConversationNotices({ view, actions, errorRef }: NoticesProps) {
       {view.assistance !== null ? (
         <div className={ALERT_CLASS} role="alert">
           <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{view.assistance.body}</p>
-          {/* A pause notice already says what was not sent or saved. */}
-          {view.assistance.kind === "paused" ? null : (
+          {/* Pause and retry notices already explain what happened to the reply. */}
+          {view.assistance.kind === "paused" || view.assistance.kind === "reply_failed" ? null : (
             <p>This assistance is temporary and is not a saved conversation reply.</p>
           )}
         </div>
@@ -732,6 +734,7 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [openExplanation, setOpenExplanation] = useState<string | null>(null);
+  const [tour, setTour] = useState<Readonly<{ opener: HTMLElement | null; conversationId: string | null }> | null>(null);
   // Which build notes show (the top bar's toggle and each box's X), never saved.
   const buildNotes = useBuildNotesState();
   // Which Compass view shows, kept separately for the wide panel and the phone
@@ -774,6 +777,17 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
     if (replyPrompt.prompt !== null) composerRef.current?.focus();
   }, [replyPrompt.prompt, composerRef]);
   const repliesDisabled = view.held || view.sendUnavailable || view.atMessageCapacity;
+  const chooseReply = (label: string) => {
+    if (offeredChoices === null || replyPrompt.dismissed || !offeredChoices.labels.includes(label)) return;
+    if (label === EXPLORER_TOUR_CHOICE) {
+      setTour({ opener: document.activeElement instanceof HTMLElement ? document.activeElement : null,
+        conversationId: state?.conversationId ?? null });
+      return;
+    }
+    if (repliesDisabled) return;
+    actions.onReplyChoice(label);
+  };
+  if (tour !== null && (state === null || view.ended || tour.conversationId !== state.conversationId)) setTour(null);
   const showSomethingElse = () => {
     if (offeredChoices === null || repliesDisabled || replyPrompt.dismissed) return;
     const prompt = nextCalmReplyPrompt(replyPrompt.lastPrompt);
@@ -840,7 +854,7 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
                           Reload, Retry and End stay outside it. */}
                       <div aria-busy={view.busy}>
                         <SavedTranscript
-                          actions={actions}
+                          actions={{ ...actions, onReplyChoice: chooseReply }}
                           choicesDismissed={replyPrompt.dismissed}
                           onSomethingElse={showSomethingElse}
                           state={state}
@@ -872,6 +886,7 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
             </div>
           </div>
         </ExplorerConversationScreenShell>
+        {tour !== null ? <ExplorerConversationTour opener={tour.opener} onClose={() => setTour(null)} /> : null}
       </NotConnectedProvider>
     </BuildNotesProvider>
   );

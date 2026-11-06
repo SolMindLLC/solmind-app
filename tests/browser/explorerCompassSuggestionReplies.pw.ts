@@ -102,16 +102,17 @@ function afterReply(current: ExplorerConversationState, response: Reply): Explor
   };
 }
 
-function afterSend(current: ExplorerConversationState, response: Exclude<Reply, "right">): ExplorerConversationState {
+function afterSend(current: ExplorerConversationState, response: Reply): ExplorerConversationState {
   return {
     ...current, revision: 7,
     messages: [...current.messages,
       { id: FOLLOW_UP_EXPLORER, role: "explorer", body: `${REPLIES[response]}: "${LABEL}"`, createdAt: "2026-11-04T18:01:00.000Z" },
       { id: FOLLOW_UP_GUIDE, role: "virtualGuide", body: response === "close" ? "Synthetic follow-up: what would you change?"
+        : response === "right" ? "Synthetic follow-up: that wording fits. What would you like to explore?"
         : "Synthetic follow-up: what matters to you now?", createdAt: "2026-11-04T18:01:01.000Z" },
     ],
     compassItems: response === "close" ? current.compassItems.map(point =>
-      ({ ...point, label: REFINED_LABEL, wordingMessageId: FOLLOW_UP_GUIDE })) : [],
+      ({ ...point, label: REFINED_LABEL, wordingMessageId: FOLLOW_UP_GUIDE })) : response === "right" ? current.compassItems : [],
   };
 }
 
@@ -155,10 +156,9 @@ for (const response of ["right", "close", "not_it"] as const) {
         // Formation results do not check provider readiness; retain the last read's availability.
         return fulfill(route, success({ ...current, providerState: "unavailable" }));
       }
-      expect(response).not.toBe("right");
       expect(requests).toHaveLength(2);
       expect(command.kind).toBe("send");
-      if (command.kind !== "send" || response === "right") throw new Error("unexpected_follow_up");
+      if (command.kind !== "send") throw new Error("unexpected_follow_up");
       expect(Object.keys(command).sort()).toEqual(["body", "expectedRevision", "kind", "operationId"]);
       expect(command.body).toBe(`${REPLIES[response]}: "${LABEL}"`);
       expect(command.expectedRevision).toBe(6);
@@ -172,13 +172,16 @@ for (const response of ["right", "close", "not_it"] as const) {
     await expect(transcript(page).getByRole("listitem").nth(1).getByRole("button")).toHaveCount(3);
     await composer(page).fill(DRAFT);
     await row(page).getByRole("button", { name: REPLIES[response], exact: true }).click();
-    await expect.poll(() => requests.length).toBe(response === "right" ? 1 : 2);
+    await expect.poll(() => requests.length).toBe(2);
+    expect(requests.filter(command => command.kind === "send")).toHaveLength(1);
     await expect(composer(page)).toHaveValue(DRAFT);
     await expect(row(page)).toHaveCount(0);
     await expect(transcript(page).getByRole("listitem").nth(1)).toBeFocused();
     await expect(transcript(page)).not.toContainText(DRAFT);
     if (response === "right") {
-      await expect(transcript(page).getByRole("listitem")).toHaveCount(2);
+      await expect(transcript(page).getByRole("listitem")).toHaveCount(4);
+      await expect(transcript(page).getByRole("listitem").nth(2)).toContainText(`That's right: "${LABEL}"`);
+      await expect(transcript(page).getByRole("listitem").nth(3)).toContainText("Synthetic follow-up: that wording fits.");
       const card = await compass(page);
       await expect(card).toContainText(LABEL);
       await expect(card.getByRole("button", { name: new RegExp(`^${LABEL}`) })).not.toHaveAccessibleName(/Forming/);
@@ -258,7 +261,7 @@ for (const response of ["close", "not_it"] as const) {
   });
 }
 
-for (const response of ["close", "not_it"] as const) {
+for (const response of ["right", "close", "not_it"] as const) {
   for (const uncertainStage of ["reply", "send"] as const) {
     test(`S6a ${response} retries the uncertain ${uncertainStage} with identical bytes and no duplicate other stage`, async ({ page }) => {
       let current = savedState();

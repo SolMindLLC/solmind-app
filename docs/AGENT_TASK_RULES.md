@@ -1,5 +1,106 @@
 # SolMind App Agent Task Rules
 
+## Second test-run review fixes - 2026-11-06 (REV306b)
+
+This isolated fix round follows BUILD_SPEC.md and BUILD_SPEC_ROUND1.md in the
+2026-11-06_1621_Pkg_TestRunFixesFix_Astra6Ultra_REV306b package. The builder
+reads only this clone and the six named package files, writes only this clone,
+uses apply_patch, and performs no Git write, network, provider or database action.
+
+The typed Compass response exclusion is derived from raw valid rewording
+proposals before the application pacing gate; a dropped refinement cannot
+authorize a simultaneous right, close or not_it response. SQL collects its raw
+valid refinement ids before applying suggestions. The application still sends
+no Compass suggestions below three Explorer messages; other proposals survive.
+The four listening/pacing/acknowledgment HTTP sentences belong only to
+classification_and_reply. The Compass wording sentence now reads exactly:
+"Suggest short Compass point wording in compass.suggestions only once the
+concern is clear; when unsure, keep listening." The other three sentences are
+unchanged. All five labels end in -20261106-tf-r2; byte counts and pins agree.
+
+The same forward migration, 20261106030000_explorer_failed_reply_reason.sql,
+narrows the canceled CHECK branch to exclude trusted_render_unavailable.
+Its read-v3 replacement keeps the existing signature, authority, capacity,
+owner lock, privileges and time limits. Only an exact terminal Send replay
+with no saved reply and a closed recorded failure (including the known legacy
+failed-Send summary provider_unavailable) gets the server-only
+authority_context.replayFailedReply flag. The flag enters neither browser
+state nor model context. It triggers the same fresh readiness, authenticated
+state, safety and capacity checks as an immediate failed reply; no replay
+dispatches again. Withheld prose is a policy/delivery decision, retains no
+failure reason, and does not show the retry sentence.
+
+Show me around opens its local tour whenever that choice is displayed,
+independently of Send gates. The initial title receives focus; later step
+changes use one live announcement and retain focus on the chosen topic or
+Next/Finish control. Closing restores the opener. "Back to the conversation"
+replaces the tour's "Let's begin" control; the related sentence is draft copy
+for Paul's wording read. Only reply_failed omits the temporary-assistance
+footer; critical assistance keeps its existing handling.
+
+A deliberate retry remains a new counted Send and saves the Explorer's line
+again. Prepare already saved the original line, and failure retains both it
+and the typed composer. Uncertain retry keeps the exact operation identity.
+No tour-taken state or daily-offer scheduler is added. All safety, consent,
+capacity, cancellation, one-call and 30/10/60-second budgets remain.
+TypeScript, ESLint and focused Vitest are the only builder execution checks;
+SQL/pgTAP and browser execution, independent Executor review, Paul's wording
+read, canonical documents and coordinated integration/publication remain
+Executor work.
+
+## Second test-run fixes - 2026-11-06 (REV306)
+
+Paul's 15:13:41 decision, "All four as recommended", authorizes this isolated
+source increment on top of the active-Waypoint and reply-choice changes.
+The server counts the authenticated conversation's full Explorer message
+history plus the immediate Send. EXPLORER_COMPASS_SUGGESTION_MIN_MESSAGES is
+three: before then, new and refined Compass suggestions are dropped without
+dropping the reply, choices or other proposals. Choice taps and suggestion
+follow-ups count as messages. Role and HTTP instructions say to listen first,
+reflect, ask one open question at a time and offer possible meanings when useful;
+wording waits until the Explorer's concern and what matters most are clear.
+All five instruction labels end in -20261106-tf-r1; bytes and pins move together.
+
+After a confirmed "That's right" on either a forming Compass point or Waypoint,
+ExplorerConversation starts the same separately identified ordinary follow-up
+Send as the other suggestion answers, using the existing label/quoted-wording
+format. It counts once and retains every gate and the Explorer's typed draft.
+If Send is gated or fails, the confirmation remains saved. An uncertain
+confirmation never starts the follow-up; exact retry never authorizes a second call.
+
+The forward migration
+supabase/migrations/20261106030000_explorer_failed_reply_reason.sql adds the
+final nullable p_failure_reason argument to settle v4 and records only closed
+reason codes in the existing invocation error_summary. Its existing CHECK is
+narrowly extended for closed v3 completed/canceled reasons without a saved reply;
+legacy failed-summary rules remain. No column or RLS policy is added or changed.
+TypeScript and SQL validate the codes; a supplied code is bound into
+terminal replay identity, while null preserves historical fingerprints.
+A confirmed failed reply with freshly checked readiness, authority and capacity
+can keep Send available and show the named draft retry sentence. Actual
+unavailability, uncertain settlement and critical assistance retain their gates.
+Prepare already saves the Explorer's message before the provider call; a failed
+reply retains that saved line and the typed composer, before and after this change.
+
+ExplorerConversationTour and explorerConversationTour own the fixed local tour.
+Tapping "Show me around" opens it without a Send, request or AI call. It explains
+the conversation, Compass formation/confirmation and Waypoint formation/
+confirmation one step at a time, with topic buttons, Next, Finish, Close and
+"Let's begin". Modal keyboard focus enters the step and returns to the opener;
+a live region announces steps. Every tour sentence and the retry sentence is
+named draft copy for Paul's wording read. No tour-taken state exists in this
+clone; no database state or daily-offer scheduler is added in this round.
+
+Existing safety, consent, authority, active/history capacity, partial Waypoint
+projection, compass-v7 context, reply-choice verification, Send counting,
+cancellation and 30/10/60-second context/RPC/provider budgets remain.
+The application and forward migrations require coordinated integration.
+Only clone-local TypeScript, ESLint and focused Vitest checks are builder work.
+SQL/pgTAP and browser tests are authored but their execution, independent
+Executor review, canonical sibling-document updates, integration and publication
+remain Executor work. The builder reads only this clone and the three named
+REV306 package documents, and performs no Git write or provider/database action.
+
 ## Lane 7: active Waypoint capacity and private history - 2026-11-06
 
 Twenty active Waypoints are allowed per durable Explorer account across all

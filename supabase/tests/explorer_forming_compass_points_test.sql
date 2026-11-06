@@ -334,11 +334,11 @@ create function pg_temp.inspect_forming(context_override jsonb default null) ret
 $$;
 create temp table points(name text primary key,id uuid);
 
-select ok((select p.pronargs=26 and p.prosecdef and p.proconfig @> array['lock_timeout=2000ms','statement_timeout=5000ms']
+select ok((select p.pronargs=27 and p.prosecdef and p.proconfig @> array['lock_timeout=2000ms','statement_timeout=5000ms']
   and has_function_privilege('service_role',p.oid,'EXECUTE') and not has_function_privilege('anon',p.oid,'EXECUTE')
   and not has_function_privilege('authenticated',p.oid,'EXECUTE') from pg_proc p join pg_namespace n on n.oid=p.pronamespace
   where n.nspname='public' and p.proname='solmind_settle_explorer_conversation_turn_v4'),
-  'S6b: settle has 26 arguments, unchanged limits and service-only execution');
+  'S6b: settle has 27 arguments, unchanged limits and service-only execution');
 select ok(not has_function_privilege('service_role','ai.solmind_resolve_forming_compass_point(uuid,uuid,uuid,uuid,integer,uuid,text,uuid,text,text)','EXECUTE')
   and not has_function_privilege('anon','ai.solmind_resolve_forming_compass_point(uuid,uuid,uuid,uuid,integer,uuid,text,uuid,text,text)','EXECUTE')
   and not has_function_privilege('authenticated','ai.solmind_resolve_forming_compass_point(uuid,uuid,uuid,uuid,integer,uuid,text,uuid,text,text)','EXECUTE')

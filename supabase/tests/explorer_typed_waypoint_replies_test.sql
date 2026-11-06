@@ -521,18 +521,18 @@ create temp table cases as select name,pg_temp.typed_case(name) value
     'reword','same_reword','restricted','adult','level2','classification_only','uninterested',
     'waypoint_limit','history_limit','rejected_limit','incomplete','foreign','foreign_existing','missing','extra','array','uppercase','bad_id','json_null']) name;
 
-select ok((select p.pronargs=26 and p.proargnames[26]='p_waypoint_response' and p.prosecdef
+select ok((select p.pronargs=27 and p.proargnames[26]='p_waypoint_response' and p.prosecdef
   and p.proowner='postgres'::regrole and p.proconfig @> array['search_path=""','lock_timeout=2000ms','statement_timeout=5000ms']
-  from pg_proc p where p.oid='public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb)'::regprocedure),
-  'S7b: settle has 26 arguments and preserves owner, security definer, empty search path and finite timeouts');
+  from pg_proc p where p.oid='public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,text)'::regprocedure),
+  'S7b: settle has 27 arguments and preserves owner, security definer, empty search path and finite timeouts');
 select ok(to_regprocedure('public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb)') is null,
   'S7b: the retired 25-argument settlement overload is absent');
 select ok(has_function_privilege('service_role',
-  'public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb)','EXECUTE')
+  'public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,text)','EXECUTE')
   and not has_function_privilege('anon',
-  'public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb)','EXECUTE')
+  'public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,text)','EXECUTE')
   and not has_function_privilege('authenticated',
-  'public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb)','EXECUTE')
+  'public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,text)','EXECUTE')
   and not exists(select 1 from pg_proc p cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
     where p.proname in ('solmind_settle_explorer_conversation_turn_v4','solmind_apply_waypoint_draft_response')
       and acl.grantee=0 and acl.privilege_type='EXECUTE'),

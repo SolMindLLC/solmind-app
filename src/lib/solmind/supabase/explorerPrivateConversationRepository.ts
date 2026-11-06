@@ -21,7 +21,7 @@ const PORTS = Object.freeze({
     columns: ["outcome", "conversation_state", "dispatch_permitted", "policy_state"] }),
   settle: Object.freeze({ name: "solmind_settle_explorer_conversation_turn_v4", parameters: [...ACTOR, "p_conversation_id", "p_operation_id", "p_status", "p_reply_message_id", "p_reply_kind", "p_reply_body",
     "p_model_level", "p_model_minor_indicated", "p_protocol_version", "p_request_mode", "p_configuration_fingerprint", "p_fallback_policy_version", "p_model_policy_version", "p_trusted_response_version", "p_resource_policy_version",
-    "p_fallback_level", "p_fallback_minor_indicated", "p_delivery_interested", "p_attention_item_id", "p_choices", "p_compass_suggestions", "p_compass_responses", "p_waypoint_suggestion", "p_waypoint_response"], columns: ["outcome", "conversation_state", "policy_state", "saved_reply"] }),
+    "p_fallback_level", "p_fallback_minor_indicated", "p_delivery_interested", "p_attention_item_id", "p_choices", "p_compass_suggestions", "p_compass_responses", "p_waypoint_suggestion", "p_waypoint_response", "p_failure_reason"], columns: ["outcome", "conversation_state", "policy_state", "saved_reply"] }),
   mutate: Object.freeze({ name: "solmind_mutate_explorer_conversation_v3", parameters: [...ACTOR, "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint", "p_kind", "p_source_message_id", "p_item_id", "p_waypoint_id", "p_label", "p_destination", "p_meaning", "p_arrival_signal", "p_evidence"],
     columns: ["outcome", "conversation_state"] }),
   arrange: Object.freeze({ name: "solmind_confirm_explorer_compass_arrangement_v1", parameters: [...ACTOR,
@@ -83,6 +83,8 @@ function parameters(input: object, expected: readonly string[]): Readonly<Record
     const property = Object.getOwnPropertyDescriptor(input, key);
     if (!property?.enumerable || !("value" in property)) throw new Error(FAILURE);
     const value: unknown = property.value;
+    if (key === "p_failure_reason" && value !== null && !["deadline", "transport_failed", "invalid_response",
+      "delivery_canceled_before_dispatch", "dispatch_not_admitted", "trusted_render_unavailable"].includes(value as string)) throw new Error(FAILURE);
     if (key === "p_reply_choice" && typeof value !== "boolean") throw new Error(FAILURE);
     if (key === "p_offset" && !(typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 2147483627)) throw new Error(FAILURE);
     if (key === "p_waypoint_response" && value !== null) {
@@ -241,6 +243,9 @@ export function createExplorerPrivateConversationRepository(client: SupabaseClie
   async function call(port: keyof typeof PORTS, input: object): Promise<ExplorerPrivateRpcRow> {
     try {
       const spec = PORTS[port]; const copied = parameters(input, spec.parameters);
+      if (port === "settle" && copied.p_failure_reason !== null &&
+          (copied.p_reply_kind !== "none" || (copied.p_model_level !== null &&
+            copied.p_failure_reason !== "invalid_response" && copied.p_failure_reason !== "trusted_render_unavailable"))) throw new Error(FAILURE);
       if (port === "closeEndedWaypoint" &&
           (!(copied.p_kind === "reach_waypoint" || copied.p_kind === "release_waypoint") ||
            (copied.p_kind === "release_waypoint" ? copied.p_reached_evidence !== null :

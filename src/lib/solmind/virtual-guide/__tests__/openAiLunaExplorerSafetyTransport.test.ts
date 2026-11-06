@@ -33,8 +33,8 @@ const RAW = '{"protocol":"explorer-safety-reply.v2","classification":{"level":4,
 function adapter(fetchImpl: typeof fetch) { return createOpenAiLunaExplorerSafetyTransport({ apiKey: "synthetic-never-transmitted-key", fetchImpl }); }
 describe("Dormant injected Explorer same-call HTTP transport", () => {
   it.each([
-    ["classification_only", 7767, "4A9A291D3D6CC04ED031E7D2893F3114503F7962F5716D033773F29B180A4F98"],
-    ["classification_and_reply", 8186, "C7FC927CCB21DB99490221025040C8F2EE682BFB961ED7AD25CA6A67199A509D"],
+    ["classification_only", 7708, "420277CE05E665636B6640ADF18F638E3265F6F4C9090414DF83D07A1BFCB9C5"],
+    ["classification_and_reply", 8749, "40528E78E2D6E7211D713344109372D64F3F8945621BA25E872657DBEFC1887D"],
   ] as const)("Lane 7 pins bounded-selection output instruction bytes and SHA-256 (%s)", (mode, bytes, sha256) => {
     const text = explorerSafetyHttpInstructions(mode);
     expect(Buffer.byteLength(text, "utf8")).toBe(bytes);
@@ -78,7 +78,7 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
     for (const sentence of [
       "compass may contain attention, a current head point id from compassContext or null, and suggestions, an array of at most three objects with label (plain text, single-line, 1 to 160 characters) and optional pointId naming a forming point; omit pointId for a new point.",
       "choices is an array of one to three objects, each with exactly label, a plain-text single-line label of 1 to 40 characters.",
-      "Suggest short Compass point wording when the Explorer talks about a topic, only with an ordinary reply below classification level 2 in an unrestricted conversation. Refine only forming points, never saved points. Never claim a suggestion is saved or confirmed; the Explorer chooses confirmation, Priority and arrangement.",
+      "Hold space first: reflect what you hear and ask open, curious questions one at a time; where it helps, name two or three possible meanings for the Explorer to choose from. Suggest short Compass point wording in compass.suggestions only once the concern is clear; when unsure, keep listening. Do not suggest or promise new or refined Compass point wording before the Explorer has sent at least three messages in this conversation, counting the immediate message. When supplied state shows a point or Waypoint is confirmed and the Explorer says \"That's right\", acknowledge it briefly and continue from what matters to them. Suggest wording only with an ordinary reply below classification level 2 in an unrestricted conversation. Refine only forming points, never saved points. Never claim a suggestion is saved or confirmed; the Explorer chooses confirmation, Priority and arrangement.",
       "Only propose a needle move with an ordinary reply in an unrestricted conversation; the application validates it and may ignore it.",
       "Never claim that a proposed move or choices were saved or applied.",
       "Mention a shift only when substantial and not just announced by the Explorer, once per shift, never at classification level 2 or above or in restricted conversations.",
@@ -91,6 +91,17 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
       "compass, waypointSuggestion, waypointResponse and choices are only proposals for the authorized application flow.",
     ]) expect(text).toContain(sentence);
     expect(explorerSafetyHttpInstructions("classification_only")).toContain("candidateReply MUST be null; omit compass, waypointSuggestion, waypointResponse and choices.");
+  });
+  it.each([
+    "Hold space first: reflect what you hear and ask open, curious questions one at a time; where it helps, name two or three possible meanings for the Explorer to choose from.",
+    "Suggest short Compass point wording in compass.suggestions only once the concern is clear; when unsure, keep listening.",
+    "Do not suggest or promise new or refined Compass point wording before the Explorer has sent at least three messages in this conversation, counting the immediate message.",
+    "When supplied state shows a point or Waypoint is confirmed and the Explorer says \"That's right\", acknowledge it briefly and continue from what matters to them.",
+  ])("TF limits the pacing and confirmation instruction to ordinary replies: %s", sentence => {
+    const ordinary = explorerSafetyHttpInstructions("classification_and_reply");
+    const classification = explorerSafetyHttpInstructions("classification_only");
+    expect(ordinary.split(sentence)).toHaveLength(2);
+    expect(classification).not.toContain(sentence);
   });
   it("CV teaches Explorer-voice labels and explains the ordinary-only verified choice marker", () => {
     const voice = "Write every choice label as the Explorer's own reply, in their voice, as a complete answer to your question or invitation, never as a question to you or as your own words.";
@@ -109,8 +120,8 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
       expect({ bytes: Buffer.byteLength(text, "utf8"),
         sha256: createHash("sha256").update(text, "utf8").digest("hex").toUpperCase() })
         .toEqual(mode === "classification_and_reply"
-          ? { bytes: 8186, sha256: "C7FC927CCB21DB99490221025040C8F2EE682BFB961ED7AD25CA6A67199A509D" }
-          : { bytes: 7767, sha256: "4A9A291D3D6CC04ED031E7D2893F3114503F7962F5716D033773F29B180A4F98" });
+          ? { bytes: 8749, sha256: "40528E78E2D6E7211D713344109372D64F3F8945621BA25E872657DBEFC1887D" }
+          : { bytes: 7708, sha256: "420277CE05E665636B6640ADF18F638E3265F6F4C9090414DF83D07A1BFCB9C5" });
     });
   it("S6b instructions bound typed responses to a clear answer to the preceding saved suggestion", () => {
     const text = explorerSafetyHttpInstructions("classification_and_reply");

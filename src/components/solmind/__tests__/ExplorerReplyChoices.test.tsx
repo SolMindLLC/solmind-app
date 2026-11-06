@@ -141,8 +141,8 @@ describe("reply choices as buttons on the connected screen (round r2)", () => {
     ["the conversation is busy or held", { held: true }],
     ["the Virtual Guide is unavailable", { sendUnavailable: true }],
     ["the saved-message capacity is reached", { atMessageCapacity: true }],
-  ] as const)("disables every choice when %s", (_name, overrides) => {
-    expect(choiceButtons(renderScreen(state(), overrides))).toEqual(CHOICES.map(label => ({ label, disabled: true })));
+  ] as const)("keeps only the local tour choice enabled when %s", (_name, overrides) => {
+    expect(choiceButtons(renderScreen(state(), overrides))).toEqual(CHOICES.map(label => ({ label, disabled: label !== "Show me around" })));
   });
 
   it.each(["support", "adult_policy", "unavailable", undefined] as const)("shows no choices when reply availability is %s", availability => {
@@ -174,7 +174,7 @@ function buttonElements(node: ReactNode): ReactElement<ComponentProps<"button">>
 }
 
 describe("Something else beside saved reply choices", () => {
-  it("shows exactly three sending choices followed by a visually distinct Something else button", () => {
+  it("shows exactly three choices followed by a visually distinct Something else button", () => {
     const group = choiceGroup(renderScreen()) ?? "";
     const buttons = [...group.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)];
     expect(buttons.map(button => plain(button[2]))).toEqual([...CHOICES, "Something else"]);
@@ -252,5 +252,16 @@ describe("Something else beside saved reply choices", () => {
     expect(onChoose).toHaveBeenCalledExactlyOnceWith("I have a question");
     expect(onSomethingElse).not.toHaveBeenCalled();
     expect(focus).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the tour's actual button as its focus return target", () => {
+    const focus = vi.fn();
+    const closest = vi.fn();
+    const onChoose = vi.fn(() => expect(focus).toHaveBeenCalledOnce());
+    const tree = ExplorerReplyChoices({ state: state(), messageId: GUIDE_MESSAGE,
+      disabled: false, onChoose, onSomethingElse: vi.fn() });
+    buttonElements(tree)[0].props.onClick?.({ currentTarget: { focus, closest } } as unknown as MouseEvent<HTMLButtonElement>);
+    expect(onChoose).toHaveBeenCalledExactlyOnceWith("Show me around");
+    expect(closest).not.toHaveBeenCalled();
   });
 });

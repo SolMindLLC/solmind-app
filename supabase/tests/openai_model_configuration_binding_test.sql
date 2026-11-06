@@ -445,10 +445,10 @@ select ok((select outcome='ok' and saved_reply from pg_temp.settle_private_legac
 
 -- S4 protocol, immutable saved choices and the separate needle operation.
 select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-  where n.nspname='public' and p.proname='solmind_settle_explorer_conversation_turn_v4' and p.pronargs=26
+  where n.nspname='public' and p.proname='solmind_settle_explorer_conversation_turn_v4' and p.pronargs=27
     and p.prosecdef and has_function_privilege('service_role',p.oid,'EXECUTE')
     and not has_function_privilege('anon',p.oid,'EXECUTE') and not has_function_privilege('authenticated',p.oid,'EXECUTE')),1,
-  'only one exact 26-argument v4 settlement is an API capability');
+  'only one exact 27-argument v4 settlement is an API capability');
 select ok(not exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
   cross join (values('anon'),('authenticated'),('service_role')) role_row(name)
   where n.nspname='public' and p.proname='solmind_settle_explorer_conversation_turn_v3'

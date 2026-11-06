@@ -24,6 +24,8 @@ import {
   type ExplorerConversationPolicy, type ExplorerFallbackObservation, type ExplorerSafetyReplyPlan,
 } from "./explorerConversationSafety";
 
+export const EXPLORER_COMPASS_SUGGESTION_MIN_MESSAGES = 3;
+
 type ActorParameters = Readonly<{ p_actor_user_account_id: string; p_user_session_id: string }>;
 type MethodologyParameters = Readonly<{ p_methodology_context_pack_id: string; p_methodology_context_pack_version_id: string;
   p_methodology_content_sha256: string; p_methodology_authorization_version: string }>;
@@ -43,6 +45,10 @@ export type ExplorerPrivatePrepareParameters = ExplorerPrivateObserveParameters 
   p_trusted_response_version: string; p_resource_policy_version: string; p_expected_safety_version: number; p_model_name: string;
   p_reply_choice: boolean }>;
 export type ExplorerPrivateReplyKind = "ordinary" | "urgent" | "crisis" | "restricted" | "adult_only" | "none";
+export type ExplorerPrivateReplyFailureReason = "deadline" | "transport_failed" | "invalid_response" |
+  "delivery_canceled_before_dispatch" | "dispatch_not_admitted" | "trusted_render_unavailable";
+// Draft for Paul's wording read, 2026-11-06. Only shown after a fresh readiness check.
+export const EXPLORER_FAILED_REPLY_RETRY_DRAFT = "The reply did not come through. You can try again.";
 export type ExplorerPrivateSettleParameters = ActorParameters & Readonly<{
   p_conversation_id: string; p_operation_id: string; p_status: "completed" | "failed" | "canceled";
   p_reply_message_id: string | null; p_reply_kind: ExplorerPrivateReplyKind; p_reply_body: string | null;
@@ -54,7 +60,8 @@ export type ExplorerPrivateSettleParameters = ActorParameters & Readonly<{
   p_compass_suggestions: readonly ExplorerSafetyCompassSuggestion[] | null;
   p_compass_responses: readonly ExplorerSafetyCompassResponse[] | null;
   p_waypoint_suggestion: ExplorerSafetyWaypointSuggestion | null;
-  p_waypoint_response: ExplorerSafetyWaypointResponse | null }>;
+  p_waypoint_response: ExplorerSafetyWaypointResponse | null;
+  p_failure_reason: ExplorerPrivateReplyFailureReason | null }>;
 export type ExplorerPrivateMutateParameters = ActorParameters & Readonly<{
   p_conversation_id: string; p_operation_id: string; p_expected_revision: number; p_command_fingerprint: string;
   p_kind: string; p_source_message_id: string | null; p_item_id: string | null; p_waypoint_id: string | null;
@@ -302,9 +309,6 @@ function verifiedReadiness(value: ExplorerPrivateOperationalReadiness | null, de
     Object.keys(dependencies.renderer.failureAssistance).sort().join("|") !== "adultPolicy|support|supportAndAdultPolicy|temporarilyUnavailable") return null;
   return Object.freeze({ ...value, configuration, modelName, methodology: Object.freeze({ ...value.methodology }) });
 }
-async function freshState(dependencies: ExplorerPrivateConversationDependencies, actor: ExplorerConversationActor): Promise<ExplorerConversationResult> {
-  return (await freshRead(dependencies, actor)).result;
-}
 // A fresh authenticated read that also keeps its row, for a caller that needs the row's server-only policy or an
 // exact replay of the same operation. The row is null whenever the result is not a successful read.
 async function freshRead(dependencies: ExplorerPrivateConversationDependencies, actor: ExplorerConversationActor,
@@ -328,6 +332,72 @@ function failureAssistanceFor(safety: ReturnType<typeof combineExplorerSafety>, 
   return Object.freeze({
     kind: critical ? safety.adultReflectionStopped && safety.restrictedLevel === null ? "adult_policy" : "support" : "temporarily_unavailable",
     body, persisted: false });
+}
+function sendCapacityAvailable(dependencies: ExplorerPrivateConversationDependencies): boolean {
+  if (dependencies.sendCapacityAvailable === undefined) return true;
+  try { return dependencies.sendCapacityAvailable() === true; } catch { return false; }
+}
+async function refreshFailedReplyReadiness(dependencies: ExplorerPrivateConversationDependencies, actor: ExplorerConversationActor,
+  first: Awaited<ReturnType<typeof freshRead>>, signal?: AbortSignal,
+  operation?: Readonly<{ operationId: string; fingerprint: string }>) {
+  let fresh = first;
+  let readiness: ExplorerPrivateOperationalReadiness | null = null;
+  if (fresh.result.ok && fresh.row !== null && !signal?.aborted) {
+    try { readiness = verifiedReadiness(await dependencies.resolveOperationalReadiness?.(actor, fresh.row) ?? null, dependencies); }
+    catch { /* A failed readiness check keeps the unavailable screen. */ }
+    fresh = await freshRead(dependencies, actor, operation);
+  }
+  return { fresh, readiness };
+}
+function failedReplyRetryResult(current: ExplorerConversationResult, available: boolean, messageId: string,
+  dependencies: ExplorerPrivateConversationDependencies): ExplorerPrivateConversationResult | null {
+  if (!available || !sendCapacityAvailable(dependencies) || !current.ok || current.state.pendingTurn ||
+      current.state.sessionStatus === "ended" || current.state.messages.length > EXPLORER_CONVERSATION_LIMITS.messages - 2 ||
+      current.state.compassSuggestionReplies !== "available" ||
+      !current.state.messages.some(message => message.id === messageId && message.role === "explorer")) return null;
+  return Object.freeze({ result: Object.freeze({ ...current,
+    state: Object.freeze({ ...current.state, providerState: "available" as const }) }),
+    assistance: Object.freeze({ kind: "reply_failed", body: EXPLORER_FAILED_REPLY_RETRY_DRAFT, persisted: false }) });
+}
+function replayHasFailedReply(row: ExplorerPrivateRpcRow): boolean {
+  const authority = row.authority_context;
+  return row.outcome === "exact_replay" && authority !== null && typeof authority === "object" &&
+    !Array.isArray(authority) && Object.hasOwn(authority, "replayFailedReply") &&
+    (authority as Record<string, unknown>).replayFailedReply === true;
+}
+async function replayedSend(row: ExplorerPrivateRpcRow, available: boolean, actor: ExplorerConversationActor,
+  command: Extract<ExplorerConversationCommand, { kind: "send" }>, dependencies: ExplorerPrivateConversationDependencies,
+  signal?: AbortSignal): Promise<ExplorerPrivateConversationResult> {
+  const result = stateResult(row, available);
+  if (!replayHasFailedReply(row) || !result.ok || result.state.conversationId === null || result.state.pendingTurn) {
+    return Object.freeze({ result, assistance: null });
+  }
+  const ids = deriveExplorerPrivateTurnIds(actor, result.state.conversationId, command.operationId);
+  if (!result.state.messages.some(message => message.id === ids.messageId && message.role === "explorer") ||
+      result.state.messages.some(message => message.id === ids.replyId)) return Object.freeze({ result, assistance: null });
+  const operation = { operationId: command.operationId, fingerprint: explorerConversationCommandFingerprint(command) };
+  const refreshed = await refreshFailedReplyReadiness(dependencies, actor,
+    { result, row: row as ExplorerPrivateReadRow }, signal, operation);
+  let fresh = refreshed.fresh;
+  const readiness = refreshed.readiness;
+  if (signal?.aborted) return failed();
+  if (readiness === null) return Object.freeze({ result: fresh.result, assistance: null });
+  const fallback = detectExplorerFallback(command.body, readiness.configuration.fallback);
+  let policy = retainKnownPolicy(parseExplorerPrivatePolicy(row.policy_state), parseExplorerPrivatePolicy(fresh.row?.policy_state));
+  let safety = combineExplorerSafety({ policy, fallback, model: null });
+  if (safety.restrictedLevel !== null || safety.adultReflectionStopped) {
+    try { await ownedCapability(ownedSignal => dependencies.operationalSignal!.emit("preparation_unavailable", ownedSignal), 1000); }
+    catch { /* Critical assistance remains available when its marker cannot be written. */ }
+    fresh = await freshRead(dependencies, actor, operation);
+    if (signal?.aborted) return failed();
+    policy = retainKnownPolicy(policy, parseExplorerPrivatePolicy(fresh.row?.policy_state));
+    safety = combineExplorerSafety({ policy, fallback, model: null });
+  } else if (fresh.row !== null && replayHasFailedReply(fresh.row) && fresh.result.ok &&
+      fresh.result.state.conversationId === ids.conversationId && !fresh.result.state.messages.some(message => message.id === ids.replyId)) {
+    const retry = failedReplyRetryResult(fresh.result, true, ids.messageId, dependencies);
+    if (retry !== null) return retry;
+  }
+  return Object.freeze({ result: fresh.result, assistance: failureAssistanceFor(safety, dependencies.renderer!.failureAssistance) });
 }
 // The pause notice for the Explorer's own screen, or null when there is no pause or the renderer cannot write it.
 // Its safety facts come from the returned conversation's own policy (the final fresh read), falling back to the
@@ -446,7 +516,8 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
     const readRow = await dependencies.repository.read(actor, { operationId: command.operationId, fingerprint });
     const read = stateResult(readRow); if (!read.ok) return Object.freeze({ result: read, assistance: null });
     // Historical exact command replay precedes new configuration/source/model work.
-    if (readRow.outcome === "exact_replay") return Object.freeze({ result: read, assistance: null });
+    if (readRow.outcome === "exact_replay") return command.kind === "send"
+      ? replayedSend(readRow, false, actor, command, dependencies, input.signal) : Object.freeze({ result: read, assistance: null });
     if (read.state.pendingTurn || input.signal?.aborted) return failed("refresh_required");
     if (command.kind === "release_waypoint") {
       // Owned closure introduces no reflection: SQL retains all current private
@@ -523,10 +594,7 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
     if (!readiness || input.signal?.aborted) return failed("provider_unavailable");
     // Checked wherever this Send would otherwise report available (a saved reply, a later exact
     // replay, or a paused refusal), so the reply to the last allowed Send already reports the Virtual Guide unavailable.
-    const capacity = (): boolean => {
-      if (dependencies.sendCapacityAvailable === undefined) return true;
-      try { return dependencies.sendCapacityAvailable() === true; } catch { return false; }
-    };
+    const capacity = (): boolean => sendCapacityAvailable(dependencies);
     const failureAssistance = Object.freeze({ ...dependencies.renderer!.failureAssistance });
     const render = dependencies.renderer!.render;
     const emitSignal = dependencies.operationalSignal!.emit;
@@ -542,6 +610,7 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
     // Accepted: in the duplicate race a critical duplicate can raise the marker for an operation then returned as
     // its replay, because the marker comes before the final read.
     const ready = readiness;
+    const sendCommand = command;
     const sendOperation = Object.freeze({ operationId: command.operationId, fingerprint });
     async function pausedResult(row: ExplorerPrivatePauseRow, known: ExplorerConversationPolicy,
       observation: ExplorerFallbackObservation): Promise<ExplorerPrivateConversationResult> {
@@ -572,8 +641,8 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
       }
       // A lost or failed fresh read keeps the static assistance, as transient() does.
       if (fresh.row === null) return Object.freeze({ result: fresh.result, assistance: failureAssistanceFor(safetyNow(), failureAssistance) });
+      if (fresh.row.outcome === "exact_replay") return replayedSend(fresh.row, capacity(), actor, sendCommand, dependencies, input.signal);
       const current = stateResult(fresh.row, capacity());
-      if (fresh.row.outcome === "exact_replay") return Object.freeze({ result: current, assistance: null });
       // The notice follows the last read's own known policy; when it is unknown, the retained policy together with the
       // pause flags. If the renderer cannot write it, the static assistance uses the retained policy facts and the
       // phrase check (never the pause flags).
@@ -607,15 +676,37 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
     let knownModel: ExplorerSafetyClassification | null = null;
     // Retained positive facts serve failure assistance only, never dispatch permission.
     let rememberedPolicy = policy;
-    async function transient(marker: ExplorerPrivateSignalMarker, persistence: "failed" | "unconfirmed" = "failed") : Promise<ExplorerPrivateConversationResult> {
+    async function transient(marker: ExplorerPrivateSignalMarker, persistence: "failed" | "unconfirmed" = "failed",
+      replyFailed = false) : Promise<ExplorerPrivateConversationResult> {
       const safety = combineExplorerSafety({ policy: retainKnownPolicy(rememberedPolicy, policy), fallback, model: knownModel });
       const critical = safety.restrictedLevel !== null || safety.adultReflectionStopped;
       if (critical) {
         try { await ownedCapability((signal) => emitSignal(marker, signal), 1000); }
         catch { /* Assistance is not suppressed by signal failure or a hung signal port. */ }
       }
-      const current = await freshState(dependencies, actor);
+      let fresh = await freshRead(dependencies, actor);
+      let available = false;
+      // A confirmed failed reply does not make operational readiness unavailable.
+      // Recheck readiness, then identity and current state after that awaited check.
+      // Uncertain settlement and critical assistance keep their existing behavior.
+      if (replyFailed && !critical && fresh.result.ok && fresh.row !== null && !input.signal?.aborted) {
+        const refreshed = await refreshFailedReplyReadiness(dependencies, actor, fresh, input.signal);
+        available = refreshed.readiness !== null;
+        fresh = refreshed.fresh;
+        if (fresh.row !== null) {
+          const latestPolicy = retainKnownPolicy(rememberedPolicy, parseExplorerPrivatePolicy(fresh.row.policy_state));
+          if (latestPolicy.status === "known" && (latestPolicy.restrictedLevel !== null || latestPolicy.adultReflectionStopped)) {
+            rememberedPolicy = latestPolicy;
+            return transient(marker, persistence);
+          }
+        }
+      }
       if (input.signal?.aborted) return failed();
+      const current = fresh.result;
+      if (replyFailed && !critical) {
+        const retry = failedReplyRetryResult(current, available, ids.messageId, dependencies);
+        if (retry !== null) return retry;
+      }
       // No generated candidate, saved-record claim or private state without a
       // separate fresh authenticated read. Static assistance remains transient.
       void persistence;
@@ -645,7 +736,7 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
       const observed = await dependencies.repository.observe(observationParameters);
       if (observed.outcome === "exact_replay") {
         const replay = await dependencies.repository.read(actor, { operationId: command.operationId, fingerprint });
-        return replay.outcome === "exact_replay" ? Object.freeze({ result: stateResult(replay, capacity()), assistance: null }) : transient("preparation_unavailable");
+        return replay.outcome === "exact_replay" ? replayedSend(replay, capacity(), actor, command, dependencies, input.signal) : transient("preparation_unavailable");
       }
       if (observed.outcome === "paused") return await pausedAfterCheck(observed.policy_state);
       if (observed.outcome !== "ok") return transient("preparation_unavailable");
@@ -656,7 +747,7 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
       const builderRow = await dependencies.repository.read(actor, { operationId: command.operationId, fingerprint });
       const builderState = stateResult(builderRow, true);
       if (!builderState.ok || builderState.state.conversationId !== ids.conversationId) return transient("preparation_unavailable");
-      if (builderRow.outcome === "exact_replay") return Object.freeze({ result: stateResult(builderRow, capacity()), assistance: null });
+      if (builderRow.outcome === "exact_replay") return replayedSend(builderRow, capacity(), actor, command, dependencies, input.signal);
       if (builderState.state.pendingTurn || builderState.state.revision !== command.expectedRevision) return transient("preparation_unavailable");
       policy = parseExplorerPrivatePolicy(builderRow.policy_state);
       rememberedPolicy = retainKnownPolicy(rememberedPolicy, policy);
@@ -678,7 +769,11 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
         p_context_serialization: request.authorizedContext, p_context_fingerprint_sha256: request.contextFingerprint, p_request_mode: mode,
         p_trusted_response_version: readiness.configuration.trustedResponses.version, p_resource_policy_version: readiness.resourcePolicyVersion,
         p_expected_safety_version: policy.safetyVersion, p_model_name: readiness.modelName, p_reply_choice: command.replyChoice === true });
-      if (prepared.outcome === "exact_replay") return Object.freeze({ result: stateResult(prepared, capacity()), assistance: null });
+      if (prepared.outcome === "exact_replay") {
+        const replay = await dependencies.repository.read(actor, { operationId: command.operationId, fingerprint });
+        return replay.outcome === "exact_replay" ? replayedSend(replay, capacity(), actor, command, dependencies, input.signal)
+          : transient("preparation_unavailable");
+      }
       if (prepared.outcome === "paused") return await pausedAfterCheck(prepared.policy_state);
       if (prepared.outcome !== "ok" || prepared.dispatch_permitted !== true) return transient("preparation_unavailable");
       const currentPolicy = parseExplorerPrivatePolicy(prepared.policy_state);
@@ -725,7 +820,14 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
         ? proposedAttention : null;
       const choices = ordinaryExtras && safety.currentLevel !== null && safety.currentLevel < 2
         ? observedModel?.observation?.choices ?? null : null;
-      const proposedPoints = ordinaryExtras && safety.currentLevel !== null && safety.currentLevel < 2
+      // The authenticated full message read predates prepare; count this Send once.
+      // Choices and suggestion follow-ups are ordinary Explorer messages too.
+      const explorerMessageCount = builderState.state.messages.filter((message) => message.role === "explorer").length + 1;
+      // A same-reply rewording excludes a typed answer even when pacing drops it.
+      const rewordedPointIds = new Set(observedModel?.observation?.compass?.suggestions
+        ?.map((suggestion) => suggestion.pointId).filter((pointId) => pointId !== undefined));
+      const proposedPoints = ordinaryExtras && safety.currentLevel !== null && safety.currentLevel < 2 &&
+        explorerMessageCount >= EXPLORER_COMPASS_SUGGESTION_MIN_MESSAGES
         ? observedModel?.observation?.compass?.suggestions?.filter((suggestion) => suggestion.pointId === undefined ||
           builderState.state.compassItems.some((item) => item.id === suggestion.pointId &&
             item.formation === "forming" && !item.mergedIntoItemId)) : undefined;
@@ -742,7 +844,7 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
         ? observedModel?.observation?.compass?.responses?.filter((response) =>
           builderState.state.compassItems.some((item) => item.id === response.pointId && item.formation === "forming" &&
             !item.mergedIntoItemId && item.wordingMessageId === previousReply.id) &&
-          !proposedPoints?.some((suggestion) => suggestion.pointId === response.pointId)) : undefined;
+          !rewordedPointIds.has(response.pointId)) : undefined;
       const settlement: ExplorerPrivateSettleParameters = { ...base(actor), p_conversation_id: ids.conversationId,
         p_operation_id: command.operationId, p_status: model !== null ? "completed" : terminalDeliveryInterested ? "failed" : "canceled",
         p_reply_message_id: replyKind === "none" ? null : ids.replyId, p_reply_kind: replyKind, p_reply_body: replyBody,
@@ -754,7 +856,9 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
         p_delivery_interested: terminalDeliveryInterested, p_attention_item_id: attentionItemId, p_choices: choices,
         p_compass_suggestions: proposedPoints?.length ? Object.freeze(proposedPoints) : null,
         p_compass_responses: proposedResponses?.length ? Object.freeze(proposedResponses) : null,
-        p_waypoint_suggestion: waypointSuggestion, p_waypoint_response: waypointResponse };
+        p_waypoint_suggestion: waypointSuggestion, p_waypoint_response: waypointResponse,
+        p_failure_reason: replyKind !== "none" ? null : observedModel?.reason ?? (model === null ? dispatchAdmitted ? "transport_failed" : "dispatch_not_admitted"
+          : renderFailed ? "trusted_render_unavailable" : candidate.kind === "unusable" ? "invalid_response" : null) };
       let settled: ExplorerPrivateRpcRow;
       try { settled = await dependencies.repository.settle(settlement); }
       catch { policy = safety.policyKnown ? { status: "known", restrictedLevel: safety.restrictedLevel, adultReflectionStopped: safety.adultReflectionStopped,
@@ -765,7 +869,9 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
       if (!deliveryInterested || input.signal?.aborted) return failed();
       const completed = stateResult(settled, capacity());
       if (settled.saved_reply === true && completed.ok) return Object.freeze({ result: completed, assistance: null });
-      return transient(renderFailed ? "trusted_render_unavailable" : "preparation_unavailable");
+      // Withheld prose reflects a current persistence/safety gate, not a failed reply.
+      return transient(renderFailed ? "trusted_render_unavailable" : "preparation_unavailable", "failed",
+        settled.outcome !== "withheld" && settlement.p_failure_reason !== null);
     } catch { return transient("preparation_unavailable"); }
   } catch { return failed(); }
 }

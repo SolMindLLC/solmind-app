@@ -352,18 +352,18 @@ select ok(not has_table_privilege('anon','content.waypoint_draft','SELECT,INSERT
   and not exists(select 1 from pg_class c cross join lateral aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) acl
     where c.oid='content.waypoint_draft'::regclass and acl.grantee=0),
   'S7a: no direct API-role or public draft table access');
-select ok((select p.pronargs=26 and p.proargnames[25]='p_waypoint_suggestion' and p.prosecdef
+select ok((select p.pronargs=27 and p.proargnames[25]='p_waypoint_suggestion' and p.prosecdef
   and p.proowner='postgres'::regrole and p.proconfig @> array['search_path=""','lock_timeout=2000ms','statement_timeout=5000ms']
-  from pg_proc p where p.oid='public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb)'::regprocedure),
-  'S7a: settlement preserves its 25th argument and adds a 26th with unchanged security and finite limits');
+  from pg_proc p where p.oid='public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,text)'::regprocedure),
+  'S7a: settlement preserves its 25th argument with 27 arguments and unchanged security and finite limits');
 select ok(to_regprocedure('public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb)') is null,
   'S7a: the retired 24-argument overload is absent');
 select ok(has_function_privilege('service_role',
-    'public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb)','EXECUTE')
+    'public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,text)','EXECUTE')
   and not has_function_privilege('anon',
-    'public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb)','EXECUTE')
+    'public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,text)','EXECUTE')
   and not has_function_privilege('authenticated',
-    'public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb)','EXECUTE'),
+    'public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,text)','EXECUTE'),
   'S7a: settlement remains service-role-only');
 select ok((select p.pronargs=8 and p.proargnames[7]='p_draft_id' and p.prosecdef and p.proowner='postgres'::regrole
   and p.proconfig @> array['search_path=""','lock_timeout=2000ms','statement_timeout=5000ms']

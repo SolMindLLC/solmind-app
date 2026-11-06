@@ -28,6 +28,15 @@ describe("private conversation browser response", () => {
     expect(parseExplorerPrivateConversationResponse({ ...response(), result: denied })?.result).toEqual(denied);
     expect(parseExplorerPrivateConversationResponse({ ...response(), assistance: null })?.assistance).toBeNull();
   });
+  it("admits the failed-reply sentence only with a confirmed available, settled state", () => {
+    const assistance = { kind: "reply_failed", body: "The reply did not come through. You can try again.", persisted: false };
+    const available = { ...result, state: { ...result.state, providerState: "available" } };
+    expect(parseExplorerPrivateConversationResponse({ ...response(), result: available, assistance })?.assistance).toEqual(assistance);
+    for (const refused of [result, { ok: false, state: null, error: "denied" },
+      { ...available, state: { ...available.state, pendingTurn: true } }]) {
+      expect(parseExplorerPrivateConversationResponse({ ...response(), result: refused, assistance })).toBeNull();
+    }
+  });
   it.each([
     { ...response(), version: "another-version" },
     { ...response(), policy_state: { restrictedLevel: 3 } },
