@@ -40,7 +40,8 @@ export type ExplorerPrivateContextEvidence = Readonly<{
 export type ExplorerPrivatePrepareParameters = ExplorerPrivateObserveParameters & MethodologyParameters & ExplorerPrivateContextEvidence & Readonly<{
   p_message_id: string; p_snapshot_id: string; p_invocation_id: string; p_body: string;
   p_context_serialization: string; p_context_fingerprint_sha256: string; p_request_mode: string;
-  p_trusted_response_version: string; p_resource_policy_version: string; p_expected_safety_version: number; p_model_name: string }>;
+  p_trusted_response_version: string; p_resource_policy_version: string; p_expected_safety_version: number; p_model_name: string;
+  p_reply_choice: boolean }>;
 export type ExplorerPrivateReplyKind = "ordinary" | "urgent" | "crisis" | "restricted" | "adult_only" | "none";
 export type ExplorerPrivateSettleParameters = ActorParameters & Readonly<{
   p_conversation_id: string; p_operation_id: string; p_status: "completed" | "failed" | "canceled";
@@ -676,7 +677,7 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
         p_message_id: ids.messageId, p_snapshot_id: ids.snapshotId, p_invocation_id: ids.invocationId, p_body: command.body,
         p_context_serialization: request.authorizedContext, p_context_fingerprint_sha256: request.contextFingerprint, p_request_mode: mode,
         p_trusted_response_version: readiness.configuration.trustedResponses.version, p_resource_policy_version: readiness.resourcePolicyVersion,
-        p_expected_safety_version: policy.safetyVersion, p_model_name: readiness.modelName });
+        p_expected_safety_version: policy.safetyVersion, p_model_name: readiness.modelName, p_reply_choice: command.replyChoice === true });
       if (prepared.outcome === "exact_replay") return Object.freeze({ result: stateResult(prepared, capacity()), assistance: null });
       if (prepared.outcome === "paused") return await pausedAfterCheck(prepared.policy_state);
       if (prepared.outcome !== "ok" || prepared.dispatch_permitted !== true) return transient("preparation_unavailable");

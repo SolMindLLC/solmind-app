@@ -696,8 +696,8 @@ describe("Explicit held private AV3 context entry points", () => {
     const result = await build({ ...f.input, mode: "classification_and_reply" });
     expect(result.evidence.p_authorization_version).toBe(privateVersion);
     expect(assembled(result.request.authorizedContext).contractVersion).toBe(EXPLORER_PRIVATE_CONVERSATION_CONTEXT_SELECTION_VERSION);
-    expect(assembled(result.request.authorizedContext).compassContext).toEqual({ version: "explorer-compass-context.v6",
-      points: [], priorityId: null, attentionId: null, recentRoute: [], waypoints: [], drafts: [] });
+    expect(assembled(result.request.authorizedContext).compassContext).toEqual({ version: "explorer-compass-context.v7",
+      points: [], priorityId: null, attentionId: null, recentRoute: [], waypoints: [], drafts: [], immediateMessageIsReplyChoice: false });
     expect(f.read).toHaveBeenCalledOnce();
     expect(f.prepare).not.toHaveBeenCalled(); expect(f.complete).not.toHaveBeenCalled();
   });
@@ -740,7 +740,7 @@ describe("Explicit held private AV3 context entry points", () => {
 // where the database rebuild must equal GOLDEN's content, compared as jsonb, and that content, set into the
 // context, must inspect clear.
 const sx = (n: number) => `f5120000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-const GOLDEN = '{"version":"explorer-compass-context.v6","points":[{"id":"f5120000-0000-4000-8000-000000000401","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},{"id":"f5120000-0000-4000-8000-000000000402","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},{"id":"f5120000-0000-4000-8000-000000000404","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],"priorityId":"f5120000-0000-4000-8000-000000000401","attentionId":"f5120000-0000-4000-8000-000000000402","recentRoute":[{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000401","label":"Money worries","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":true}],"waypoints":[{"id":"f5120000-0000-4000-8000-000000000425","title":"Read before bed","destination":"Read before bed","meaning":"Screens keep me awake","arrivalSignal":"I read on three nights","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000421","title":"Find a calmer morning","destination":"Find a calmer morning","meaning":"Mornings set\\nmy whole day","arrivalSignal":"I start two mornings a week without rushing","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000423","title":"Call my sister","destination":"Call my sister","meaning":"We have drifted apart","arrivalSignal":"We talk once a week for a month","stage":"released","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000422","title":"Walk after dinner","destination":"Walk after dinner","meaning":"It clears my head","arrivalSignal":"I walk three evenings in one week","stage":"reached","reachedEvidence":"I walked four evenings last week"}],"drafts":[]}';
+const GOLDEN = '{"version":"explorer-compass-context.v7","points":[{"id":"f5120000-0000-4000-8000-000000000401","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},{"id":"f5120000-0000-4000-8000-000000000402","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},{"id":"f5120000-0000-4000-8000-000000000404","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],"priorityId":"f5120000-0000-4000-8000-000000000401","attentionId":"f5120000-0000-4000-8000-000000000402","recentRoute":[{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000401","label":"Money worries","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":true}],"waypoints":[{"id":"f5120000-0000-4000-8000-000000000425","title":"Read before bed","destination":"Read before bed","meaning":"Screens keep me awake","arrivalSignal":"I read on three nights","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000421","title":"Find a calmer morning","destination":"Find a calmer morning","meaning":"Mornings set\\nmy whole day","arrivalSignal":"I start two mornings a week without rushing","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000423","title":"Call my sister","destination":"Call my sister","meaning":"We have drifted apart","arrivalSignal":"We talk once a week for a month","stage":"released","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000422","title":"Walk after dinner","destination":"Walk after dinner","meaning":"It clears my head","arrivalSignal":"I walk three evenings in one week","stage":"reached","reachedEvidence":"I walked four evenings last week"}],"drafts":[],"immediateMessageIsReplyChoice":false}';
 function s3State(): ExplorerConversationState {
   const base = state(); const source = base.messages[0].id;
   const at = (minute: number) => `2026-11-03T09:${String(minute).padStart(2, "0")}:00.000Z`;
@@ -788,6 +788,117 @@ function privateFixture(history: ExplorerConversationState, formingAttentionMove
   return { ...f, input: { ...f.input, mode: "classification_and_reply" as const },
     build: createPrivateExplorerConversationContextBuilder({ repository: { read: f.read }, configuration: f.config }) };
 }
+
+describe("Choice voice verified marker in the actual private context builder", () => {
+  const label = "Something that happened today";
+  function offered(labels: readonly string[] = [label]): ExplorerConversationState {
+    const saved = state();
+    return { ...saved, messages: [saved.messages[0],
+      { ...saved.messages[1], choices: labels.map(label => ({ label })) },
+    ] };
+  }
+  function tapped(f: ReturnType<typeof privateFixture>, body = label) {
+    return { ...f.input, command: { ...f.input.command, body, replyChoice: true as const } };
+  }
+
+  it("matches the ordinary context golden shared with the SQL choice verification test", async () => {
+    const sql = readFileSync("supabase/tests/explorer_reply_choice_voice_test.sql", "utf8");
+    const expected = sql.match(/\$choice_context_golden\$([\s\S]*?)\$choice_context_golden\$/);
+    expect(expected).not.toBeNull();
+    const f = privateFixture(offered([label, "I have a question"]));
+    const result = await f.build(tapped(f));
+    expect(JSON.stringify(assembled(result.request.authorizedContext).compassContext)).toBe(expected![1].trim());
+  });
+
+  it("marks only an explicitly tapped exact unique choice in the preceding saved reply", async () => {
+    const f = privateFixture(offered(["I have a question", label, "I'd like to talk about my mood"]));
+    const marked = await f.build(tapped(f));
+    const typed = await f.build({ ...f.input, command: { ...f.input.command, body: label } });
+    const context = assembled(marked.request.authorizedContext);
+    expect(context.compassContext!.version).toBe("explorer-compass-context.v7");
+    expect(context.compassContext!.immediateMessageIsReplyChoice).toBe(true);
+    expect(Object.keys(context.compassContext!).at(-1)).toBe("immediateMessageIsReplyChoice");
+    expect(context.immediateExplorerMessage.content).toBe(label);
+    expect(assembled(typed.request.authorizedContext).compassContext!.immediateMessageIsReplyChoice).toBe(false);
+    expect(marked.request.authorizedContext).toBe(typed.request.authorizedContext
+      .replace('"immediateMessageIsReplyChoice":false', '"immediateMessageIsReplyChoice":true'));
+    expect(marked.request.contextFingerprint).not.toBe(typed.request.contextFingerprint);
+    expect(marked.evidence.p_context_source_ids).toEqual(typed.evidence.p_context_source_ids);
+    expect(f.read).toHaveBeenCalledTimes(2);
+    expect(f.prepare).not.toHaveBeenCalled(); expect(f.complete).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: "different words", offeredLabel: label, body: "I have a question" },
+    { name: "different case", offeredLabel: label, body: label.toLowerCase() },
+    { name: "leading whitespace", offeredLabel: label, body: ` ${label}` },
+    { name: "trailing whitespace", offeredLabel: label, body: `${label} ` },
+    { name: "Unicode normalization", offeredLabel: "My caf\u00e9 visit", body: "My cafe\u0301 visit" },
+  ])("drops the flag without repairing or normalizing $name", async ({ offeredLabel, body }) => {
+    const f = privateFixture(offered([offeredLabel]));
+    const result = await f.build(tapped(f, body));
+    const context = assembled(result.request.authorizedContext);
+    expect(context.compassContext!.immediateMessageIsReplyChoice).toBe(false);
+    expect(context.immediateExplorerMessage.content).toBe(body.trim());
+    expect(f.read).toHaveBeenCalledOnce();
+  });
+
+  it("drops an ambiguous duplicated label even when the browser explicitly flags the Send", async () => {
+    const f = privateFixture(offered([label, label]));
+    expect(assembled((await f.build(tapped(f))).request.authorizedContext)
+      .compassContext!.immediateMessageIsReplyChoice).toBe(false);
+  });
+
+  it.each(["later_reply", "explorer_message", "no_choices", "no_messages"] as const)(
+    "drops an older or absent offer when the preceding saved message has %s", async condition => {
+      const previous = offered();
+      const history: ExplorerConversationState = condition === "no_messages" ? state(0)
+        : condition === "no_choices" ? state()
+        : { ...previous, messages: [...previous.messages, {
+          id: uuid(103), role: condition === "later_reply" ? "virtualGuide" : "explorer",
+          body: "A later saved message", createdAt: "2026-10-24T05:01:00.000Z",
+          ...(condition === "later_reply" ? { choices: [{ label: "I have a question" }] } : {}),
+        }] };
+      const f = privateFixture(history);
+      expect(assembled((await f.build(tapped(f))).request.authorizedContext)
+        .compassContext!.immediateMessageIsReplyChoice).toBe(false);
+      expect(f.read).toHaveBeenCalledOnce();
+    });
+
+  it.each([false, true])("uses saved sequence despite reversed reply timestamps (latest match %s)", async latestMatches => {
+    const saved = state(4);
+    const f = privateFixture({ ...saved, messages: saved.messages.map((message, index) => index === 1
+      ? { ...message, createdAt: "2030-01-01T00:00:00.000Z", choices: [{ label }] }
+      : index === 3 ? { ...message, createdAt: "2020-01-01T00:00:00.000Z",
+        choices: [{ label: latestMatches ? label : "I have a question" }] } : message) });
+    expect(assembled((await f.build(tapped(f))).request.authorizedContext)
+      .compassContext!.immediateMessageIsReplyChoice).toBe(latestMatches);
+  });
+
+  it("keeps classification-only context bytes and fingerprint identical with or without a valid flag", async () => {
+    const f = privateFixture(offered());
+    const marked = await f.build({ ...tapped(f), mode: "classification_only" });
+    const typed = await f.build({ ...f.input, mode: "classification_only",
+      command: { ...f.input.command, body: label } });
+    expect(marked.request.authorizedContext).toBe(typed.request.authorizedContext);
+    expect(marked.request.contextFingerprint).toBe(typed.request.contextFingerprint);
+    expect(marked.evidence.p_context_source_ids).toEqual(typed.evidence.p_context_source_ids);
+    expect(assembled(marked.request.authorizedContext)).not.toHaveProperty("compassContext");
+    expect(marked.request.authorizedContext).not.toContain("immediateMessageIsReplyChoice");
+    expect(assembled(marked.request.authorizedContext).contractVersion).toBe(EXPLORER_CONVERSATION_CONTEXT_SELECTION_VERSION);
+  });
+
+  it("rejects choice changes during final revalidation even when the saved revision stays equal", async () => {
+    const history = offered();
+    const f = privateFixture(history);
+    f.read.mockResolvedValueOnce({ ...f.row, conversation_state: { ...history, messages: [history.messages[0],
+      { ...history.messages[1], choices: [{ label: "I have a different question" }] },
+    ] } });
+    await expect(f.build(tapped(f))).rejects.toMatchObject({ code: "authorized_virtual_guide_context_source_failed" });
+    expect(f.read).toHaveBeenCalledExactlyOnceWith(actor);
+    expect(f.prepare).not.toHaveBeenCalled(); expect(f.complete).not.toHaveBeenCalled();
+  });
+});
 
 describe("Chat step slice S3 saved Compass and Waypoint section (private AV3 entries)", () => {
   it("Lane 7 matches SQL's twenty-head selection and exact source ids with active heads before newest closed heads", async () => {
@@ -981,7 +1092,7 @@ describe("Chat step slice S3 saved Compass and Waypoint section (private AV3 ent
     const f = privateFixture(s3State()); const result = await f.build(f.input);
     const serialized = result.request.authorizedContext;
     const context = assembled(serialized);
-    expect(context.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2+compass-v6");
+    expect(context.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2+compass-v7");
     expect(JSON.stringify(context.compassContext)).toBe(GOLDEN);
     expect(serialized).toContain(`,"compassContext":${GOLDEN},"currentSessionMessages":`);
     expect(Object.keys(context)).toEqual(["contractVersion", "aiRole", "actorRoleContext", "globalPolicy", "roleBehavior",

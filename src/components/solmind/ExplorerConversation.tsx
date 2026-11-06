@@ -32,7 +32,7 @@ type PendingCommand = Readonly<{ command: ExplorerConversationCommand; body: str
 function prepareCommand(intent: CommandIntent, expectedRevision: number, suggestionWording: string | null = null): PendingCommand | null {
   const wireIntent = intent.kind === "suggestion_follow_up"
     ? { kind: "send" as const, body: `${COMPASS_SUGGESTION_REPLY_LABELS[intent.response]}: "${intent.wording}"` }
-    : intent.kind === "reply_choice" ? { kind: "send" as const, body: intent.label } : intent;
+    : intent.kind === "reply_choice" ? { kind: "send" as const, body: intent.label, replyChoice: true as const } : intent;
   const command: ExplorerConversationCommand = Object.freeze({
     ...wireIntent, operationId: crypto.randomUUID(), expectedRevision,
   });

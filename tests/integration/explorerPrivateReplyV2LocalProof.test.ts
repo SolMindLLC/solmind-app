@@ -24,10 +24,10 @@ const ACTOR = { accountId: id(1), applicationSessionId: id(2) };
 const POLICY = { known: true, contractVersion: "explorer-conversation-safety.v1", restrictedLevel: null, adultReflectionStopped: false, version: 0 };
 const CHOICES = [{ label: "Explore this topic" }, { label: "I have a question" }];
 const COMMAND = { kind: "send", operationId: id(8), expectedRevision: 1, body: "Synthetic message about money worries." } as const;
-const COMPASS = { version: "explorer-compass-context.v6", points: [{ id: id(9), label: "Money worries", order: 0,
+const COMPASS = { version: "explorer-compass-context.v7", points: [{ id: id(9), label: "Money worries", order: 0,
   formation: "saved", anchor: null, emphasis: null }], priorityId: null, attentionId: null, recentRoute: [],
   waypoints: [{ id: id(12), title: "Review my spending", destination: "Review my spending", meaning: "Find room for rest",
-    arrivalSignal: "One review completed", stage: "formed", reachedEvidence: null }], drafts: [] };
+    arrivalSignal: "One review completed", stage: "formed", reachedEvidence: null }], drafts: [], immediateMessageIsReplyChoice: false };
 
 function fixture(proposals: Record<string, unknown>, options: { restrictedLevel?: 3 | 4; adultReflectionStopped?: boolean; body?: string; forming?: boolean } = {}) {
   const configuration = getExplorerPrivateConfigurationCandidate();
@@ -110,7 +110,7 @@ function fixture(proposals: Record<string, unknown>, options: { restrictedLevel?
   });
   const buildContext = vi.fn<NonNullable<ExplorerPrivateConversationDependencies["buildContext"]>>(async input => {
     const authorizedContext = JSON.stringify({ contractVersion: input.mode === "classification_only"
-      ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v6",
+      ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v7",
       globalPolicy: { version: configuration.globalPolicy.version, text: configuration.globalPolicy.text },
       roleBehavior: { version: configuration.roleBehavior.version, text: configuration.roleBehavior.text },
       crisisBehavior: { version: configuration.crisisBehavior.version, text: configuration.crisisBehavior.text },
@@ -153,7 +153,8 @@ async function expectPreparedHttpInput(f: ReturnType<typeof fixture>, mode: "cla
   const preparations = f.rpc.mock.calls.filter(([name]) => name === "solmind_prepare_explorer_conversation_turn_v3");
   expect(preparations).toHaveLength(1);
   const prepared = preparations[0][1];
-  expect(Object.keys(prepared)).toHaveLength(37);
+  expect(Object.keys(prepared)).toHaveLength(38);
+  expect(prepared.p_reply_choice).toBe(false);
   expect(f.fetchImpl).toHaveBeenCalledOnce();
   const [, init] = f.fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
   const sent = JSON.parse(init.body as string);
@@ -165,7 +166,7 @@ async function expectPreparedHttpInput(f: ReturnType<typeof fixture>, mode: "cla
   expect(prepared.p_context_source_ids).toEqual(built.evidence.p_context_source_ids);
   const context = JSON.parse(sent.input);
   expect(context.contractVersion).toBe(mode === "classification_only"
-    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v6");
+    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v7");
   if (mode === "classification_only") {
     expect(context).not.toHaveProperty("compassContext");
     for (const value of [id(9), id(12), "Money worries", "Review my spending", "Find room for rest", "One review completed"]) {
@@ -185,7 +186,7 @@ describe("S4 joined current private path, with injected synthetic HTTP and RPC r
     expect(result.assistance).toBeNull(); expect(result.result.ok).toBe(true); expect(f.fetchImpl).toHaveBeenCalledOnce();
     await expectPreparedHttpInput(f, "classification_and_reply"); expect(f.render).not.toHaveBeenCalled();
     const preparations = f.rpc.mock.calls.filter(([name]) => name === "solmind_prepare_explorer_conversation_turn_v3");
-    expect(preparations).toHaveLength(1); expect(Object.keys(preparations[0][1])).toHaveLength(37);
+    expect(preparations).toHaveLength(1); expect(Object.keys(preparations[0][1])).toHaveLength(38);
     const terminals = f.rpc.mock.calls.filter(([name]) => name === "solmind_settle_explorer_conversation_turn_v4");
     expect(terminals).toHaveLength(1);
     expect(terminals[0][1]).toMatchObject({ p_protocol_version: "explorer-safety-reply.v2", p_attention_item_id: id(9),

@@ -25,7 +25,7 @@ function state(conversationId: string | null): ExplorerConversationState {
     messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] };
 }
 // Since chat step slice S3 (2026-11-03) the private context revision carries the saved Compass section.
-const PRIVATE_CONTEXT_VERSION = "wi007-v0.1+onboarding-fields-v2+compass-v6";
+const PRIVATE_CONTEXT_VERSION = "wi007-v0.1+onboarding-fields-v2+compass-v7";
 function fixture(contextVersion?: string) {
   const configuration = getExplorerPrivateConfigurationCandidate(); if (!configuration) throw new Error("synthetic_candidate_missing");
   const readiness: ExplorerPrivateOperationalReadiness = { configuration, configurationFingerprint: SHA, modelName: "gpt-5.6-luna", modelPolicyVersion: "synthetic-model.v1",
@@ -81,14 +81,14 @@ function fixture(contextVersion?: string) {
         globalPolicy: { version: configuration.globalPolicy.version, text: configuration.globalPolicy.text.replace(/\r\n?/g, "\n").trim() },
         roleBehavior: { version: configuration.roleBehavior.version, text: configuration.roleBehavior.text.replace(/\r\n?/g, "\n").trim() },
         crisisBehavior: { version: configuration.crisisBehavior.version, text: configuration.crisisBehavior.text.replace(/\r\n?/g, "\n").trim() },
-        ...(includeCompass ? { compassContext: { version: "explorer-compass-context.v6",
+        ...(includeCompass ? { compassContext: { version: "explorer-compass-context.v7",
           points: input.state.compassItems.map((point, order) => ({ id: point.id, label: point.label, order,
             formation: point.formation ?? "saved", anchor: point.anchor ?? null, emphasis: point.emphasis ?? null,
             ...(point.formation === "forming" ? { suggestedInPreviousReply: point.wordingMessageId !== undefined &&
               point.wordingMessageId === [...input.state.messages].reverse().find(message => message.role === "virtualGuide")?.id } : {}) })),
           priorityId: input.state.priorityId, attentionId: input.state.attentionId, recentRoute: [],
           waypoints: input.state.waypoints.map(point => ({ id: point.id, title: point.destination, destination: point.destination,
-            meaning: point.meaning, arrivalSignal: point.arrivalSignal, stage: "formed", reachedEvidence: null })), drafts: [] } } : {}),
+            meaning: point.meaning, arrivalSignal: point.arrivalSignal, stage: "formed", reachedEvidence: null })), drafts: [], immediateMessageIsReplyChoice: false } } : {}),
         immediateExplorerMessage: { messageId: input.ids.messageId, content: input.command.body }, outputRequirements: { format: "plain_text" } });
       return { request: { contractVersion: EXPLORER_SAFETY_REQUEST_VERSION, invocationId: input.ids.invocationId,
         explorerId: ID.explorer, sessionId: input.ids.conversationId, contextSnapshotId: input.ids.snapshotId,
@@ -107,6 +107,36 @@ function fixture(contextVersion?: string) {
 }
 function send(body = "Synthetic ordinary message.") { return { kind: "send", operationId: ID.operation, expectedRevision: 0, body }; }
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+describe("CV tapped-choice preparation", () => {
+  it.each([false, true])("passes raw flag %s through one counted Send", async marked => {
+    const f = fixture();
+    const command = { ...send(), ...(marked ? { replyChoice: true } : {}) };
+    const result = await commandExplorerPrivateConversation({ command, dependencies: f.dependencies });
+    expect(result.result.ok).toBe(true);
+    expect(f.prepare).toHaveBeenCalledOnce(); expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
+    expect(f.getPrepared()!.p_reply_choice).toBe(marked);
+    expect(Object.keys(f.getPrepared()!)).toHaveLength(38);
+    expect(f.dependencies.buildContext).toHaveBeenCalledWith(expect.objectContaining({ command }));
+    // The raw claim reaches SQL even when the builder cannot find a matching saved choice.
+    expect(JSON.parse(f.getPrepared()!.p_context_serialization).compassContext.immediateMessageIsReplyChoice).toBe(false);
+  });
+  it.each(["v5", "v6"])("rejects %s ordinary context before preparation or provider work", async version => {
+    const f = fixture("wi007-v0.1+onboarding-fields-v2+compass-" + version);
+    await commandExplorerPrivateConversation({ command: { ...send(), replyChoice: true }, dependencies: f.dependencies });
+    expect(f.prepare).not.toHaveBeenCalled(); expect(f.generate).not.toHaveBeenCalled();
+  });
+  it("keeps a flagged classification-only Send section-free and single-call", async () => {
+    const f = fixture(); f.setPolicy({ ...POLICY, restrictedLevel: 3 });
+    await commandExplorerPrivateConversation({ command: { ...send(), replyChoice: true }, dependencies: f.dependencies });
+    expect(f.prepare).toHaveBeenCalledOnce(); expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
+    expect(f.getPrepared()).toMatchObject({ p_reply_choice: true, p_request_mode: "classification_only" });
+    const context = JSON.parse(f.getPrepared()!.p_context_serialization);
+    expect(context.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2");
+    expect(context).not.toHaveProperty("compassContext");
+    expect(f.getPrepared()!.p_context_serialization).not.toContain("immediateMessageIsReplyChoice");
+  });
+});
+
 describe("S7a private Waypoint composition", () => {
   const wording = { title: "Calm mornings with room to breathe", destination: "An unhurried breakfast",
     whyItMatters: "Time with my family", arrivalSignal: "Two calm breakfasts" };

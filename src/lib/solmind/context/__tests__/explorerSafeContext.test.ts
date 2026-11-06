@@ -893,7 +893,7 @@ function compassSection(): Record<string, unknown> {
       { id: COMPASS_IDS.reached, title: "Walk after dinner", destination: "Walk after dinner",
         meaning: "It clears my head", arrivalSignal: "Three walks in a week", stage: "reached", reachedEvidence: " Four walks " },
     ],
-    drafts: [],
+    drafts: [], immediateMessageIsReplyChoice: false,
   };
 }
 function compassInput(): Record<string, unknown> {
@@ -960,7 +960,7 @@ describe("Chat step slice S3 saved Compass and Waypoint section", () => {
     ]);
     const section = JSON.stringify(result.context.compassContext);
     expect(section).toBe(
-      '{"version":"explorer-compass-context.v6","points":[' +
+      '{"version":"explorer-compass-context.v7","points":[' +
       '{"id":"c0000000-0000-4000-8000-000000000001","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},' +
       '{"id":"c0000000-0000-4000-8000-000000000002","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},' +
       '{"id":"c0000000-0000-4000-8000-000000000003","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],' +
@@ -971,7 +971,7 @@ describe("Chat step slice S3 saved Compass and Waypoint section", () => {
       '"meaning":"Mornings set\\nmy whole day","arrivalSignal":"Two calm mornings a week","stage":"formed","reachedEvidence":null},' +
       '{"id":"d0000000-0000-4000-8000-000000000002","title":"Walk after dinner","destination":"Walk after dinner",' +
       '"meaning":"It clears my head","arrivalSignal":"Three walks in a week","stage":"reached","reachedEvidence":"Four walks"}],' +
-      '"drafts":[]}',
+      '"drafts":[],"immediateMessageIsReplyChoice":false}',
     );
     expect(result.serialized).toContain(`"approvedContinuity":${JSON.stringify(result.context.approvedContinuity)},"compassContext":${section},"currentSessionMessages":`);
     expect(Object.isFrozen(result.context.compassContext?.points[0])).toBe(true);
@@ -995,7 +995,7 @@ describe("Chat step slice S3 saved Compass and Waypoint section", () => {
     const empty = withCompass(section => { section.points = []; section.priorityId = null; section.attentionId = null;
       section.recentRoute = []; section.waypoints = []; });
     expect(assembleExplorerSafeContext(empty).context.compassContext).toEqual({ version: EXPLORER_COMPASS_CONTEXT_VERSION,
-      points: [], priorityId: null, attentionId: null, recentRoute: [], waypoints: [], drafts: [] });
+      points: [], priorityId: null, attentionId: null, recentRoute: [], waypoints: [], drafts: [], immediateMessageIsReplyChoice: false });
     const unplaced = assembleExplorerSafeContext(compassInput()).context.compassContext;
     expect(unplaced?.attentionId).toBe(COMPASS_IDS.unplaced);
     expect(unplaced?.points.find(point => point.id === unplaced.attentionId)?.anchor).toBeNull();
@@ -1042,6 +1042,24 @@ describe("Chat step slice S3 saved Compass and Waypoint section", () => {
   });
 });
 
+describe("CV ordinary context choice marker", () => {
+  it.each([false, true])("requires and preserves the boolean marker %s", immediateMessageIsReplyChoice => {
+    const result = assembleExplorerSafeContext(withCompass(section => { section.immediateMessageIsReplyChoice = immediateMessageIsReplyChoice; }));
+    expect(result.context.compassContext!.immediateMessageIsReplyChoice).toBe(immediateMessageIsReplyChoice);
+    expect(Object.isFrozen(result.context.compassContext)).toBe(true);
+  });
+  it.each([undefined, null, "true", 1, {}, []])("rejects a missing or non-boolean marker %j", marker => {
+    expectCode(withCompass(section => {
+      section.immediateMessageIsReplyChoice = marker;
+      if (marker === undefined) delete section.immediateMessageIsReplyChoice;
+    }), marker === undefined ? "explorer_context_missing_required_layer" : "explorer_context_invalid_envelope");
+  });
+  it.each(["v5", "v6"])("rejects the retired %s section and marker outside the ordinary section", version => {
+    expectCode(withCompass(section => { section.version = "explorer-compass-context." + version; }), "explorer_context_invalid_envelope");
+    expectCode({ ...validInput(), immediateMessageIsReplyChoice: true }, "explorer_context_unknown_key");
+  });
+});
+
 describe("S5 forming Compass context", () => {
   it.each([false, true])("S7b requires and preserves the draft preceding-reply signal %s", suggestedInPreviousReply => {
     const result = assembleExplorerSafeContext(withCompass(section => {
@@ -1059,8 +1077,11 @@ describe("S5 forming Compass context", () => {
     });
     expectCode(input, signal === undefined ? "explorer_context_missing_required_layer" : "explorer_context_invalid_envelope");
   });
-  it("Lane 7 refuses the previous section version under compass-v6", () => {
+  it("Lane 7 refuses the previous section version under compass-v7", () => {
     expectCode(withCompass(section => { section.version = "explorer-compass-context.v5"; }), "explorer_context_invalid_envelope");
+  });
+  it("S7b refuses the previous section version under compass-v7", () => {
+    expectCode(withCompass(section => { section.version = "explorer-compass-context.v4"; }), "explorer_context_invalid_envelope");
   });
   it.each([false, true])("S6b preserves the required forming-only preceding-reply signal %s", suggestedInPreviousReply => {
     const result = assembleExplorerSafeContext(withCompass(section => {
@@ -1085,7 +1106,7 @@ describe("S5 forming Compass context", () => {
       "explorer_context_invalid_envelope");
   });
 
-  it.each(["compass-v1", "compass-v2", "compass-v3", "compass-v4", "compass-v5", "compass-v7"])("Lane 7 refuses the retired or unknown %s with or without a section", revision => {
+  it.each(["compass-v1", "compass-v2", "compass-v3", "compass-v4", "compass-v5", "compass-v6", "compass-v8"])("Lane 7 refuses the retired or unknown %s with or without a section", revision => {
     const input: Record<string, unknown> = { ...compassInput(), contractVersion: "wi007-v0.1+onboarding-fields-v2+" + revision };
     expectCode(input, "explorer_context_invalid_envelope");
     delete input.compassContext;
@@ -1103,7 +1124,7 @@ describe("S5 forming Compass context", () => {
       section.recentRoute = [];
     });
     const section = assembleExplorerSafeContext(input).context.compassContext!;
-    expect(section.version).toBe("explorer-compass-context.v6");
+    expect(section.version).toBe("explorer-compass-context.v7");
     expect(section.points.map(point => point.formation)).toEqual(["saved", "forming", "saved"]);
     expect(section.attentionId).toBe(COMPASS_IDS.unplaced);
     expect(section.points[1].anchor).toBeNull();

@@ -151,7 +151,7 @@ end $$;
 -- order, the saved Priority and attention, the last five needle moves on a current point (oldest first, each
 -- with the point's current label), the current Waypoint heads, no drafts.
 create function pg_temp.compass_context() returns jsonb language sql stable as $$
-  select jsonb_build_object('version','explorer-compass-context.v6',
+  select jsonb_build_object('version','explorer-compass-context.v7','immediateMessageIsReplyChoice',false,
     'points',coalesce((select jsonb_agg(jsonb_build_object('id',c.item_id,'label',ai.solmind_exclusion_normalize_v3(c.label),
       'order',c.ord-1,'formation',case when c.formation_status='proposed' then 'forming' else 'saved' end,'anchor',c.compass_anchor,'emphasis',c.relative_emphasis)
       ||case when c.formation_status='proposed' then jsonb_build_object('suggestedInPreviousReply',coalesce(
@@ -197,7 +197,7 @@ create function pg_temp.compass_source_ids() returns uuid[] language sql stable 
 $$;
 create function pg_temp.context_value(msg uuid,body text,classification_only boolean default false) returns jsonb language sql stable as $$
   select jsonb_build_object('contractVersion',case when classification_only then 'wi007-v0.1+onboarding-fields-v2'
-    else 'wi007-v0.1+onboarding-fields-v2+compass-v6' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
+    else 'wi007-v0.1+onboarding-fields-v2+compass-v7' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy',jsonb_build_object('version','synthetic-policy.v1','text','Synthetic policy.'),
     'roleBehavior',jsonb_build_object('version','synthetic-behavior.v1','text','Synthetic behavior.'),
     'crisisBehavior',jsonb_build_object('version','synthetic-crisis.v1','text','Synthetic crisis.'),
@@ -307,7 +307,7 @@ select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid=
     'solmind_observe_explorer_conversation_fallback_v3','solmind_prepare_explorer_conversation_turn_v3',
     'solmind_settle_explorer_conversation_turn_v4','solmind_mutate_explorer_conversation_v3','solmind_confirm_explorer_compass_arrangement_v1',
     'solmind_end_explorer_conversation_v1','solmind_read_ended_explorer_conversations_v1')
-  and (p.proname<>'solmind_prepare_explorer_conversation_turn_v3' or p.pronargs=37)
+  and (p.proname<>'solmind_prepare_explorer_conversation_turn_v3' or p.pronargs=38)
   and p.prosecdef and has_function_privilege('service_role',p.oid,'EXECUTE')
   and not has_function_privilege('anon',p.oid,'EXECUTE') and not has_function_privilege('authenticated',p.oid,'EXECUTE')),9,
   'exact nine closed definer ports including arrangement and owned ending/review are service-only');

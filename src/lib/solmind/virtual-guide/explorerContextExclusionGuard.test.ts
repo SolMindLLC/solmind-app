@@ -106,15 +106,15 @@ describe("provider-held pure Explorer exclusion matcher (synthetic data)", () =>
 
   it("S3: inspects the saved Compass and Waypoint section's strings and refuses unknown root keys", () => {
     const base = JSON.parse(fixture().serializedContext) as Record<string, unknown>;
-    const section = { version: "explorer-compass-context.v6",
+    const section = { version: "explorer-compass-context.v7",
       points: [{ id: id(8), label: "A saved synthetic point", order: 0, formation: "saved", anchor: null, emphasis: null }],
       priorityId: null, attentionId: id(8), recentRoute: [{ kind: "attention_changed", pointId: id(8), label: "A saved synthetic point" }],
       waypoints: [{ id: id(9), title: "Synthetic", destination: "Synthetic", meaning: "Synthetic meaning", arrivalSignal: "Synthetic signal",
-        stage: "formed", reachedEvidence: null }], drafts: [] };
+        stage: "formed", reachedEvidence: null }], drafts: [], immediateMessageIsReplyChoice: false };
     const withSection = (value: unknown) => {
       const ordered: Record<string, unknown> = {};
       for (const [key, part] of Object.entries(base)) { ordered[key] = part; if (key === "approvedContinuity") ordered.compassContext = value; }
-      return JSON.stringify({ ...ordered, contractVersion: "wi007-v0.1+onboarding-fields-v2+compass-v6" });
+      return JSON.stringify({ ...ordered, contractVersion: "wi007-v0.1+onboarding-fields-v2+compass-v7" });
     };
     const clean = fixture(); clean.serializedContext = withSection(section);
     expect(inspectExplorerContextExclusions(clean)).toEqual({ status: "clear" });

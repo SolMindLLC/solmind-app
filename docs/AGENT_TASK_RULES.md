@@ -53,10 +53,10 @@ provenance stay unchanged. No after-End revision, revisit, reactivation or
 Guide access is authorized. The private Your Waypoints screen is later work;
 this increment adds no route or page.
 
-Ordinary model context is compass-v6 / explorer-compass-context.v6 and includes
+Ordinary model context is compass-v7 / explorer-compass-context.v7 and includes
 at most 20 same-conversation heads: active heads first, then newest closed
 heads, with deterministic matching SQL/TypeScript selection and source ids.
-Compass-v5 is refused for new turns; classification_only is unchanged.
+Compass-v5 and compass-v6 are refused for new turns; classification_only is unchanged.
 The bounded-selection instruction and its five version labels, byte counts
 and integrity pins move together. Paul approved that instruction as written
 in the decision queue on 2026-11-06 at 15:13:41 CST. Classification-only context
@@ -86,6 +86,60 @@ must reach the database together. Earlier migrations remain immutable;
 reverting the application alone after longer history or closure facts exist
 is unsafe. SQL/pgTAP and browser execution, canonical sibling-document updates,
 independent review and integration remain Executor work.
+
+## Reply choices in the Explorer's voice - 2026-11-06 (REV302b)
+
+Paul's decision of 2026-11-06 11:58:16 CST ("Yes, both fixes") authorizes
+Explorer-voice choice labels and a server-verified marker for a tapped choice.
+Every offered choice is the Explorer's own reply, in their voice, as a
+complete answer to the Virtual Guide's question or invitation; it must not
+read as a question to the Virtual Guide or as the Virtual Guide's own words.
+
+ExplorerConversation.tsx adds replyChoice: true only to the ordinary Send
+started by onReplyChoice. The closed optional command field is replyChoice?:
+true; other values are invalid, and typed Sends omit it. It is only a browser
+claim. The server independently requires the latest saved message in this
+conversation to be a Virtual Guide reply and the immediate message to equal
+exactly one of that reply's choice labels, with exact bytes and no trimming,
+normalization or case folding. Older replies, duplicate matching labels and
+nonmatching messages do not qualify. A failed verification drops the marker
+to false; it does not turn the claim into authority or cancel an ordinary Send.
+
+Ordinary context is now wi007-v0.1+onboarding-fields-v2+compass-v7 with
+explorer-compass-context.v7. Its required boolean
+compassContext.immediateMessageIsReplyChoice is last in that section and is
+true only for the verified selection. The Virtual Guide is told to respond
+to that selected option instead of treating its words as a question to it.
+TypeScript and SQL independently derive the same value and serialized section;
+the inspector checks the same current facts. Compass-v5 and compass-v6 are refused for new
+ordinary turns. Classification-only context stays on the section-free base
+revision and receives no choice marker or additional source material.
+
+The reply-choice forward migration follows the Waypoint-limits migration:
+
+supabase/migrations/20261106010000_explorer_reply_choice_voice.sql.
+It changes no table schema or Row Level Security policy. Prepare adds final
+p_reply_choice boolean default false as argument 38; the inspector and audited
+inspection entry add it as argument 8. The raw flag is bound into the request
+fingerprint while the absent/false path preserves its existing fingerprint
+and exact-replay behavior. Exact replay never authorizes a second provider call.
+Both forward migrations and the application must reach a database together.
+Waypoint-limits capacity gates, partial head projection, context selection,
+owner locks and function settings are preserved.
+
+All five prompt/role/instruction labels end in -20261106-cv-r2. The role and
+reply-format instructions each add one Explorer-voice sentence, and the
+ordinary reply-format context description adds one marker sentence. Byte
+counts and SHA-256 pins move with the text. Paul must read the exact new
+sentences before integration into the app or demo.
+
+A choice remains one counted Send with the existing safety classification,
+authority, restriction, adults-only, pending-turn, capacity and uncertain-retry
+gates. Context/RPC/provider budgets remain 30/10/60 seconds; cancellation,
+counting and the one-call rule are unchanged. This is isolated source work:
+SQL/pgTAP and browser execution, independent review, integration and publication
+remain Executor work. This builder may read only the clone and the named
+REV302b package files outside it; sibling product documentation is untouched.
 
 Version: 0.2.2
 Last Updated: 2026-10-27

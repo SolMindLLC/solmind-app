@@ -127,7 +127,7 @@ function comparableInstant(value: string): string {
 // Chat step slice S3 (Paul's decision 4, decision queue 2026-11-03 12:38:07 CST; go-ahead
 // 20:50:45 CST): the saved Compass and Waypoint section, taken from the state the final
 // read returned. The safe assembler validates it, and
-// supabase/migrations/20261106000000_explorer_waypoint_active_limits.sql rebuilds it from the
+// supabase/migrations/20261106010000_explorer_reply_choice_voice.sql rebuilds it from the
 // saved rows and compares it exactly before any provider call. Current points only (not
 // combined away), in saved display order; the saved Priority and attention (the needle
 // may be on an unplaced point); the last five needle moves (attention_changed) on a
@@ -135,13 +135,21 @@ function comparableInstant(value: string): string {
 // the Route captured, which may be wording from before a rename (Priority changes,
 // arrangement and category events and their before-labels are never model context);
 // at most twenty current Waypoint heads and the current proposed private Waypoint draft.
-function compassContext(state: ConversationState, formingMove: Authority["formingAttentionMove"]) {
+function compassContext(state: ConversationState, formingMove: Authority["formingAttentionMove"],
+  command: Parameters<ExplorerConversationContextBuilder>[0]["command"]) {
   const points = state.compassItems.filter((item) => item.mergedIntoItemId == null);
   const currentLabels = new Map(points.filter((item) => item.formation !== "forming").map((item) => [item.id, item.label]));
   const moves = (state.route ?? []).filter(pointRouteEvent);
   const latestMove = moves.at(-1);
   // State messages retain saved sequence order; timestamps can tie or arrive out of order.
   const previousReplyId = state.messages.findLast(message => message.role === "virtualGuide")?.id;
+  // A browser flag alone carries no meaning. Use saved sequence order and exact
+  // label equality; an intervening Explorer message or duplicate match drops it.
+  // Parity with SQL relies on prepare refusing context content that differs from the
+  // raw body (supabase/migrations/20261106010000_explorer_reply_choice_voice.sql).
+  const preceding = state.messages.at(-1);
+  const immediateMessageIsReplyChoice = command.replyChoice === true && preceding?.role === "virtualGuide" &&
+    preceding.choices?.filter(choice => choice.label === command.body).length === 1;
   const lastReplyAt = state.messages.filter((message) => message.role === "virtualGuide")
     .map((message) => comparableInstant(message.createdAt)).sort().at(-1);
   const formingPoint = formingMove === undefined ? undefined : points.find(point => point.id === formingMove.pointId);
@@ -197,6 +205,7 @@ function compassContext(state: ConversationState, formingMove: Authority["formin
         destination: state.waypointDraft.destination, whyItMatters: state.waypointDraft.whyItMatters,
         arrivalSignal: state.waypointDraft.arrivalSignal, suggestedInPreviousReply:
           previousReplyId !== undefined && state.waypointDraft.suggestionMessageId === previousReplyId }],
+      immediateMessageIsReplyChoice,
     },
     sourceIds: [...points.map((item) => item.id), ...heads.map((waypoint) => waypoint.id),
       ...(state.waypointDraft === null ? [] : [state.waypointDraft.id])],
@@ -229,7 +238,7 @@ function createConversationContextBuilder(input: ConversationContextBuilderInput
     const recent = state.messages.slice(-24);
     // Classification-only AV3 omits the section and its sources before assembly and hashing; AV2 is unchanged.
     const compass = authorizationContract === "AV3" && mode === "classification_and_reply"
-      ? compassContext(state, facts.formingAttentionMove) : undefined;
+      ? compassContext(state, facts.formingAttentionMove, command) : undefined;
     const contextInput = {
       contractVersion: compass === undefined ? EXPLORER_CONVERSATION_CONTEXT_SELECTION_VERSION
         : EXPLORER_PRIVATE_CONVERSATION_CONTEXT_SELECTION_VERSION,

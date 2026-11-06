@@ -46,7 +46,7 @@ describe("private Explorer exact inert configuration candidate", () => {
     const expected = [
       [value.globalPolicy, 2439, "1C145A87C65565875148150C4083D298EF5D66A49C19F00FABF55BB4F4F693B9"],
       [value.crisisBehavior, 2222, "7B39A9C98351D25E2FAC5DA236E2086B3F33CCBD8987A80AE6716E5242208D84"],
-      [value.roleBehavior, 9949, "2B538C56F2365329503E0E4D39E7A2F1718A31DB321F445B16A41FAD029B54EE"],
+      [value.roleBehavior, 10121, "C1E32276CFCC0616300229E621E0A8DAFDF35328BA665C58CF670D5CFDDDC095"],
     ] as const;
     for (const [part, bytes, sha] of expected) {
       expect(Buffer.byteLength(part.text, "utf8")).toBe(bytes);
@@ -61,11 +61,11 @@ describe("private Explorer exact inert configuration candidate", () => {
   it("pins actual assembler-compatible labels and all seven finite reviewed-language definitions", () => {
     const value = candidate();
     expect(value.protocolVersion).toBe("explorer-safety-reply.v2");
-    expect(value.promptVersion).toBe("explorer-same-call.synthetic-draft-20261106-wl-r1");
-    expect(value.instructionVersion).toBe("solmind-same-call-output.synthetic-draft-20261106-wl-r1");
-    expect(value.roleVersion).toBe("solmind-virtual-guide.synthetic-draft-20261106-wl-r1");
-    expect(value.globalPolicy.version).toBe("solmind-global-policy.synthetic-draft-20261106-wl-r1");
-    expect(value.roleBehavior.version).toBe("solmind-virtual-guide-role.synthetic-draft-20261106-wl-r1");
+    expect(value.promptVersion).toBe("explorer-same-call.synthetic-draft-20261106-cv-r2");
+    expect(value.instructionVersion).toBe("solmind-same-call-output.synthetic-draft-20261106-cv-r2");
+    expect(value.roleVersion).toBe("solmind-virtual-guide.synthetic-draft-20261106-cv-r2");
+    expect(value.globalPolicy.version).toBe("solmind-global-policy.synthetic-draft-20261106-cv-r2");
+    expect(value.roleBehavior.version).toBe("solmind-virtual-guide-role.synthetic-draft-20261106-cv-r2");
     const labels = [value.protocolVersion, value.promptVersion, value.instructionVersion, value.roleVersion,
       value.globalPolicy.version, value.roleBehavior.version, value.crisisBehavior.version,
       value.fallback.version, value.fallback.normalizationVersion, value.trustedResponses.version,
@@ -109,6 +109,7 @@ describe("private Explorer exact inert configuration candidate", () => {
       "Never claim that a proposed needle move or choices were saved or applied; the application may drop them, so the prose must not depend on that effect.",
       "Offer optional choices whenever they would make answering easier, not to meet a target number of replies with choices, with at most three items, each containing only a short plain-text label of 1 to 40 characters.",
       "Never offer choices in a restricted conversation or at classification level 2 or above.",
+      "Write every choice label as the Explorer's own reply, in their voice, as a complete answer to your question or invitation, never as a question to you or as your own words.",
       'In a conversation\'s first reply, when the Explorer has not named a topic, you may offer "Show me around", "I have a question" and "Let\'s begin".',
       "Always answer when the Explorer asks how things work.",
       "When the Explorer talks about a topic, you may suggest short Compass point wording in compass.suggestions. Offer at most three suggestions per reply, each with a plain-text label (single-line, 1 to 160 characters). To refine a forming point, include its pointId; omit pointId for a new point, and never rewrite a saved point. Suggest wording only with an ordinary reply below classification level 2 in an unrestricted conversation. Never claim a suggestion is saved or confirmed; the Explorer decides whether it fits and chooses Priority and arrangement. Record a typed answer in compass.responses only when the Explorer's latest message clearly answers a forming point from your immediately preceding saved reply, marked suggestedInPreviousReply true in compassContext. Use right only when the Explorer accepts the exact stored wording, close when they say it needs a change, and not_it when they turn it down. Never infer an answer from silence, a change of topic or an ambiguous message, and never answer for the Explorer; when unsure, ask instead. With close, ask what to change; if you offer new wording, refine that point with its pointId in compass.suggestions and omit its response. With not_it, ask an open question. Do not respond to a point you refine in the same reply. Use responses only with an ordinary reply below classification level 2 in an unrestricted conversation. Never claim a response was saved or applied; the application may drop it.",

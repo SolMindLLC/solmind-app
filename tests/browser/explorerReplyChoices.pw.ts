@@ -65,7 +65,7 @@ async function openPage(page: Page, read: () => ExplorerConversationState) {
   await expect(transcript(page)).toBeVisible();
 }
 
-test("R01 a tapped choice sends exactly its label as an ordinary message, keeps the typed draft and ends the offer", async ({ page }) => {
+test("R01 a tapped choice sends exactly its label with the choice marker, keeps the typed draft and ends the offer", async ({ page }) => {
   let current = savedState();
   const requests: ExplorerConversationCommand[] = [];
   await page.route("**/explorer/conversation/commands", route => {
@@ -74,7 +74,8 @@ test("R01 a tapped choice sends exactly its label as an ordinary message, keeps 
     requests.push(command);
     expect(command.kind).toBe("send");
     if (command.kind !== "send") throw new Error("unexpected_command");
-    expect(Object.keys(command).sort()).toEqual(["body", "expectedRevision", "kind", "operationId"]);
+    expect(Object.keys(command).sort()).toEqual(["body", "expectedRevision", "kind", "operationId", "replyChoice"]);
+    expect(command.replyChoice).toBe(true);
     expect(command.body).toBe("I have a question");
     expect(command.expectedRevision).toBe(3);
     expect(command.operationId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
@@ -107,6 +108,7 @@ test("R02 an ordinary typed Send also ends the offer", async ({ page }) => {
     const command = route.request().postDataJSON() as ExplorerConversationCommand;
     if (command.kind !== "send") throw new Error("unexpected_command");
     expect(command.body).toBe("Something else on my mind");
+    expect(Object.hasOwn(command, "replyChoice")).toBe(false);
     current = { ...current, revision: 4, messages: [...current.messages,
       { id: CHOSEN_EXPLORER, role: "explorer", body: command.body, createdAt: "2026-11-05T08:01:00.000Z" },
       { id: NEXT_GUIDE, role: "virtualGuide", body: "Synthetic answer", createdAt: "2026-11-05T08:01:01.000Z" },
@@ -186,6 +188,7 @@ test("R05 Something else uses the existing card fixture, preserves a draft and o
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect.poll(() => requests.length).toBe(1);
   expect(requests[0]).toMatchObject({ kind: "send", body: DRAFT, expectedRevision: 12 });
+  expect(Object.hasOwn(requests[0], "replyChoice")).toBe(false);
   await expect(prompt).toHaveCount(0);
   await expect(choices(page)).toHaveCount(0);
   expect((await composer(page).getAttribute("aria-describedby")) ?? "").not.toContain("conversation-calm-prompt");
@@ -245,7 +248,7 @@ test("R07 a choice clears the calm prompt immediately and makes only its one ord
   await expect(page.locator("#conversation-calm-prompt")).toBeVisible();
   await choices(page).getByRole("button", { name: "Let's begin", exact: true }).click();
   await expect.poll(() => requests.length).toBe(1);
-  expect(requests[0]).toMatchObject({ kind: "send", body: "Let's begin", expectedRevision: 3 });
+  expect(requests[0]).toMatchObject({ kind: "send", body: "Let's begin", replyChoice: true, expectedRevision: 3 });
   await expect(choices(page)).toHaveCount(0);
   await expect(page.locator("#conversation-calm-prompt")).toHaveCount(0);
   current = { ...current, revision: 4, messages: [...current.messages,
@@ -298,6 +301,7 @@ test("R09 a Compass Close follow-up clears the prompt and choices while its ordi
     }
     expect(requests).toHaveLength(2);
     expect(command).toMatchObject({ kind: "send", body: 'Close, not quite: "Making time to rest"', expectedRevision: 4 });
+    expect(Object.hasOwn(command, "replyChoice")).toBe(false);
     expect(command.operationId).not.toBe(requests[0].operationId);
     pending.route = route;
   });
@@ -352,5 +356,55 @@ test("R10 a failed reload followed by the same saved reply does not resurrect a 
   await expect(choices(page)).toHaveCount(0);
   await expect(page.locator("#conversation-calm-prompt")).toHaveCount(0);
   await expect(composer(page)).toHaveValue(DRAFT);
+  expect(requests).toHaveLength(1);
+});
+
+test("R11 an uncertain tapped Send retries its exact flagged bytes and keeps the typed draft", async ({ page }) => {
+  let current = savedState();
+  const bodies: string[] = [];
+  await page.route("**/explorer/conversation/commands", route => {
+    bodies.push(route.request().postData()!);
+    const command = route.request().postDataJSON() as ExplorerConversationCommand;
+    expect(command).toMatchObject({ kind: "send", body: "I have a question", replyChoice: true, expectedRevision: 3 });
+    if (bodies.length === 1) return route.abort();
+    expect(bodies[1]).toBe(bodies[0]);
+    current = { ...current, revision: 4, messages: [...current.messages,
+      { id: CHOSEN_EXPLORER, role: "explorer", body: "I have a question", createdAt: "2026-11-05T08:01:00.000Z" },
+      { id: NEXT_GUIDE, role: "virtualGuide", body: "A synthetic reply after the exact retry", createdAt: "2026-11-05T08:01:01.000Z" },
+    ] };
+    return fulfill(route, success(current));
+  });
+  await openPage(page, () => current);
+  await composer(page).fill(DRAFT);
+  await choices(page).getByRole("button", { name: "I have a question", exact: true }).click();
+  await expect.poll(() => bodies.length).toBe(1);
+  await expect(choices(page)).toHaveCount(0);
+  await expect(composer(page)).toHaveValue(DRAFT);
+  await page.getByRole("button", { name: "Retry the same request", exact: true }).click();
+  await expect(transcript(page).getByRole("listitem")).toHaveCount(4);
+  await expect(composer(page)).toHaveValue(DRAFT);
+  expect(bodies).toHaveLength(2);
+});
+
+test("R12 typing an exact choice label still sends no tapped-choice marker", async ({ page }) => {
+  let current = savedState();
+  const requests: ExplorerConversationCommand[] = [];
+  await page.route("**/explorer/conversation/commands", route => {
+    const command = route.request().postDataJSON() as ExplorerConversationCommand;
+    requests.push(command);
+    expect(command).toMatchObject({ kind: "send", body: "I have a question", expectedRevision: 3 });
+    expect(Object.hasOwn(command, "replyChoice")).toBe(false);
+    current = { ...current, revision: 4, messages: [...current.messages,
+      { id: CHOSEN_EXPLORER, role: "explorer", body: "I have a question", createdAt: "2026-11-05T08:01:00.000Z" },
+      { id: NEXT_GUIDE, role: "virtualGuide", body: "A synthetic reply to typed text", createdAt: "2026-11-05T08:01:01.000Z" },
+    ] };
+    return fulfill(route, success(current));
+  });
+  await openPage(page, () => current);
+  await composer(page).fill("I have a question");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(transcript(page).getByRole("listitem")).toHaveCount(4);
+  await expect(choices(page)).toHaveCount(0);
+  await expect(composer(page)).toHaveValue("");
   expect(requests).toHaveLength(1);
 });

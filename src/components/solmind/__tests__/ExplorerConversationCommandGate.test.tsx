@@ -89,6 +89,75 @@ const success = (next: ExplorerConversationState) => new Response(JSON.stringify
   version: EXPLORER_PRIVATE_RESPONSE_VERSION, result: { ok: true, state: next, error: null }, assistance: null,
 }), { headers: { "Content-Type": "application/json" } });
 
+describe("Tapped reply choice Send ownership", () => {
+  const label = "Something that happened today";
+  const offered = (): ExplorerConversationState => ({ ...state(false), messages: [
+    { ...state(false).messages[0], choices: [{ label }] },
+  ] });
+
+  it("sends the exact offered label once with the literal marker and the saved revision", async () => {
+    const f = await loaded(false, offered());
+    f.actions.onReplyChoice(label);
+    f.actions.onReplyChoice(label);
+    expect(f.fetch).toHaveBeenCalledOnce();
+    expect(JSON.parse(f.fetch.mock.calls[0][1]!.body as string)).toEqual({
+      kind: "send", body: label, replyChoice: true, operationId: expect.any(String), expectedRevision: 3,
+    });
+    expect(f.fetch.mock.calls[0][0]).toBe("/explorer/conversation/commands");
+  });
+
+  it("retries the identical flagged Send bytes and operation after an uncertain result", async () => {
+    const f = await loaded(false, offered());
+    f.fetch.mockResolvedValueOnce(new Response("malformed", { headers: { "Content-Type": "application/json" } }));
+    f.actions.onReplyChoice(label);
+    await vi.advanceTimersByTimeAsync(0);
+    const bytes = f.fetch.mock.calls[0][1]!.body;
+    f.actions.onReplyChoice(label);
+    expect(f.fetch).toHaveBeenCalledOnce();
+    f.fetch.mockResolvedValueOnce(success({ ...offered(), revision: 4 }));
+    f.actions.onRetry();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.fetch).toHaveBeenCalledTimes(2);
+    expect(f.fetch.mock.calls[1][1]!.body).toBe(bytes);
+    expect(JSON.parse(bytes as string).replyChoice).toBe(true);
+  });
+
+  it.each(["Something That Happened Today", "Something that happened today ", "An older choice"])(
+    "does not send a label absent from the latest offered reply: %s", async attempted => {
+      const f = await loaded(false, offered());
+      f.actions.onReplyChoice(attempted);
+      expect(f.fetch).not.toHaveBeenCalled();
+    });
+
+  it.each([
+    { providerState: "unavailable" }, { pendingTurn: true },
+    { compassSuggestionReplies: "support" }, { compassSuggestionReplies: "adult_policy" },
+    { compassSuggestionReplies: undefined },
+  ] as const)("keeps the existing held conversation gates for marked Send: %j", async overrides => {
+    const f = await loaded(false, { ...offered(), ...overrides });
+    f.actions.onReplyChoice(label);
+    expect(f.fetch).not.toHaveBeenCalled();
+  });
+
+  it("holds a choice at saved-message capacity", async () => {
+    const full = offered();
+    const f = await loaded(false, { ...full, messages: Array.from({ length: 99 }, (_, index) => ({
+      ...full.messages[0], id: id(index + 10),
+    })) });
+    f.actions.onReplyChoice(label);
+    expect(f.fetch).not.toHaveBeenCalled();
+  });
+
+  it("does not revive an older offer after a later Explorer message", async () => {
+    const saved = offered();
+    const f = await loaded(false, { ...saved, messages: [...saved.messages,
+      { id: id(8), role: "explorer", body: "My next thought", createdAt: "2026-11-05T12:00:01Z" },
+    ] });
+    f.actions.onReplyChoice(label);
+    expect(f.fetch).not.toHaveBeenCalled();
+  });
+});
+
 describe("S7a Waypoint draft reply command ownership", () => {
   const capacityState = () => {
     const saved = cardStateAtWaypointLimit();

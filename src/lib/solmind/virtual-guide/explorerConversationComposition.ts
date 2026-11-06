@@ -138,6 +138,7 @@ export function explorerConversationCommandFingerprint(command: ExplorerConversa
     "meaning" in command ? command.meaning : null,
     "arrivalSignal" in command ? command.arrivalSignal : null,
     "evidence" in command ? command.evidence : null,
+    ...(command.kind === "send" && command.replyChoice === true ? [true] : []),
   ]), "utf8").digest("hex").toUpperCase();
 }
 export async function readExplorerConversation(dependencies: ExplorerConversationDependencies): Promise<ExplorerConversationResult> {

@@ -9,8 +9,9 @@ import {
 
 function request(mode: "classification_and_reply" | "classification_only" = "classification_and_reply") {
   const authorizedContext = JSON.stringify({ contractVersion: mode === "classification_only"
-    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v6",
-    ...(mode === "classification_only" ? {} : { compassContext: { version: "explorer-compass-context.v6",
+    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v7",
+    ...(mode === "classification_only" ? {} : { compassContext: { version: "explorer-compass-context.v7",
+      immediateMessageIsReplyChoice: false,
       points: [{ id: "00000000-0000-4000-8000-000000000005", label: "Saved point", order: 0,
         formation: "saved", anchor: null, emphasis: null }], priorityId: null, attentionId: null, recentRoute: [],
       waypoints: [{ id: "00000000-0000-4000-8000-000000000006", title: "Saved destination", destination: "Saved destination",
@@ -32,8 +33,8 @@ const RAW = '{"protocol":"explorer-safety-reply.v2","classification":{"level":4,
 function adapter(fetchImpl: typeof fetch) { return createOpenAiLunaExplorerSafetyTransport({ apiKey: "synthetic-never-transmitted-key", fetchImpl }); }
 describe("Dormant injected Explorer same-call HTTP transport", () => {
   it.each([
-    ["classification_only", 7595, "80056A5D6AC83099B311929282F8E54DFE02BDDE6188C5551D652589F9247C84"],
-    ["classification_and_reply", 7761, "AF19BC7F4B236675B677B4ED929A0CFA19B3D71393387A4FEE46C15562630D55"],
+    ["classification_only", 7767, "4A9A291D3D6CC04ED031E7D2893F3114503F7962F5716D033773F29B180A4F98"],
+    ["classification_and_reply", 8186, "C7FC927CCB21DB99490221025040C8F2EE682BFB961ED7AD25CA6A67199A509D"],
   ] as const)("Lane 7 pins bounded-selection output instruction bytes and SHA-256 (%s)", (mode, bytes, sha256) => {
     const text = explorerSafetyHttpInstructions(mode);
     expect(Buffer.byteLength(text, "utf8")).toBe(bytes);
@@ -51,12 +52,13 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
     expect(createHash("sha256").update(sent.input).digest("hex").toUpperCase()).toBe(input.contextFingerprint);
     const context = JSON.parse(sent.input);
     expect(context.contractVersion).toBe(mode === "classification_only"
-      ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v6");
+      ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v7");
     if (mode === "classification_only") {
       expect(context).not.toHaveProperty("compassContext");
       for (const text of ["Saved point", "Saved destination", "Saved meaning", "Saved arrival",
         "00000000-0000-4000-8000-000000000005", "00000000-0000-4000-8000-000000000006"]) expect(sent.input).not.toContain(text);
     } else {
+      expect(context.compassContext.immediateMessageIsReplyChoice).toBe(false);
       expect(context.compassContext.points).toHaveLength(1); expect(context.compassContext.waypoints).toHaveLength(1);
     }
     expect(sent.reasoning).toEqual({ effort: "medium" }); expect(sent.store).toBe(false); expect(sent.max_output_tokens).toBe(4096);
@@ -90,6 +92,26 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
     ]) expect(text).toContain(sentence);
     expect(explorerSafetyHttpInstructions("classification_only")).toContain("candidateReply MUST be null; omit compass, waypointSuggestion, waypointResponse and choices.");
   });
+  it("CV teaches Explorer-voice labels and explains the ordinary-only verified choice marker", () => {
+    const voice = "Write every choice label as the Explorer's own reply, in their voice, as a complete answer to your question or invitation, never as a question to you or as your own words.";
+    const marker = "When compassContext.immediateMessageIsReplyChoice is true, the immediate Explorer message is their selection from the choices in your immediately preceding saved reply; respond to the selected option rather than treating its words as a question to you.";
+    const ordinary = explorerSafetyHttpInstructions("classification_and_reply");
+    const classification = explorerSafetyHttpInstructions("classification_only");
+    expect(ordinary).toContain(voice);
+    expect(ordinary).toContain(marker);
+    expect(classification).toContain(voice);
+    expect(classification).not.toContain("immediateMessageIsReplyChoice");
+    expect(classification).toContain("candidateReply MUST be null; omit compass, waypointSuggestion, waypointResponse and choices.");
+  });
+  it.each(["classification_and_reply", "classification_only"] as const)(
+    "CV pins exact decoded output instructions (%s)", mode => {
+      const text = explorerSafetyHttpInstructions(mode);
+      expect({ bytes: Buffer.byteLength(text, "utf8"),
+        sha256: createHash("sha256").update(text, "utf8").digest("hex").toUpperCase() })
+        .toEqual(mode === "classification_and_reply"
+          ? { bytes: 8186, sha256: "C7FC927CCB21DB99490221025040C8F2EE682BFB961ED7AD25CA6A67199A509D" }
+          : { bytes: 7767, sha256: "4A9A291D3D6CC04ED031E7D2893F3114503F7962F5716D033773F29B180A4F98" });
+    });
   it("S6b instructions bound typed responses to a clear answer to the preceding saved suggestion", () => {
     const text = explorerSafetyHttpInstructions("classification_and_reply");
     expect(text).toContain("compass may also contain responses, an array of at most three objects with exactly pointId naming a forming point and response equal to right, close or not_it.");

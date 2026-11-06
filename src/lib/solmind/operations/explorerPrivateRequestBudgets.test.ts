@@ -40,7 +40,7 @@ const PREPARE: ExplorerPrivatePrepareParameters = Object.freeze({ ...OBSERVE, ..
   p_message_id: ID, p_snapshot_id: ID, p_invocation_id: ID, p_body: "Synthetic submitted body.",
   p_context_serialization: "Synthetic context bytes.", p_context_fingerprint_sha256: SHA,
   p_request_mode: "classification_and_reply", p_trusted_response_version: "synthetic-trusted.v1",
-  p_resource_policy_version: "synthetic-resources.v1", p_expected_safety_version: 0, p_model_name: "gpt-5.6-luna" });
+  p_resource_policy_version: "synthetic-resources.v1", p_expected_safety_version: 0, p_model_name: "gpt-5.6-luna", p_reply_choice: false });
 const SETTLE: ExplorerPrivateSettleParameters = Object.freeze({ ...ACTOR_PARAMETERS, p_conversation_id: ID,
   p_operation_id: ID, p_status: "completed", p_reply_message_id: null, p_reply_kind: "none", p_reply_body: null,
   p_model_level: 4, p_model_minor_indicated: true, p_protocol_version: "explorer-safety-reply.v2",

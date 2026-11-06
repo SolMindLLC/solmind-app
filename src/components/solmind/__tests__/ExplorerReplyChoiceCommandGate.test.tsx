@@ -89,7 +89,7 @@ describe("saved reply choice controller gate", () => {
     expect(url).toBe("/explorer/conversation/commands");
     expect(init).toMatchObject({ method: "POST", credentials: "same-origin", cache: "no-store", redirect: "error" });
     expect(JSON.parse(init!.body as string)).toEqual({
-      kind: "send", body: LABEL, expectedRevision: 3,
+      kind: "send", body: LABEL, expectedRevision: 3, replyChoice: true,
       operationId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/),
     });
   });

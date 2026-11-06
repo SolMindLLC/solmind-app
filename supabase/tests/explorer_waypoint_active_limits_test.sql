@@ -143,7 +143,7 @@ end $$;
 -- order, the saved Priority and attention, the last five needle moves on a current point (oldest first, each
 -- with the point's current label), the current Waypoint heads, no drafts.
 create function pg_temp.compass_context() returns jsonb language sql stable as $$
-  select jsonb_build_object('version','explorer-compass-context.v6',
+  select jsonb_build_object('version','explorer-compass-context.v7','immediateMessageIsReplyChoice',false,
     'points',coalesce((select jsonb_agg(jsonb_build_object('id',c.item_id,'label',ai.solmind_exclusion_normalize_v3(c.label),
       'order',c.ord-1,'formation',case when c.formation_status='proposed' then 'forming' else 'saved' end,'anchor',c.compass_anchor,'emphasis',c.relative_emphasis)
       ||case when c.formation_status='proposed' then jsonb_build_object('suggestedInPreviousReply',coalesce(
@@ -188,7 +188,7 @@ create function pg_temp.compass_source_ids() returns uuid[] language sql stable 
       order by case when h.lifecycle_status='chosen' and h.released_at is null then 0 else 1 end,h.created_at desc,h.waypoint_id limit 20) w) x
 $$;
 create function pg_temp.context_value(msg uuid,body text) returns jsonb language sql stable as $$
-  select jsonb_build_object('contractVersion','wi007-v0.1+onboarding-fields-v2+compass-v6','aiRole','solmind_virtual_guide','actorRoleContext','explorer',
+  select jsonb_build_object('contractVersion','wi007-v0.1+onboarding-fields-v2+compass-v7','aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy',jsonb_build_object('version','synthetic-policy.v1','text','Synthetic policy.'),
     'roleBehavior',jsonb_build_object('version','synthetic-behavior.v1','text','Synthetic behavior.'),
     'crisisBehavior',jsonb_build_object('version','synthetic-crisis.v1','text','Synthetic crisis.'),
@@ -659,7 +659,7 @@ select ok((select value->>'error'='solmind_explorer_private_denied' and value->>
   from (select pg_temp.unknown_closure('reach_waypoint') value) x),
   'unknown-policy post-End Reached fails closed despite explicit evidence');
 select ok(not methodology.serialized_methodology_valid(replace(pg_temp.compact(pg_temp.context_value(pg_temp.gid(9999),'Synthetic text')),
-  'compass-v6','compass-v5'),pg_temp.gid(1001),(select content_markdown from methodology.methodology_context_pack_version where methodology_context_pack_version_id=pg_temp.gid(1001))),
+  'compass-v7','compass-v5'),pg_temp.gid(1001),(select content_markdown from methodology.methodology_context_pack_version where methodology_context_pack_version_id=pg_temp.gid(1001))),
   'the prior compass-v5 envelope is refused for new ordinary turns');
 create function pg_temp.capacity_replays() returns jsonb language plpgsql as $$
 declare result jsonb; before_state jsonb; manual text; revision text; draft text; expected integer;
@@ -717,7 +717,7 @@ begin
     envelope:=jsonb_set(envelope,'{sessionContext,sessionId}',to_jsonb(pg_temp.gid(7005)));
     envelope:=jsonb_set(envelope,'{immediateExplorerMessage,sessionId}',to_jsonb(pg_temp.gid(7005)));
     envelope:=jsonb_set(envelope,'{currentSessionMessages}','[]'::jsonb);
-    envelope:=jsonb_set(envelope,'{compassContext}',jsonb_build_object('version','explorer-compass-context.v6',
+    envelope:=jsonb_set(envelope,'{compassContext}',jsonb_build_object('version','explorer-compass-context.v7','immediateMessageIsReplyChoice',false,
       'points','[]'::jsonb,'priorityId',null,'attentionId',null,'recentRoute','[]'::jsonb,
       'waypoints','[]'::jsonb,'drafts','[]'::jsonb));
     ordinary:=pg_temp.compact(envelope);

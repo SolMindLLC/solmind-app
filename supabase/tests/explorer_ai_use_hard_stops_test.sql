@@ -141,7 +141,7 @@ end $$;
 -- order, the saved Priority and attention, the last five needle moves on a current point (oldest first, each
 -- with the point's current label), the current Waypoint heads, no drafts.
 create function pg_temp.compass_context() returns jsonb language sql stable as $$
-  select jsonb_build_object('version','explorer-compass-context.v6',
+  select jsonb_build_object('version','explorer-compass-context.v7','immediateMessageIsReplyChoice',false,
     'points',coalesce((select jsonb_agg(jsonb_build_object('id',c.item_id,'label',ai.solmind_exclusion_normalize_v3(c.label),
       'order',c.ord-1,'formation',case when c.formation_status='proposed' then 'forming' else 'saved' end,'anchor',c.compass_anchor,'emphasis',c.relative_emphasis)
       ||case when c.formation_status='proposed' then jsonb_build_object('suggestedInPreviousReply',coalesce(
@@ -187,7 +187,7 @@ create function pg_temp.compass_source_ids() returns uuid[] language sql stable 
 $$;
 create function pg_temp.context_value(msg uuid,body text,classification_only boolean default false) returns jsonb language sql stable as $$
   select jsonb_build_object('contractVersion',case when classification_only then 'wi007-v0.1+onboarding-fields-v2'
-    else 'wi007-v0.1+onboarding-fields-v2+compass-v6' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
+    else 'wi007-v0.1+onboarding-fields-v2+compass-v7' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy',jsonb_build_object('version','synthetic-policy.v1','text','Synthetic policy.'),
     'roleBehavior',jsonb_build_object('version','synthetic-behavior.v1','text','Synthetic behavior.'),
     'crisisBehavior',jsonb_build_object('version','synthetic-crisis.v1','text','Synthetic crisis.'),
@@ -429,7 +429,7 @@ select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid=
   'pause read, lift, report and daily summary are service-role-only definer functions with an empty search path');
 select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid=p.pronamespace
   where n.nspname='public' and ((p.proname='solmind_observe_explorer_conversation_fallback_v3' and p.pronargs=13)
-    or (p.proname='solmind_prepare_explorer_conversation_turn_v3' and p.pronargs=37))
+    or (p.proname='solmind_prepare_explorer_conversation_turn_v3' and p.pronargs=38))
     and has_function_privilege('service_role',p.oid,'EXECUTE')
     and not has_function_privilege('anon',p.oid,'EXECUTE') and not has_function_privilege('authenticated',p.oid,'EXECUTE')),2,
   'the replaced observe and prepare steps keep service-only execution');
@@ -452,7 +452,7 @@ select is((select array_to_string(p.proargnames,',') from pg_proc p
 select ok((select position('pg_advisory_xact_lock' in p.prosrc)>0
     and position('pg_advisory_xact_lock' in p.prosrc)<position('ts:=clock_timestamp();' in p.prosrc)
   from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-  where n.nspname='public' and p.proname='solmind_prepare_explorer_conversation_turn_v3' and p.pronargs=37),
+  where n.nspname='public' and p.proname='solmind_prepare_explorer_conversation_turn_v3' and p.pronargs=38),
   'prepare takes the shared lock before it reads the clock for the counted Send');
 create function pg_temp.early_lock_ok(src text) returns boolean language sql immutable as $$
   select position('(''explorer_ai_use_automatic_lifts_per_month'',''explorer_ai_use_automatic_lifts_per_week'','
@@ -464,7 +464,7 @@ $$;
 select ok((select pg_temp.early_lock_ok(p.prosrc)
     and position('order by s.setting_key for share' in p.prosrc)<position('pg_advisory_xact_lock' in p.prosrc)
   from pg_proc p join pg_namespace n on n.oid=p.pronamespace
-  where n.nspname='public' and p.proname='solmind_prepare_explorer_conversation_turn_v3' and p.pronargs=37),
+  where n.nspname='public' and p.proname='solmind_prepare_explorer_conversation_turn_v3' and p.pronargs=38),
   'prepare takes the four hard-stop settings, in key order, in the statement before its first check, and before the shared lock');
 select ok((select pg_temp.early_lock_ok(p.prosrc)
   from pg_proc p join pg_namespace n on n.oid=p.pronamespace

@@ -92,6 +92,36 @@ describe("S7a private Waypoint draft contract", () => {
 });
 
 describe("Explorer conversation command parser", () => {
+  it("accepts and freezes only the optional literal tapped-choice marker on Send", () => {
+    const ordinary = { ...base, kind: "send", body: "Something that happened today" };
+    const tapped = { ...ordinary, replyChoice: true };
+    const parsed = parseExplorerConversationCommand(tapped);
+    expect(parsed).toEqual(tapped);
+    expect(Object.isFrozen(parsed)).toBe(true);
+    expect(Object.hasOwn(parseExplorerConversationCommand(ordinary)!, "replyChoice")).toBe(false);
+    for (const replyChoice of [false, undefined, null, "true", 1, {}, []]) {
+      expect(parseExplorerConversationCommand({ ...ordinary, replyChoice })).toBeNull();
+    }
+    for (const command of validCommands.filter(command => command.kind !== "send")) {
+      expect(parseExplorerConversationCommand({ ...command, replyChoice: true })).toBeNull();
+    }
+  });
+
+  it("keeps tapped Send closed and retains every required field and body bound", () => {
+    const tapped = { ...base, kind: "send", body: "I have a question", replyChoice: true };
+    for (const field of ["kind", "operationId", "expectedRevision", "body"]) {
+      expect(parseExplorerConversationCommand(without(tapped, field))).toBeNull();
+    }
+    for (const body of ["", " ", "x".repeat(8_193), "bad\u0000text", "bad\ud800text"]) {
+      expect(parseExplorerConversationCommand({ ...tapped, body })).toBeNull();
+    }
+    for (const extra of [{ choiceLabel: tapped.body }, { choiceMessageId: sourceId }, { verified: true }]) {
+      expect(parseExplorerConversationCommand({ ...tapped, ...extra })).toBeNull();
+    }
+    expect(parseExplorerConversationCommand({ ...tapped, [Symbol("extra")]: true })).toBeNull();
+    expect(parseExplorerConversationCommand(Object.defineProperty({ ...tapped }, "hidden", { value: true }))).toBeNull();
+  });
+
   it("accepts only ids and a closed suggestion response, never browser wording", () => {
     const command = { ...base, kind: "respond_compass_suggestion", itemId: pointId, response: "right" };
     for (const response of [null, undefined, "confirm", "RIGHT", "right ", "That's right", 1, {}]) {

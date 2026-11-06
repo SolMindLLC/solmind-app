@@ -159,7 +159,7 @@ create function pg_temp.compass_context() returns jsonb language sql stable as $
     select 'set_attention',(value->>'recordedAt')::timestamptz,'attention_changed',(value->>'pointId')::uuid,
       (value->>'revision')::integer-1,null::uuid from forming_move where value is not null
   )
-  select jsonb_build_object('version','explorer-compass-context.v6',
+  select jsonb_build_object('version','explorer-compass-context.v7','immediateMessageIsReplyChoice',false,
     'points',coalesce((select jsonb_agg(jsonb_build_object('id',c.item_id,'label',ai.solmind_exclusion_normalize_v3(c.label),
       'order',c.ord-1,'formation',case when c.formation_status='proposed' then 'forming' else 'saved' end,'anchor',c.compass_anchor,'emphasis',c.relative_emphasis)
       ||case when c.formation_status='proposed' then jsonb_build_object('suggestedInPreviousReply',
@@ -203,7 +203,7 @@ create function pg_temp.compass_source_ids() returns uuid[] language sql stable 
 $$;
 create function pg_temp.context_value(msg uuid,body text,classification_only boolean default false) returns jsonb language sql stable as $$
   select jsonb_build_object('contractVersion',case when classification_only then 'wi007-v0.1+onboarding-fields-v2'
-    else 'wi007-v0.1+onboarding-fields-v2+compass-v6' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
+    else 'wi007-v0.1+onboarding-fields-v2+compass-v7' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy',jsonb_build_object('version','synthetic-policy.v1','text','Synthetic policy.'),
     'roleBehavior',jsonb_build_object('version','synthetic-behavior.v1','text','Synthetic behavior.'),
     'crisisBehavior',jsonb_build_object('version','synthetic-crisis.v1','text','Synthetic crisis.'),
@@ -341,7 +341,7 @@ begin
     'currentSessionMessages','[]'::jsonb,
     'immediateExplorerMessage',jsonb_build_object('messageId',pg_temp.gid(20001),'explorerId',pg_temp.gid(26),
       'sessionId',pg_temp.gid(6006),'role','explorer','content','Synthetic other Explorer message.'),
-    'compassContext',jsonb_build_object('version','explorer-compass-context.v6','points','[]'::jsonb,
+    'compassContext',jsonb_build_object('version','explorer-compass-context.v7','immediateMessageIsReplyChoice',false,'points','[]'::jsonb,
       'priorityId',null,'attentionId',null,'recentRoute','[]'::jsonb,'waypoints','[]'::jsonb,'drafts','[]'::jsonb));
   serialization:=pg_temp.compact(context_value);
   select array_agg(id order by id) into source_ids from unnest(array[pg_temp.gid(55),pg_temp.gid(1001),pg_temp.gid(20001)]) id;
@@ -650,7 +650,7 @@ create function pg_temp.inspect(value jsonb) returns text language sql as $$
       union all select unnest(pg_temp.compass_source_ids())) ids))
 $$;
 create temp table context_fixture as select pg_temp.context_value(pg_temp.gid(99901),'Synthetic typed answer.') value;
-select is(pg_temp.inspect((select value from context_fixture)),'clear','S6b: SQL accepts exact v5 context with current forming eligibility');
+select is(pg_temp.inspect((select value from context_fixture)),'clear','S6b: SQL accepts exact v7 context with current forming eligibility');
 select ok((select bool_and((point->>'suggestedInPreviousReply')::boolean)
   from jsonb_array_elements((select value#>'{compassContext,points}' from context_fixture)) point),
   'S6b: every point supplied by the immediately preceding saved reply is eligible');

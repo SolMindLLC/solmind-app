@@ -20,7 +20,7 @@ function prepare(): ExplorerPrivatePrepareParameters { return { ...observe(), ..
   p_prompt_version: "synthetic.v1", p_policy_version: "synthetic.v1", p_behavior_version: "synthetic.v1", p_crisis_version: "synthetic.v1",
   p_role_version: "synthetic.v1", p_instruction_version: "synthetic.v1", p_message_id: UUID, p_snapshot_id: UUID, p_invocation_id: UUID,
   p_body: "Synthetic only.", p_context_serialization: "{}", p_context_fingerprint_sha256: SHA, p_request_mode: "classification_and_reply",
-  p_trusted_response_version: "synthetic.v1", p_resource_policy_version: "synthetic.v1", p_expected_safety_version: 0, p_model_name: "gpt-5.6-luna" }; }
+  p_trusted_response_version: "synthetic.v1", p_resource_policy_version: "synthetic.v1", p_expected_safety_version: 0, p_model_name: "gpt-5.6-luna", p_reply_choice: false }; }
 function settle(): ExplorerPrivateSettleParameters { return { ...ACTOR, p_conversation_id: UUID, p_operation_id: UUID,
   p_status: "completed", p_reply_message_id: null, p_reply_kind: "none", p_reply_body: null, p_model_level: 0, p_model_minor_indicated: false,
   p_protocol_version: "explorer-safety-reply.v2", p_request_mode: "classification_only", p_configuration_fingerprint: SHA,
@@ -171,6 +171,27 @@ describe("Closed private Explorer RPC repository (synthetic client)", () => {
     expect(s.rpc).toHaveBeenCalledWith("solmind_settle_explorer_conversation_turn_v4", settle());
     const m = fixture({ outcome: "ok", conversation_state: null }); await m.repository.mutate!(mutate());
     expect(m.rpc).toHaveBeenCalledWith("solmind_mutate_explorer_conversation_v3", mutate());
+  });
+  it.each([false, true])("passes only the closed choice flag %s in the 38-argument prepare", async p_reply_choice => {
+    const f = fixture({ outcome: "ok", conversation_state: null, dispatch_permitted: false, policy_state: null });
+    await f.repository.prepare({ ...prepare(), p_reply_choice });
+    expect(f.rpc).toHaveBeenCalledOnce();
+    expect(f.rpc.mock.calls[0][1]).toEqual({ ...prepare(), p_reply_choice });
+    expect(Object.keys(f.rpc.mock.calls[0][1] as ExplorerPrivatePrepareParameters)).toHaveLength(38);
+    expect(Object.isFrozen(f.rpc.mock.calls[0][1])).toBe(true);
+  });
+  it.each([undefined, null, "true", 1, {}, []])("refuses a missing or non-boolean choice flag %j before RPC", async p_reply_choice => {
+    const f = fixture(null);
+    const input: Record<string, unknown> = { ...prepare(), p_reply_choice };
+    if (p_reply_choice === undefined) delete input.p_reply_choice;
+    await expect(f.repository.prepare(input as ExplorerPrivatePrepareParameters)).rejects.toThrow("explorer_private_repository_unavailable");
+    expect(f.rpc).not.toHaveBeenCalled();
+  });
+  it("refuses a choice flag getter without reading it", async () => {
+    const f = fixture(null); const input = prepare(); const getter = vi.fn(() => true);
+    Object.defineProperty(input, "p_reply_choice", { enumerable: true, get: getter });
+    await expect(f.repository.prepare(input)).rejects.toThrow("explorer_private_repository_unavailable");
+    expect(getter).not.toHaveBeenCalled(); expect(f.rpc).not.toHaveBeenCalled();
   });
   it("refuses extra/missing/getter parameters before any RPC", async () => {
     for (const input of [{ ...ensure(), p_unreviewed: true }, { ...ensure(), p_configuration_fingerprint: undefined }]) {

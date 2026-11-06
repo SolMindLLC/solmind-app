@@ -159,7 +159,7 @@ create function pg_temp.compass_context() returns jsonb language sql stable as $
     select 'set_attention',(value->>'recordedAt')::timestamptz,'attention_changed',(value->>'pointId')::uuid,
       (value->>'revision')::integer-1,null::uuid from forming_move where value is not null
   )
-  select jsonb_build_object('version','explorer-compass-context.v6',
+  select jsonb_build_object('version','explorer-compass-context.v7','immediateMessageIsReplyChoice',false,
     'points',coalesce((select jsonb_agg(jsonb_build_object('id',c.item_id,'label',ai.solmind_exclusion_normalize_v3(c.label),
       'order',c.ord-1,'formation',case when c.formation_status='proposed' then 'forming' else 'saved' end,'anchor',c.compass_anchor,'emphasis',c.relative_emphasis)
       ||case when c.formation_status='proposed' then jsonb_build_object('suggestedInPreviousReply',
@@ -214,7 +214,7 @@ create function pg_temp.compass_source_ids() returns uuid[] language sql stable 
 $$;
 create function pg_temp.context_value(msg uuid,body text,classification_only boolean default false) returns jsonb language sql stable as $$
   select jsonb_build_object('contractVersion',case when classification_only then 'wi007-v0.1+onboarding-fields-v2'
-    else 'wi007-v0.1+onboarding-fields-v2+compass-v6' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
+    else 'wi007-v0.1+onboarding-fields-v2+compass-v7' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy',jsonb_build_object('version','synthetic-policy.v1','text','Synthetic policy.'),
     'roleBehavior',jsonb_build_object('version','synthetic-behavior.v1','text','Synthetic behavior.'),
     'crisisBehavior',jsonb_build_object('version','synthetic-crisis.v1','text','Synthetic crisis.'),
@@ -419,7 +419,7 @@ select throws_ok($$select * from public.solmind_respond_explorer_waypoint_draft_
 select is((select conversation_state->'waypointDraft' from public.solmind_read_explorer_conversation_v3(
   pg_temp.gid(4),pg_temp.gid(54))),'null'::jsonb,'S7a: another Explorer empty state has no draft');
 select is(pg_temp.inspect(pg_temp.context_value(pg_temp.gid(99901),'Synthetic draft context.')),'clear',
-  'S7a: SQL accepts the exact v5 draft context and draft source identity');
+  'S7a: SQL accepts the exact v7 draft context and draft source identity');
 select is(pg_temp.compass_context()->'drafts',jsonb_build_array(jsonb_build_object(
   'id',(select waypoint_draft_id from original_draft),'title','Make room for breakfast before work',
   'destination','Start my morning without rushing.','whyItMatters','I want room to think before work.',
@@ -824,7 +824,7 @@ select ok(pg_temp.guard_case('invalid_text'),'S7a: table constraints reject inva
 
 -- The TypeScript context test reads this one expected non-empty sample too.
 create function pg_temp.expected_draft_context() returns jsonb language sql immutable as $$
-  select $waypoint_context_golden${"version":"explorer-compass-context.v6","points":[],"priorityId":null,"attentionId":null,"recentRoute":[],"waypoints":[],"drafts":[{"id":"f5120000-0000-4000-8000-000000000901","title":"A calmer morning","destination":"An unhurried breakfast","whyItMatters":"Family time","arrivalSignal":"Two calm mornings","suggestedInPreviousReply":true}]}$waypoint_context_golden$::jsonb
+  select $waypoint_context_golden${"version":"explorer-compass-context.v7","points":[],"priorityId":null,"attentionId":null,"recentRoute":[],"waypoints":[],"drafts":[{"id":"f5120000-0000-4000-8000-000000000901","title":"A calmer morning","destination":"An unhurried breakfast","whyItMatters":"Family time","arrivalSignal":"Two calm mornings","suggestedInPreviousReply":true}],"immediateMessageIsReplyChoice":false}$waypoint_context_golden$::jsonb
 $$;
 create function pg_temp.shared_context_golden() returns jsonb language plpgsql as $$
 declare result jsonb;

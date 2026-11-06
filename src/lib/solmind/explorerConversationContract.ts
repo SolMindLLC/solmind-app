@@ -156,7 +156,7 @@ export type ExplorerConversationState = Readonly<{
 }>;
 type CommandBase = Readonly<{ operationId: string; expectedRevision: number }>;
 export type ExplorerConversationCommand = CommandBase & (
-  | Readonly<{ kind: "send"; body: string }>
+  | Readonly<{ kind: "send"; body: string; replyChoice?: true }>
   | Readonly<{ kind: "end_conversation"; conversationId: string }>
   | Readonly<{ kind: "add_compass"; sourceMessageId: string; label: string }>
   | Readonly<{ kind: "confirm_priority"; itemId: string }>
@@ -375,9 +375,14 @@ export function parseExplorerConversationCommand(value: unknown): ExplorerConver
   if (!object(value) || !id(value.operationId) || !revision(value.expectedRevision)) return null;
   const base = ["kind", "operationId", "expectedRevision"];
   switch (value.kind) {
-    case "send":
-      if (!keys(value, [...base, "body"]) || !text(value.body, EXPLORER_CONVERSATION_LIMITS.messageCharacters, true)) return null;
+    case "send": {
+      const hasReplyChoice = Object.hasOwn(value, "replyChoice");
+      if (!keys(value, [...base, "body", ...(hasReplyChoice ? ["replyChoice"] : [])]) ||
+          Reflect.ownKeys(value).length !== (hasReplyChoice ? 5 : 4) ||
+          (hasReplyChoice && value.replyChoice !== true) ||
+          !text(value.body, EXPLORER_CONVERSATION_LIMITS.messageCharacters, true)) return null;
       break;
+    }
     case "end_conversation":
       if (!keys(value, [...base, "conversationId"]) || !isExplorerConversationId(value.operationId) ||
           !isExplorerConversationId(value.conversationId)) return null;

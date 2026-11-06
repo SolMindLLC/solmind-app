@@ -399,6 +399,24 @@ describe("Explorer conversation composition with synthetic ports", () => {
       expect(explorerConversationCommandFingerprint(changed)).not.toBe(first);
     }
   });
+
+  it("CV01 tapped Send binds the marker while ordinary Send keeps its historical fingerprint", () => {
+    const tapped = { ...send, replyChoice: true as const };
+    const ordinary = explorerConversationCommandFingerprint(send);
+    const fingerprint = explorerConversationCommandFingerprint(tapped);
+    expect(ordinary).toBe("0207D9DCC82D95EB2E5F18E3B6C48A28CC49C8FED0855D2AB03414EBEDB3C496");
+    expect(fingerprint).toBe(createHash("sha256").update(JSON.stringify([
+      EXPLORER_CONVERSATION_VERSION, send.kind, send.operationId, send.expectedRevision,
+      send.body, null, null, null, null, null, null, null, null, true,
+    ]), "utf8").digest("hex").toUpperCase());
+    expect(fingerprint).not.toBe(ordinary);
+    expect(explorerConversationCommandFingerprint({ replyChoice: true, body: send.body,
+      expectedRevision: send.expectedRevision, operationId: send.operationId, kind: "send" })).toBe(fingerprint);
+    for (const changed of [{ ...tapped, body: `${send.body} ` }, { ...tapped, expectedRevision: 5 },
+      { ...tapped, operationId: ID.otherSession }]) {
+      expect(explorerConversationCommandFingerprint(changed)).not.toBe(fingerprint);
+    }
+  });
 });
 
 
