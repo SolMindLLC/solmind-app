@@ -12,6 +12,7 @@ import { parseExplorerPrivateConversationResponse, type ExplorerPrivateConversat
 import { ExplorerConversationConnectedScreen } from "./ExplorerConversationConnectedScreen";
 import type { ExplorerConversationFormationIntent } from "./ExplorerConversationFormation";
 import { COMPASS_SUGGESTION_REPLY_LABELS } from "@/lib/solmind/explorerCompassSuggestionReplies";
+import { latestReplyChoices } from "@/lib/solmind/explorerReplyChoices";
 import { completeWaypointDraft, waypointLimitReached } from "@/lib/solmind/explorerWaypointDraft";
 
 const STATE_PATH = "/explorer/conversation/state";
@@ -22,14 +23,15 @@ const REQUEST_BYTE_LIMIT = 16_384;
 
 type CommandIntent = ExplorerConversationFormationIntent | Readonly<{ kind: "send"; body: string }> |
   Readonly<{ kind: "end_conversation"; conversationId: string }> |
-  Readonly<{ kind: "suggestion_follow_up"; response: "close" | "not_it"; wording: string }>;
+  Readonly<{ kind: "suggestion_follow_up"; response: "close" | "not_it"; wording: string }> |
+  Readonly<{ kind: "reply_choice"; label: string }>;
 type PendingCommand = Readonly<{ command: ExplorerConversationCommand; body: string; intent: CommandIntent;
   suggestionWording: string | null }>;
 
 function prepareCommand(intent: CommandIntent, expectedRevision: number, suggestionWording: string | null = null): PendingCommand | null {
   const wireIntent = intent.kind === "suggestion_follow_up"
     ? { kind: "send" as const, body: `${COMPASS_SUGGESTION_REPLY_LABELS[intent.response]}: "${intent.wording}"` }
-    : intent;
+    : intent.kind === "reply_choice" ? { kind: "send" as const, body: intent.label } : intent;
   const command: ExplorerConversationCommand = Object.freeze({
     ...wireIntent, operationId: crypto.randomUUID(), expectedRevision,
   });
@@ -70,6 +72,7 @@ export function ExplorerConversation() {
   const [notice, setNotice] = useState("");
   const [assistance, setAssistance] = useState<ExplorerPrivateAssistance | null>(null);
   const [endReview, setEndReview] = useState<Readonly<{ conversationId: string; revision: number }> | null>(null);
+  const [sendSequence, setSendSequence] = useState(0);
   const stateRef = useRef<ExplorerConversationState | null>(null);
   const busyRef = useRef(true);
   const pendingRef = useRef<PendingCommand | null>(null);
@@ -163,6 +166,9 @@ export function ExplorerConversation() {
 
   const dispatch = useCallback(async function dispatchPending(pending: PendingCommand) {
     if (busyRef.current || pendingRef.current !== pending) return;
+    // Display signal only: clear local reply prompts for every ordinary Send,
+    // including a Compass follow-up or an exact uncertain retry.
+    if (pending.command.kind === "send") setSendSequence(sequence => sequence + 1);
     busyRef.current = true;
     setBusy(true);
     setUncertain(false);
@@ -271,6 +277,12 @@ export function ExplorerConversation() {
     if (busyRef.current || pendingRef.current !== null || current === null || current.pendingTurn || current.sessionStatus === "ended") return;
     if (intent.kind === "end_conversation" && (current.conversationId === null || intent.conversationId !== current.conversationId)) return;
     if (intent.kind === "send" && current.providerState !== "available") return;
+    // A reply choice sends exactly the latest saved choice as an ordinary Send,
+    // with its own intent so the Explorer's typed draft is kept across retries.
+    if (intent.kind === "reply_choice" && (endReview !== null || current.providerState !== "available" ||
+        current.compassSuggestionReplies !== "available" ||
+        current.messages.length > EXPLORER_CONVERSATION_LIMITS.messages - 2 ||
+        !(latestReplyChoices(current)?.labels.includes(intent.label) ?? false))) return;
     const suggestion = intent.kind === "respond_compass_suggestion"
       ? current.compassItems.find(item => item.id === intent.itemId && item.formation === "forming" && item.mergedIntoItemId == null)
       : undefined;
@@ -301,7 +313,7 @@ export function ExplorerConversation() {
     } catch {
       setDraftError("This change could not be prepared. Please reload and try again.");
     }
-  }, [dispatch]);
+  }, [dispatch, endReview]);
 
   function send(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -348,12 +360,14 @@ export function ExplorerConversation() {
         onConfirmEnd: confirmEnd,
         onKeepOpen: () => { setEndReview(null); setDraftError(""); },
         onCommand: command,
+        onReplyChoice: (label: string) => command({ kind: "reply_choice", label }),
       }}
       composerRef={composerRef}
       headingRef={headingRef}
       view={{
         state,
         busy,
+        sendSequence,
         statusText: busy ? (state === null ? "Loading your saved conversation..." : "Checking your change...") : notice,
         assistance,
         errorMessage: error !== null && !uncertain ? errorCopy(error) : null,

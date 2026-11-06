@@ -51,6 +51,7 @@ function state(overrides: Partial<ExplorerConversationState> = {}): ExplorerConv
 function view(next: ExplorerConversationState, overrides: Partial<ConnectedConversationView> = {}): ConnectedConversationView {
   return {
     state: next,
+    sendSequence: 0,
     busy: false,
     statusText: "",
     assistance: null,
@@ -80,6 +81,7 @@ const actions: ConnectedConversationActions = {
   onConfirmEnd: () => {},
   onKeepOpen: () => {},
   onCommand: () => {},
+  onReplyChoice: () => {},
 };
 
 function renderScreen(next = state(), overrides: Partial<ConnectedConversationView> = {}) {

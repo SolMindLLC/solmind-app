@@ -1594,6 +1594,8 @@ awaitingReply pair to recentRoute. New assembly and SQL exact rederivation suppl
 both; only the latest Explorer needle move after the last saved Virtual Guide reply
 has awaitingReply true. This prevents repeated acknowledgments without a persistent
 marker. Priority changes remain excluded. AV2 stays unchanged.
+Amendment 2026-11-05 (reply choices): the connected screen now shows the latest saved reply's choices as
+buttons; see "Reply choices as buttons" below.
 Amendment 2026-11-04 (S5): ordinary AV3 uses compass-v2 / explorer-compass-context.v2; the latest Explorer move onto a forming point also supplies the transient awaitingReply signal without a Route row.
 Amendment 2026-11-05 (S6b): ordinary AV3 now uses compass-v3 / explorer-compass-context.v3 (forming points add suggestedInPreviousReply); the current inspector is in 20261105030000_explorer_typed_suggestion_replies.sql; compass-v2 is refused.
 
@@ -2001,3 +2003,46 @@ independent review, canonical sibling-document updates, integration and any
 publication remain Executor work. This builder is limited to the clone and
 the three named external files; no sibling product documentation, database
 or provider was accessed.
+
+## Reply choices as buttons - 2026-11-05
+
+Paul approved this screen behavior in the decision queue on 2026-11-05
+16:37:16 CST. He approved the labels and calm lines in his wording read on
+2026-11-06 at 08:56:47 CST. Since S4 a saved Virtual Guide reply may carry one to
+three plain-text choices (1 to 40 Unicode scalar values each), returned as
+the message's optional choices. src/lib/solmind/explorerReplyChoices.ts owns
+the rule: only the latest saved message may offer choices, and only when it
+is a Virtual Guide reply carrying them, in an active conversation with no
+pending turn and compassSuggestionReplies "available". This uses the coarse
+S6a display value; restricted, adults-only and unconfirmed conversations show
+none. Saved choices are already empty at classification level 2 or above.
+A choice tap or a sent message ends the current offer.
+ExplorerReplyChoices.tsx is presentation only, inside that message's existing
+list item after any Compass suggestion replies, as a group named "Suggested
+replies" with the existing choice-button look. The class strings are exported
+from ExplorerConversationScreenTranscript.tsx; the review mockup is unchanged.
+These are connected controls, not build notes. Existing held-screen, Virtual
+Guide availability and saved-message capacity gates remain in force.
+
+ExplorerConversation.tsx owns the Send: the reply_choice intent sends exactly
+the choice's label as an ordinary send command (kind, body, operationId,
+expectedRevision). It is refused unless the latest reply still offers that
+label, the Virtual Guide is available and capacity remains. It is the
+Explorer's own message: one counted call, checked for crisis signs like any
+typed message, with the same uncertain-retry bytes and operation identity.
+Its own intent keeps the Explorer's typed draft. There is no server, database,
+provider-instruction, reply-format or context change; the first-conversation
+tour and its daily offer remain later work.
+
+Amendment 2026-11-05 (reply choices r2): "Something else" appears after the
+choice buttons with a distinct text-style appearance, only where those
+choices show, and never on the Compass suggestion reply row. It is not
+counted among the three choices. Pressing it focuses the message box, keeps
+any typed draft, sends nothing and makes no request or provider call. The
+choices stay visible until Send. One calm line appears just above the
+message box and is associated with it for screen readers. The list of 20
+exact lines lives in explorerReplyChoices.ts, as Paul approved them; change
+them only with his approval. Screen state remembers the last selected line only for the
+current conversation; each press selects randomly from the other lines.
+The line clears on Send or a new Virtual Guide reply. Nothing is saved or
+sent, no browser storage is used, and the line is not a Virtual Guide message.

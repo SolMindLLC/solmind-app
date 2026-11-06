@@ -23,12 +23,12 @@ import { SpeakerBadge } from "./ExplorerConversationScreenSpeaker";
 
 const SCOPE = "chat";
 
-const CHOICE_CLASS =
+export const CHOICE_CLASS =
   "flex w-full items-center justify-between gap-3 rounded-2xl border px-3.5 py-2.5 text-left text-sm";
 // The label grows from zero, so a badge stays beside it while the longest
 // word still fits and wraps below it otherwise; nothing can overlap.
-const CHOICE_WRAP = "flex-wrap gap-y-1.5";
-const CHOICE_PLAIN = "border-stone-700 bg-black/30 text-stone-100 hover:border-amber-300/40 hover:bg-amber-300/5";
+export const CHOICE_WRAP = "flex-wrap gap-y-1.5";
+export const CHOICE_PLAIN = "border-stone-700 bg-black/30 text-stone-100 hover:border-amber-300/40 hover:bg-amber-300/5";
 const CHOICE_OTHER = "border-amber-300/40 text-amber-100 hover:bg-amber-300/10";
 const LANE_LABEL = "text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-200";
 

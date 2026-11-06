@@ -111,6 +111,7 @@ const savedState = (overrides: Partial<ExplorerConversationState> = {}): Explore
 function view(overrides: Partial<ConnectedConversationView> = {}): ConnectedConversationView {
   return {
     state: savedState(),
+    sendSequence: 0,
     busy: false,
     statusText: "",
     assistance: null,
@@ -140,6 +141,7 @@ const actions: ConnectedConversationActions = {
   onConfirmEnd: () => {},
   onKeepOpen: () => {},
   onCommand: () => {},
+  onReplyChoice: () => {},
 };
 
 function render(next: ConnectedConversationView = view()): string {
@@ -257,7 +259,7 @@ describe("connected Explorer conversation screen", () => {
     }
   });
 
-  it("S4 keeps saved reply choices out of the screen until S6", () => {
+  it("keeps saved reply choices hidden without confirmed reply availability", () => {
     const original = savedState();
     const withChoices = savedState({ messages: original.messages.map(message => message.role === "virtualGuide"
       ? { ...message, choices: [{ label: "Synthetic S4 hidden choice" }] } : message) });

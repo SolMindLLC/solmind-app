@@ -21,10 +21,10 @@ const state = (overrides: Partial<ExplorerConversationState> = {}) => cardState(
   priorityId: null, attentionId: null, waypoints: [], waypointDraft: draft, ...overrides,
 });
 const actions = { onReload: () => {}, onRetry: () => {}, onDraftChange: () => {}, onSend: () => {},
-  onReviewEnd: () => {}, onConfirmEnd: () => {}, onKeepOpen: () => {}, onCommand: () => {} };
+  onReviewEnd: () => {}, onConfirmEnd: () => {}, onKeepOpen: () => {}, onCommand: () => {}, onReplyChoice: () => {} };
 function screen(next = state(), overrides: Partial<ConnectedConversationView> = {}) {
   return renderToStaticMarkup(createElement(ExplorerConversationConnectedScreen, {
-    view: { state: next, busy: false, statusText: "", assistance: null, errorMessage: null,
+    view: { state: next, busy: false, sendSequence: 0, statusText: "", assistance: null, errorMessage: null,
       signInRequired: false, uncertain: false, reloadAvailable: true, draft: "", draftError: "",
       endReviewOpen: false, staleEndReview: false, ended: false, endBlocked: false, held: false,
       sendUnavailable: false, atMessageCapacity: false, ...overrides }, actions,

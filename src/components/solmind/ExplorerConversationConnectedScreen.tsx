@@ -29,11 +29,13 @@ import {
   type ExplorerConversationState,
 } from "@/lib/solmind/explorerConversationContract";
 import type { ExplorerPrivateAssistance } from "@/lib/solmind/explorerPrivateConversationResponse";
+import { latestReplyChoices, nextCalmReplyPrompt } from "@/lib/solmind/explorerReplyChoices";
 import { SPEAKER_LABEL_STYLE, speakerLabelClass } from "@/lib/solmind/explorerSpeakerStyle";
 import { SOLMIND_TERMS } from "@/lib/solmind/terms";
 
 import { ConnectedCompassCard } from "./ExplorerConnectedCompassCard";
 import { ExplorerCompassSuggestionReplies } from "./ExplorerCompassSuggestionReplies";
+import { ExplorerReplyChoices } from "./ExplorerReplyChoices";
 import { ExplorerWaypointDraft } from "./ExplorerWaypointDraft";
 import { ConnectedWaypointCard } from "./ExplorerConnectedWaypointCard";
 import {
@@ -85,7 +87,8 @@ import {
 // the narrow drawer is open (it closes, and focus moves to the page's alert,
 // when a change made from it leaves no saved state), which Compass view (Full
 // or Compact) shows in the panel and in the drawer, whether the narrow-screen Menu is open, which
-// "Not connected yet" sentence is shown, and which build notes show. Parts that are not connected yet show
+// "Not connected yet" sentence is shown, which build notes show, and the local
+// reply-choice dismissal and calm prompt (including its last line). Parts that are not connected yet show
 // a blue "Not connected yet" build-note label and, when activated, one sentence directly
 // under them saying what they will do (NotConnectedProvider). A note that
 // describes an area rather than a control (standalone) is a blue build-note box
@@ -105,10 +108,13 @@ const COMPOSER_FIELD_ID = "conversation-message";
 const END_HEADING_ID = "conversation-end-heading";
 const AVAILABILITY_ID = "conversation-availability";
 const CAPACITY_ID = "conversation-capacity";
+const CALM_PROMPT_ID = "conversation-calm-prompt";
 
 export type ConnectedConversationView = Readonly<{
   state: ExplorerConversationState | null;
   busy: boolean;
+  // Local display signal for every actual ordinary Send, including a follow-up.
+  sendSequence: number;
   statusText: string;
   assistance: ExplorerPrivateAssistance | null;
   // The error sentence, shown only while the last change is not uncertain.
@@ -132,6 +138,7 @@ export type ConnectedConversationActions = Readonly<{
   onRetry: () => void;
   onDraftChange: (value: string) => void;
   onSend: (event: FormEvent<HTMLFormElement>) => void;
+  onReplyChoice: (label: string) => void;
   onReviewEnd: () => void;
   onConfirmEnd: () => void;
   onKeepOpen: () => void;
@@ -353,10 +360,12 @@ function MessageBubble({ message }: Readonly<{ message: ExplorerConversationMess
 
 // The saved messages, oldest first, in the designed transcript box. The box
 // scrolls to the newest message whenever the saved count changes.
-function SavedTranscript({ state, view, actions }: Readonly<{
+function SavedTranscript({ state, view, actions, choicesDismissed, onSomethingElse }: Readonly<{
   state: ExplorerConversationState;
   view: ConnectedConversationView;
   actions: ConnectedConversationActions;
+  choicesDismissed: boolean;
+  onSomethingElse: () => void;
 }>) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const count = state.messages.length;
@@ -407,6 +416,15 @@ function SavedTranscript({ state, view, actions }: Readonly<{
                   onCommand={actions.onCommand}
                   state={state}
                 />
+                {choicesDismissed ? null : (
+                  <ExplorerReplyChoices
+                    disabled={view.held || view.sendUnavailable || view.atMessageCapacity}
+                    messageId={message.id}
+                    onChoose={actions.onReplyChoice}
+                    onSomethingElse={onSomethingElse}
+                    state={state}
+                  />
+                )}
               </li>
             ))}
           </ol>
@@ -420,14 +438,18 @@ type ComposerProps = Readonly<{
   view: ConnectedConversationView;
   actions: ConnectedConversationActions;
   composerRef: RefObject<HTMLTextAreaElement | null>;
+  calmPrompt: string | null;
 }>;
 
 // The real message form, with the designed controls that are not built yet
 // beside Send, each with its sentence directly under it, and the marked
 // latest-change line.
-function ConnectedComposer({ view, actions, composerRef }: ComposerProps) {
+function ConnectedComposer({ view, actions, composerRef, calmPrompt }: ComposerProps) {
   const disabled = view.held || view.sendUnavailable || view.atMessageCapacity;
-  const describedBy = view.atMessageCapacity ? CAPACITY_ID : view.sendUnavailable ? AVAILABILITY_ID : undefined;
+  const describedBy = [
+    view.atMessageCapacity ? CAPACITY_ID : view.sendUnavailable ? AVAILABILITY_ID : null,
+    calmPrompt === null ? null : CALM_PROMPT_ID,
+  ].filter(Boolean).join(" ") || undefined;
 
   return (
     <div className="grid gap-3 border-t border-amber-200/15 bg-[#0c0a08]/95 px-3 py-3 sm:px-5" data-composer-bar="">
@@ -447,6 +469,11 @@ function ConnectedComposer({ view, actions, composerRef }: ComposerProps) {
         <label className="text-sm font-semibold text-stone-100" htmlFor={COMPOSER_FIELD_ID}>
           {COMPOSER_LABEL}
         </label>
+        {calmPrompt === null ? null : (
+          <p className="text-sm leading-6 text-stone-300" id={CALM_PROMPT_ID} role="status">
+            {calmPrompt}
+          </p>
+        )}
         <textarea
           aria-describedby={describedBy}
           className={joinClasses(
@@ -669,6 +696,15 @@ function CurrentTools({ state, view, onCommand }: ToolsProps) {
   );
 }
 
+type ReplyPromptState = Readonly<{
+  conversationId: string | null;
+  messageId: string | null;
+  lastPrompt: string | null;
+  prompt: string | null;
+  dismissed: boolean;
+  sendSequence: number;
+}>;
+
 export function ExplorerConversationConnectedScreen({ view, actions, headingRef, composerRef }: ScreenProps) {
   const [panelVisible, setPanelVisible] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -681,6 +717,46 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
   // kept here because the drawer's content is removed while it is closed.
   const [compassViews, setCompassViews] = useState<Readonly<Record<SupportScope, CardCompassView>>>({ panel: "full", drawer: "full" });
   const { state } = view;
+  const latestMessageId = state?.messages[state.messages.length - 1]?.id ?? null;
+  const offeredChoices = state === null ? null : latestReplyChoices(state);
+  const [replyPrompt, setReplyPrompt] = useState<ReplyPromptState>({
+    conversationId: state?.conversationId ?? null,
+    messageId: latestMessageId,
+    lastPrompt: null,
+    prompt: null,
+    dismissed: false,
+    sendSequence: view.sendSequence,
+  });
+  // Clear transient display on a changed saved message or lost eligibility.
+  // Retain the last line across replies and temporary reloads in this conversation.
+  const conversationChanged = state !== null && state.conversationId !== replyPrompt.conversationId;
+  const messageChanged = state !== null && replyPrompt.messageId !== latestMessageId;
+  const sendStarted = replyPrompt.sendSequence !== view.sendSequence;
+  const signInClearsPrompt = view.signInRequired &&
+    (replyPrompt.conversationId !== null || replyPrompt.messageId !== null || replyPrompt.lastPrompt !== null || replyPrompt.dismissed);
+  if (signInClearsPrompt) {
+    setReplyPrompt({ conversationId: null, messageId: null, lastPrompt: null, prompt: null, dismissed: false, sendSequence: view.sendSequence });
+  } else if (!view.signInRequired && (conversationChanged || messageChanged || sendStarted ||
+      (offeredChoices === null && replyPrompt.prompt !== null))) {
+    setReplyPrompt({
+      conversationId: state === null ? replyPrompt.conversationId : state.conversationId,
+      messageId: state === null ? replyPrompt.messageId : latestMessageId,
+      lastPrompt: conversationChanged ? null : replyPrompt.lastPrompt,
+      prompt: null,
+      dismissed: conversationChanged || messageChanged ? false : sendStarted || replyPrompt.dismissed,
+      sendSequence: view.sendSequence,
+    });
+  }
+  // Focus after the new description is present, so screen readers can read it.
+  useEffect(() => {
+    if (replyPrompt.prompt !== null) composerRef.current?.focus();
+  }, [replyPrompt.prompt, composerRef]);
+  const repliesDisabled = view.held || view.sendUnavailable || view.atMessageCapacity;
+  const showSomethingElse = () => {
+    if (offeredChoices === null || repliesDisabled || replyPrompt.dismissed) return;
+    const prompt = nextCalmReplyPrompt(replyPrompt.lastPrompt);
+    setReplyPrompt({ ...replyPrompt, lastPrompt: prompt, prompt });
+  };
   const errorRef = useRef<HTMLDivElement>(null);
   // A change made from the narrow drawer that leaves no saved state (a refusal
   // or a sign-in problem) closes the drawer, which makes the rest of the page
@@ -741,7 +817,13 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
                           the composer are marked busy; the status line, alerts,
                           Reload, Retry and End stay outside it. */}
                       <div aria-busy={view.busy}>
-                        <SavedTranscript actions={actions} state={state} view={view} />
+                        <SavedTranscript
+                          actions={actions}
+                          choicesDismissed={replyPrompt.dismissed}
+                          onSomethingElse={showSomethingElse}
+                          state={state}
+                          view={view}
+                        />
                         {/* Outside the scrolling transcript, beside the composer, so it
                             stays in view however long the saved history is. */}
                         {state.pendingTurn ? (
@@ -752,7 +834,9 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
                             </p>
                           </div>
                         ) : null}
-                        {view.ended ? null : <ConnectedComposer actions={actions} composerRef={composerRef} view={view} />}
+                        {view.ended ? null : (
+                          <ConnectedComposer actions={actions} calmPrompt={replyPrompt.prompt} composerRef={composerRef} view={view} />
+                        )}
                       </div>
                       <EndSession actions={actions} state={state} view={view} />
                     </>
