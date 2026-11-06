@@ -708,28 +708,33 @@ test("redesign: tapping a point in the bottom row sends exactly set_attention, a
   await expect(currentLine).toBeFocused();
   await expect(currentLine).toHaveText(`Current attention:${CARD_LABELS.otherPath}`);
   await expect(point(group, CARD_LABELS.attention)).toBeEnabled();
-  // The needle is drawn dashed toward the place's symbol (240, 308), stopping 52 from the centre, with the
-  // yellow symbol at its tip; no solid needle and no orange bubble remain.
+  // The needle is drawn dashed all the way to the place (240, 308), stopping outside its orange ring; the
+  // place keeps its own yellow symbol and the needle has none at its tip; no solid needle and no orange bubble remain.
   const dashed = dashedLine(card);
   await expect(dashed).toHaveCount(1);
   await expect(dial.locator("line.stroke-orange-300")).toHaveCount(1);
-  expect(Number(await dashed.getAttribute("x2"))).toBeCloseTo(198.46, 2);
-  expect(Number(await dashed.getAttribute("y2"))).toBeCloseTo(198.61, 2);
-  await expect(dial.locator("path.fill-yellow-300")).toHaveCount(3);
-  await expect(dial.locator("path.fill-yellow-300").first()).toHaveAttribute("d", "M198.46 193.61L203.46 198.61L198.46 203.61L193.46 198.61Z");
+  expect(Number(await dashed.getAttribute("x2"))).toBeCloseTo(235.92, 2);
+  expect(Number(await dashed.getAttribute("y2"))).toBeCloseTo(297.25, 2);
+  await expect(dial.locator("path.fill-yellow-300")).toHaveCount(2);
+  await expect(dial.locator('path.fill-yellow-300[d="M240 303L245 308L240 313L235 308Z"]')).toHaveCount(1);
   await expect(dial.locator("circle.fill-none.stroke-orange-300")).toHaveCount(1);
   await expect(dial.locator("circle.fill-none.stroke-orange-300")).toHaveAttribute("cx", "240");
   await expect(dial.locator("g > circle.stroke-orange-300")).toHaveCount(0);
   await expect(dial).toHaveAccessibleDescription(/ The needle points to Avoiding hard talks, which is in Other paths, off your Compass\.$/);
 
-  // The dashed needle is a button over the needle: a tap shows one short sentence, the next tap hides it.
+  // The dashed needle is a button over the needle, 30 along it from the centre (clear of the dial's points): a tap
+  // shows one short sentence, the next tap hides it.
   const why = dashedButton(card);
   await expect(why).toBeEnabled();
   await expect(why).toHaveAttribute("aria-expanded", "false");
   await expect(why).toHaveAttribute("aria-controls", `${scopeOf(page)}-connected-needle-why`);
-  const middle = await dashed.evaluate((line) => {
-    const box = line.getBoundingClientRect();
-    return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const middle = await dashed.evaluate((element) => {
+    const line = element as SVGLineElement;
+    const [x1, y1, x2, y2] = [line.x1.baseVal.value, line.y1.baseVal.value, line.x2.baseVal.value, line.y2.baseVal.value];
+    const length = Math.hypot(x2 - x1, y2 - y1);
+    const at = new DOMPoint(x1 + ((x2 - x1) * 30) / length, y1 + ((y2 - y1) * 30) / length);
+    const screen = at.matrixTransform(line.getScreenCTM() ?? undefined);
+    return { x: screen.x, y: screen.y };
   });
   const whyBox = await why.boundingBox();
   expect(whyBox).not.toBeNull();
@@ -759,8 +764,8 @@ test("redesign: tapping a point in the bottom row sends exactly set_attention, a
   expect(second.operationId).toMatch(UUID_V4);
   expect(second.operationId).not.toBe(sent.operationId);
   expect(bodies[1]).toBe(JSON.stringify({ kind: "set_attention", itemId: CARD_POINTS.unarranged, operationId: second.operationId, expectedRevision: 13 }));
-  await expect(dashed).toHaveAttribute("x2", "161.54");
-  await expect(dashed).toHaveAttribute("y2", "198.61");
+  await expect(dashed).toHaveAttribute("x2", "124.08");
+  await expect(dashed).toHaveAttribute("y2", "297.25");
   // By keyboard: Tab reaches the dashed needle right after the dial's points; Enter shows its sentence (on a
   // phone, where the current tools are behind the panel, it says so), Enter again hides it.
   await point(group, CARD_LABELS.excursion).focus();
@@ -843,7 +848,7 @@ test("redesign: with more than three points without a position the third place i
   await expect(dial.locator('text[y="325"]')).toHaveText([CARD_LABELS.unarranged, "Calling an old...", "+3 more"]);
   await expect(point(needleGroup(card), "Calling an old friend")).toHaveAttribute("aria-pressed", "true");
   await expect(dashedLine(card)).toHaveAttribute("x2", "180");
-  await expect(dashedLine(card)).toHaveAttribute("y2", "202");
+  await expect(dashedLine(card)).toHaveAttribute("y2", "296.5");
   await expect(dashedButton(card)).toBeVisible();
   await expectNoSidewaysScroll(page);
   await expectNoSeriousAxeViolations(page);
@@ -855,8 +860,8 @@ test("redesign: after End the dashed needle still explains itself, without point
   await openPage(page, () => cardState({ sessionStatus: "ended", attentionId: CARD_POINTS.unarranged }));
   const card = await openCard(page);
   const group = needleGroup(card);
-  // The needle is on the point not yet arranged: dashed toward its place, and every point is held.
-  await expect(dashedLine(card)).toHaveAttribute("x2", "161.54");
+  // The needle is on the point not yet arranged: dashed all the way to its place, and every point is held.
+  await expect(dashedLine(card)).toHaveAttribute("x2", "124.08");
   await expect(group.getByText(NEEDLE_HOLD_TEXT.ended, { exact: true })).toBeVisible();
   await expect(point(group, CARD_LABELS.unarranged)).toBeDisabled();
   await expect(point(group, CARD_LABELS.otherPath)).toBeDisabled();

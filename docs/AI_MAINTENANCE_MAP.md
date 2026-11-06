@@ -205,7 +205,7 @@ position sit in a bottom row under Excursion (`bottomRow`: at most three
 places, the third "+N more" when there are more, which opens the Compact view;
 a needle point beyond the first two takes the second place), grey with one
 small yellow symbol each, each a button with the dial's rules; a needle on such
-a point is drawn dashed toward its place with the yellow symbol at its tip, and
+a point is drawn dashed all the way to its place, under the dial's points, with no symbol at its tip (amended 2026-11-05, Paul's decision, decision queue 2026-11-05 19:11:11 CST), and
 is a button named "Why the needle is dashed" whose tap shows one short sentence
 (`dashedNeedleText`) and whose next tap hides it. The Compact view's points
 without a position are grey with the same symbol. The heading is "Point the

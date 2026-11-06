@@ -1042,7 +1042,7 @@ describe("connected Explorer conversation screen", () => {
     expect(rowLabels(dialOf(allOnDial))).toEqual([]);
     expect(pointButtons(allOnDial)).toHaveLength(5);
     // Before any arrangement the Priority is drawn at the top and the other points are in the row; the needle on
-    // one of them is dashed, toward its place (120, 308), and stops 52 from the centre.
+    // one of them is dashed and reaches its place (120, 308), stopping 11.5 short of its centre, outside the orange ring.
     const source = "20000000-0000-4000-8000-000000000001";
     const point = (index: number) => `40000000-0000-4000-8000-00000000000${index}`;
     const before = savedState({
@@ -1063,9 +1063,9 @@ describe("connected Explorer conversation screen", () => {
     expect(beforeFull).not.toContain('<line class="stroke-orange-300" stroke-linecap="round"');
     const dashed = dashedNeedle(dialOf(beforeFull));
     expect(dashed).not.toBeNull();
-    expect(Number(dashed?.[1])).toBeCloseTo(161.54, 2);
-    expect(Number(dashed?.[2])).toBeCloseTo(198.61, 2);
-    expect(Math.hypot(Number(dashed?.[1]) - 180, Number(dashed?.[2]) - 150)).toBeCloseTo(52, 1);
+    expect(Number(dashed?.[1])).toBeCloseTo(124.08, 2);
+    expect(Number(dashed?.[2])).toBeCloseTo(297.25, 2);
+    expect(Math.hypot(Number(dashed?.[1]) - 120, Number(dashed?.[2]) - 308)).toBeCloseTo(11.5, 1);
     expect(textOf(beforeFull)).toContain("Current attention: First");
     expect(pointButtons(cardMarkup({ state: before, view: "compact" })).map(({ text, disabled }) => [text, disabled])).toEqual([
       ["Third Priority", false],
@@ -1128,13 +1128,14 @@ describe("connected Explorer conversation screen", () => {
       expect(pointButtons(held).every((button) => button.disabled), hold).toBe(true);
     }
     // The needle on a point beyond the first two: that point takes the second place, and the dashed needle points
-    // to it (straight down, toward 180, 308), with the yellow symbol at its tip and the orange ring on its place.
+    // to it (straight down to 180, 308, stopping outside the orange ring on its place); the place keeps its own
+    // yellow symbol and the needle has none at its tip.
     const onSixth = cardMarkup({ state: many(6) });
     const sixthDial = dialOf(onSixth);
     expect(rowLabels(sixthDial)).toEqual([[60, "Waiting 2"], [180, "Waiting 6"], [300, "+4 more"]]);
     const dashed = dashedNeedle(sixthDial);
-    expect([Number(dashed?.[1]), Number(dashed?.[2])]).toEqual([180, 202]);
-    expect(yellowSymbols(sixthDial)).toEqual([[180, 202], [60, 308], [180, 308]]);
+    expect([Number(dashed?.[1]), Number(dashed?.[2])]).toEqual([180, 296.5]);
+    expect(yellowSymbols(sixthDial)).toEqual([[60, 308], [180, 308]]);
     expect(sixthDial).toContain('<circle class="fill-none stroke-orange-300" cx="180" cy="308" r="8.5" stroke-width="1.5"></circle>');
     expect(sixthDial.split('class="fill-none stroke-orange-300"').length - 1).toBe(1);
     expect(pointButtons(onSixth).map(({ text, pressed }) => [text, pressed])).toEqual([
@@ -1161,7 +1162,7 @@ describe("connected Explorer conversation screen", () => {
     const onOther = cardMarkup({ scope: "drawer", state: cardState({ attentionId: CARD_POINTS.otherPath }) });
     const otherDial = dialOf(onOther, "drawer");
     const otherDashed = dashedNeedle(otherDial);
-    expect([Number(otherDashed?.[1]), Number(otherDashed?.[2])]).toEqual([198.46, 198.61]);
+    expect([Number(otherDashed?.[1]), Number(otherDashed?.[2])]).toEqual([235.92, 297.25]);
     expect(dashedButton(onOther, "drawer")).not.toBeNull();
     expect(otherDial.match(/<line class="stroke-orange-300"/g)?.length).toBe(1);
     // The bubble the solid needle would point at keeps its plain stroke.

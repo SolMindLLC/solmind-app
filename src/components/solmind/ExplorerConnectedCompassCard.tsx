@@ -67,8 +67,8 @@ import { FOCUS_RING, QUIET_BUTTON, joinClasses } from "./ExplorerConversationScr
 // arranged, Other paths) in "the lowest positions": a row under Excursion in
 // grey, each with one small yellow symbol, at most three, the third "+N more"
 // (which opens the Compact view) when there are more; each is a button with
-// the dial's rules. A needle on such a point is drawn dashed with the yellow
-// symbol at its tip; it is a button whose tap shows one short sentence and
+// the dial's rules. A needle on such a point is drawn dashed all the way to
+// its place in the row (amended 2026-11-05, below); it is a button whose tap shows one short sentence and
 // whose next tap hides it. The Compact view's unplaced points are grey with
 // the same symbol. The heading is "Point the needle to change topic", with no
 // instruction under it, and the card no longer has the two "Not connected
@@ -137,10 +137,13 @@ const ROW_TEXT_Y = 325;
 const ROW_PLACE = { y: 315, width: 112, height: 30 } as const;
 const ROW_PLACES_X: readonly (readonly number[])[] = [[], [180], [120, 240], [60, 180, 300]];
 const SYMBOL_RADIUS = 5;
-// The dashed needle stops 52 from the centre, inside the ring of bubbles
-// (their inner edge is 64 out), with the symbol at its tip; its button is a
-// 34 square centred 30 along it, clear of the bubbles' buttons.
-const DASHED_LENGTH = 52;
+// The dashed needle reaches the row place it points at, stopping just outside
+// that place's orange ring (radius 8.5, plus a gap of 3), and is drawn under
+// the dial's points (Paul's decision, decision queue 2026-11-05 19:11:11 CST: "you can
+// see it reach the grey circle"). The place keeps its own yellow symbol, so
+// the needle has none at its tip. Its button is a 34 square centred 30 along
+// it, clear of the bubbles' buttons.
+const DASHED_TARGET_GAP = 11.5;
 const DASHED_BUTTON = { along: 30, size: 34 } as const;
 
 function rowPlacesX(count: number): readonly number[] {
@@ -176,7 +179,8 @@ function Dial({ scope, compass, row, children }: DialProps) {
   const needleAt = compass.attention?.dialAnchor ?? null;
   const end = needleAt === null ? null : needleEnd(needleAt);
   const target = dashedTarget(compass, row);
-  const dashedEnd = target === null ? null : towardTarget(target, DASHED_LENGTH);
+  const dashedEnd =
+    target === null ? null : towardTarget(target, Math.hypot(target.x - CENTER.x, target.y - CENTER.y) - DASHED_TARGET_GAP);
   const places = rowPlacesX(row.length);
 
   return (
@@ -221,7 +225,7 @@ function Dial({ scope, compass, row, children }: DialProps) {
         {end ? (
           <line className="stroke-orange-300" strokeLinecap="round" strokeWidth={3} x1={CENTER.x} x2={end.x} y1={CENTER.y} y2={end.y} />
         ) : null}
-        {/* A needle on a point without a position: a few dashes toward its row place. */}
+        {/* A needle on a point without a position: a dashed line to its row place, under the dial's points. */}
         {dashedEnd ? (
           <line
             className="stroke-orange-300"
@@ -235,7 +239,6 @@ function Dial({ scope, compass, row, children }: DialProps) {
           />
         ) : null}
         <circle className="fill-orange-200" cx={CENTER.x} cy={CENTER.y} r={4.5} />
-        {dashedEnd ? <SymbolMark at={dashedEnd} /> : null}
         {[...byAnchor].map(([anchor, point]) => {
           const at = positionOf(anchor);
           const lines = dialLabelLines(point.label);

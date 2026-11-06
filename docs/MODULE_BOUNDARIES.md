@@ -312,8 +312,9 @@ screen, and `ExplorerConversation.tsx` stays its only fetch owner:
   small yellow symbol each, at most three places, the third "+N more" (which
   opens the Compact view, focus then on the view switch) when there are more,
   each a button with the dial's rules; the line about the Compact view is
-  gone; a needle on such a point is drawn dashed with the yellow symbol at its
-  tip and is a button (named "Why the needle is dashed") whose tap shows one
+  gone; a needle on such a point is drawn dashed all the way to its place, under
+  the dial's points, with no symbol at its tip (amended 2026-11-05, Paul's decision, decision queue 2026-11-05 19:11:11 CST),
+  and is a button (named "Why the needle is dashed") whose tap shows one
   short sentence and whose next tap hides it (card state only); the Compact
   view's points without a position are grey with the same symbol; the heading
   is "Point the needle to change topic" in both views, with no instruction

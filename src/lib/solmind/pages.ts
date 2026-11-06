@@ -14,7 +14,7 @@ export const SOLMIND_PAGES = {
     explorer: {
       title: "Explorer",
       description:
-        "Explorer-facing conversation, intake, reflection, check-ins, and onboarding preview.",
+        "Explorer workspace: the conversation with your Virtual Guide, your Compass and your Waypoints.",
       href: "/explorer",
     },
     guide: {
