@@ -22,7 +22,7 @@ const PRIVATE_DETAIL = "SYNTHETIC_INTERNAL_DETAIL_NOT_FOR_CALLERS";
 const UNAVAILABLE = "explorer_conversation_repository_unavailable";
 const STATE = Object.freeze({
   version: "explorer-conversation.v1", conversationId: null, revision: 0,
-  pendingTurn: false, turnedDownLimitReached: false, providerState: "unavailable", messages: [], compassItems: [],
+  pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable", messages: [], compassItems: [],
   priorityId: null, attentionId: null, waypoints: [],
 });
 const ROW = Object.freeze({ outcome: "ok", conversation_state: STATE });
@@ -93,6 +93,20 @@ const CALLS: ReadonlyArray<Readonly<{
 ];
 
 describe("explorerConversationRepository closed transport boundary", () => {
+  it.each(CALLS)("S7a $method requires an exact nullable private draft projection", async ({ invoke }) => {
+    const draft = { id: OPERATION_ID, title: "A private draft", destination: null, whyItMatters: "A reason",
+      arrivalSignal: null, suggestionMessageId: MESSAGE_ID };
+    for (const waypointDraft of [null, draft]) {
+      const row = { ...ROW, conversation_state: { ...STATE, conversationId: CONVERSATION_ID, waypointDraft } };
+      const f = transport({ data: [row], error: null });
+      expect(await invoke(createExplorerConversationRepository(f.client))).toEqual(row);
+    }
+    for (const waypointDraft of [undefined, {}, [], { ...draft, title: "x".repeat(1001) },
+      { ...draft, suggestionMessageId: null }, { ...draft, draftStatus: "rejected" }]) {
+      const f = transport({ data: [{ ...ROW, conversation_state: { ...STATE, waypointDraft } }], error: null });
+      await expectUnavailable(invoke(createExplorerConversationRepository(f.client)));
+    }
+  });
   it.each(CALLS)("$method requires the turned-down limit boolean in every returned state", async ({ invoke }) => {
     for (const turnedDownLimitReached of [false, true]) {
       const row = { ...ROW, conversation_state: { ...STATE, conversationId: CONVERSATION_ID, turnedDownLimitReached } };

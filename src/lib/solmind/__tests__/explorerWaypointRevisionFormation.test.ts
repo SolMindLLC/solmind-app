@@ -4,12 +4,12 @@ import { EXPLORER_CONVERSATION_VERSION, type ExplorerConversationState,
 import { buildReachedFormationIntent, buildWaypointReleaseFormationIntent,
   buildWaypointRevisionFormationIntent, type WaypointRevisionReview } from "../explorerConversationFormation";
 
-const parent = { id: "waypoint-a", sourceMessageId: "source-a", destination: "A calm breakfast",
+const parent = { id: "waypoint-a", sourceMessageId: "source-a", title: "A calm breakfast", destination: "A calm breakfast",
   meaning: "Connecting", arrivalSignal: "An unhurried meal", status: "chosen" as const };
 const answer = () => ({ component: "destination" as const, answer: "A calm evening meal" });
 function state(overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
   return { version: EXPLORER_CONVERSATION_VERSION, conversationId: "conversation-a", revision: 4,
-    providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, messages: [], compassItems: [], priorityId: null,
+    providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, messages: [], compassItems: [], priorityId: null,
     attentionId: null, waypoints: [parent], sessionStatus: "active", ending: null, ...overrides };
 }
 function review(overrides: Partial<WaypointRevisionReview> = {}): WaypointRevisionReview {

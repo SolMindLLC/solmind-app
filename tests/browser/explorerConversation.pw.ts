@@ -12,7 +12,7 @@ const CONVERSATION = "10000000-0000-4000-8000-000000000001";
 const EXPLORER_MESSAGE = "20000000-0000-4000-8000-000000000001";
 const GUIDE_MESSAGE = "30000000-0000-4000-8000-000000000001";
 const emptyState = (providerState: ExplorerConversationState["providerState"] = "available"): ExplorerConversationState => ({
-  version: EXPLORER_CONVERSATION_VERSION, conversationId: null, revision: 0, providerState, pendingTurn: false, turnedDownLimitReached: false,
+  version: EXPLORER_CONVERSATION_VERSION, conversationId: null, revision: 0, providerState, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null,
   messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [],
 });
 const savedState = (body = "A synthetic Explorer question"): ExplorerConversationState => ({
@@ -99,7 +99,7 @@ test("F01 saved Route and Reached evidence remain reviewable after reload withou
       kind: "priority_confirmed", compassItemId: pointId, label: "Captured earlier direction",
       recordedAt: "2026-10-29T07:00:00.123456+00:00" }],
     waypoints: [{ id: "60000000-0000-4000-8000-000000000001", sourceMessageId: GUIDE_MESSAGE,
-      destination: "One calm choice", meaning: "Room for what matters", arrivalSignal: "I can name a next step",
+      title: "One calm choice", destination: "One calm choice", meaning: "Room for what matters", arrivalSignal: "I can name a next step",
       status: "reached", reachedEvidence: "I named a next step. <script>not markup</script>",
       reachedAt: "2026-10-29T07:01:00.123456+00:00" }] };
   let writes = 0;

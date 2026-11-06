@@ -9,7 +9,7 @@ import {
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, "0")}`;
 const base = { operationId: uuid(8), expectedRevision: 4, waypointId: uuid(3) };
-const parent = { id: uuid(3), sourceMessageId: uuid(2), destination: "A calm breakfast",
+const parent = { id: uuid(3), sourceMessageId: uuid(2), title: "A calm breakfast", destination: "A calm breakfast",
   meaning: "Connecting with family", arrivalSignal: "An unhurried meal together", status: "chosen" };
 const clarification = () => ({ component: "destination", questionKey: EXPLORER_WAYPOINT_QUESTION_KEYS.destination,
   answer: "A calm evening meal", recordedAt: "2026-10-29T15:00:00.123456+00:00" });
@@ -17,7 +17,7 @@ const child = () => ({ ...parent, id: uuid(4), destination: clarification().answ
   lifecycle: { predecessorWaypointId: parent.id, creationReason: "revision", clarifications: [clarification()] } });
 function state(waypoints: readonly unknown[] = [parent, child()]) {
   return { version: EXPLORER_CONVERSATION_VERSION, conversationId: uuid(1), revision: 5,
-    providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, messages: [
+    providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, messages: [
       { id: uuid(2), role: "explorer", body: "I want more time with my family.", createdAt: "2026-10-29T14:00:00Z" },
     ], compassItems: [], priorityId: null, attentionId: null, waypoints, sessionStatus: "active", ending: null };
 }

@@ -19,11 +19,11 @@ const ACTOR = { accountId: ID.actor, applicationSessionId: ID.app };
 const POLICY = { known: true, contractVersion: "explorer-conversation-safety.v1", restrictedLevel: null, adultReflectionStopped: false, version: 0 };
 const RAW = JSON.stringify({ protocol: "explorer-safety-reply.v2", classification: { level: 0, minorIndicated: false }, candidateReply: { content: "One saved synthetic reply." } });
 function state(conversationId: string | null): ExplorerConversationState {
-  return { version: "explorer-conversation.v1", conversationId, revision: 0, pendingTurn: false, turnedDownLimitReached: false, providerState: "unavailable",
+  return { version: "explorer-conversation.v1", conversationId, revision: 0, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable",
     messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] };
 }
 // Since chat step slice S3 (2026-11-03) the private context revision carries the saved Compass section.
-const PRIVATE_CONTEXT_VERSION = "wi007-v0.1+onboarding-fields-v2+compass-v3";
+const PRIVATE_CONTEXT_VERSION = "wi007-v0.1+onboarding-fields-v2+compass-v4";
 function fixture(contextVersion?: string) {
   const configuration = getExplorerPrivateConfigurationCandidate(); if (!configuration) throw new Error("synthetic_candidate_missing");
   const readiness: ExplorerPrivateOperationalReadiness = { configuration, configurationFingerprint: SHA, modelName: "gpt-5.6-luna", modelPolicyVersion: "synthetic-model.v1",
@@ -79,7 +79,7 @@ function fixture(contextVersion?: string) {
         globalPolicy: { version: configuration.globalPolicy.version, text: configuration.globalPolicy.text.replace(/\r\n?/g, "\n").trim() },
         roleBehavior: { version: configuration.roleBehavior.version, text: configuration.roleBehavior.text.replace(/\r\n?/g, "\n").trim() },
         crisisBehavior: { version: configuration.crisisBehavior.version, text: configuration.crisisBehavior.text.replace(/\r\n?/g, "\n").trim() },
-        ...(includeCompass ? { compassContext: { version: "explorer-compass-context.v3",
+        ...(includeCompass ? { compassContext: { version: "explorer-compass-context.v4",
           points: input.state.compassItems.map((point, order) => ({ id: point.id, label: point.label, order,
             formation: point.formation ?? "saved", anchor: point.anchor ?? null, emphasis: point.emphasis ?? null,
             ...(point.formation === "forming" ? { suggestedInPreviousReply: point.wordingMessageId !== undefined &&
@@ -105,6 +105,86 @@ function fixture(contextVersion?: string) {
 }
 function send(body = "Synthetic ordinary message.") { return { kind: "send", operationId: ID.operation, expectedRevision: 0, body }; }
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+describe("S7a private Waypoint composition", () => {
+  const wording = { title: "Calm mornings with room to breathe", destination: "An unhurried breakfast",
+    whyItMatters: "Time with my family", arrivalSignal: "Two calm breakfasts" };
+  const reply = (level = 0, minorIndicated = false, waypointSuggestion: unknown = wording) => JSON.stringify({
+    protocol: "explorer-safety-reply.v2", classification: { level, minorIndicated },
+    candidateReply: { content: "What would you change?" }, waypointSuggestion });
+  const current = (): ExplorerConversationState => ({ ...state(ID.conversation), sessionStatus: "active", ending: null,
+    messages: [{ id: ID.intake, role: "virtualGuide", body: "A tentative Waypoint", createdAt: "2026-11-05T10:00:00Z" }],
+    waypointDraft: { id: ID.pack, ...wording, suggestionMessageId: ID.intake } });
+  it("passes one valid proposal through the 25-argument terminal intent after one ordinary provider call", async () => {
+    const f = fixture(); f.generate.mockResolvedValue(reply());
+    const result = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(result.result.ok).toBe(true);
+    expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
+    expect(f.settle.mock.calls[0][0].p_waypoint_suggestion).toEqual(wording);
+    expect(Object.keys(f.settle.mock.calls[0][0])).toHaveLength(25);
+  });
+  it.each(["level2", "level3", "minor", "restricted", "adult", "malformed", "canceled"] as const)(
+    "keeps Waypoint suggestions out of %s settlement", async reason => {
+      const f = fixture(); const signal = new AbortController();
+      if (reason === "restricted") f.setPolicy({ ...POLICY, restrictedLevel: 3 });
+      if (reason === "adult") f.setPolicy({ ...POLICY, adultReflectionStopped: true });
+      f.generate.mockImplementation(async () => {
+        if (reason === "canceled") signal.abort();
+        return reply(reason === "level2" ? 2 : reason === "level3" ? 3 : 0,
+          reason === "minor", reason === "malformed" ? { ...wording, title: null } : wording);
+      });
+      await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies, signal: signal.signal });
+      expect(f.settle).toHaveBeenCalledOnce();
+      expect(f.settle.mock.calls[0][0].p_waypoint_suggestion).toBeNull();
+    });
+  it.each(["right", "close", "not_it"] as const)("routes %s only to the eight-argument draft port without Send work", async response => {
+    const f = fixture(); f.setCurrent(current());
+    const respondWaypointDraft = vi.fn(async () => ({ outcome: "ok", conversation_state: current() }));
+    const command = { kind: "respond_waypoint_draft" as const, draftId: ID.pack, response, operationId: ID.operation, expectedRevision: 0 };
+    const result = await commandExplorerPrivateConversation({ command, dependencies: { ...f.dependencies,
+      repository: { ...f.dependencies.repository, respondWaypointDraft } } });
+    expect(result.result.ok).toBe(true);
+    expect(respondWaypointDraft).toHaveBeenCalledExactlyOnceWith({ p_actor_user_account_id: ID.actor,
+      p_user_session_id: ID.app, p_conversation_id: ID.conversation, p_operation_id: ID.operation,
+      p_expected_revision: 0, p_command_fingerprint: explorerConversationCommandFingerprint(command),
+      p_draft_id: ID.pack, p_response: response });
+    for (const port of [f.generate, f.prepare, f.settle, f.observe, f.resolve, f.mutate]) expect(port).not.toHaveBeenCalled();
+  });
+  it.each(["unknown", "restricted", "adult", "pending", "absent", "replay"] as const)(
+    "retains the %s gate and exact replay before draft responses", async reason => {
+      const f = fixture(); f.setCurrent({ ...current(), pendingTurn: reason === "pending" });
+      if (reason === "unknown") f.setPolicy({ known: false });
+      if (reason === "restricted") f.setPolicy({ ...POLICY, restrictedLevel: 3 });
+      if (reason === "adult") f.setPolicy({ ...POLICY, adultReflectionStopped: true });
+      if (reason === "replay") f.read.mockResolvedValue({ outcome: "exact_replay", conversation_state: current() });
+      const respondWaypointDraft = vi.fn();
+      const result = await commandExplorerPrivateConversation({ command: { kind: "respond_waypoint_draft", draftId: ID.pack,
+        response: "close", operationId: ID.operation, expectedRevision: 0 }, dependencies: { ...f.dependencies,
+        repository: { ...f.dependencies.repository, ...(reason === "absent" ? {} : { respondWaypointDraft }) } } });
+      expect(result.result.ok).toBe(reason === "replay"); expect(respondWaypointDraft).not.toHaveBeenCalled();
+      expect(f.generate).not.toHaveBeenCalled();
+    });
+  it.each(["stale_revision", "operation_conflict"])("returns a definite refresh for %s", async outcome => {
+    const f = fixture(); f.setCurrent(current());
+    const result = await commandExplorerPrivateConversation({ command: { kind: "respond_waypoint_draft", draftId: ID.pack,
+      response: "right", operationId: ID.operation, expectedRevision: 0 }, dependencies: { ...f.dependencies,
+      repository: { ...f.dependencies.repository, respondWaypointDraft: async () => ({ outcome }) } } });
+    expect(result.result).toEqual({ ok: false, state: null, error: "refresh_required" });
+    expect(f.generate).not.toHaveBeenCalled();
+  });
+  it("binds draft identity and response into a versioned fingerprint and refuses v3 ordinary context", async () => {
+    const command = { kind: "respond_waypoint_draft" as const, draftId: ID.pack, response: "right" as const,
+      operationId: ID.operation, expectedRevision: 0 };
+    expect(explorerConversationCommandFingerprint(command)).toBe(createHash("sha256").update(JSON.stringify([
+      "explorer-conversation.v1", command.kind, ID.operation, 0, ID.pack, "right" ])).digest("hex").toUpperCase());
+    expect(explorerConversationCommandFingerprint(command)).not.toBe(explorerConversationCommandFingerprint({ ...command, response: "close" }));
+    expect(explorerConversationCommandFingerprint(command)).not.toBe(explorerConversationCommandFingerprint({ ...command, draftId: ID.version }));
+    const f = fixture("wi007-v0.1+onboarding-fields-v2+compass-v3");
+    const refused = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(refused.assistance).toMatchObject({ kind: "temporarily_unavailable", persisted: false });
+    expect(f.generate).not.toHaveBeenCalled(); expect(f.prepare).not.toHaveBeenCalled();
+    expect(f.settle).not.toHaveBeenCalled();
+  });
+});
 describe("Held private Explorer controller: explicit synthetic ports only", () => {
   it("owns the actual ensure identity, fresh AV3 read, one model observation and one terminal", async () => {
     const f = fixture(); const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
@@ -686,7 +766,7 @@ describe("owned private Waypoint release capability", () => {
   const command = { kind: "release_waypoint" as const, operationId: ID.operation, expectedRevision: 0, waypointId: ID.actor };
   const released = () => ({ ...state(ID.conversation), revision: 1, sessionStatus: "active" as const, ending: null,
     messages: [{ id: ID.intake, role: "explorer" as const, body: "Saved synthetic conversation source", createdAt: "2026-10-29T14:00:00Z" }],
-    waypoints: [{ id: ID.actor, sourceMessageId: ID.intake, destination: "A synthetic destination", meaning: "It matters",
+    waypoints: [{ id: ID.actor, sourceMessageId: ID.intake, title: "A synthetic destination", destination: "A synthetic destination", meaning: "It matters",
       arrivalSignal: "An observable signal", status: "chosen" as const,
       release: { operationId: ID.operation, releasedAt: "2026-10-29T15:00:00.000Z" } }] });
   it("forwards seven authenticated arguments as owned closure without readiness/provider or generic writes", async () => {
@@ -727,7 +807,7 @@ describe("private conversation-confirmed Waypoint successor",()=>{
  const command={kind:"revise_waypoint" as const,operationId:ID.operation,expectedRevision:0,waypointId:ID.actor,
   answers:[{component:"destination" as const,answer:"A clarified destination"}]};
  const current=()=>({...state(ID.conversation),sessionStatus:"active" as const,ending:null,messages:[{id:ID.intake,role:"explorer" as const,body:"Synthetic saved source",createdAt:"2026-10-29T14:00:00Z"}],
-  waypoints:[{id:ID.actor,sourceMessageId:ID.intake,destination:"Old destination",meaning:"It matters",arrivalSignal:"Visible signal",status:"chosen" as const}]});
+  waypoints:[{id:ID.actor,sourceMessageId:ID.intake,title: "Old destination", destination:"Old destination",meaning:"It matters",arrivalSignal:"Visible signal",status:"chosen" as const}]});
  const saved=()=>{const before=current();return {...before,revision:1,waypoints:[...before.waypoints,{...before.waypoints[0],id:ID.operation,destination:command.answers[0].answer,
   lifecycle:{predecessorWaypointId:ID.actor,creationReason:"revision" as const,clarifications:[{...command.answers[0],questionKey:"waypoint.destination.v1" as const,recordedAt:"2026-10-29T15:30:00Z"}]}}]};};
  it("forwards only nine derived arguments, returns immutable successor, never invokes the provider",async()=>{
@@ -752,7 +832,7 @@ it("does not claim a confirmed successor from an unrelated well-formed repositor
  const command={kind:"revise_waypoint" as const,operationId:ID.operation,expectedRevision:0,waypointId:ID.actor,
   answers:[{component:"destination" as const,answer:"Clarified destination"}]};
  const source={id:ID.intake,role:"explorer" as const,body:"Synthetic saved source",createdAt:"2026-10-29T14:00:00Z"};
- const prior={id:ID.actor,sourceMessageId:ID.intake,destination:"Old destination",meaning:"It matters",arrivalSignal:"Visible signal",status:"chosen" as const};
+ const prior={id:ID.actor,sourceMessageId:ID.intake,title: "Old destination", destination:"Old destination",meaning:"It matters",arrivalSignal:"Visible signal",status:"chosen" as const};
  const current={...state(ID.conversation),sessionStatus:"active" as const,ending:null,messages:[source],waypoints:[prior]};
  const successor={...prior,id:ID.operation,destination:command.answers[0].answer,lifecycle:{predecessorWaypointId:ID.actor,creationReason:"revision" as const,
   clarifications:[{...command.answers[0],questionKey:"waypoint.destination.v1" as const,recordedAt:"2026-10-29T15:30:00Z"}]}};
@@ -1324,7 +1404,7 @@ describe("S4 optional reply proposals keep settlement and safety separate", () =
     f.generate.mockResolvedValue(answeredReply([{ pointId: otherId, response: "right" }]));
     const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
     expect(output.result.ok).toBe(true);
-    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_reply_kind: "ordinary", p_compass_responses: null });
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_reply_kind: "ordinary", p_compass_responses: null, p_waypoint_suggestion: null });
   });
   it.each([pointId, mergedId, "00000000-0000-4000-8000-000000000099"])(
     "S6b drops saved, merged or foreign answer target %s without losing an eligible sibling", async invalidId => {
@@ -1338,7 +1418,7 @@ describe("S4 optional reply proposals keep settlement and safety separate", () =
     const suggestions = [{ pointId: otherId, label }];
     f.generate.mockResolvedValue(answeredReply([{ pointId: otherId, response: "right" }], 0, suggestions));
     await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
-    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_compass_responses: null, p_compass_suggestions: suggestions });
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_compass_responses: null, p_waypoint_suggestion: null, p_compass_suggestions: suggestions });
   });
   it.each([2, 3, 4])("S6b drops typed answers at level %i", async level => {
     const f = withPoints("forming", "previous");
@@ -1480,7 +1560,7 @@ describe("Crisis checks omit saved Compass context before preparation", () => {
     const populated: ExplorerConversationState = { ...state(ID.conversation),
       messages: [{ id: source, role: "explorer", body: "Synthetic saved message.", createdAt: "2026-11-04T12:00:00Z" }],
       compassItems: [{ id: point, sourceMessageId: source, label: "Private saved point" }],
-      waypoints: [{ id: waypoint, sourceMessageId: source, destination: "Private saved destination",
+      waypoints: [{ id: waypoint, sourceMessageId: source, title: "Private saved destination", destination: "Private saved destination",
         meaning: "Private saved meaning", arrivalSignal: "Private saved signal", status: "chosen" }] };
     f.setCurrent(populated);
     f.ensure.mockResolvedValue({ outcome: "reused", conversation_state: populated, policy_state: policy });

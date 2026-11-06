@@ -1,5 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { parseExplorerConversationWaypointDraft } from "../explorerConversationContract";
 import type { ExplorerConversationRepository, ExplorerConversationRpcRow } from "../virtual-guide/explorerConversationComposition";
 
 const FAILED = "explorer_conversation_repository_unavailable";
@@ -40,7 +41,8 @@ function createRepository(client: SupabaseClient, prepareFunction:
           typeof data[0].outcome !== "string") throw new Error(FAILED);
       const state: unknown = data[0].conversation_state;
       if (state != null && (typeof state !== "object" || Array.isArray(state) ||
-          typeof Object.getOwnPropertyDescriptor(state, "turnedDownLimitReached")?.value !== "boolean")) throw new Error(FAILED);
+          typeof Object.getOwnPropertyDescriptor(state, "turnedDownLimitReached")?.value !== "boolean" ||
+          parseExplorerConversationWaypointDraft(Object.getOwnPropertyDescriptor(state, "waypointDraft")?.value) === undefined)) throw new Error(FAILED);
       return data[0] as ExplorerConversationRpcRow;
     } catch { throw new Error(FAILED); }
   }

@@ -24,7 +24,7 @@ const ACTOR = { accountId: id(1), applicationSessionId: id(2) };
 const POLICY = { known: true, contractVersion: "explorer-conversation-safety.v1", restrictedLevel: null, adultReflectionStopped: false, version: 0 };
 const CHOICES = [{ label: "Explore this topic" }, { label: "I have a question" }];
 const COMMAND = { kind: "send", operationId: id(8), expectedRevision: 1, body: "Synthetic message about money worries." } as const;
-const COMPASS = { version: "explorer-compass-context.v3", points: [{ id: id(9), label: "Money worries", order: 0,
+const COMPASS = { version: "explorer-compass-context.v4", points: [{ id: id(9), label: "Money worries", order: 0,
   formation: "saved", anchor: null, emphasis: null }], priorityId: null, attentionId: null, recentRoute: [],
   waypoints: [{ id: id(12), title: "Review my spending", destination: "Review my spending", meaning: "Find room for rest",
     arrivalSignal: "One review completed", stage: "formed", reachedEvidence: null }], drafts: [] };
@@ -38,12 +38,12 @@ function fixture(proposals: Record<string, unknown>, options: { restrictedLevel?
     rendererVerificationReceiptSha256: SHA, signalVerificationReceiptSha256: SHA,
     methodology: { packId: id(6), versionId: id(7), contentSha256: SHA, authorizationVersion: "MV1:" + SHA } };
   let current: ExplorerConversationState = { version: "explorer-conversation.v1", conversationId: id(3),
-    revision: 1, pendingTurn: false, turnedDownLimitReached: false, providerState: "unavailable",
+    revision: 1, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable",
     messages: [{ id: id(10), role: "explorer", body: "Synthetic source about money worries.", createdAt: "2026-11-04T12:00:00Z" },
       ...(options.forming ? [{ id: id(13), role: "virtualGuide" as const, body: "Does Money worries fit?", createdAt: "2026-11-04T12:00:00.500Z" }] : [])],
     compassItems: [{ id: id(9), sourceMessageId: id(10), label: "Money worries",
       ...(options.forming ? { formation: "forming" as const, wordingMessageId: id(13) } : {}) }], priorityId: null, attentionId: null,
-    waypoints: [{ id: id(12), sourceMessageId: id(10), destination: "Review my spending", meaning: "Find room for rest",
+    waypoints: [{ id: id(12), sourceMessageId: id(10), title: "Review my spending", destination: "Review my spending", meaning: "Find room for rest",
       arrivalSignal: "One review completed", status: "chosen" }] };
   let policy = { ...POLICY, restrictedLevel: options.restrictedLevel ?? null,
     adultReflectionStopped: options.adultReflectionStopped ?? false };
@@ -110,7 +110,7 @@ function fixture(proposals: Record<string, unknown>, options: { restrictedLevel?
   });
   const buildContext = vi.fn<NonNullable<ExplorerPrivateConversationDependencies["buildContext"]>>(async input => {
     const authorizedContext = JSON.stringify({ contractVersion: input.mode === "classification_only"
-      ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v3",
+      ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v4",
       globalPolicy: { version: configuration.globalPolicy.version, text: configuration.globalPolicy.text },
       roleBehavior: { version: configuration.roleBehavior.version, text: configuration.roleBehavior.text },
       crisisBehavior: { version: configuration.crisisBehavior.version, text: configuration.crisisBehavior.text },
@@ -165,7 +165,7 @@ async function expectPreparedHttpInput(f: ReturnType<typeof fixture>, mode: "cla
   expect(prepared.p_context_source_ids).toEqual(built.evidence.p_context_source_ids);
   const context = JSON.parse(sent.input);
   expect(context.contractVersion).toBe(mode === "classification_only"
-    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v3");
+    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v4");
   if (mode === "classification_only") {
     expect(context).not.toHaveProperty("compassContext");
     for (const value of [id(9), id(12), "Money worries", "Review my spending", "Find room for rest", "One review completed"]) {
@@ -209,7 +209,7 @@ describe("S4 joined current private path, with injected synthetic HTTP and RPC r
     await expectPreparedHttpInput(f, "classification_and_reply");
     const terminals = f.rpc.mock.calls.filter(([name]) => name === "solmind_settle_explorer_conversation_turn_v4");
     expect(terminals).toHaveLength(1);
-    expect(Object.keys(terminals[0][1])).toHaveLength(24);
+    expect(Object.keys(terminals[0][1])).toHaveLength(25);
     expect(terminals[0][1]).toMatchObject({ p_reply_kind: "ordinary", p_attention_item_id: id(9),
       p_compass_suggestions: [{ label: "Evening rest" }, { label: "Family time" }] });
     const replay = await commandExplorerPrivateConversation({ command: COMMAND, dependencies: f.dependencies });
@@ -229,7 +229,7 @@ describe("S4 joined current private path, with injected synthetic HTTP and RPC r
     expect(httpInput.compassContext.points[0]).toMatchObject({ formation: "forming", suggestedInPreviousReply: true });
     expect(httpInput.immediateExplorerMessage.content).toBe("Yes, that's it.");
     const terminals = f.rpc.mock.calls.filter(([name]) => name === "solmind_settle_explorer_conversation_turn_v4");
-    expect(terminals).toHaveLength(1); expect(Object.keys(terminals[0][1])).toHaveLength(24);
+    expect(terminals).toHaveLength(1); expect(Object.keys(terminals[0][1])).toHaveLength(25);
     expect(terminals[0][1]).toMatchObject({ p_reply_kind: "ordinary", p_compass_responses: [{ pointId: id(9), response: "right" }] });
     const browser = parseExplorerPrivateConversationResponse(JSON.parse(JSON.stringify({ version: EXPLORER_PRIVATE_RESPONSE_VERSION, ...result })));
     if (!browser?.result.ok) throw new Error("synthetic_saved_state_missing");

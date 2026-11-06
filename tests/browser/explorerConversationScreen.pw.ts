@@ -22,7 +22,7 @@ const message = (index: number, role: "explorer" | "virtualGuide", body: string)
   createdAt: `2026-10-30T14:0${index}:00.000Z`,
 });
 const savedState = (): ExplorerConversationState => ({
-  version: EXPLORER_CONVERSATION_VERSION, conversationId: CONVERSATION, revision: 4, pendingTurn: false, turnedDownLimitReached: false,
+  version: EXPLORER_CONVERSATION_VERSION, conversationId: CONVERSATION, revision: 4, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null,
   providerState: "unavailable", compassItems: [], priorityId: null, attentionId: null, waypoints: [], route: [],
   sessionStatus: "active", ending: null,
   messages: [

@@ -1,7 +1,7 @@
 import "server-only";
 import { types } from "node:util";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { EXPLORER_COMPASS_ANCHORS, EXPLORER_CONVERSATION_LIMITS, parseExplorerWaypointClarificationAnswers } from "../explorerConversationContract";
+import { EXPLORER_COMPASS_ANCHORS, EXPLORER_CONVERSATION_LIMITS, parseExplorerConversationWaypointDraft, parseExplorerWaypointClarificationAnswers } from "../explorerConversationContract";
 import type { ExplorerPrivateConversationRepository, ExplorerPrivatePauseRow, ExplorerPrivateRpcRow } from "../virtual-guide/explorerPrivateConversationComposition";
 
 const ACTOR = ["p_actor_user_account_id", "p_user_session_id"] as const;
@@ -20,7 +20,7 @@ const PORTS = Object.freeze({
     columns: ["outcome", "conversation_state", "dispatch_permitted", "policy_state"] }),
   settle: Object.freeze({ name: "solmind_settle_explorer_conversation_turn_v4", parameters: [...ACTOR, "p_conversation_id", "p_operation_id", "p_status", "p_reply_message_id", "p_reply_kind", "p_reply_body",
     "p_model_level", "p_model_minor_indicated", "p_protocol_version", "p_request_mode", "p_configuration_fingerprint", "p_fallback_policy_version", "p_model_policy_version", "p_trusted_response_version", "p_resource_policy_version",
-    "p_fallback_level", "p_fallback_minor_indicated", "p_delivery_interested", "p_attention_item_id", "p_choices", "p_compass_suggestions", "p_compass_responses"], columns: ["outcome", "conversation_state", "policy_state", "saved_reply"] }),
+    "p_fallback_level", "p_fallback_minor_indicated", "p_delivery_interested", "p_attention_item_id", "p_choices", "p_compass_suggestions", "p_compass_responses", "p_waypoint_suggestion"], columns: ["outcome", "conversation_state", "policy_state", "saved_reply"] }),
   mutate: Object.freeze({ name: "solmind_mutate_explorer_conversation_v3", parameters: [...ACTOR, "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint", "p_kind", "p_source_message_id", "p_item_id", "p_waypoint_id", "p_label", "p_destination", "p_meaning", "p_arrival_signal", "p_evidence"],
     columns: ["outcome", "conversation_state"] }),
   arrange: Object.freeze({ name: "solmind_confirm_explorer_compass_arrangement_v1", parameters: [...ACTOR,
@@ -31,6 +31,9 @@ const PORTS = Object.freeze({
     columns: ["outcome", "conversation_state"] }),
   respondCompassSuggestion: Object.freeze({ name: "solmind_respond_explorer_compass_suggestion_v1", parameters: [...ACTOR,
     "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint", "p_item_id", "p_response"],
+    columns: ["outcome", "conversation_state"] }),
+  respondWaypointDraft: Object.freeze({ name: "solmind_respond_explorer_waypoint_draft_v1", parameters: [...ACTOR,
+    "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint", "p_draft_id", "p_response"],
     columns: ["outcome", "conversation_state"] }),
   waypointRevision: Object.freeze({ name: "solmind_confirm_explorer_waypoint_revision_v1", parameters: [...ACTOR,
     "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint", "p_kind", "p_waypoint_id", "p_answers"],
@@ -56,6 +59,7 @@ const OUTCOMES: Readonly<Record<keyof typeof PORTS, readonly string[]>> = Object
   arrange: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   category: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   respondCompassSuggestion: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
+  respondWaypointDraft: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   waypointRevision: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   release: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   end: ["ok", "exact_replay", "already_ended", "stale_revision", "unavailable"], review: ["ok"], pause: ["ok"],
@@ -71,6 +75,19 @@ function parameters(input: object, expected: readonly string[]): Readonly<Record
     const property = Object.getOwnPropertyDescriptor(input, key);
     if (!property?.enumerable || !("value" in property)) throw new Error(FAILURE);
     const value: unknown = property.value;
+    if (key === "p_waypoint_suggestion" && value !== null) {
+      if (!object(value) || Reflect.ownKeys(value).length !== 4) throw new Error(FAILURE);
+      const suggestion: Record<string, string> = {};
+      for (const name of ["title", "destination", "whyItMatters", "arrivalSignal"]) {
+        const field = Object.getOwnPropertyDescriptor(value, name);
+        if (!field?.enumerable || !("value" in field) || typeof field.value !== "string" || !field.value.trim() ||
+            field.value !== field.value.trim() || field.value.length > 1_000 ||
+            /[\u0000-\u0009\u000b\u000c\u000e-\u001f\u007f-\u009f\u200b-\u200d\u202a-\u202e\u2060\u2066-\u2069\ufeff]/u.test(field.value) ||
+            /[\uD800-\uDFFF]/u.test(field.value)) throw new Error(FAILURE);
+        suggestion[name] = field.value;
+      }
+      copied[key] = Object.freeze(suggestion); continue;
+    }
     if (key === "p_response" && !["right", "close", "not_it"].includes(value as string)) throw new Error(FAILURE);
     if ((key === "p_items" || key === "p_member_item_ids" || key === "p_answers") && !Array.isArray(value)) throw new Error(FAILURE);
     if (key === "p_compass_responses" && value !== null) {
@@ -199,7 +216,7 @@ function parameters(input: object, expected: readonly string[]): Readonly<Record
   return Object.freeze(copied);
 }
 
-// The returned object exposes fourteen exact ports, including deliberate
+// The returned object exposes fifteen exact ports, including deliberate
 // formation, ending, owned ended review and the hard-stop pause read. There is no generic select/RPC/credential capability.
 export function createExplorerPrivateConversationRepository(client: SupabaseClient): ExplorerPrivateConversationRepository {
   async function call(port: keyof typeof PORTS, input: object): Promise<ExplorerPrivateRpcRow> {
@@ -215,7 +232,8 @@ export function createExplorerPrivateConversationRepository(client: SupabaseClie
       if (error || !Array.isArray(data) || data.length !== 1 || !object(data[0])) throw new Error(FAILURE);
       const row = data[0];
       if (row.conversation_state != null && (!object(row.conversation_state) ||
-          typeof Object.getOwnPropertyDescriptor(row.conversation_state, "turnedDownLimitReached")?.value !== "boolean")) throw new Error(FAILURE);
+          typeof Object.getOwnPropertyDescriptor(row.conversation_state, "turnedDownLimitReached")?.value !== "boolean" ||
+          parseExplorerConversationWaypointDraft(Object.getOwnPropertyDescriptor(row.conversation_state, "waypointDraft")?.value) === undefined)) throw new Error(FAILURE);
       if (Object.keys(row).length !== spec.columns.length || !spec.columns.every((column) => Object.hasOwn(row, column)) ||
         typeof row.outcome !== "string" || !OUTCOMES[port].includes(row.outcome) ||
         (Object.hasOwn(row, "dispatch_permitted") && typeof row.dispatch_permitted !== "boolean") ||
@@ -235,6 +253,7 @@ export function createExplorerPrivateConversationRepository(client: SupabaseClie
     ensure: (input) => call("ensure", input), observe: (input) => call("observe", input), prepare: (input) => call("prepare", input),
     settle: (input) => call("settle", input), mutate: (input) => call("mutate", input),
     respondCompassSuggestion: (input) => call("respondCompassSuggestion", input),
+    respondWaypointDraft: (input) => call("respondWaypointDraft", input),
     arrange: (input) => call("arrange", input), category: (input) => call("category", input), release: (input) => call("release", input), waypointRevision: (input) => call("waypointRevision", input), end: (input) => call("end", input), review: (input) => call("review", input),
     pause: async (actor) => await call("pause", { p_actor_user_account_id: actor.accountId, p_user_session_id: actor.applicationSessionId }) as ExplorerPrivatePauseRow,
   });

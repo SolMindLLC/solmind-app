@@ -7,12 +7,12 @@ import {
 } from "../explorerConversationFormation";
 
 const source = { id: "source-a", role: "explorer" as const, body: "I want calmer mornings.", createdAt: "2026-10-29T14:00:00Z" };
-const waypoint = { id: "waypoint-a", sourceMessageId: source.id, destination: "A calm breakfast",
+const waypoint = { id: "waypoint-a", sourceMessageId: source.id, title: "A calm breakfast", destination: "A calm breakfast",
   meaning: "Connecting", arrivalSignal: "A shared unhurried breakfast", status: "chosen" as const };
 const release = { operationId: "release-operation", releasedAt: "2026-10-29T15:00:00Z" };
 function state(overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
   return { version: EXPLORER_CONVERSATION_VERSION, conversationId: "conversation-a", revision: 4,
-    providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, messages: [source], compassItems: [],
+    providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, messages: [source], compassItems: [],
     priorityId: null, attentionId: null, waypoints: [waypoint], sessionStatus: "active", ending: null,
     ...overrides };
 }

@@ -64,7 +64,7 @@ const send: ExplorerConversationCommand = Object.freeze({ kind: "send", operatio
 function state(): ExplorerConversationState {
   return {
     version: EXPLORER_CONVERSATION_VERSION, conversationId: ID.conversation,
-    revision: 4, providerState: "available", pendingTurn: false, turnedDownLimitReached: false,
+    revision: 4, providerState: "available", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null,
     messages: [{ id: ID.sourceMessage, role: "explorer", body: "An earlier saved question", createdAt: "2026-10-24T06:00:00.000Z" }],
     compassItems: [{ id: ID.item, sourceMessageId: ID.sourceMessage, label: "An Explorer-selected focus" }],
     priorityId: null, attentionId: ID.item, waypoints: [],

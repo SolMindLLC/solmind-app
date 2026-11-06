@@ -53,15 +53,15 @@ function fixture(options: { body?: string; ledger?: ReturnType<typeof fakeLedger
     restrictedLevel: options.restricted ? 4 : null, adultReflectionStopped: options.adultStopped ?? false };
   const mode = options.restricted || options.adultStopped ? "classification_only" as const : "classification_and_reply" as const;
   const initial = { version: "explorer-conversation.v1" as const, conversationId: ids.conversationId,
-    revision: 0, pendingTurn: false, turnedDownLimitReached: false, providerState: "available" as const, messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] };
+    revision: 0, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "available" as const, messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] };
   const authority = { accountId: actor.accountId, applicationSessionId: actor.applicationSessionId, explorerId: profile.explorerId,
     guideId: profile.guideId, authorizationVersion: AV3, applicationSessionExpiresAt: profile.expiresAt };
   const row = { outcome: "ok", authority_context: authority, policy_state: policy,
     conversation_state: { ...initial, revision: 1, pendingTurn: true,
       messages: [{ id: ids.messageId, role: "explorer", body: command.body, createdAt: new Date().toISOString() }] } };
   const serialized = JSON.stringify({ contractVersion: mode === "classification_only"
-    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v3",
-    ...(mode === "classification_only" ? {} : { compassContext: { version: "explorer-compass-context.v3",
+    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v4",
+    ...(mode === "classification_only" ? {} : { compassContext: { version: "explorer-compass-context.v4",
       points: [], priorityId: null, attentionId: null, recentRoute: [], waypoints: [], drafts: [] } }),
     immediateExplorerMessage: { content: command.body } });
   const request = { contractVersion: "explorer-safety-request.v2" as const, invocationId: ids.invocationId, explorerId: profile.explorerId,

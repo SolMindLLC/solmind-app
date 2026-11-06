@@ -22,7 +22,7 @@ const source = { id: "saved-message-a", role: "explorer" as const, body: "I want
 function state(overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
   return {
     version: EXPLORER_CONVERSATION_VERSION,
-    conversationId: "conversation-a", revision: 4, providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false,
+    conversationId: "conversation-a", revision: 4, providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null,
     messages: [source], compassItems: [], priorityId: null, attentionId: null, waypoints: [],
     ...overrides,
   };
@@ -32,7 +32,7 @@ const items = [
   { id: "point-b", sourceMessageId: source.id, label: "Being heard" },
 ];
 const waypoint = {
-  id: "waypoint-a", sourceMessageId: source.id, destination: "A calmer start to the day",
+  id: "waypoint-a", sourceMessageId: source.id, title: "A calmer start to the day", destination: "A calmer start to the day",
   meaning: "I can connect with my family", arrivalSignal: "I notice an unhurried family breakfast",
   status: "chosen" as const,
 };

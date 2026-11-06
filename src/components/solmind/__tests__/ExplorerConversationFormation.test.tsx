@@ -7,7 +7,7 @@ import { EXPLORER_CONVERSATION_VERSION, type ExplorerConversationState } from ".
 
 function state(overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
   return { version: EXPLORER_CONVERSATION_VERSION, conversationId: null, revision: 0,
-    providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, messages: [], compassItems: [], priorityId: null,
+    providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, messages: [], compassItems: [], priorityId: null,
     attentionId: null, waypoints: [], ...overrides };
 }
 
@@ -30,7 +30,7 @@ describe("Formation presentation (static proof only)", () => {
       { id: "point-a", sourceMessageId: source.id, label: "Priority choice" },
       { id: "point-b", sourceMessageId: source.id, label: "Attention choice" },
     ], priorityId: "point-a", attentionId: "point-b", waypoints: [{
-      id: "waypoint-a", sourceMessageId: source.id, destination: "A meaningful destination",
+      id: "waypoint-a", sourceMessageId: source.id, title: "A meaningful destination", destination: "A meaningful destination",
       meaning: "Why it matters", arrivalSignal: "An observable signal", status: "chosen",
     }] });
     const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: current, busy: false, onCommand: vi.fn() }));
@@ -45,7 +45,7 @@ describe("Formation presentation (static proof only)", () => {
 
   it("offers no second Reached operation for an already reached saved Waypoint", () => {
     const current = state({ conversationId: "conversation-a", waypoints: [{
-      id: "waypoint-a", sourceMessageId: "message-a", destination: "A meaningful destination",
+      id: "waypoint-a", sourceMessageId: "message-a", title: "A meaningful destination", destination: "A meaningful destination",
       meaning: "Why it matters", arrivalSignal: "An observable signal", status: "reached",
     }] });
     const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: current, busy: true, onCommand: vi.fn() }));
@@ -97,7 +97,7 @@ describe("Formation presentation (static proof only)", () => {
   it("shows only saved Reached evidence and confirmation time without offering another Reached action", () => {
     const reachedAt = "2026-10-29T07:04:00.123456+00:00";
     const current = state({ conversationId: "conversation-a", waypoints: [{
-      id: "waypoint-a", sourceMessageId: "message-a", destination: "A meaningful destination",
+      id: "waypoint-a", sourceMessageId: "message-a", title: "A meaningful destination", destination: "A meaningful destination",
       meaning: "Why it matters", arrivalSignal: "An observable signal", status: "reached",
       reachedEvidence: "I observed the saved arrival signal.\n<script>plain text only</script>", reachedAt,
     }] });
@@ -235,9 +235,9 @@ it("read-only formation preserves saved Compass, Route, sources and Waypoint evi
       { id: "point-b", sourceMessageId: "message-a", label: "Saved Other path", anchor: null, emphasis: 1 }],
     priorityId: "point-a", attentionId: "point-a", route: [{ operationId: "operation-route", revision: 2,
       kind: "priority_confirmed", compassItemId: "point-a", label: "Captured direction", recordedAt: "2026-10-29T07:01:00Z" }],
-    waypoints: [{ id: "waypoint-chosen", sourceMessageId: "message-a", destination: "Still in progress",
+    waypoints: [{ id: "waypoint-chosen", sourceMessageId: "message-a", title: "Still in progress", destination: "Still in progress",
       meaning: "A saved meaning", arrivalSignal: "A saved signal", status: "chosen" },
-    { id: "waypoint-reached", sourceMessageId: "message-a", destination: "Saved arrival",
+    { id: "waypoint-reached", sourceMessageId: "message-a", title: "Saved arrival", destination: "Saved arrival",
       meaning: "A meaningful arrival", arrivalSignal: "I noticed it", status: "reached",
       reachedEvidence: "Actual saved evidence", reachedAt: "2026-10-29T07:02:00Z" }] });
   const onCommand = vi.fn();
@@ -339,7 +339,7 @@ describe("Category presentation (static proof only)", () => {
   it("keeps a released chosen definition and exact source in history without offering Reached or release again", () => {
     const onCommand = vi.fn();
     const current = state({ conversationId: "conversation-a", messages: [{ id: "message-a", role: "explorer", body: "Exact private source <not markup>", createdAt: "2026-10-29T10:00:00Z" }], waypoints: [{
-      id: "waypoint-a", sourceMessageId: "message-a", destination: "A retained destination", meaning: "A retained meaning", arrivalSignal: "A retained signal", status: "chosen",
+      id: "waypoint-a", sourceMessageId: "message-a", title: "A retained destination", destination: "A retained destination", meaning: "A retained meaning", arrivalSignal: "A retained signal", status: "chosen",
       release: { operationId: "release-operation", releasedAt: "2026-10-29T15:00:00Z" },
     }] });
     for (const readOnly of [false, true]) {
@@ -359,7 +359,7 @@ describe("Category presentation (static proof only)", () => {
   });
 
   it("offers a deliberate release review only for a current chosen Waypoint in an active editable conversation", () => {
-    const waypoint = { id: "waypoint-a", sourceMessageId: "message-a", destination: "A meaningful destination", meaning: "Why it matters", arrivalSignal: "An observable signal", status: "chosen" as const };
+    const waypoint = { id: "waypoint-a", sourceMessageId: "message-a", title: "A meaningful destination", destination: "A meaningful destination", meaning: "Why it matters", arrivalSignal: "An observable signal", status: "chosen" as const };
     const onCommand = vi.fn();
     const active = state({ conversationId: "conversation-a", sessionStatus: "active", waypoints: [waypoint] });
     const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: active, busy: false, onCommand }));
@@ -375,8 +375,8 @@ describe("Category presentation (static proof only)", () => {
 
   it("keeps earlier Reached evidence/source and attributes successor answers to the Explorer rather than a model", () => {
     const source = { id: "message-a", role: "explorer" as const, body: "Original saved source", createdAt: "2026-10-29T10:00:00Z" };
-    const earlier = { id: "waypoint-a", sourceMessageId: source.id, destination: "Original destination", meaning: "Original meaning", arrivalSignal: "Original signal", status: "reached" as const, reachedEvidence: "Actual earlier observation", reachedAt: "2026-10-29T11:00:00Z" };
-    const successor = { id: "waypoint-b", sourceMessageId: source.id, destination: "New destination", meaning: "Original meaning", arrivalSignal: "Original signal", status: "chosen" as const, lifecycle: { predecessorWaypointId: earlier.id, creationReason: "revisit" as const, clarifications: [{ component: "destination" as const, questionKey: "waypoint.destination.v1" as const, answer: "New destination", recordedAt: "2026-10-29T12:00:00Z" }] } };
+    const earlier = { id: "waypoint-a", sourceMessageId: source.id, title: "Original destination", destination: "Original destination", meaning: "Original meaning", arrivalSignal: "Original signal", status: "reached" as const, reachedEvidence: "Actual earlier observation", reachedAt: "2026-10-29T11:00:00Z" };
+    const successor = { id: "waypoint-b", sourceMessageId: source.id, title: "New destination", destination: "New destination", meaning: "Original meaning", arrivalSignal: "Original signal", status: "chosen" as const, lifecycle: { predecessorWaypointId: earlier.id, creationReason: "revisit" as const, clarifications: [{ component: "destination" as const, questionKey: "waypoint.destination.v1" as const, answer: "New destination", recordedAt: "2026-10-29T12:00:00Z" }] } };
     const onCommand = vi.fn();
     const stateValue = state({ conversationId: "conversation-a", sessionStatus: "active", messages: [source], waypoints: [earlier, successor] });
     const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: stateValue, busy: false, readOnly: true, onCommand }));
@@ -397,7 +397,7 @@ describe("Category presentation (static proof only)", () => {
 
   it("labels an earlier chosen and an earlier released version as Earlier version - Formed and - Released", () => {
     const source = { id: "message-a", role: "explorer" as const, body: "Original saved source", createdAt: "2026-10-29T10:00:00Z" };
-    const chosen = { id: "waypoint-a", sourceMessageId: source.id, destination: "First destination", meaning: "Meaning", arrivalSignal: "Signal", status: "chosen" as const };
+    const chosen = { id: "waypoint-a", sourceMessageId: source.id, title: "First destination", destination: "First destination", meaning: "Meaning", arrivalSignal: "Signal", status: "chosen" as const };
     const revised = { ...chosen, id: "waypoint-b", destination: "Revised destination", lifecycle: { predecessorWaypointId: chosen.id, creationReason: "revision" as const, clarifications: [{ component: "destination" as const, questionKey: "waypoint.destination.v1" as const, answer: "Revised destination", recordedAt: "2026-10-29T12:00:00Z" }] } };
     const released = { ...chosen, id: "waypoint-c", destination: "Released destination", release: { operationId: "70000000-0000-4000-8000-000000000001", releasedAt: "2026-10-29T13:00:00Z" } };
     const revisited = { ...chosen, id: "waypoint-d", destination: "Released destination", lifecycle: { predecessorWaypointId: released.id, creationReason: "revisit" as const, clarifications: [] } };

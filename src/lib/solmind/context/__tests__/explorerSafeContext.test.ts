@@ -909,6 +909,21 @@ function at(section: Record<string, unknown>, key: string, index: number): Recor
 }
 
 describe("Chat step slice S3 saved Compass and Waypoint section", () => {
+  it("S7a carries one private draft with normalized nullable text and freezes it", () => {
+    const draft = { id: "e0000000-0000-4000-8000-000000000001", title: "  A calmer morning  ",
+      destination: "One\r\nTwo", whyItMatters: null, arrivalSignal: "A visible arrival" };
+    const context = assembleExplorerSafeContext(withCompass(section => { section.drafts = [draft]; })).context;
+    expect(context.compassContext?.drafts).toEqual([{ ...draft, title: "A calmer morning", destination: "One\nTwo" }]);
+    expect(Object.isFrozen(context.compassContext?.drafts[0])).toBe(true);
+  });
+  it("S7a refuses a second draft, source collisions and hidden confirmation metadata", () => {
+    const draft = { id: "e0000000-0000-4000-8000-000000000001", title: null, destination: null, whyItMatters: null, arrivalSignal: null };
+    expectCode(withCompass(section => { section.drafts = [draft, { ...draft, id: "e0000000-0000-4000-8000-000000000002" }]; }),
+      "explorer_context_invalid_envelope");
+    expectCode(withCompass(section => { section.drafts = [{ ...draft, id: COMPASS_IDS.priority }]; }), "explorer_context_duplicate_source");
+    expectCode(withCompass(section => { section.drafts = [{ ...draft, suggestionMessageId: "hidden" }]; }), "explorer_context_unknown_key");
+    expectCode(withCompass(section => { section.drafts = [{ ...draft, title: "x".repeat(1001) }]; }), "explorer_context_text_limit_exceeded");
+  });
   it("S4 preserves the paired attention actor and next-reply eligibility without changing historical bytes", () => {
     const input = withCompass(section => {
       Object.assign(at(section, "recentRoute", 0), { actor: "virtual_guide", awaitingReply: false });
@@ -945,7 +960,7 @@ describe("Chat step slice S3 saved Compass and Waypoint section", () => {
     ]);
     const section = JSON.stringify(result.context.compassContext);
     expect(section).toBe(
-      '{"version":"explorer-compass-context.v3","points":[' +
+      '{"version":"explorer-compass-context.v4","points":[' +
       '{"id":"c0000000-0000-4000-8000-000000000001","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},' +
       '{"id":"c0000000-0000-4000-8000-000000000002","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},' +
       '{"id":"c0000000-0000-4000-8000-000000000003","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],' +
@@ -989,8 +1004,8 @@ describe("Chat step slice S3 saved Compass and Waypoint section", () => {
   it.each([
     ["an extra section key", (s: Record<string, unknown>) => { s.extra = []; }, "explorer_context_unknown_key"],
     ["a missing section key", (s: Record<string, unknown>) => { delete s.drafts; }, "explorer_context_missing_required_layer"],
-    ["another section version", (s: Record<string, unknown>) => { s.version = "explorer-compass-context.v4"; }, "explorer_context_invalid_envelope"],
-    ["a reserved draft", (s: Record<string, unknown>) => { s.drafts = [{ label: "Draft" }]; }, "explorer_context_invalid_envelope"],
+    ["another section version", (s: Record<string, unknown>) => { s.version = "explorer-compass-context.v3"; }, "explorer_context_invalid_envelope"],
+    ["a malformed draft", (s: Record<string, unknown>) => { s.drafts = [{ label: "Draft" }]; }, "explorer_context_unknown_key"],
     ["an arranged forming point", (s: Record<string, unknown>) => { at(s, "points", 1).formation = "forming"; at(s, "points", 1).suggestedInPreviousReply = false;
       at(s, "points", 1).anchor = "upper_left"; at(s, "points", 1).emphasis = 1; s.recentRoute = []; }, "explorer_context_invalid_envelope"],
     ["an unknown anchor", (s: Record<string, unknown>) => { at(s, "points", 1).anchor = "center"; at(s, "points", 1).emphasis = 1; }, "explorer_context_invalid_envelope"],
@@ -1051,7 +1066,7 @@ describe("S5 forming Compass context", () => {
       "explorer_context_invalid_envelope");
   });
 
-  it.each(["compass-v1", "compass-v2", "compass-v4"])("S6b refuses the retired or unknown %s with or without a section", revision => {
+  it.each(["compass-v1", "compass-v2", "compass-v3", "compass-v5"])("S7a refuses the retired or unknown %s with or without a section", revision => {
     const input: Record<string, unknown> = { ...compassInput(), contractVersion: "wi007-v0.1+onboarding-fields-v2+" + revision };
     expectCode(input, "explorer_context_invalid_envelope");
     delete input.compassContext;
@@ -1069,7 +1084,7 @@ describe("S5 forming Compass context", () => {
       section.recentRoute = [];
     });
     const section = assembleExplorerSafeContext(input).context.compassContext!;
-    expect(section.version).toBe("explorer-compass-context.v3");
+    expect(section.version).toBe("explorer-compass-context.v4");
     expect(section.points.map(point => point.formation)).toEqual(["saved", "forming", "saved"]);
     expect(section.attentionId).toBe(COMPASS_IDS.unplaced);
     expect(section.points[1].anchor).toBeNull();

@@ -11,10 +11,10 @@ const END = "a1050000-0000-4000-8000-000000000001";
 const RELEASED_AT = "2026-10-29T15:05:00Z";
 const SOURCE_TEXT = "A retained exact private source <script>plain text only</script>.";
 const currentState = (): ExplorerConversationState => ({ version: "explorer-conversation.v1", conversationId: CONVERSATION,
-  revision: 5, sessionStatus: "active", ending: null, pendingTurn: false, turnedDownLimitReached: false, providerState: "unavailable",
+  revision: 5, sessionStatus: "active", ending: null, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable",
   messages: [{ id: SOURCE, role: "explorer", body: SOURCE_TEXT, createdAt: "2026-10-29T15:00:00Z" }],
   compassItems: [], priorityId: null, attentionId: null, route: [], waypoints: [{ id: WAYPOINT, sourceMessageId: SOURCE,
-    destination: "A saved destination", meaning: "A saved meaning", arrivalSignal: "A saved arrival signal", status: "chosen",
+    title: "A saved destination", destination: "A saved destination", meaning: "A saved meaning", arrivalSignal: "A saved arrival signal", status: "chosen",
     reachedEvidence: null, reachedAt: null }] });
 const releasedState = (operationId = RELEASE): ExplorerConversationState => { const current = currentState(); return {
   ...current, revision: 6, waypoints: current.waypoints.map(item => ({ ...item, release: { operationId, releasedAt: RELEASED_AT } })),

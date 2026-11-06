@@ -85,6 +85,11 @@ function base(actor: ExplorerConversationActor): Record<string, unknown> {
   return { p_actor_user_account_id: actor.accountId, p_user_session_id: actor.applicationSessionId };
 }
 export function explorerConversationCommandFingerprint(command: ExplorerConversationCommand): string {
+  if (command.kind === "respond_waypoint_draft") {
+    return createHash("sha256").update(JSON.stringify([
+      EXPLORER_CONVERSATION_VERSION, command.kind, command.operationId, command.expectedRevision, command.draftId, command.response,
+    ]), "utf8").digest("hex").toUpperCase();
+  }
   if (command.kind === "respond_compass_suggestion") {
     return createHash("sha256").update(JSON.stringify([
       EXPLORER_CONVERSATION_VERSION, command.kind, command.operationId, command.expectedRevision,
@@ -149,7 +154,7 @@ export async function commandExplorerConversation(input: {
   const command = parseExplorerConversationCommand(input.command);
   if (!command) return failure("denied");
   // Ending is private-v3 only; the legacy generic mutation has no End authority.
-  if (["end_conversation", "release_waypoint", "revise_waypoint", "revisit_waypoint", "respond_compass_suggestion"].includes(command.kind)) return failure("denied");
+  if (["end_conversation", "release_waypoint", "revise_waypoint", "revisit_waypoint", "respond_compass_suggestion", "respond_waypoint_draft"].includes(command.kind)) return failure("denied");
   const { dependencies } = input;
   try {
     const actor = await dependencies.authenticate();

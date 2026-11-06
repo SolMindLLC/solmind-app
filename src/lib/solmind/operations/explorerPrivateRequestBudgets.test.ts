@@ -18,7 +18,7 @@ const SHA = "A".repeat(64);
 const ACTOR = Object.freeze({ accountId: ID, applicationSessionId: SESSION });
 const OPERATION = Object.freeze({ operationId: ID, fingerprint: SHA });
 const STATE = Object.freeze({ version: "explorer-conversation.v1" as const, conversationId: ID,
-  revision: 1, pendingTurn: false, turnedDownLimitReached: false, providerState: "unavailable" as const,
+  revision: 1, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable" as const,
   messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] });
 const ROW: ExplorerPrivateReadRow = Object.freeze({ outcome: "ok", conversation_state: STATE });
 const PAUSE_ROW: ExplorerPrivatePauseRow = Object.freeze({ outcome: "ok", notice_kind: null, crisis: false, adults_only: false });
@@ -47,7 +47,7 @@ const SETTLE: ExplorerPrivateSettleParameters = Object.freeze({ ...ACTOR_PARAMET
   p_request_mode: "classification_only", p_configuration_fingerprint: SHA,
   p_fallback_policy_version: "synthetic-fallback.v1", p_model_policy_version: "synthetic-model.v1",
   p_trusted_response_version: "synthetic-trusted.v1", p_resource_policy_version: "synthetic-resources.v1",
-  p_fallback_level: 3, p_fallback_minor_indicated: false, p_delivery_interested: false, p_attention_item_id: null, p_choices: null, p_compass_suggestions: null, p_compass_responses: null });
+  p_fallback_level: 3, p_fallback_minor_indicated: false, p_delivery_interested: false, p_attention_item_id: null, p_choices: null, p_compass_suggestions: null, p_compass_responses: null, p_waypoint_suggestion: null });
 const MUTATE: ExplorerPrivateMutateParameters = Object.freeze({ ...ACTOR_PARAMETERS, p_conversation_id: ID,
   p_operation_id: ID, p_expected_revision: 1, p_command_fingerprint: SHA, p_kind: "confirm_reached",
   p_source_message_id: null, p_item_id: null, p_waypoint_id: ID, p_label: null, p_destination: null,
@@ -62,6 +62,8 @@ const END: ExplorerPrivateEndParameters = Object.freeze({ ...ACTOR_PARAMETERS, p
 const REVIEW: ExplorerPrivateReviewParameters = Object.freeze({ ...ACTOR_PARAMETERS, p_conversation_id: null });
 const SUGGESTION: ExplorerPrivateCompassSuggestionParameters = Object.freeze({ ...ACTOR_PARAMETERS, p_conversation_id: ID,
   p_operation_id: ID, p_expected_revision: 1, p_command_fingerprint: SHA, p_item_id: ID, p_response: "right" });
+const WAYPOINT_DRAFT = Object.freeze({ ...ACTOR_PARAMETERS, p_conversation_id: ID,
+  p_operation_id: ID, p_expected_revision: 1, p_command_fingerprint: SHA, p_draft_id: ID, p_response: "right" as const });
 
 type BuildContext = NonNullable<ExplorerPrivateConversationDependencies["buildContext"]>;
 function contextInput(signal?: AbortSignal, mode: Parameters<BuildContext>[0]["mode"] = "classification_and_reply"): Parameters<BuildContext>[0] {
@@ -103,6 +105,7 @@ function fixture() {
     mutate: vi.fn<NonNullable<ExplorerPrivateConversationRepository["mutate"]>>(async () => ROW),
     arrange: vi.fn<NonNullable<ExplorerPrivateConversationRepository["arrange"]>>(async () => ROW),
     respondCompassSuggestion: vi.fn<NonNullable<ExplorerPrivateConversationRepository["respondCompassSuggestion"]>>(async () => ROW),
+    respondWaypointDraft: vi.fn<NonNullable<ExplorerPrivateConversationRepository["respondWaypointDraft"]>>(async () => ROW),
     end: vi.fn<NonNullable<ExplorerPrivateConversationRepository["end"]>>(async () => ROW),
     review: vi.fn<NonNullable<ExplorerPrivateConversationRepository["review"]>>(async () => ROW),
   };
@@ -121,12 +124,13 @@ function repositoryCalls(dependencies: ExplorerPrivateConversationDependencies) 
     mutate: () => dependencies.repository.mutate!(MUTATE),
     arrange: () => dependencies.repository.arrange!(ARRANGE),
     respondCompassSuggestion: () => dependencies.repository.respondCompassSuggestion!(SUGGESTION),
+    respondWaypointDraft: () => dependencies.repository.respondWaypointDraft!(WAYPOINT_DRAFT),
     end: () => dependencies.repository.end!(END),
     review: () => dependencies.repository.review!(REVIEW),
   };
 }
 const EXPECTED_ARGUMENTS = { read: [ACTOR, OPERATION], ensure: [ENSURE], observe: [OBSERVE],
-  prepare: [PREPARE], settle: [SETTLE], pause: [ACTOR], mutate: [MUTATE], arrange: [ARRANGE], respondCompassSuggestion: [SUGGESTION], end: [END], review: [REVIEW] };
+  prepare: [PREPARE], settle: [SETTLE], pause: [ACTOR], mutate: [MUTATE], arrange: [ARRANGE], respondCompassSuggestion: [SUGGESTION], respondWaypointDraft: [WAYPOINT_DRAFT], end: [END], review: [REVIEW] };
 
 beforeEach(() => { vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] }); });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -142,6 +146,7 @@ describe("private request port budgets with explicit synthetic dependencies", ()
     expect(Object.isFrozen(wrapped)).toBe(true); expect(Object.isFrozen(wrapped.repository)).toBe(true);
     expect(wrapped.repository).not.toHaveProperty("arrange");
     expect(wrapped.repository).not.toHaveProperty("respondCompassSuggestion");
+    expect(wrapped.repository).not.toHaveProperty("respondWaypointDraft");
     expect(wrapped.repository).not.toHaveProperty("end"); expect(wrapped.repository).not.toHaveProperty("review");
     expect(await wrapped.authenticate()).toBe(ACTOR);
     expect(await wrapped.repository.read(ACTOR, OPERATION)).toBe(ROW);
@@ -150,7 +155,7 @@ describe("private request port budgets with explicit synthetic dependencies", ()
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it.each(["read", "ensure", "observe", "prepare", "settle", "pause", "mutate", "arrange", "respondCompassSuggestion", "end", "review"] as const)(
+  it.each(["read", "ensure", "observe", "prepare", "settle", "pause", "mutate", "arrange", "respondCompassSuggestion", "respondWaypointDraft", "end", "review"] as const)(
     "bounds a stalled %s once with exact arguments and ignores a late success", async method => {
       const f = fixture(); const held = deferred<ExplorerPrivateReadRow>();
       f.repository[method].mockImplementation(() => held.promise);
@@ -267,7 +272,7 @@ describe("private request port budgets with explicit synthetic dependencies", ()
 it("propagates the supplied arrangement capability and exact arguments without reaching any other port", async () => {
   const f = fixture();
   const wrapped = withExplorerPrivateRequestBudgets(f.dependencies);
-  expect(Object.keys(wrapped.repository).sort()).toEqual(["arrange", "end", "ensure", "mutate", "observe", "pause", "prepare", "read", "respondCompassSuggestion", "review", "settle"]);
+  expect(Object.keys(wrapped.repository).sort()).toEqual(["arrange", "end", "ensure", "mutate", "observe", "pause", "prepare", "read", "respondCompassSuggestion", "respondWaypointDraft", "review", "settle"]);
   expect(await wrapped.repository.arrange!(ARRANGE)).toBe(ROW);
   expect(f.repository.arrange).toHaveBeenCalledExactlyOnceWith(ARRANGE);
   expect(f.repository.arrange.mock.calls[0][0]).toBe(ARRANGE);

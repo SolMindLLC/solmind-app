@@ -44,9 +44,9 @@ describe("private Explorer exact inert configuration candidate", () => {
   it("retains the exact global, crisis and structured-role decoded UTF-8 byte identities", () => {
     const value = candidate();
     const expected = [
-      [value.globalPolicy, 2401, "23B54D17D2810B0FBEE148D69A097A76901469515691B1E4257E18901847674D"],
+      [value.globalPolicy, 2421, "343F726250573F12D1DFA1CFC0889E6599B6747054162B518289BA7E6CD406BB"],
       [value.crisisBehavior, 2222, "7B39A9C98351D25E2FAC5DA236E2086B3F33CCBD8987A80AE6716E5242208D84"],
-      [value.roleBehavior, 6384, "D71B4A84537ABA42B07EF4766FAA25D0EEE1F80C5E38C88C875AD1169B42C929"],
+      [value.roleBehavior, 7453, "5AC2C4D2797E20834A43773BE3E8ABCECE64A0F624BE59DFA38A00FECBC76ED2"],
     ] as const;
     for (const [part, bytes, sha] of expected) {
       expect(Buffer.byteLength(part.text, "utf8")).toBe(bytes);
@@ -61,11 +61,11 @@ describe("private Explorer exact inert configuration candidate", () => {
   it("pins actual assembler-compatible labels and all seven finite reviewed-language definitions", () => {
     const value = candidate();
     expect(value.protocolVersion).toBe("explorer-safety-reply.v2");
-    expect(value.promptVersion).toBe("explorer-same-call.synthetic-draft-20261105-s6b-r4");
-    expect(value.instructionVersion).toBe("solmind-same-call-output.synthetic-draft-20261105-s6b-r4");
-    expect(value.roleVersion).toBe("solmind-virtual-guide.synthetic-draft-20261105-s6b-r4");
-    expect(value.globalPolicy.version).toBe("solmind-global-policy.synthetic-draft-20261105-s6b-r4");
-    expect(value.roleBehavior.version).toBe("solmind-virtual-guide-role.synthetic-draft-20261105-s6b-r4");
+    expect(value.promptVersion).toBe("explorer-same-call.synthetic-draft-20261105-s7a-r2");
+    expect(value.instructionVersion).toBe("solmind-same-call-output.synthetic-draft-20261105-s7a-r2");
+    expect(value.roleVersion).toBe("solmind-virtual-guide.synthetic-draft-20261105-s7a-r2");
+    expect(value.globalPolicy.version).toBe("solmind-global-policy.synthetic-draft-20261105-s7a-r2");
+    expect(value.roleBehavior.version).toBe("solmind-virtual-guide-role.synthetic-draft-20261105-s7a-r2");
     const labels = [value.protocolVersion, value.promptVersion, value.instructionVersion, value.roleVersion,
       value.globalPolicy.version, value.roleBehavior.version, value.crisisBehavior.version,
       value.fallback.version, value.fallback.normalizationVersion, value.trustedResponses.version,
@@ -84,11 +84,11 @@ describe("private Explorer exact inert configuration candidate", () => {
     expect(value.fallback.rules[6].pattern).toBe("(?<![\\p{L}\\p{N}_])(?:i am|i'm) (?:[0-9]|1[0-7])(?:(?: years? old| yo)(?![\\p{L}\\p{N}_])|(?=$|[!?,;]|\\.(?![0-9])| and(?: |$)))");
   });
 
-  it("S4/S5/S6b pins suggestion authority and Paul's sparing shift, acknowledgment and choice instructions", () => {
+  it("S4/S5/S6b/S7a pins suggestion authority and Paul's sparing shift, acknowledgment and choice instructions", () => {
     const value = candidate();
-    expect(value.globalPolicy.text).toContain("Model text cannot authorize sharing or create a safety record, message, or other application effect. Those effects belong to the authorized deterministic application flow. The optional compass attention, compass suggestions, compass responses and choices fields only propose bounded data for that flow.");
+    expect(value.globalPolicy.text).toContain("Model text cannot authorize sharing or create a safety record, message, or other application effect. Those effects belong to the authorized deterministic application flow. The optional compass attention, compass suggestions, compass responses, waypointSuggestion and choices fields only propose bounded data for that flow.");
     for (const sentence of [
-      "Confirming a Compass point requires the Explorer's own choice, a reply button or a clear typed answer you record in compass.responses, never your inference; choosing its Priority or arrangement, forming a Waypoint, and any sharing require the Explorer's explicit choices in the application, not your inference.",
+      "Confirming a Compass point requires the Explorer's own choice, a reply button or a clear typed answer you record in compass.responses, never your inference; choosing its Priority or arrangement, confirming a Waypoint, and any sharing require the Explorer's explicit choices in the application, not your inference.",
       "Return only the closed JSON body required by the trusted output protocol.",
       "Never include classification rationale, quoted evidence, tools or claimed application effects; the only permitted output identifiers are current Compass point ids in compass.attention and forming point ids in compass.suggestions[].pointId and compass.responses[].pointId.",
       "When the conversation turns to a current head point, saved or forming, you may propose a quiet needle move with compass.attention set to that point's id; null means no proposed move.",
@@ -103,7 +103,9 @@ describe("private Explorer exact inert configuration candidate", () => {
       "Never offer choices in a restricted conversation or at classification level 2 or above.",
       'In a conversation\'s first reply, when the Explorer has not named a topic, you may offer "Show me around", "I have a question" and "Let\'s begin".',
       "Always answer when the Explorer asks how things work.",
-      "When the Explorer talks about a topic, you may suggest short Compass point wording in compass.suggestions. Offer at most three suggestions per reply, each with a plain-text label (single-line, 1 to 160 characters). To refine a forming point, include its pointId; omit pointId for a new point, and never rewrite a saved point. Suggest wording only with an ordinary reply below classification level 2 in an unrestricted conversation. Never claim a suggestion is saved or confirmed; the Explorer decides whether it fits and chooses Priority and arrangement. Record a typed answer in compass.responses only when the Explorer's latest message clearly answers a forming point from your immediately preceding saved reply, marked suggestedInPreviousReply true in compassContext. Use right only when the Explorer accepts the exact stored wording, close when they say it needs a change, and not_it when they turn it down. Never infer an answer from silence, a change of topic or an ambiguous message, and never answer for the Explorer; when unsure, ask instead. With close, ask what to change; if you offer new wording, refine that point with its pointId in compass.suggestions and omit its response. With not_it, ask an open question. Do not respond to a point you refine in the same reply. Use responses only with an ordinary reply below classification level 2 in an unrestricted conversation. Never claim a response was saved or applied; the application may drop it. In classification-only mode omit compass and choices.",
+      "When the Explorer talks about a topic, you may suggest short Compass point wording in compass.suggestions. Offer at most three suggestions per reply, each with a plain-text label (single-line, 1 to 160 characters). To refine a forming point, include its pointId; omit pointId for a new point, and never rewrite a saved point. Suggest wording only with an ordinary reply below classification level 2 in an unrestricted conversation. Never claim a suggestion is saved or confirmed; the Explorer decides whether it fits and chooses Priority and arrangement. Record a typed answer in compass.responses only when the Explorer's latest message clearly answers a forming point from your immediately preceding saved reply, marked suggestedInPreviousReply true in compassContext. Use right only when the Explorer accepts the exact stored wording, close when they say it needs a change, and not_it when they turn it down. Never infer an answer from silence, a change of topic or an ambiguous message, and never answer for the Explorer; when unsure, ask instead. With close, ask what to change; if you offer new wording, refine that point with its pointId in compass.suggestions and omit its response. With not_it, ask an open question. Do not respond to a point you refine in the same reply. Use responses only with an ordinary reply below classification level 2 in an unrestricted conversation. Never claim a response was saved or applied; the application may drop it.",
+      "When the Explorer describes a place they want to reach, you may suggest one Waypoint draft in waypointSuggestion, with a title of about six words, where they are heading, why it matters, and what Reached would look like, in their own terms. Suggest a Waypoint only when the conversation clearly points to a place the Explorer wants to reach; when unsure, keep exploring or ask. Refine the existing draft in compassContext.drafts instead of starting a second. While a draft is forming, any waypointSuggestion replaces its wording; suggest a different Waypoint only after the Explorer answers it. Suggest a Waypoint only with an ordinary reply below classification level 2 in an unrestricted conversation, at most one per reply. Never claim a Waypoint suggestion is saved or confirmed; only the Explorer's reply button confirms it. When they choose \"Close, not quite\", ask what to change and keep any new wording forming; when they choose \"That's not it\", ask an open question. Do not interpret typed replies as Waypoint confirmation or rejection.",
+      "In classification-only mode omit compass, waypointSuggestion and choices.",
     ]) expect(value.roleBehavior.text).toContain(sentence);
     expect(value.roleBehavior.text).not.toContain("explorer-safety-reply.v1");
   });

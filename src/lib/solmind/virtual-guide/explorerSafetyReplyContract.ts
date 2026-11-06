@@ -24,6 +24,9 @@ export type ExplorerSafetyCandidate =
   | Readonly<{ kind: "not_requested" }>;
 export type ExplorerSafetyCompassSuggestion = Readonly<{ label: string; pointId?: string }>;
 export type ExplorerSafetyCompassResponse = Readonly<{ pointId: string; response: "right" | "close" | "not_it" }>;
+export type ExplorerSafetyWaypointSuggestion = Readonly<{
+  title: string; destination: string; whyItMatters: string; arrivalSignal: string;
+}>;
 export type ExplorerSafetyCompass = Readonly<{
   attention?: string | null; suggestions?: readonly ExplorerSafetyCompassSuggestion[];
   responses?: readonly ExplorerSafetyCompassResponse[];
@@ -32,6 +35,7 @@ export type ExplorerSafetyChoice = Readonly<{ label: string }>;
 export type ExplorerSafetyReplyObservation = Readonly<{
   classification: ExplorerSafetyClassification; candidate: ExplorerSafetyCandidate;
   compass?: ExplorerSafetyCompass; choices?: readonly ExplorerSafetyChoice[];
+  waypointSuggestion?: ExplorerSafetyWaypointSuggestion;
 }>;
 export type ExplorerSafetyReplyErrorCode =
   | "explorer_safety_invalid_request" | "explorer_safety_invalid_response"
@@ -178,6 +182,18 @@ function choices(input: unknown): readonly ExplorerSafetyChoice[] | undefined {
     return Object.freeze(result);
   } catch { return undefined; }
 }
+export function parseExplorerSafetyWaypointSuggestion(input: unknown): ExplorerSafetyWaypointSuggestion | undefined {
+  try {
+    if (!dataObject(input, ["title", "destination", "whyItMatters", "arrivalSignal"])) return undefined;
+    for (const value of Object.values(input)) {
+      if (typeof value !== "string" || !value.trim() || value !== value.trim() || value.length > 1_000 ||
+          !explorerSafetyUnicodeValid(value) ||
+          /[\u0000-\u0009\u000b\u000c\u000e-\u001f\u007f-\u009f\u200b-\u200d\u202a-\u202e\u2060\u2066-\u2069\ufeff]/u.test(value)) return undefined;
+    }
+    return Object.freeze({ title: input.title as string, destination: input.destination as string,
+      whyItMatters: input.whyItMatters as string, arrivalSignal: input.arrivalSignal as string });
+  } catch { return undefined; }
+}
 export function parseExplorerSafetyReplyBody(rawText: unknown, mode: ExplorerSafetyRequestMode): ExplorerSafetyReplyObservation {
   if (mode !== "classification_only" && mode !== "classification_and_reply") fail("explorer_safety_invalid_request");
   if (typeof rawText !== "string") fail("explorer_safety_invalid_response");
@@ -185,15 +201,18 @@ export function parseExplorerSafetyReplyBody(rawText: unknown, mode: ExplorerSaf
   let body: unknown;
   try { body = JSON.parse(rawText) as unknown; } catch { fail("explorer_safety_invalid_response"); }
   const required = ["protocol", "classification", "candidateReply"];
-  if ((!dataObject(body, required) && !dataObject(body, [...required, "compass"]) &&
-    !dataObject(body, [...required, "choices"]) && !dataObject(body, [...required, "compass", "choices"])) ||
+  const optional = body !== null && typeof body === "object"
+    ? ["compass", "choices", "waypointSuggestion"].filter(key => Object.hasOwn(body, key)) : [];
+  if (!dataObject(body, [...required, ...optional]) ||
     body.protocol !== EXPLORER_SAFETY_REPLY_PROTOCOL) fail("explorer_safety_invalid_response");
   const classification = parseExplorerSafetyClassification(body.classification);
   if (classification === null) fail("explorer_safety_invalid_response");
   // Optional proposal defects cannot erase the accepted signal or usable prose.
   if (mode === "classification_only") return Object.freeze({ classification, candidate: NOT_REQUESTED });
   const parsedCompass = compass(body.compass); const parsedChoices = choices(body.choices);
+  const waypointSuggestion = parseExplorerSafetyWaypointSuggestion(body.waypointSuggestion);
   return Object.freeze({ classification, candidate: candidate(body.candidateReply),
     ...(parsedCompass === undefined ? {} : { compass: parsedCompass }),
+    ...(waypointSuggestion === undefined ? {} : { waypointSuggestion }),
     ...(parsedChoices === undefined ? {} : { choices: parsedChoices }) });
 }

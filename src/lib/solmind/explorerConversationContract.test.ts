@@ -29,27 +29,63 @@ const validCommands = [
   { ...base, kind: "end_conversation", conversationId: uuid(1) },
   { ...base, kind: "confirm_compass_category", targetItemId: pointId, memberItemIds: [pointId], label: "Broader mornings" },
   ...(["right", "close", "not_it"] as const).map(response => ({ ...base, kind: "respond_compass_suggestion", itemId: pointId, response })),
+  ...(["right", "close", "not_it"] as const).map(response => ({ ...base, kind: "respond_waypoint_draft", draftId: uuid(9), response })),
 ];
 function without(value: Record<string, unknown>, key: string): Record<string, unknown> {
   return Object.fromEntries(Object.entries(value).filter(([name]) => name !== key));
 }
 function emptyState() {
   return { version: EXPLORER_CONVERSATION_VERSION, conversationId: null, revision: 0,
-    providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, messages: [], compassItems: [], priorityId: null,
+    providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, messages: [], compassItems: [], priorityId: null,
     attentionId: null, waypoints: [] };
 }
 function populatedState() {
   return { version: EXPLORER_CONVERSATION_VERSION, conversationId: uuid(1), revision: 3,
-    providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, messages: [
+    providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, messages: [
       { id: sourceId, role: "explorer", body: "I want an unhurried morning.\nWhat could that look like?", createdAt: "2026-10-24T05:05:00.000Z" },
       { id: uuid(3), role: "virtualGuide", body: "What would tell you that you arrived?", createdAt: "2026-10-24T05:05:01.123456+00:00" },
     ], compassItems: [{ id: pointId, sourceMessageId: sourceId, label: "Calmer mornings" }],
     priorityId: pointId, attentionId: pointId, waypoints: [{
-      id: waypointId, sourceMessageId: uuid(3), destination: "An unhurried morning",
+      id: waypointId, sourceMessageId: uuid(3), title: "An unhurried morning", destination: "An unhurried morning",
       meaning: "Connecting with my family", arrivalSignal: "A calm breakfast together", status: "chosen",
     }] };
 }
 const success = (state: unknown) => ({ ok: true, state, error: null });
+
+describe("S7a private Waypoint draft contract", () => {
+  const draft = { id: uuid(9), title: "Calm mornings with room to breathe", destination: "An unhurried morning",
+    whyItMatters: "Time with my family", arrivalSignal: "A calm breakfast", suggestionMessageId: uuid(3) };
+  it("requires the nullable projection and freezes exact current wording linked to an owned Guide message", () => {
+    const state = { ...populatedState(), waypointDraft: draft };
+    const parsed = parseExplorerConversationState(state);
+    expect(parsed).toEqual(state);
+    expect(Object.isFrozen(parsed?.waypointDraft)).toBe(true);
+    expect(parseExplorerConversationState(without(state, "waypointDraft"))).toBeNull();
+    expect(parseExplorerConversationState({ ...state, waypointDraft: { ...draft, title: null, destination: null,
+      whyItMatters: null, arrivalSignal: null } })?.waypointDraft?.title).toBeNull();
+  });
+  it("refuses malformed, leaked, oversized and wrongly sourced draft projections", () => {
+    for (const waypointDraft of [undefined, [], {}, { ...draft, extra: true }, without(draft, "title"),
+      { ...draft, title: "" }, { ...draft, title: "x".repeat(1001) }, { ...draft, destination: " padded " },
+      { ...draft, whyItMatters: "bad\u0000text" }, { ...draft, arrivalSignal: "\ud800" },
+      { ...draft, title: "bad\u200btext" }, { ...draft, title: "bad\ttext" },
+      { ...draft, suggestionMessageId: sourceId }, { ...draft, suggestionMessageId: uuid(99) },
+      { ...draft, id: pointId }, { ...draft, id: waypointId }, { ...draft, draftStatus: "rejected" }]) {
+      expect(parseExplorerConversationState({ ...populatedState(), waypointDraft })).toBeNull();
+    }
+    expect(parseExplorerConversationState({ ...emptyState(), waypointDraft: draft })).toBeNull();
+  });
+  it("allows only the stored draft selection and closed reply, with no browser wording", () => {
+    const command = { ...base, kind: "respond_waypoint_draft", draftId: draft.id, response: "right" };
+    for (const response of [null, "confirm", "RIGHT", "right ", 1]) {
+      expect(parseExplorerConversationCommand({ ...command, response })).toBeNull();
+    }
+    for (const extra of [{ title: draft.title }, { itemId: pointId }, { suggestedBy: "explorer" }]) {
+      expect(parseExplorerConversationCommand({ ...command, ...extra })).toBeNull();
+    }
+    expect(parseExplorerConversationCommand({ ...command, draftId: draft.id + "\n" })).toBeNull();
+  });
+});
 
 describe("Explorer conversation command parser", () => {
   it("accepts only ids and a closed suggestion response, never browser wording", () => {

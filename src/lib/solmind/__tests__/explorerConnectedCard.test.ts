@@ -43,7 +43,7 @@ const POINT = (index: number) => `40000000-0000-4000-8000-00000000000${index}`;
 
 function bare(compassItems: ExplorerConversationCompassItem[], overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
   return {
-    version: EXPLORER_CONVERSATION_VERSION, conversationId: "10000000-0000-4000-8000-000000000001", revision: 3, pendingTurn: false, turnedDownLimitReached: false,
+    version: EXPLORER_CONVERSATION_VERSION, conversationId: "10000000-0000-4000-8000-000000000001", revision: 3, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null,
     providerState: "available", messages: [{ id: SOURCE, role: "explorer", body: "A synthetic message", createdAt: "2026-11-03T14:00:00.000Z" }],
     compassItems, priorityId: null, attentionId: null, waypoints: [], route: [], sessionStatus: "active", ending: null, ...overrides,
   };
@@ -288,10 +288,10 @@ describe("connected Compass & Waypoint card mapping", () => {
     const clarify = (answer: string) => [{ component: "destination" as const, questionKey: "waypoint.destination.v1" as const, answer, recordedAt: "2026-11-03T14:00:00.000Z" }];
     const W = (index: number) => `60000000-0000-4000-8000-00000000000${index}`;
     const chain = bare([], { waypoints: [
-      { ...base, id: W(1), destination: "One" },
-      { ...base, id: W(2), destination: "Two", lifecycle: { predecessorWaypointId: W(1), creationReason: "revision", clarifications: clarify("Two") } },
-      { ...base, id: W(3), destination: "Three", lifecycle: { predecessorWaypointId: W(2), creationReason: "revision", clarifications: clarify("Three") } },
-      { ...base, id: W(4), destination: "Alone" },
+      { ...base, id: W(1), title: "One", destination: "One" },
+      { ...base, id: W(2), title: "Two", destination: "Two", lifecycle: { predecessorWaypointId: W(1), creationReason: "revision", clarifications: clarify("Two") } },
+      { ...base, id: W(3), title: "Three", destination: "Three", lifecycle: { predecessorWaypointId: W(2), creationReason: "revision", clarifications: clarify("Three") } },
+      { ...base, id: W(4), title: "Alone", destination: "Alone" },
     ] });
     expect(parseExplorerConversationState(chain)).not.toBeNull();
     expect(connectedWaypointLines(chain).map((line) => [line.current.destination, line.earlier.map((version) => version.destination)])).toEqual([

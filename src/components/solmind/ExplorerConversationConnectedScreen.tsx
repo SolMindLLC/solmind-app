@@ -34,6 +34,7 @@ import { SOLMIND_TERMS } from "@/lib/solmind/terms";
 
 import { ConnectedCompassCard } from "./ExplorerConnectedCompassCard";
 import { ExplorerCompassSuggestionReplies } from "./ExplorerCompassSuggestionReplies";
+import { ExplorerWaypointDraft } from "./ExplorerWaypointDraft";
 import { ConnectedWaypointCard } from "./ExplorerConnectedWaypointCard";
 import {
   ExplorerConversationFormation,
@@ -393,6 +394,13 @@ function SavedTranscript({ state, view, actions }: Readonly<{
               <li className={joinClasses("grid", FOCUS_RING)} key={message.id} tabIndex={-1}>
                 <MessageBubble message={message} />
                 <ExplorerCompassSuggestionReplies
+                  followUpHeld={view.sendUnavailable || view.atMessageCapacity}
+                  held={view.held}
+                  messageId={message.id}
+                  onCommand={actions.onCommand}
+                  state={state}
+                />
+                <ExplorerWaypointDraft
                   followUpHeld={view.sendUnavailable || view.atMessageCapacity}
                   held={view.held}
                   messageId={message.id}

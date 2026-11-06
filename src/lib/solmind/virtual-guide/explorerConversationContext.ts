@@ -127,15 +127,14 @@ function comparableInstant(value: string): string {
 // Chat step slice S3 (Paul's decision 4, decision queue 2026-11-03 12:38:07 CST; go-ahead
 // 20:50:45 CST): the saved Compass and Waypoint section, taken from the state the final
 // read returned. The safe assembler validates it, and
-// supabase/migrations/20261105030000_explorer_typed_suggestion_replies.sql rebuilds it from the
+// supabase/migrations/20261105050000_explorer_waypoint_drafts.sql rebuilds it from the
 // saved rows and compares it exactly before any provider call. Current points only (not
 // combined away), in saved display order; the saved Priority and attention (the needle
 // may be on an unplaced point); the last five needle moves (attention_changed) on a
 // current point, oldest first, each with that point's current label, never the label
 // the Route captured, which may be wording from before a rename (Priority changes,
 // arrangement and category events and their before-labels are never model context);
-// the current Waypoint heads. The state carries no Waypoint title: every Waypoint writer
-// stores the destination as the title, and the database compares against the saved title.
+// the current Waypoint heads and the current proposed private Waypoint draft.
 function compassContext(state: ConversationState, formingMove: Authority["formingAttentionMove"]) {
   const points = state.compassItems.filter((item) => item.mergedIntoItemId == null);
   const currentLabels = new Map(points.filter((item) => item.formation !== "forming").map((item) => [item.id, item.label]));
@@ -180,13 +179,16 @@ function compassContext(state: ConversationState, formingMove: Authority["formin
           previousReplyId !== undefined && item.wordingMessageId === previousReplyId } : {}) })),
       priorityId: state.priorityId, attentionId: state.attentionId,
       recentRoute: recentRoute.slice(-EXPLORER_SAFE_CONTEXT_LIMITS.compassRouteEventCount),
-      waypoints: heads.map((waypoint) => ({ id: waypoint.id, title: waypoint.destination,
+      waypoints: heads.map((waypoint) => ({ id: waypoint.id, title: waypoint.title,
         destination: waypoint.destination, meaning: waypoint.meaning, arrivalSignal: waypoint.arrivalSignal,
         stage: waypoint.status === "reached" ? "reached" : waypoint.release === undefined ? "formed" : "released",
         reachedEvidence: waypoint.status === "reached" ? waypoint.reachedEvidence ?? null : null })),
-      drafts: [],
+      drafts: state.waypointDraft === null ? [] : [{ id: state.waypointDraft.id, title: state.waypointDraft.title,
+        destination: state.waypointDraft.destination, whyItMatters: state.waypointDraft.whyItMatters,
+        arrivalSignal: state.waypointDraft.arrivalSignal }],
     },
-    sourceIds: [...points.map((item) => item.id), ...heads.map((waypoint) => waypoint.id)],
+    sourceIds: [...points.map((item) => item.id), ...heads.map((waypoint) => waypoint.id),
+      ...(state.waypointDraft === null ? [] : [state.waypointDraft.id])],
   };
 }
 

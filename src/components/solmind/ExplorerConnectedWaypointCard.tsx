@@ -46,12 +46,18 @@ function WaypointLineCard({ scope, line }: Readonly<{ scope: string; line: CardW
         <div className="min-w-0">
           <p className={EYEBROW}>{W.eyebrow}</p>
           <h4 className="whitespace-pre-wrap font-serif text-lg leading-snug text-stone-50 [overflow-wrap:anywhere]" id={titleId}>
-            {current.destination}
+            {current.title ?? current.destination}
           </h4>
         </div>
         <StageMarker label={current.label} stage={current.stage} />
       </div>
       <dl className="mt-2 grid gap-2">
+        {current.title === undefined || current.title === current.destination ? null : (
+          <div className="border-l-2 border-amber-300/60 pl-3">
+            <dt className="text-[11px] uppercase tracking-[0.18em] text-amber-200">{W.destinationTerm}</dt>
+            <dd className="mt-0.5 whitespace-pre-wrap text-sm leading-6 text-stone-100 [overflow-wrap:anywhere]">{current.destination}</dd>
+          </div>
+        )}
         <div className="border-l-2 border-amber-300/60 pl-3">
           <dt className="text-[11px] uppercase tracking-[0.18em] text-amber-200">{W.meaningTerm}</dt>
           <dd className="mt-0.5 whitespace-pre-wrap text-sm leading-6 text-stone-100 [overflow-wrap:anywhere]">{current.meaning}</dd>
@@ -73,6 +79,7 @@ function WaypointLineCard({ scope, line }: Readonly<{ scope: string; line: CardW
             {earlier.map((version) => (
               <li className="grid gap-0.5 px-1 py-1 text-sm text-stone-400" key={version.id}>
                 <p className="text-xs font-semibold text-stone-300">{version.label}</p>
+                {version.title === undefined || version.title === version.destination ? null : <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{version.title}</p>}
                 <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{version.destination}</p>
                 <p className="whitespace-pre-wrap text-xs leading-5 [overflow-wrap:anywhere]">
                   {W.meaningTerm}: {version.meaning}

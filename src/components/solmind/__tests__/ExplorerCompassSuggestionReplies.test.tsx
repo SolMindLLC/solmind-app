@@ -29,7 +29,7 @@ function state(overrides: Partial<ExplorerConversationState> = {}): ExplorerConv
     conversationId: CONVERSATION,
     revision: 5,
     pendingTurn: false,
-    turnedDownLimitReached: false,
+    turnedDownLimitReached: false, waypointDraft: null,
     providerState: "available",
     compassSuggestionReplies: "available",
     messages: [
@@ -258,9 +258,9 @@ describe("S6a Compass suggestion replies", () => {
   });
 
   it.each([
-    ["support", "To keep this conversation focused on support, Compass suggestion replies are not available in this conversation."],
-    ["adult_policy", "Because SolMind is for adults, Compass suggestion replies are unavailable in this conversation."],
-    ["unavailable", "To keep this conversation safe, Compass suggestion replies wait until SolMind can confirm this conversation's settings."],
+    ["support", "To keep this conversation focused on support, suggestion replies are not available in this conversation."],
+    ["adult_policy", "Because SolMind is for adults, suggestion replies are unavailable in this conversation."],
+    ["unavailable", "To keep this conversation safe, suggestion replies wait until SolMind can confirm this conversation's settings."],
   ] as const)("replaces all rows in one message with one reason when availability is %s", (availability, reason) => {
     const original = state();
     const html = renderRows(state({ compassSuggestionReplies: availability,
@@ -273,7 +273,7 @@ describe("S6a Compass suggestion replies", () => {
   it("fails closed without availability and does not invent a reason when there is no suggestion", () => {
     expect(buttons(renderRows(state({ compassSuggestionReplies: undefined })))).toEqual([]);
     expect(plain(renderRows(state({ compassSuggestionReplies: undefined })))).toBe(
-      "To keep this conversation safe, Compass suggestion replies wait until SolMind can confirm this conversation's settings.",
+      "To keep this conversation safe, suggestion replies wait until SolMind can confirm this conversation's settings.",
     );
     expect(renderRows(state({ compassSuggestionReplies: "support", compassItems: [] }))).toBe("");
   });

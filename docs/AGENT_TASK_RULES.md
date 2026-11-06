@@ -1858,3 +1858,84 @@ anything reaches the app or demo. This isolated build grants no publication or
 deployment authority. SQL/pgTAP and browser execution, independent review and
 canonical sibling-document updates remain Executor work; the builder cannot
 read or write the sibling documentation under this package's access limits.
+
+## Chat step S7a: private Waypoint drafts in the conversation - 2026-11-05
+
+Paul's decisions of 2026-11-03 12:38:07 and 2026-11-05 13:18:35 authorize
+one private forming Waypoint draft with a short title, destination, why it
+matters and arrival signal. The Virtual Guide may suggest or refine that
+wording; only an Explorer reply button confirms or rejects it. Typed Waypoint
+answers remain S7b. Existing local clarification/form drafts retain their
+close/reload loss disclosure; these saved conversation drafts survive reload.
+
+The single forward migration is
+supabase/migrations/20261105050000_explorer_waypoint_drafts.sql.
+The app change and its migration must reach a database together. State now
+requires waypointDraft (the current proposed draft or null) and each saved
+Waypoint's title. Old state projections and the old ordinary context version
+fail closed; this is not a runtime compatibility switch.
+
+content.waypoint_draft is Explorer-private, with RLS enabled, zero policies
+and no direct anon, authenticated or service_role grants. It allows one
+proposed draft per conversation, draft_kind new only, nullable forming fields,
+and at most 24 rejected rows per conversation. Drafts do not consume the
+existing 20-Waypoint limit. Only settlement rewrites proposed wording.
+Confirmed and rejected drafts are immutable; rejected details never enter
+browser state or model context.
+
+The service-role-only settle v4 replaces the 24-argument overload with 25
+arguments, adding optional p_waypoint_suggestion. The additive optional
+waypointSuggestion reply field keeps explorer-safety-reply.v2. Its four
+required valid fields are accepted only with a saved ordinary reply below
+level 2, delivery still wanted, classification_and_reply, clear restriction
+and no adults-only stop. Invalid suggestions are dropped independently of
+the reply. Refinement replaces wording and its latest suggestion-message
+pointer, retaining the first source message; exact replay applies no change.
+
+public.solmind_respond_explorer_waypoint_draft_v1 is the separate bounded
+service-role-only command. It preserves fresh authority, policy, ownership,
+revision, pending-turn and exact-operation-replay checks. Right copies the
+exact stored four fields into a chosen Waypoint within the existing limit,
+records Explorer choice and insert-only Virtual Guide/draft/source provenance,
+and marks the draft confirmed. Close records only the answer; not_it rejects
+within the separate bound. Neither response command calls a provider.
+History, revision, Reached and sharing rules remain unchanged.
+
+Ordinary context is wi007-v0.1+onboarding-fields-v2+compass-v4 with
+explorer-compass-context.v4. Its drafts array contains zero or one proposed
+draft with id and the four nullable fields. SQL and TypeScript derive the
+same section and source set; compass-v3 is refused for new turns.
+Classification-only calls retain the section-free base revision and exclude
+Compass, Waypoint and draft sources. The 30/10/60-second context/RPC/provider
+budgets, cancellation, one-call and counting rules remain unchanged.
+
+The connected transcript shows the current draft under the Virtual Guide
+message that supplied its latest wording, with Forming, Where you're heading:,
+Why it matters: and Reached looks like:. The existing three-reply row and helper
+retain their labels, operation identity and uncertain
+retry behavior. Close and not_it start a separate ordinary follow-up Send
+only after the response is confirmed, naming the draft title and preserving
+the Explorer's typed message. Right starts no Send. Confirmed Waypoints use
+their saved titles in the existing Waypoint display. Review mockups are unchanged.
+
+Fix round 2, 2026-11-05 (Paul's answers at 17:04:49, 17:21:15 and 17:30:02
+CST): the shared unavailability sentences now say "suggestion replies" for
+both Compass and Waypoint rows. At the Waypoint limit only "That's right"
+is disabled, with the approved reason once beneath the row and a local
+command refusal before any request. Close, not_it and typing keep their
+existing gates; a server refusal after a race keeps the definite-conflict path.
+The browser's waypoints array contains every row counted by the server,
+including Reached, Released and earlier versions retained by revisions.
+Both screen and command gate use its length and the existing
+EXPLORER_CONVERSATION_LIMITS.waypoints constant; no new state flag is needed.
+SQL coverage exercises Release, Reached, revision and history guards on a
+draft-confirmed Waypoint, plus this complete count. The SQL and TypeScript
+context tests share one non-empty draft golden in the SQL test.
+
+All five prompt/role/instruction labels end in -20261105-s7a-r2; wording,
+byte counts and integrity pins move together. Paul approved the final
+screen and instruction sentences in this round's PAUL_ANSWERS.md.
+SQL/pgTAP and browser execution, independent review, canonical sibling-doc
+updates and any integration or publication remain Executor work. This builder
+is limited to the clone and the five named fix-package files; no sibling product
+documentation, database or provider was accessed.

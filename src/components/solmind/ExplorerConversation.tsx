@@ -12,6 +12,7 @@ import { parseExplorerPrivateConversationResponse, type ExplorerPrivateConversat
 import { ExplorerConversationConnectedScreen } from "./ExplorerConversationConnectedScreen";
 import type { ExplorerConversationFormationIntent } from "./ExplorerConversationFormation";
 import { COMPASS_SUGGESTION_REPLY_LABELS } from "@/lib/solmind/explorerCompassSuggestionReplies";
+import { completeWaypointDraft, waypointLimitReached } from "@/lib/solmind/explorerWaypointDraft";
 
 const STATE_PATH = "/explorer/conversation/state";
 const COMMAND_PATH = "/explorer/conversation/commands";
@@ -220,7 +221,8 @@ export function ExplorerConversation() {
         // A button's ordinary Send has its own intent. It never consumes the
         // Explorer's composer draft, including after an exact uncertain retry.
         if (pending.intent.kind === "send" && output?.assistance === null) setDraft("");
-        if (pending.command.kind === "respond_compass_suggestion" && pending.command.response !== "right" &&
+        if ((pending.command.kind === "respond_compass_suggestion" || pending.command.kind === "respond_waypoint_draft") &&
+            pending.command.response !== "right" &&
             pending.suggestionWording !== null) {
           const current = stateRef.current;
           if (current !== null && !current.pendingTurn && current.sessionStatus !== "ended" &&
@@ -278,10 +280,17 @@ export function ExplorerConversation() {
          suggestion === undefined ||
          (intent.response !== "right" && (current.providerState !== "available" ||
           current.messages.length > EXPLORER_CONVERSATION_LIMITS.messages - 2)))) return;
+    const waypointDraft = intent.kind === "respond_waypoint_draft" && current.waypointDraft?.id === intent.draftId
+      ? current.waypointDraft : null;
+    if (intent.kind === "respond_waypoint_draft" &&
+        (current.compassSuggestionReplies !== "available" || waypointDraft === null ||
+         (intent.response === "right" && (waypointLimitReached(current) || !completeWaypointDraft(waypointDraft))) ||
+         (intent.response !== "right" && (waypointDraft.title === null || current.providerState !== "available" ||
+          current.messages.length > EXPLORER_CONVERSATION_LIMITS.messages - 2)))) return;
     try {
       // Keep the displayed wording pinned to this reply's revision, even when
       // rejection removes the point or the exact response needs a later retry.
-      const pending = prepareCommand(intent, current.revision, suggestion?.label ?? null);
+      const pending = prepareCommand(intent, current.revision, suggestion?.label ?? waypointDraft?.title ?? null);
       if (pending === null) {
         setDraftError("This change is too long to send. Please shorten the text.");
         return;

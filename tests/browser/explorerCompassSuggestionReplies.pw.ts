@@ -31,7 +31,7 @@ function savedState(overrides: Partial<ExplorerConversationState> = {}): Explore
     conversationId: CONVERSATION,
     revision: 5,
     pendingTurn: false,
-    turnedDownLimitReached: false,
+    turnedDownLimitReached: false, waypointDraft: null,
     providerState: "available",
     compassSuggestionReplies: "available",
     messages: [

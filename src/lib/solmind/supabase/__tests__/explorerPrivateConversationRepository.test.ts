@@ -25,7 +25,7 @@ function settle(): ExplorerPrivateSettleParameters { return { ...ACTOR, p_conver
   p_status: "completed", p_reply_message_id: null, p_reply_kind: "none", p_reply_body: null, p_model_level: 0, p_model_minor_indicated: false,
   p_protocol_version: "explorer-safety-reply.v2", p_request_mode: "classification_only", p_configuration_fingerprint: SHA,
   p_fallback_policy_version: "synthetic.v1", p_model_policy_version: "synthetic.v1", p_trusted_response_version: "synthetic.v1",
-  p_resource_policy_version: "synthetic.v1", p_fallback_level: 0, p_fallback_minor_indicated: false, p_delivery_interested: false, p_attention_item_id: null, p_choices: null, p_compass_suggestions: null, p_compass_responses: null }; }
+  p_resource_policy_version: "synthetic.v1", p_fallback_level: 0, p_fallback_minor_indicated: false, p_delivery_interested: false, p_attention_item_id: null, p_choices: null, p_compass_suggestions: null, p_compass_responses: null, p_waypoint_suggestion: null }; }
 function mutate(): ExplorerPrivateMutateParameters { return { ...ACTOR, p_conversation_id: UUID, p_operation_id: UUID,
   p_expected_revision: 0, p_command_fingerprint: SHA, p_kind: "set_attention", p_source_message_id: null, p_item_id: UUID,
   p_waypoint_id: null, p_label: null, p_destination: null, p_meaning: null, p_arrival_signal: null, p_evidence: null }; }
@@ -42,9 +42,62 @@ function fixture(row: unknown) {
   return { repository, rpc, abortSignal };
 }
 describe("Closed private Explorer RPC repository (synthetic client)", () => {
+  it("S7a freezes a complete four-field suggestion as the 25th argument and rejects malformed values before RPC", async () => {
+    const suggestion = { title: "Room to breathe", destination: "A calmer breakfast", whyItMatters: "Family time", arrivalSignal: "Two calm mornings" };
+    const f = fixture({ outcome: "ok", conversation_state: null, policy_state: null, saved_reply: true });
+    await f.repository.settle({ ...settle(), p_waypoint_suggestion: suggestion });
+    const sent = f.rpc.mock.calls[0][1] as ExplorerPrivateSettleParameters;
+    expect(Object.keys(sent)).toHaveLength(25);
+    expect(sent.p_waypoint_suggestion).toEqual(suggestion); expect(sent.p_waypoint_suggestion).not.toBe(suggestion);
+    expect(Object.isFrozen(sent.p_waypoint_suggestion)).toBe(true);
+    const getter = vi.fn(); const accessor = { ...suggestion };
+    Object.defineProperty(accessor, "title", { enumerable: true, get: getter });
+    for (const p_waypoint_suggestion of [undefined, [], [suggestion], {}, { ...suggestion, extra: true },
+      { ...suggestion, title: null }, { ...suggestion, destination: "x".repeat(1001) },
+      { ...suggestion, whyItMatters: " padded " }, { ...suggestion, arrivalSignal: "\ud800" },
+      { ...suggestion, title: "hidden\u200btext" }, { ...suggestion, title: "hidden\ttext" }, accessor,
+      new Proxy(suggestion, {})]) {
+      const invalid = fixture(null);
+      await expect(invalid.repository.settle({ ...settle(), p_waypoint_suggestion } as unknown as ExplorerPrivateSettleParameters))
+        .rejects.toThrow("explorer_private_repository_unavailable");
+      expect(invalid.rpc).not.toHaveBeenCalled();
+    }
+    expect(getter).not.toHaveBeenCalled();
+  });
+  it("S7a exposes only the closed eight-argument Waypoint response port", async () => {
+    const input = { ...ACTOR, p_conversation_id: UUID, p_operation_id: UUID, p_expected_revision: 0,
+      p_command_fingerprint: SHA, p_draft_id: UUID, p_response: "right" as const };
+    const f = fixture({ outcome: "exact_replay", conversation_state: null });
+    expect(await f.repository.respondWaypointDraft!(input)).toEqual({ outcome: "exact_replay", conversation_state: null });
+    expect(f.rpc).toHaveBeenCalledExactlyOnceWith("solmind_respond_explorer_waypoint_draft_v1", input);
+    expect(Object.keys(f.rpc.mock.calls[0][1] as object)).toHaveLength(8);
+    for (const changed of [{ ...input, p_title: "Client wording" }, { ...input, p_response: "confirm" },
+      { ...input, p_draft_id: undefined }]) {
+      const invalid = fixture(null);
+      await expect(invalid.repository.respondWaypointDraft!(changed as typeof input)).rejects.toThrow();
+      expect(invalid.rpc).not.toHaveBeenCalled();
+    }
+  });
+  it("S7a refuses absent or malformed draft state on read and ended review", async () => {
+    const valid = { turnedDownLimitReached: false, waypointDraft: null };
+    const draft = { id: UUID, title: "Name", destination: null, whyItMatters: "Meaning", arrivalSignal: null, suggestionMessageId: UUID };
+    for (const waypointDraft of [null, draft]) {
+      const conversation_state = { ...valid, waypointDraft };
+      const row = { outcome: "ok", conversation_state, authority_context: null, policy_state: null };
+      expect(await fixture(row).repository.read({ accountId: UUID, applicationSessionId: UUID })).toEqual(row);
+    }
+    for (const waypointDraft of [undefined, {}, [], { ...draft, id: "bad" }, { ...draft, title: "x".repeat(1001) },
+      { ...draft, suggestionMessageId: null }, { ...draft, rejected: true }]) {
+      const conversation_state = { ...valid, waypointDraft };
+      await expect(fixture({ outcome: "ok", conversation_state, authority_context: null, policy_state: null })
+        .repository.read({ accountId: UUID, applicationSessionId: UUID })).rejects.toThrow();
+      await expect(fixture({ outcome: "ok", conversation_state, ended_conversations: [] }).repository.review!(review()))
+        .rejects.toThrow();
+    }
+  });
   it("read and ended review require a boolean turned-down limit without changing other state fields", async () => {
     const state = { version: "explorer-conversation.v1", conversationId: UUID, revision: 0,
-      pendingTurn: false, providerState: "unavailable", messages: [], compassItems: [],
+      pendingTurn: false, waypointDraft: null, providerState: "unavailable", messages: [], compassItems: [],
       priorityId: null, attentionId: null, waypoints: [] };
     for (const turnedDownLimitReached of [false, true]) {
       const conversation_state = { ...state, turnedDownLimitReached };
@@ -65,9 +118,9 @@ describe("Closed private Explorer RPC repository (synthetic client)", () => {
       expect(ended.rpc).toHaveBeenCalledOnce();
     }
   });
-  it("exposes fourteen closed ports including suggestion replies, End, ended review and the pause read, without generic access", () => {
+  it("exposes fifteen closed ports including suggestion replies, End, ended review and the pause read, without generic access", () => {
     const f = fixture(null);
-    expect(Object.keys(f.repository).sort()).toEqual(["arrange", "category", "end", "ensure", "mutate", "observe", "pause", "prepare", "read", "release", "respondCompassSuggestion", "review", "settle", "waypointRevision"]);
+    expect(Object.keys(f.repository).sort()).toEqual(["arrange", "category", "end", "ensure", "mutate", "observe", "pause", "prepare", "read", "release", "respondCompassSuggestion", "respondWaypointDraft", "review", "settle", "waypointRevision"]);
     expect(Object.isFrozen(f.repository)).toBe(true);
   });
   it("read derives exact actor fields and paired operation selectors", async () => {
@@ -480,14 +533,14 @@ describe("S4 exact v4 settle capability", () => {
     expect((f.rpc.mock.calls[0][1] as ExplorerPrivateSettleParameters).p_choices).toEqual(observation.choices);
     expect(f.abortSignal).toHaveBeenCalledOnce();
   });
-  it("copies and freezes choices with the exact 24 arguments and optional needle", async () => {
+  it("copies and freezes choices with the exact 25 arguments and optional needle", async () => {
     const f = fixture({ outcome: "ok", conversation_state: null, policy_state: null, saved_reply: true });
     const choices = [{ label: "Show me around" }, { label: "\u{1F642}".repeat(40) }];
     const input = { ...settle(), p_attention_item_id: UUID, p_choices: choices };
     await f.repository.settle(input);
     expect(f.rpc).toHaveBeenCalledExactlyOnceWith("solmind_settle_explorer_conversation_turn_v4", input);
     const copied = f.rpc.mock.calls[0][1] as ExplorerPrivateSettleParameters;
-    expect(Object.keys(copied)).toHaveLength(24);
+    expect(Object.keys(copied)).toHaveLength(25);
     expect(copied.p_choices).not.toBe(choices); expect(copied.p_choices?.[0]).not.toBe(choices[0]);
     expect(Object.isFrozen(copied.p_choices)).toBe(true); expect(Object.isFrozen(copied.p_choices?.[0])).toBe(true);
     choices[0].label = "Changed";
@@ -526,7 +579,7 @@ describe("S6b typed suggestion response repository boundary", () => {
     await f.repository.settle(input);
     expect(f.rpc).toHaveBeenCalledExactlyOnceWith("solmind_settle_explorer_conversation_turn_v4", input);
     const copied = f.rpc.mock.calls[0][1] as ExplorerPrivateSettleParameters;
-    expect(Object.keys(copied)).toHaveLength(24);
+    expect(Object.keys(copied)).toHaveLength(25);
     expect(copied.p_compass_responses).not.toBe(responses);
     expect(Object.isFrozen(copied.p_compass_responses)).toBe(true);
     expect(Object.isFrozen(copied.p_compass_responses?.[0])).toBe(true);
@@ -567,14 +620,14 @@ describe("S6b typed suggestion response repository boundary", () => {
 });
 
 describe("S5 forming suggestion repository boundary", () => {
-  it("copies and freezes the exact 24-argument settle payload without sharing proposal references", async () => {
+  it("copies and freezes the exact 25-argument settle payload without sharing proposal references", async () => {
     const f = fixture({ outcome: "ok", conversation_state: null, policy_state: null, saved_reply: true });
     const suggestions = [{ label: "New topic" }, { label: "Current wording", pointId: UUID }];
     const input = { ...settle(), p_compass_suggestions: suggestions };
     await f.repository.settle(input);
     expect(f.rpc).toHaveBeenCalledExactlyOnceWith("solmind_settle_explorer_conversation_turn_v4", input);
     const copied = f.rpc.mock.calls[0][1] as ExplorerPrivateSettleParameters;
-    expect(Object.keys(copied)).toHaveLength(24);
+    expect(Object.keys(copied)).toHaveLength(25);
     expect(copied.p_compass_suggestions).not.toBe(suggestions);
     expect(Object.isFrozen(copied.p_compass_suggestions)).toBe(true);
     expect(Object.isFrozen(copied.p_compass_suggestions?.[0])).toBe(true);

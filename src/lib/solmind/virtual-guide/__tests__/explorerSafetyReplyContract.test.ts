@@ -22,6 +22,36 @@ function proposedBody(proposals: Record<string, unknown>) {
   return JSON.stringify({ protocol: EXPLORER_SAFETY_REPLY_PROTOCOL,
     classification: { level: 0, minorIndicated: false }, candidateReply: { content: "We can explore that." }, ...proposals });
 }
+describe("S7a Waypoint proposals", () => {
+  const waypointSuggestion = { title: "Calm mornings with room to breathe", destination: "An unhurried breakfast",
+    whyItMatters: "Time with my family", arrivalSignal: "Two calm breakfasts this week" };
+  it("parses one exact frozen suggestion beside valid Compass and reply data", () => {
+    const result = parseExplorerSafetyReplyBody(proposedBody({ waypointSuggestion,
+      compass: { suggestions: [{ label: "Mornings" }] }, choices: [{ label: "Begin" }] }), "classification_and_reply");
+    expect(result.waypointSuggestion).toEqual(waypointSuggestion);
+    expect(Object.isFrozen(result.waypointSuggestion)).toBe(true);
+    expect(result.candidate.kind).toBe("usable");
+    expect(result.compass?.suggestions).toEqual([{ label: "Mornings" }]);
+  });
+  it("drops every malformed suggestion independently without discarding prose or other proposals", () => {
+    for (const invalid of [null, [], [waypointSuggestion], {}, { ...waypointSuggestion, extra: true },
+      ...Object.keys(waypointSuggestion).flatMap(field => [undefined, null, "", " ", " padded ", "x".repeat(1001), "\ud800", "bad\u0000text", "bad\ttext", "bad\u200btext", "bad\u202etext"]
+        .map(value => ({ ...waypointSuggestion, [field]: value })))]) {
+      const result = parseExplorerSafetyReplyBody(proposedBody({ waypointSuggestion: invalid,
+        compass: { suggestions: [{ label: "Mornings" }] } }), "classification_and_reply");
+      expect(result.waypointSuggestion).toBeUndefined();
+      expect(result.candidate.kind).toBe("usable");
+      expect(result.compass?.suggestions).toEqual([{ label: "Mornings" }]);
+    }
+  });
+  it("accepts exact text bounds and excludes the suggestion from classification-only observations", () => {
+    expect(parseExplorerSafetyReplyBody(proposedBody({ waypointSuggestion: { ...waypointSuggestion,
+      destination: "x".repeat(1000), whyItMatters: "One\nTwo" } }), "classification_and_reply").waypointSuggestion)
+      .toMatchObject({ destination: "x".repeat(1000), whyItMatters: "One\nTwo" });
+    expect(parseExplorerSafetyReplyBody(proposedBody({ waypointSuggestion }), "classification_only"))
+      .toEqual({ classification: { level: 0, minorIndicated: false }, candidate: { kind: "not_requested" } });
+  });
+});
 describe("Explorer same-call raw body contract (synthetic mechanics)", () => {
   it("binds exact compact bytes, mode, versions and server identities into a frozen request", () => {
     const input = request(); const parsed = parseExplorerSafetyReplyRequest(input);

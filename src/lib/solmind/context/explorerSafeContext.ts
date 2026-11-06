@@ -52,11 +52,11 @@ export const EXPLORER_SAFE_CONTEXT_LIMITS = Object.freeze({
 // his go-ahead at 20:50:45 CST): the saved Compass and Waypoint section. It is tied to
 // its own contract version both ways: that version requires the section and every
 // other version forbids it, so the older twelve-layer envelope keeps its exact bytes.
-// The S6b migration 20261105030000_explorer_typed_suggestion_replies.sql rebuilds the same
+// The S7a migration 20261105050000_explorer_waypoint_drafts.sql rebuilds the same
 // section from the saved rows and compares it exactly before a Send is prepared.
-export const EXPLORER_COMPASS_CONTEXT_VERSION = "explorer-compass-context.v3" as const;
+export const EXPLORER_COMPASS_CONTEXT_VERSION = "explorer-compass-context.v4" as const;
 export const EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION =
-  "wi007-v0.1+onboarding-fields-v2+compass-v3" as const;
+  "wi007-v0.1+onboarding-fields-v2+compass-v4" as const;
 // The eight saved anchors (kept here so this module adds no import edge).
 const COMPASS_ANCHORS = Object.freeze([
   "apex", "upper_left", "upper_right", "side_left", "side_right",
@@ -269,6 +269,13 @@ type CompassWaypoint = {
   stage: "formed" | "reached" | "released";
   reachedEvidence: string | null;
 };
+type CompassWaypointDraft = {
+  id: string;
+  title: string | null;
+  destination: string | null;
+  whyItMatters: string | null;
+  arrivalSignal: string | null;
+};
 
 export type ExplorerCompassContext = {
   version: typeof EXPLORER_COMPASS_CONTEXT_VERSION;
@@ -277,7 +284,7 @@ export type ExplorerCompassContext = {
   attentionId: string | null;
   recentRoute: ReadonlyArray<CompassRouteEvent>;
   waypoints: ReadonlyArray<CompassWaypoint>;
-  drafts: ReadonlyArray<never>;
+  drafts: ReadonlyArray<CompassWaypointDraft>;
 };
 
 export type ExplorerSafeContext = {
@@ -921,8 +928,7 @@ function parseCompassContext(value: unknown): ExplorerCompassContext {
   ) {
     fail("explorer_context_collection_limit_exceeded");
   }
-  // Reserved for a later slice; nothing may be supplied yet.
-  if (object.drafts.length !== 0) {
+  if (object.drafts.length > 1) {
     fail("explorer_context_invalid_envelope");
   }
   const anchors = new Set<string>();
@@ -1029,6 +1035,15 @@ function parseCompassContext(value: unknown): ExplorerCompassContext {
       reachedEvidence: stage === "reached" ? parseText(waypoint.reachedEvidence, maximum) : null,
     };
   });
+  const drafts = object.drafts.map((candidate): CompassWaypointDraft => {
+    const draft = parsePlainObject(candidate);
+    assertExactKeys(draft, ["id", "title", "destination", "whyItMatters", "arrivalSignal"]);
+    const id = parseUuid(draft.id);
+    if (pointIds.has(id) || waypointIds.has(id)) fail("explorer_context_duplicate_source");
+    const field = (value: unknown) => value === null ? null : parseText(value, EXPLORER_SAFE_CONTEXT_LIMITS.compassWaypointCharacters);
+    return { id, title: field(draft.title), destination: field(draft.destination),
+      whyItMatters: field(draft.whyItMatters), arrivalSignal: field(draft.arrivalSignal) };
+  });
   return {
     version: EXPLORER_COMPASS_CONTEXT_VERSION,
     points,
@@ -1036,7 +1051,7 @@ function parseCompassContext(value: unknown): ExplorerCompassContext {
     attentionId,
     recentRoute,
     waypoints,
-    drafts: [],
+    drafts,
   };
 }
 

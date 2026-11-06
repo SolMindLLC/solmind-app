@@ -6,6 +6,7 @@
 // src/lib/solmind/__tests__/explorerConnectedCard.test.ts proves that the
 // closed browser parser accepts it.
 import {
+  EXPLORER_CONVERSATION_LIMITS,
   EXPLORER_CONVERSATION_VERSION,
   type ExplorerConversationState,
 } from "../../src/lib/solmind/explorerConversationContract";
@@ -61,7 +62,7 @@ export const cardState = (overrides: Partial<ExplorerConversationState> = {}): E
   version: EXPLORER_CONVERSATION_VERSION,
   conversationId: CARD_CONVERSATION,
   revision: 12,
-  pendingTurn: false, turnedDownLimitReached: false,
+  pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null,
   providerState: "unavailable",
   messages: MESSAGES,
   compassItems: [
@@ -77,27 +78,27 @@ export const cardState = (overrides: Partial<ExplorerConversationState> = {}): E
   priorityId: CARD_POINTS.priority,
   attentionId: CARD_POINTS.attention,
   waypoints: [
-    { id: CARD_WAYPOINTS.formedEarlier, sourceMessageId: EXPLORER_SOURCE, destination: "Ask my sister for a calm hour",
+    { id: CARD_WAYPOINTS.formedEarlier, sourceMessageId: EXPLORER_SOURCE, title: "Ask my sister for a calm hour", destination: "Ask my sister for a calm hour",
       meaning: "So we can talk without rushing", arrivalSignal: "We have a day and a time", status: "chosen" },
-    { id: CARD_WAYPOINTS.reachedEarlier, sourceMessageId: MESSAGES[2].id, destination: "Write down what I need",
+    { id: CARD_WAYPOINTS.reachedEarlier, sourceMessageId: MESSAGES[2].id, title: "Write down what I need", destination: "Write down what I need",
       meaning: "So I do not lose my point", arrivalSignal: "I have three lines on paper", status: "reached",
       reachedEvidence: "I wrote three lines on Sunday.", reachedAt: "2026-11-02T20:00:00.000Z" },
-    { id: CARD_WAYPOINTS.releasedEarlier, sourceMessageId: MESSAGES[3].id, destination: "Fix the budget this month",
+    { id: CARD_WAYPOINTS.releasedEarlier, sourceMessageId: MESSAGES[3].id, title: "Fix the budget this month", destination: "Fix the budget this month",
       meaning: "Money worry keeps me up", arrivalSignal: "The budget sheet is done",
       status: "chosen", release: { operationId: "70000000-0000-4000-8000-0000000000c1", releasedAt: "2026-11-02T21:00:00.000Z" } },
-    { id: CARD_WAYPOINTS.formed, sourceMessageId: EXPLORER_SOURCE, destination: "Ask my sister for a calm evening",
+    { id: CARD_WAYPOINTS.formed, sourceMessageId: EXPLORER_SOURCE, title: "Ask my sister for a calm evening", destination: "Ask my sister for a calm evening",
       meaning: "So we can talk without rushing", arrivalSignal: "We have a day and a time", status: "chosen",
       lifecycle: { predecessorWaypointId: CARD_WAYPOINTS.formedEarlier, creationReason: "revision", clarifications: [
         { component: "destination", questionKey: "waypoint.destination.v1", answer: "Ask my sister for a calm evening", recordedAt: "2026-11-03T14:10:00.000Z" },
       ] } },
-    { id: CARD_WAYPOINTS.reached, sourceMessageId: MESSAGES[2].id, destination: "Say what I need in one sentence",
+    { id: CARD_WAYPOINTS.reached, sourceMessageId: MESSAGES[2].id, title: "Say what I need in one sentence", destination: "Say what I need in one sentence",
       meaning: "So I do not lose my point", arrivalSignal: "I can say it out loud once", status: "reached",
       reachedEvidence: "I said it out loud this morning.", reachedAt: "2026-11-03T14:20:00.000Z",
       lifecycle: { predecessorWaypointId: CARD_WAYPOINTS.reachedEarlier, creationReason: "revisit", clarifications: [
         { component: "destination", questionKey: "waypoint.destination.v1", answer: "Say what I need in one sentence", recordedAt: "2026-11-03T14:15:00.000Z" },
         { component: "arrivalSignal", questionKey: "waypoint.arrivalSignal.v1", answer: "I can say it out loud once", recordedAt: "2026-11-03T14:15:00.000Z" },
       ] } },
-    { id: CARD_WAYPOINTS.released, sourceMessageId: MESSAGES[3].id, destination: "Fix the budget this month",
+    { id: CARD_WAYPOINTS.released, sourceMessageId: MESSAGES[3].id, title: "Fix the budget this month", destination: "Fix the budget this month",
       meaning: "It can wait until the talk is done", arrivalSignal: "The budget sheet is done",
       status: "chosen", release: { operationId: "70000000-0000-4000-8000-0000000000c2", releasedAt: "2026-11-03T14:30:00.000Z" },
       lifecycle: { predecessorWaypointId: CARD_WAYPOINTS.releasedEarlier, creationReason: "revisit", clarifications: [
@@ -109,3 +110,17 @@ export const cardState = (overrides: Partial<ExplorerConversationState> = {}): E
   ending: null,
   ...overrides,
 });
+
+// Capacity counts all stored rows, including the Reached, Released and earlier
+// versions above, even though they are not current chosen Waypoints.
+export function cardStateAtWaypointLimit(): ExplorerConversationState {
+  const state = cardState();
+  return { ...state, waypoints: [...state.waypoints,
+    ...Array.from({ length: EXPLORER_CONVERSATION_LIMITS.waypoints - state.waypoints.length }, (_, index) => ({
+      id: `60000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      sourceMessageId: EXPLORER_SOURCE, title: `Synthetic Waypoint ${index + 1}`,
+      destination: "A synthetic destination", meaning: "A synthetic reason",
+      arrivalSignal: "A synthetic arrival signal", status: "chosen" as const,
+    })),
+  ] };
+}

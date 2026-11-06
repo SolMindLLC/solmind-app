@@ -72,6 +72,7 @@ export type ExplorerWaypointLifecycle = Readonly<{
 export type ExplorerConversationWaypoint = Readonly<{
   id: string;
   sourceMessageId: string;
+  title: string;
   destination: string;
   meaning: string;
   arrivalSignal: string;
@@ -80,6 +81,14 @@ export type ExplorerConversationWaypoint = Readonly<{
   reachedAt?: string | null;
   release?: Readonly<{ operationId: string; releasedAt: string }>;
   lifecycle?: ExplorerWaypointLifecycle;
+}>;
+export type ExplorerConversationWaypointDraft = Readonly<{
+  id: string;
+  title: string | null;
+  destination: string | null;
+  whyItMatters: string | null;
+  arrivalSignal: string | null;
+  suggestionMessageId: string;
 }>;
 export type ExplorerConversationRouteEvent = Readonly<{
   operationId: string;
@@ -123,6 +132,7 @@ export type ExplorerConversationState = Readonly<{
   priorityId: string | null;
   attentionId: string | null;
   waypoints: readonly ExplorerConversationWaypoint[];
+  waypointDraft: ExplorerConversationWaypointDraft | null;
   route?: readonly ExplorerConversationRouteEvent[];
   sessionStatus?: "active" | "ended" | null;
   ending?: ExplorerConversationEnding | null;
@@ -135,6 +145,7 @@ export type ExplorerConversationCommand = CommandBase & (
   | Readonly<{ kind: "confirm_priority"; itemId: string }>
   | Readonly<{ kind: "set_attention"; itemId: string }>
   | Readonly<{ kind: "respond_compass_suggestion"; itemId: string; response: ExplorerCompassSuggestionResponse }>
+  | Readonly<{ kind: "respond_waypoint_draft"; draftId: string; response: ExplorerCompassSuggestionResponse }>
   | Readonly<{ kind: "confirm_compass_arrangement"; priorityId: string | null; items: readonly ExplorerCompassArrangementItem[] }>
   | Readonly<{ kind: "confirm_compass_category"; targetItemId: string; memberItemIds: readonly string[]; label: string }>
   | Readonly<{ kind: "confirm_waypoint"; sourceMessageId: string; destination: string;
@@ -172,6 +183,23 @@ function text(value: unknown, maximum: number, multiline = false): value is stri
     } else if (code >= 0xdc00 && code <= 0xdfff) return false;
   }
   return true;
+}
+export function parseExplorerConversationWaypointDraft(value: unknown): ExplorerConversationWaypointDraft | null | undefined {
+  if (value === null) return null;
+  if (!object(value) || !keys(value, ["id", "title", "destination", "whyItMatters", "arrivalSignal", "suggestionMessageId"]) ||
+      Reflect.ownKeys(value).length !== 6 || Object.keys(value).some(key => {
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        return !descriptor?.enumerable || !("value" in descriptor);
+      }) || !isExplorerConversationId(value.id) ||
+      !isExplorerConversationId(value.suggestionMessageId)) return undefined;
+  for (const field of ["title", "destination", "whyItMatters", "arrivalSignal"] as const) {
+    const part = value[field];
+    if (part !== null && (!text(part, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) || part !== part.trim() ||
+        /[\u0009\u200b-\u200d\u202a-\u202e\u2060\u2066-\u2069\ufeff]/u.test(part))) return undefined;
+  }
+  return Object.freeze({ id: value.id, title: value.title as string | null, destination: value.destination as string | null,
+    whyItMatters: value.whyItMatters as string | null, arrivalSignal: value.arrivalSignal as string | null,
+    suggestionMessageId: value.suggestionMessageId });
 }
 function revision(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 2_147_483_647;
@@ -330,6 +358,11 @@ export function parseExplorerConversationCommand(value: unknown): ExplorerConver
           !isExplorerConversationId(value.operationId) || !isExplorerConversationId(value.itemId) ||
           !["right", "close", "not_it"].includes(value.response as string)) return null;
       break;
+    case "respond_waypoint_draft":
+      if (!keys(value, [...base, "draftId", "response"]) || Reflect.ownKeys(value).length !== 5 ||
+          !isExplorerConversationId(value.operationId) || !isExplorerConversationId(value.draftId) ||
+          !["right", "close", "not_it"].includes(value.response as string)) return null;
+      break;
     case "confirm_compass_arrangement": {
       if (!keys(value, [...base, "priorityId", "items"]) || !(value.priorityId === null || id(value.priorityId)) ||
           !Array.isArray(value.items) || value.items.length > EXPLORER_CONVERSATION_LIMITS.compassItems) return null;
@@ -389,7 +422,7 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
   const hasRoute = Object.hasOwn(state, "route");
   const hasLifecycle = Object.hasOwn(state, "sessionStatus") || Object.hasOwn(state, "ending");
   const hasSuggestionReplies = Object.hasOwn(state, "compassSuggestionReplies");
-  if (!keys(state, ["version", "conversationId", "revision", "pendingTurn", "turnedDownLimitReached", "providerState", "messages", "compassItems", "priorityId", "attentionId", "waypoints", ...(hasRoute ? ["route"] : []), ...(hasLifecycle ? ["sessionStatus", "ending"] : []), ...(hasSuggestionReplies ? ["compassSuggestionReplies"] : [])]) ||
+  if (!keys(state, ["version", "conversationId", "revision", "pendingTurn", "turnedDownLimitReached", "providerState", "messages", "compassItems", "priorityId", "attentionId", "waypoints", "waypointDraft", ...(hasRoute ? ["route"] : []), ...(hasLifecycle ? ["sessionStatus", "ending"] : []), ...(hasSuggestionReplies ? ["compassSuggestionReplies"] : [])]) ||
       state.version !== EXPLORER_CONVERSATION_VERSION || !revision(state.revision) ||
       typeof state.pendingTurn !== "boolean" ||
       typeof state.turnedDownLimitReached !== "boolean" ||
@@ -468,8 +501,9 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
     const hasReached = Object.hasOwn(item, "reachedEvidence") || Object.hasOwn(item, "reachedAt");
     const hasRelease = Object.hasOwn(item, "release");
     const hasWaypointLifecycle = Object.hasOwn(item, "lifecycle");
-    if (!keys(item, ["id", "sourceMessageId", "destination", "meaning", "arrivalSignal", "status", ...(hasReached ? ["reachedEvidence", "reachedAt"] : []), ...(hasRelease ? ["release"] : []), ...(hasWaypointLifecycle ? ["lifecycle"] : [])]) ||
+    if (!keys(item, ["id", "sourceMessageId", "title", "destination", "meaning", "arrivalSignal", "status", ...(hasReached ? ["reachedEvidence", "reachedAt"] : []), ...(hasRelease ? ["release"] : []), ...(hasWaypointLifecycle ? ["lifecycle"] : [])]) ||
         !id(item.id) || waypointIds.has(item.id) || !id(item.sourceMessageId) || !messageIds.has(item.sourceMessageId) ||
+        !text(item.title, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) ||
         !text(item.destination, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) || !text(item.meaning, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) ||
         !text(item.arrivalSignal, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) || !["chosen", "reached"].includes(item.status as string)) return null;
     if (hasReached && (item.status === "chosen"
@@ -512,13 +546,17 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
         clarifications: Object.freeze(clarifications) });
     }
     waypointIds.add(item.id);
-    waypoints.push(Object.freeze({ id: item.id, sourceMessageId: item.sourceMessageId, destination: item.destination,
+    waypoints.push(Object.freeze({ id: item.id, sourceMessageId: item.sourceMessageId, title: item.title, destination: item.destination,
       meaning: item.meaning, arrivalSignal: item.arrivalSignal, status: item.status as ExplorerConversationWaypoint["status"],
       ...(hasReached ? { reachedEvidence: item.reachedEvidence as string | null, reachedAt: item.reachedAt as string | null } : {}),
       ...(release === undefined ? {} : { release }),
       ...(lifecycle === undefined ? {} : { lifecycle }) }));
   }
   if (!waypointLineageValid(waypoints)) return null;
+  const waypointDraft = parseExplorerConversationWaypointDraft(state.waypointDraft);
+  if (waypointDraft === undefined || (waypointDraft !== null &&
+      (state.conversationId === null || waypointIds.has(waypointDraft.id) || compassIds.has(waypointDraft.id) ||
+        !messages.some(message => message.id === waypointDraft.suggestionMessageId && message.role === "virtualGuide")))) return null;
   const route: ExplorerConversationRouteEvent[] = [];
   const routeIds = new Set<string>();
   if (hasRoute) {
@@ -600,7 +638,7 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
     turnedDownLimitReached: state.turnedDownLimitReached,
     providerState: state.providerState as ExplorerConversationState["providerState"], messages: Object.freeze(messages),
     compassItems: Object.freeze(compassItems), priorityId: state.priorityId as string | null,
-    attentionId: state.attentionId as string | null, waypoints: Object.freeze(waypoints),
+    attentionId: state.attentionId as string | null, waypoints: Object.freeze(waypoints), waypointDraft,
     ...(hasRoute ? { route: Object.freeze(route) } : {}),
     ...(hasSuggestionReplies ? { compassSuggestionReplies: state.compassSuggestionReplies as ExplorerCompassSuggestionReplies } : {}),
     ...(hasLifecycle ? { sessionStatus: state.sessionStatus as "active" | "ended" | null, ending } : {}) }) });

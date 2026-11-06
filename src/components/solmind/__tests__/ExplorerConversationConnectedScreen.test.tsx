@@ -92,7 +92,7 @@ const savedState = (overrides: Partial<ExplorerConversationState> = {}): Explore
   version: EXPLORER_CONVERSATION_VERSION,
   conversationId: CONVERSATION,
   revision: 2,
-  pendingTurn: false, turnedDownLimitReached: false,
+  pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null,
   providerState: "available",
   messages: [
     { id: "20000000-0000-4000-8000-000000000001", role: "explorer", body: "A synthetic first message <script>x</script>", createdAt: "2026-10-30T14:00:00.000Z" },

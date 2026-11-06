@@ -6,7 +6,7 @@ import type { ExplorerConversationState } from "../../../lib/solmind/explorerCon
 
 function ended(overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
   return { version: "explorer-conversation.v1", conversationId: "conversation-a", revision: 4,
-    pendingTurn: false, turnedDownLimitReached: false, providerState: "unavailable", messages: [], compassItems: [], priorityId: null, attentionId: null,
+    pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable", messages: [], compassItems: [], priorityId: null, attentionId: null,
     waypoints: [], route: [], sessionStatus: "ended", ending: { operationId: "end-operation", revision: 4,
       endedAt: "2026-10-29T07:04:00.123456+00:00", directionsTaken: "Actual saved ending <script>plain text</script>.", routeThroughRevision: 3 }, ...overrides };
 }

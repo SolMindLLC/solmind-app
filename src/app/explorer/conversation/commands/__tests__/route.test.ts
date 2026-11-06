@@ -111,6 +111,21 @@ describe("POST Explorer conversation commands boundary", () => {
     expect(JSON.stringify(body)).not.toContain("private_actor");
     if (source === "factory") expect(mocks.command).not.toHaveBeenCalled();
   });
+  it.each(["right", "close", "not_it"])("S7a forwards only the closed Waypoint draft answer (%s)", async response => {
+    const body = { kind: "respond_waypoint_draft", operationId: command.operationId, expectedRevision: 2,
+      draftId: command.operationId, response };
+    const next = request({ body });
+    await invoke(next);
+    expect(mocks.command).toHaveBeenCalledExactlyOnceWith({ command: body, dependencies, signal: next.signal });
+    expect(Object.isFrozen(mocks.command.mock.calls[0][0].command)).toBe(true);
+  });
+  it.each(["title", "destination", "whyItMatters", "arrivalSignal", "actorAccountId"])(
+    "S7a refuses browser-supplied wording or authority (%s)", async key => {
+      const body = { kind: "respond_waypoint_draft", operationId: command.operationId, expectedRevision: 2,
+        draftId: command.operationId, response: "right", [key]: "Browser supplied value" };
+      expect(await invoke(request({ body }))).toEqual(denied);
+      expect(mocks.factory).not.toHaveBeenCalled(); expect(mocks.command).not.toHaveBeenCalled();
+    });
   it.each(["denied", "refresh_required", "unavailable", "provider_unavailable"])("P07 preserves closed failure %s", async error => {
     const failure = { ok: false, state: null, error }; mocks.command.mockResolvedValue({ result: failure, assistance: null });
     expect(await invoke()).toEqual(failure);
@@ -129,7 +144,7 @@ it("projects bounded transient assistance separately and rejects leaked engine f
 });
 
 it("projects a server-written hard-stop pause notice intact and still rejects leaked pause flags", async () => {
-  const state = { version: "explorer-conversation.v1", conversationId: null, revision: 0, providerState: "available", pendingTurn: false, turnedDownLimitReached: false,
+  const state = { version: "explorer-conversation.v1", conversationId: null, revision: 0, providerState: "available", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null,
     messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] };
   const result = { ok: true, state, error: null };
   const assistance = { kind: "paused", body: "Synthetic pause notice.\n\nThe message in the box has not been sent or saved.", persisted: false };

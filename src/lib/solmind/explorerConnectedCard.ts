@@ -376,6 +376,7 @@ export const WAYPOINT_STAGE_NAMES: Readonly<Record<CardWaypointStage, string>> =
 
 export type CardWaypointVersion = Readonly<{
   id: string;
+  title?: string;
   destination: string;
   meaning: string;
   arrivalSignal: string;
@@ -406,6 +407,7 @@ function version(waypoint: ExplorerConversationWaypoint, earlier: boolean): Card
   const stage = waypointStage(waypoint);
   return freeze({
     id: waypoint.id,
+    ...(waypoint.title === undefined ? {} : { title: waypoint.title }),
     destination: waypoint.destination,
     meaning: waypoint.meaning,
     arrivalSignal: waypoint.arrivalSignal,
@@ -442,6 +444,7 @@ export const CONNECTED_WAYPOINT_WORDING = freeze({
   empty: "No Waypoint is chosen yet. You can keep exploring without one.",
   notLoaded: "Your saved Waypoints are shown here when your saved conversation is available.",
   meaningTerm: "Why it matters",
+  destinationTerm: "Where you're heading",
   arrivalTerm: "Reached looks like",
   earlierHeading: "Earlier versions, kept in your private history",
 });
