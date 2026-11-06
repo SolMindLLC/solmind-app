@@ -4135,3 +4135,14 @@ SQL/pgTAP and browser execution, independent review, canonical sibling-doc
 updates and any integration or publication remain Executor work. This builder
 is limited to the clone and the five named fix-package files; no sibling product
 documentation, database or provider was accessed.
+
+## Curious Virtual Guide instruction round - 2026-11-05
+
+This instruction-only round adds easier optional choices, one gentle invitation
+after hesitation, useful situation questions one at a time, and adaptation to
+the Explorer's style within the conversation without assigning a type or
+retaining a style profile. All five prompt/role/instruction labels end in
+-20261105-cg-r1; changed text and integrity pins move together. There is no
+database, context or screen change. Existing safety, crisis, pacing, Compass,
+Waypoint and output-protocol rules remain. Paul must read the exact changed
+instruction sentences before saving or integration into the app or demo.

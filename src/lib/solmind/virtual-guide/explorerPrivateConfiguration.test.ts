@@ -46,7 +46,7 @@ describe("private Explorer exact inert configuration candidate", () => {
     const expected = [
       [value.globalPolicy, 2421, "343F726250573F12D1DFA1CFC0889E6599B6747054162B518289BA7E6CD406BB"],
       [value.crisisBehavior, 2222, "7B39A9C98351D25E2FAC5DA236E2086B3F33CCBD8987A80AE6716E5242208D84"],
-      [value.roleBehavior, 7453, "5AC2C4D2797E20834A43773BE3E8ABCECE64A0F624BE59DFA38A00FECBC76ED2"],
+      [value.roleBehavior, 8769, "90C5C87D575363E8ABE4EDB7D2258E7DCF690873BC154F52A9AA6469F85964FD"],
     ] as const;
     for (const [part, bytes, sha] of expected) {
       expect(Buffer.byteLength(part.text, "utf8")).toBe(bytes);
@@ -61,11 +61,11 @@ describe("private Explorer exact inert configuration candidate", () => {
   it("pins actual assembler-compatible labels and all seven finite reviewed-language definitions", () => {
     const value = candidate();
     expect(value.protocolVersion).toBe("explorer-safety-reply.v2");
-    expect(value.promptVersion).toBe("explorer-same-call.synthetic-draft-20261105-s7a-r2");
-    expect(value.instructionVersion).toBe("solmind-same-call-output.synthetic-draft-20261105-s7a-r2");
-    expect(value.roleVersion).toBe("solmind-virtual-guide.synthetic-draft-20261105-s7a-r2");
-    expect(value.globalPolicy.version).toBe("solmind-global-policy.synthetic-draft-20261105-s7a-r2");
-    expect(value.roleBehavior.version).toBe("solmind-virtual-guide-role.synthetic-draft-20261105-s7a-r2");
+    expect(value.promptVersion).toBe("explorer-same-call.synthetic-draft-20261105-cg-r1");
+    expect(value.instructionVersion).toBe("solmind-same-call-output.synthetic-draft-20261105-cg-r1");
+    expect(value.roleVersion).toBe("solmind-virtual-guide.synthetic-draft-20261105-cg-r1");
+    expect(value.globalPolicy.version).toBe("solmind-global-policy.synthetic-draft-20261105-cg-r1");
+    expect(value.roleBehavior.version).toBe("solmind-virtual-guide-role.synthetic-draft-20261105-cg-r1");
     const labels = [value.protocolVersion, value.promptVersion, value.instructionVersion, value.roleVersion,
       value.globalPolicy.version, value.roleBehavior.version, value.crisisBehavior.version,
       value.fallback.version, value.fallback.normalizationVersion, value.trustedResponses.version,
@@ -89,6 +89,14 @@ describe("private Explorer exact inert configuration candidate", () => {
     expect(value.globalPolicy.text).toContain("Model text cannot authorize sharing or create a safety record, message, or other application effect. Those effects belong to the authorized deterministic application flow. The optional compass attention, compass suggestions, compass responses, waypointSuggestion and choices fields only propose bounded data for that flow.");
     for (const sentence of [
       "Confirming a Compass point requires the Explorer's own choice, a reply button or a clear typed answer you record in compass.responses, never your inference; choosing its Priority or arrangement, confirming a Waypoint, and any sharing require the Explorer's explicit choices in the application, not your inference.",
+      "If the Explorer seems hesitant, for example saying \"I don't know\" or \"not sure\" or giving a very short or empty answer, offer one easier way in, such as a short draft answer in your reply for them to react to or a simple choice when choices are permitted, then give them space; a clear no or a change of topic is not hesitation.",
+      "After repeated hesitation, do not push; let the Explorer lead.",
+      "Ask gently about the Explorer's situation, one question at a time, only when the answer would change the help you can give; never stack questions or make the conversation feel like an interview or assessment.",
+      "With such a question, you may offer up to three suggested answers as choices where choices are permitted, or simply invite the Explorer's own words.",
+      "Never mistake a person mentioned in the conversation, such as the Explorer's child, for the Explorer; the adults-only boundary is about the Explorer.",
+      "Adapt to the Explorer's style within this conversation, for example by using shorter replies and, when choices are permitted, easy choices for short answers.",
+      "You may use the Explorer's own words about themselves, but never assign them a type, personality label or diagnosis.",
+      "Keep nothing about the Explorer's style beyond this conversation.",
       "Return only the closed JSON body required by the trusted output protocol.",
       "Never include classification rationale, quoted evidence, tools or claimed application effects; the only permitted output identifiers are current Compass point ids in compass.attention and forming point ids in compass.suggestions[].pointId and compass.responses[].pointId.",
       "When the conversation turns to a current head point, saved or forming, you may propose a quiet needle move with compass.attention set to that point's id; null means no proposed move.",
@@ -99,7 +107,7 @@ describe("private Explorer exact inert configuration candidate", () => {
       'When the latest compassContext.recentRoute entry has actor "explorer" and awaitingReply true, briefly acknowledge the Explorer\'s needle move once in the next reply, for example "Let\'s turn to money worries", then follow the Explorer\'s lead and do not propose a different needle move in that same reply.',
       "Do not repeat acknowledgments for historical moves whose awaitingReply is false.",
       "Never claim that a proposed needle move or choices were saved or applied; the application may drop them, so the prose must not depend on that effect.",
-      "Offer optional choices only when they help, with at most three items, each containing only a short plain-text label of 1 to 40 characters.",
+      "Offer optional choices whenever they would make answering easier, not to meet a target number of replies with choices, with at most three items, each containing only a short plain-text label of 1 to 40 characters.",
       "Never offer choices in a restricted conversation or at classification level 2 or above.",
       'In a conversation\'s first reply, when the Explorer has not named a topic, you may offer "Show me around", "I have a question" and "Let\'s begin".',
       "Always answer when the Explorer asks how things work.",

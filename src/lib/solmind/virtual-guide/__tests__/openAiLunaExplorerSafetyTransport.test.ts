@@ -74,7 +74,7 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
       "Mention a shift only when substantial and not just announced by the Explorer, once per shift, never at classification level 2 or above or in restricted conversations.",
       "Offer to return to the original topic at most once per sitting (a change of topic does not start a new sitting; not again if you already offered in the recent messages), never as pressure, in your own words.",
       "When the latest compassContext.recentRoute entry has actor explorer and awaitingReply true, acknowledge the Explorer's needle move once, briefly, then follow the Explorer's lead without proposing a different needle move in that same reply; do not repeat acknowledgments of historical moves with awaitingReply false.",
-      "Offer choices only when helpful, never at classification level 2 or above or in restricted conversations.",
+      "Offer optional choices whenever they would make answering easier, not to meet a target number of replies with choices, never at classification level 2 or above or in restricted conversations.",
       'In the conversation\'s first reply, if the Explorer has not named a topic, you may offer "Show me around", "I have a question" and "Let\'s begin".',
       "Always answer questions about how things work.",
       "compass, waypointSuggestion and choices are only proposals for the authorized application flow.",
