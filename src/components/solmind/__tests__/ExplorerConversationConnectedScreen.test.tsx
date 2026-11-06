@@ -827,12 +827,17 @@ describe("connected Explorer conversation screen", () => {
     expect(panel).not.toContain('id="panel-connected-needle-placement"');
     expect(panel).not.toContain('id="panel-connected-needle-help"');
     expect(panel).not.toContain('id="panel-connected-needle-hold"');
-    // Waypoints: one card per Waypoint, in saved order, each stage named, older wording as an Earlier version.
+    // Waypoints, the compact list (lane 8, Paul's design approval, decision queue 2026-11-06 08:59:55 CST): the
+    // active Waypoint is one closed row with its title and stage; the Reached and Released ones sit in a closed group
+    // that names their count; no details or earlier versions show until a row is opened.
     const cards = [...panel.matchAll(/<article\b[\s\S]*?<\/article>/g)].map((match) => textOf(match[0]).trim());
-    expect(cards).toHaveLength(3);
-    expect(cards[0]).toMatch(/^Waypoint Ask my sister for a calm evening Formed Why it matters So we can talk without rushing Reached looks like We have a day and a time Earlier versions, kept in your private history Earlier version - Formed Ask my sister for a calm hour/);
-    expect(cards[1]).toMatch(/^Waypoint Say what I need in one sentence Reached .* Earlier version - Reached Write down what I need/);
-    expect(cards[2]).toMatch(/^Waypoint Fix the budget this month Released .* Earlier version - Released Fix the budget this month Why it matters: Money worry keeps me up/);
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toBe("> Ask my sister for a calm evening Formed");
+    expect(panel).toMatch(/<button aria-controls="panel-waypoint-row-[^"]+" aria-expanded="false"/);
+    expect(panel).toMatch(/<button aria-controls="panel-connected-waypoint-history" aria-expanded="false"[^>]*>[\s\S]*?Reached and released \(2\)<\/button>/);
+    expect(panel).not.toContain("Earlier version - ");
+    expect(panel).not.toContain("Say what I need in one sentence");
+    expect(panel).not.toContain("Show 1 more");
     expect(textOf(panel)).toContain(CURRENT_TOOLS_POINTER);
     expect(CURRENT_TOOLS_POINTER).toBe(
       "To add, arrange or reword Compass points, or to choose, clarify, reach or release a Waypoint, use your current tools below the conversation.");

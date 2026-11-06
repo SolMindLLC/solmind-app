@@ -2046,3 +2046,25 @@ them only with his approval. Screen state remembers the last selected line only 
 current conversation; each press selects randomly from the other lines.
 The line clears on Send or a new Virtual Guide reply. Nothing is saved or
 sent, no browser storage is used, and the line is not a Virtual Guide message.
+
+## Compact Waypoint list - 2026-11-06
+
+Paul's decision of 2026-11-05 19:38:45 (point 4, on GPT-6 Astra's research
+REV276) and his design approval of 2026-11-06 08:59:55 (both additions:
+newest first, and a forming Waypoint shown in the list as well as in the
+conversation) turn the connected Waypoint card into a compact list.
+ExplorerConnectedWaypointCard.tsx draws each Waypoint as one row (its title,
+at most two lines while closed, and its stage) that opens to the earlier card
+details, one row at a time (a disclosure button with aria-expanded and
+aria-controls). Three rows show at first, then five ("Show N more"), then all
+("Show all N"); "Show fewer" returns to three. Show more and Show all move
+focus to the first row they reveal, and Show fewer to Show more. A forming
+draft takes the first row with the dashed "Forming" marker (not in an ended
+conversation); the other rows are the Formed Waypoints, newest first; Reached
+and Released Waypoints sit in a closed "Reached and released (N)" group.
+explorerConnectedCard.ts owns the list helpers (waypointListGroups,
+waypointRowsShown, waypointListNextSize) and WAYPOINT_LIST_WORDING. Layout
+state only (which row is open, how many show, whether the group is open):
+nothing is saved and no command, request or AI call is added. Its screen-reader
+operation is still to be checked with a real screen reader before the pilot
+(Paul's rank, 2026-11-06 09:20:44: This Sprint Could, MVP0 Should).

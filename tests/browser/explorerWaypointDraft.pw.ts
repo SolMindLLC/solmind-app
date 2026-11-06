@@ -96,8 +96,11 @@ test("S7a a saved Waypoint draft refines after an exact answer retry, confirms i
   if ((page.viewportSize()?.width ?? 0) < 1024) await page.locator("#conversation-preview-drawer-opener").click();
   const panel = page.locator((page.viewportSize()?.width ?? 0) < 1024 ? "#conversation-preview-drawer" : "#conversation-preview-panel");
   const waypoints = panel.getByRole("region", { name: "Waypoints", exact: true });
-  await expect(waypoints.getByRole("heading", { name: REFINED_TITLE, exact: true })).toBeVisible();
+  // The compact list (lane 8): each row heading names the title and its stage.
+  await expect(waypoints.getByRole("heading", { name: `${REFINED_TITLE} Formed`, exact: true })).toBeVisible();
   await expect(waypoints).toContainText("Formed");
+  // The row opens to the saved wording.
+  await waypoints.getByRole("button", { name: `${REFINED_TITLE} Formed`, exact: true }).click();
   await expect(waypoints).toContainText(initial.destination);
   if ((page.viewportSize()?.width ?? 0) < 1024) await page.keyboard.press("Escape");
   const nextSuggestionId = "30000000-0000-4000-8000-000000000093";
@@ -173,13 +176,15 @@ for (const response of ["right", "not_it"] as const) {
     const waypoints = panel.getByRole("region", { name: "Waypoints", exact: true });
     await expect(waypoints).toBeVisible();
     if (response === "right") {
-      await expect(waypoints.getByRole("heading", { name: TITLE, exact: true })).toBeVisible();
+      await expect(waypoints.getByRole("heading", { name: `${TITLE} Formed`, exact: true })).toBeVisible();
       await expect(waypoints.getByRole("article")).toHaveCount(1);
+      // The row opens to the saved wording.
+      await waypoints.getByRole("button", { name: `${TITLE} Formed`, exact: true }).click();
       for (const text of ["Formed", draft.destination, draft.whyItMatters, draft.arrivalSignal]) {
         await expect(waypoints).toContainText(text);
       }
     } else {
-      await expect(waypoints.getByRole("heading", { name: TITLE, exact: true })).toHaveCount(0);
+      await expect(waypoints.getByRole("heading", { name: `${TITLE} Formed`, exact: true })).toHaveCount(0);
       await expect(waypoints.getByRole("article")).toHaveCount(0);
     }
     expect(requests).toHaveLength(1);

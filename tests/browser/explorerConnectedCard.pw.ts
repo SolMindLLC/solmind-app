@@ -254,12 +254,15 @@ test("the card draws the saved Compass and Waypoints, and tapping a point on the
   // Nothing is said in the live line before a hold or a change, and it is live only in the drawer.
   await expect(liveLine(group)).toHaveText("");
   await expectLiveOnlyInDrawer(page, group);
-  // The saved Waypoints with their stages and earlier versions.
+  // The saved Waypoints in the compact list (lane 8): the Formed one as a closed row, the Reached and Released
+  // ones in their closed group; opening shows the stages and earlier versions (explorerWaypointList.pw.ts).
   const waypoints = card.getByRole("region", { name: "Waypoints", exact: true });
+  await expect(waypoints.getByRole("article")).toHaveCount(1);
+  await waypoints.getByRole("button", { name: /Reached and released \(2\)/ }).click();
   await expect(waypoints.getByRole("article")).toHaveCount(3);
-  for (const label of ["Formed", "Reached", "Released", "Earlier version - Formed", "Earlier version - Reached", "Earlier version - Released"]) {
-    await expect(waypoints.getByText(label, { exact: true })).toBeVisible();
-  }
+  for (const label of ["Formed", "Reached", "Released"]) await expect(waypoints.getByText(label, { exact: true })).toBeVisible();
+  await waypoints.getByRole("button", { name: /Ask my sister for a calm evening/ }).click();
+  await expect(waypoints.getByText("Earlier version - Formed", { exact: true })).toBeVisible();
   await expectNoSidewaysScroll(page);
   await expectNoSeriousAxeViolations(page);
   expect(bodies).toHaveLength(0);
@@ -537,7 +540,9 @@ test("an ended conversation shows its Compass read-only and says why the needle 
     await expect(page.getByText(CURRENT_TOOLS_POINTER, { exact: true })).toHaveCount(0);
     if (shown === "full") await showCompact(card);
   }
-  await expect(card.getByRole("region", { name: "Waypoints", exact: true }).getByRole("article")).toHaveCount(3);
+  // The compact list (lane 8): one Formed row; the Reached and Released Waypoints are in their closed group.
+  await expect(card.getByRole("region", { name: "Waypoints", exact: true }).getByRole("article")).toHaveCount(1);
+  await expect(card.getByRole("region", { name: "Waypoints", exact: true }).getByRole("button", { name: /Reached and released \(2\)/ })).toBeVisible();
   await expectNoSidewaysScroll(page);
   expect(commands).toBe(0);
 });

@@ -155,13 +155,16 @@ describe("S7a private forming Waypoint card", () => {
     expect(focus).toHaveBeenCalledOnce();
   });
 
-  it("shows an exact confirmed title and all wording in the existing saved Waypoints card", () => {
+  it("shows an exact confirmed title as a closed row of the compact Waypoint list", () => {
     const html = screen(state({ waypointDraft: null, waypoints: [{ id: DRAFT_ID, title: TITLE,
       sourceMessageId: MESSAGE, destination: draft.destination, meaning: draft.whyItMatters,
       arrivalSignal: draft.arrivalSignal, status: "chosen" }] }));
     expect(html).not.toContain("Reply to Waypoint suggestion:");
-    expect(html).toContain(`${TITLE}</h4>`);
-    for (const text of ["Formed", draft.destination, draft.whyItMatters, draft.arrivalSignal]) expect(plain(html)).toContain(text);
+    // Lane 8 (Paul's design approval, 2026-11-06 08:59:55 CST): the row shows the exact title and its stage; its
+    // wording shows when the row is opened (tests/browser/explorerWaypointList.pw.ts).
+    expect(html).toContain(`${TITLE}</span>`);
+    expect(plain(html)).toContain("Formed");
+    expect(html).toMatch(/aria-expanded="false"/);
   });
 
   it("escapes every stored field as text", () => {

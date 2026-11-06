@@ -449,4 +449,52 @@ export const CONNECTED_WAYPOINT_WORDING = freeze({
   earlierHeading: "Earlier versions, kept in your private history",
 });
 
+// The compact Waypoint list (lane 8; Paul's decision, decision queue 2026-11-05
+// 19:38:45 CST, point 4, after GPT-6 Astra's research REV276 A3): three compact
+// rows at first, expandable to five, the rest on request, one detailed card open
+// at a time; a forming draft takes one row; Reached and Released Waypoints sit in
+// a collapsed group. Paul approved the design, with the newest first and the forming
+// Waypoint shown here too, on 2026-11-06 at 08:59:55 CST.
+export const WAYPOINT_LIST_ROWS = freeze({ initial: 3, expanded: 5 });
+export type WaypointListSize = "initial" | "expanded" | "all";
+
+export const WAYPOINT_LIST_WORDING = freeze({
+  showMore: (count: number) => `Show ${count} more`,
+  showAll: (count: number) => `Show all ${count}`,
+  showFewer: "Show fewer",
+  history: (count: number) => `Reached and released (${count})`,
+});
+
+export type WaypointListGroups = Readonly<{
+  // Formed (still active) Waypoints, the newest first.
+  active: readonly CardWaypointLine[];
+  // Reached and Released Waypoints, the newest first.
+  history: readonly CardWaypointLine[];
+}>;
+
+// The saved order is oldest first (by when each current version was saved), so
+// the list reverses it.
+export function waypointListGroups(state: ExplorerConversationState): WaypointListGroups {
+  const newestFirst = [...connectedWaypointLines(state)].reverse();
+  return freeze({
+    active: freeze(newestFirst.filter((line) => line.current.stage === "formed")),
+    history: freeze(newestFirst.filter((line) => line.current.stage !== "formed")),
+  });
+}
+
+export function waypointRowsShown(total: number, size: WaypointListSize): number {
+  return size === "all" ? total : Math.min(total, WAYPOINT_LIST_ROWS[size]);
+}
+
+// The next "show more" step for a list of `total` rows, or null when every row shows.
+export function waypointListNextSize(total: number, size: WaypointListSize): Readonly<{ size: WaypointListSize; label: string }> | null {
+  if (size === "initial" && total > WAYPOINT_LIST_ROWS.initial) {
+    return freeze({ size: "expanded", label: WAYPOINT_LIST_WORDING.showMore(Math.min(total, WAYPOINT_LIST_ROWS.expanded) - WAYPOINT_LIST_ROWS.initial) });
+  }
+  if (size === "expanded" && total > WAYPOINT_LIST_ROWS.expanded) {
+    return freeze({ size: "all", label: WAYPOINT_LIST_WORDING.showAll(total) });
+  }
+  return null;
+}
+
 export const CONNECTED_KEY_INSIGHT_HEADING = "Key Insight";
