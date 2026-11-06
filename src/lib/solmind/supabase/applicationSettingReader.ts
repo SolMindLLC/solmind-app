@@ -19,6 +19,39 @@ export const EXPLORER_SHARED_SNAPSHOT_SENDABILITY_DAYS_KEY =
 export const APPLICATION_SETTING_READ_FAILED =
   "solmind_application_setting_read_failed";
 
+export type ExplorerEarlyTestNoticeSetting = Readonly<{
+  enabled: boolean;
+  noticeVersion: string;
+  version: number;
+}>;
+
+// A separate closed RPC reads only this protected setting. No arbitrary key or
+// mutation capability is exposed, including while the switch is off.
+export async function readExplorerEarlyTestNoticeSetting(
+  client: SupabaseClient,
+): Promise<ExplorerEarlyTestNoticeSetting> {
+  try {
+    const { data, error } = await client.rpc(
+      "solmind_read_explorer_early_test_notice_setting_v1", {},
+    ).abortSignal(AbortSignal.timeout(10_000));
+    if ((error !== null && error !== undefined) || !Array.isArray(data) || data.length !== 1) {
+      throw new Error(APPLICATION_SETTING_READ_FAILED);
+    }
+    const row: unknown = data[0];
+    if (!row || typeof row !== "object" || Array.isArray(row) ||
+        Object.keys(row).sort().join(",") !== "enabled,notice_version,version") {
+      throw new Error(APPLICATION_SETTING_READ_FAILED);
+    }
+    const enabled = Object.getOwnPropertyDescriptor(row, "enabled")?.value;
+    const noticeVersion = Object.getOwnPropertyDescriptor(row, "notice_version")?.value;
+    const version = Object.getOwnPropertyDescriptor(row, "version")?.value;
+    if (typeof enabled !== "boolean" || typeof noticeVersion !== "string" ||
+        !/^[a-z0-9][a-z0-9.-]{0,127}$/.test(noticeVersion) ||
+        !isSafePositiveInteger(version)) throw new Error(APPLICATION_SETTING_READ_FAILED);
+    return Object.freeze({ enabled, noticeVersion, version });
+  } catch { throw new Error(APPLICATION_SETTING_READ_FAILED); }
+}
+
 export type ExplorerSharedSnapshotSendabilitySetting = Readonly<{
   key: typeof EXPLORER_SHARED_SNAPSHOT_SENDABILITY_DAYS_KEY;
   days: number;

@@ -10,7 +10,7 @@ vi.mock("@supabase/supabase-js", () => ({
   createClient: (...args: unknown[]) => transport.build(...args),
 }));
 
-import { resolveExplorerHomeAccess } from "../explorerHomeAccess";
+import { resolveExplorerHomeAccess, resolveExplorerHomeActorAccess } from "../explorerHomeAccess";
 import { createInMemoryRequestCookieAccessor, type RequestCookie } from "../requestCookieAccessor";
 import { EXPLORER_HOME_ROUTE, SOLMIND_ROUTE_ACCESS_RULES, canSolMindRoleAccessRoute } from "../../routeAccess";
 import { SOLMIND_ROLES, SOLMIND_ROLE_HOME_ROUTES } from "../../roles";
@@ -214,5 +214,15 @@ describe("fixed Explorer home server access", () => {
     expect(transport.getUser.mock.calls.length).toBe(2);
     expect(transport.build.mock.calls.length).toBe(4);
     expect(setAll.mock.calls.length).toBe(0);
+  });
+
+  it("shares only the proved account/session with server gates while the page projection stays minimal", async () => {
+    const server = await resolveExplorerHomeActorAccess({ cookies: createInMemoryRequestCookieAccessor(cookieEntries()),
+      now: () => new Date(NOW) });
+    expect(server).toEqual({ allowed: true, accountId: ACCOUNT, applicationSessionId: SESSION,
+      expiresAt: END, observedAt: NOW });
+    expect(Object.isFrozen(server)).toBe(true);
+    const page = await request();
+    expect(Object.keys(page).sort()).toEqual(["allowed", "expiresAt", "observedAt"]);
   });
 });

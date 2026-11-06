@@ -22,6 +22,8 @@ import { createOpenAiLunaExplorerSafetyTransport } from "../virtual-guide/openAi
 import { createEffectiveMethodologySource } from "./effectiveMethodologySource";
 import { join } from "node:path";
 import { readOpenAiModelName } from "../virtual-guide/openAiModelConfiguration";
+import { checkExplorerEarlyTestNoticeAccess, isExplorerEarlyTestNoticeEnabled } from "../auth/explorerEarlyTestNoticeAccess";
+import { createExplorerEarlyTestNoticeRepository } from "./explorerEarlyTestNoticeRepository";
 
 // Compatibility name for the shared raw framing boundary. Owned occurrences
 // and exact values still reach the unchanged request-auth validation.
@@ -45,8 +47,13 @@ function createRequestAuthentication(rawCookieHeader: string | null) {
       if (!access.allowed) return null;
       const expiresAt = Date.parse(access.context.session.expiresAt);
       if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return null;
-      return Object.freeze({ accountId: access.context.identity.userAccountId,
+      const actor = Object.freeze({ accountId: access.context.identity.userAccountId,
         applicationSessionId: access.context.session.userSessionId });
+      if (isExplorerEarlyTestNoticeEnabled()) {
+        const notice = await checkExplorerEarlyTestNoticeAccess(createExplorerEarlyTestNoticeRepository(client), actor);
+        if (notice.status !== "allowed" || expiresAt <= Date.now()) return null;
+      }
+      return actor;
     },
   });
 }

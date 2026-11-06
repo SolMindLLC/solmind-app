@@ -7,6 +7,7 @@ import { SOLMIND_TERMS } from "@/lib/solmind/terms";
 import { ExplorerConversationFormation } from "./ExplorerConversationFormation";
 import { FOCUS_RING, SECONDARY_BUTTON, joinClasses } from "./ExplorerConversationScreenNotYetImplemented";
 import { ExplorerWorkspaceFrame } from "./ExplorerWorkspaceFrame";
+import { useExplorerEarlyTestNoticeRecheck } from "@/lib/solmind/explorerEarlyTestNoticeRecheck";
 
 const STATE_PATH = "/explorer/conversations/state";
 const RESPONSE_BUDGET_MS = 70_000;
@@ -63,6 +64,7 @@ export function ExplorerEndedConversationReadback({ state }: Readonly<{ state: E
 
 /** Public shell; all metadata and content come only from authenticated GETs. */
 export function ExplorerConversationReview() {
+  const notifyExplorerEarlyTestNoticeRecheck = useExplorerEarlyTestNoticeRecheck();
   const [items, setItems] = useState<readonly ReviewItem[] | null>(null);
   const [selected, setSelected] = useState<ExplorerConversationState | null>(null);
   const [busy, setBusy] = useState(true);
@@ -88,6 +90,7 @@ export function ExplorerConversationReview() {
       });
       const result = await readReviewResult(response);
       if (!mountedRef.current || generation !== generationRef.current) return;
+      if (result && !result.ok) notifyExplorerEarlyTestNoticeRecheck();
       if (!result?.ok) {
         setItems(null); setSelected(null); setError(result?.error ?? "unavailable");
       } else if (conversationId === undefined ? result.items === null || result.state !== null
@@ -106,7 +109,7 @@ export function ExplorerConversationReview() {
         activeRef.current = null; busyRef.current = false; setBusy(false);
       }
     }
-  }, []);
+  }, [notifyExplorerEarlyTestNoticeRecheck]);
 
   useEffect(() => {
     mountedRef.current = true;

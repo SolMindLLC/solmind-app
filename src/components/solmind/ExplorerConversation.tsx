@@ -16,6 +16,7 @@ import { COMPASS_SUGGESTION_REPLY_LABELS } from "@/lib/solmind/explorerCompassSu
 import { latestReplyChoices } from "@/lib/solmind/explorerReplyChoices";
 import { completeWaypointDraft, waypointLimitReached } from "@/lib/solmind/explorerWaypointDraft";
 import { EXPLORER_TOUR_CHOICE } from "@/lib/solmind/explorerConversationTour";
+import { useExplorerEarlyTestNoticeRecheck } from "@/lib/solmind/explorerEarlyTestNoticeRecheck";
 
 const STATE_PATH = "/explorer/conversation/state";
 const COMMAND_PATH = "/explorer/conversation/commands";
@@ -65,6 +66,7 @@ function errorCopy(error: ExplorerConversationError): string {
 
 /** Authenticated feature routes own all authority and persistence. No optimistic replies. */
 export function ExplorerConversation() {
+  const notifyExplorerEarlyTestNoticeRecheck = useExplorerEarlyTestNoticeRecheck();
   const [state, setState] = useState<ExplorerConversationState | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<ExplorerConversationError | null>(null);
@@ -107,6 +109,9 @@ export function ExplorerConversation() {
       const output = await readResult(response);
       const result = output?.result;
       if (!mountedRef.current || generation !== generationRef.current) return;
+      if (result && !result.ok && (result.error === "denied" || result.error === "unavailable")) {
+        notifyExplorerEarlyTestNoticeRecheck();
+      }
       if (result?.ok) {
         replaceState(result.state);
         setError(null);
@@ -131,7 +136,7 @@ export function ExplorerConversation() {
         setBusy(false);
       }
     }
-  }, [replaceState]);
+  }, [notifyExplorerEarlyTestNoticeRecheck, replaceState]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -190,6 +195,9 @@ export function ExplorerConversation() {
       const output = await readResult(response);
       const result = output?.result ?? null;
       if (!mountedRef.current || generation !== generationRef.current || pendingRef.current !== pending) return;
+      if (result && !result.ok && (result.error === "denied" || result.error === "unavailable")) {
+        notifyExplorerEarlyTestNoticeRecheck();
+      }
       setAssistance(output?.assistance ?? null);
       if (result === null || (!result.ok && result.error === "unavailable")) {
         setUncertain(true);
@@ -271,7 +279,7 @@ export function ExplorerConversation() {
         if (followUp !== null) void dispatchPending(followUp);
       }
     }
-  }, [replaceState]);
+  }, [notifyExplorerEarlyTestNoticeRecheck, replaceState]);
 
   const command = useCallback((intent: CommandIntent) => {
     // The fixed tour is local presentation, never an ordinary Send.

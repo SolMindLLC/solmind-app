@@ -112,6 +112,7 @@ beforeEach(() => {
     principalSource: { resolveAuthenticatedUser: vi.fn() },
     authSource: { loadServerAuthContextInput: vi.fn() },
     executor: { execute: vi.fn() },
+    checkExplorerNoticeAccess: async () => true,
   });
   resolveRequestMock.mockResolvedValue({
     ok: true,
@@ -291,6 +292,7 @@ describe("POST suggestion-scoped Explorer Suggested Waypoint command", () => {
       principalSource: createInMemoryRequestAuthPrincipalSource(principal),
       authSource: createInMemoryAuthSource(fixture),
       executor,
+      checkExplorerNoticeAccess: async () => true,
     });
     resolveRequestMock.mockImplementation(actual.resolveSuggestedWaypointRequest);
 

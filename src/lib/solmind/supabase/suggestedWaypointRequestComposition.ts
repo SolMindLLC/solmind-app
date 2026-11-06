@@ -155,6 +155,9 @@ export type SuggestedWaypointRequestCompositionDependencies = Readonly<{
   principalSource: SolMindRequestAuthPrincipalSource;
   authSource: SolMindAuthSource;
   executor: SuggestedWaypointHumanRpcExecutor;
+  // Every composition must supply this Explorer-only gate. Pure contract
+  // fixtures explicitly allow it; Guide requests never call it.
+  checkExplorerNoticeAccess: (actor: Readonly<{ accountId: string; applicationSessionId: string }>) => Promise<boolean>;
   identifiers?: Readonly<{
     // Both functions MUST be stable for the same exact scoped operation so an
     // idempotent retry cannot receive different canonical bytes.
@@ -735,6 +738,16 @@ export async function resolveSuggestedWaypointRequest(
       context.identity.explorerProfileId === null
     ) {
       return deny();
+    }
+
+    if (!isGuideRequest(request)) {
+      const expiresAt = Date.parse(context.session.expiresAt);
+      if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return deny();
+      const noticeAllowed = await deps.checkExplorerNoticeAccess({
+        accountId: context.identity.userAccountId,
+        applicationSessionId: context.session.userSessionId,
+      });
+      if (!noticeAllowed || expiresAt <= Date.now()) return deny();
     }
 
     actorUserAccountId = context.identity.userAccountId;

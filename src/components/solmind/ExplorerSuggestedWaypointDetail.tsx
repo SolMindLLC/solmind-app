@@ -28,6 +28,7 @@ import { formatSuggestedWaypointDate } from "@/lib/solmind/suggestedWaypointDisp
 import { SOLMIND_TERMS } from "@/lib/solmind/terms";
 import { FOCUS_RING, SECONDARY_BUTTON, joinClasses } from "./ExplorerConversationScreenNotYetImplemented";
 import { SuggestedWaypointStatusPill } from "./SuggestedWaypointStatusPill";
+import { useExplorerEarlyTestNoticeRecheck } from "@/lib/solmind/explorerEarlyTestNoticeRecheck";
 
 // The dark and amber look of the signed-in conversation screen (Paul's
 // 2026-11-02 decisions); every text, state and focus rule is unchanged.
@@ -104,6 +105,7 @@ function completedNotice(command: SuggestedWaypointExplorerCommand): string {
 export function ExplorerSuggestedWaypointDetail({
   suggestedWaypointId,
 }: Readonly<{ suggestedWaypointId: string }>) {
+  const notifyExplorerEarlyTestNoticeRecheck = useExplorerEarlyTestNoticeRecheck();
   const [detail, setDetail] = useState<Detail | null>(null);
   const [viewState, setViewState] = useState<ViewState>("loading");
   const [notice, setNotice] = useState("Loading suggestion detail.");
@@ -211,6 +213,7 @@ export function ExplorerSuggestedWaypointDetail({
         return fail();
       }
       if (!result.ok) {
+        notifyExplorerEarlyTestNoticeRecheck();
         if (result.error === SUGGESTED_WAYPOINT_EXPLORER_DETAIL_DENIED) {
           lastLoadOutcomeRef.current = "denied";
           updateDetail(null);
@@ -240,7 +243,7 @@ export function ExplorerSuggestedWaypointDetail({
     } finally {
       window.clearTimeout(timeout);
     }
-  }, [suggestedWaypointId, updateDetail]);
+  }, [notifyExplorerEarlyTestNoticeRecheck, suggestedWaypointId, updateDetail]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -313,6 +316,7 @@ export function ExplorerSuggestedWaypointDetail({
     }
 
     const result = submission.result;
+    if (!result.ok && result.error !== null) notifyExplorerEarlyTestNoticeRecheck();
     const currentOperation = operationRef.current;
     const resolvedOperation = resolveSuggestedWaypointCommandOperation(
       currentOperation,
@@ -393,7 +397,7 @@ export function ExplorerSuggestedWaypointDetail({
         "The action was accepted, but the current state has not appeared yet. Refresh current status; do not submit the action again.",
       );
     }
-  }, [focusActionStatus, load, updateOperation]);
+  }, [focusActionStatus, load, notifyExplorerEarlyTestNoticeRecheck, updateOperation]);
 
   const startCommand = useCallback((
     kind: SuggestedWaypointExplorerCommand["kind"],

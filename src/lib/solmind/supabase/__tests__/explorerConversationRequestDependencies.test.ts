@@ -7,6 +7,11 @@ import type { SolMindRequestAuthPrincipalSource } from "../../auth/requestAuthPr
 import type { RequestCookieAccessor } from "../../auth/requestCookieAccessor";
 
 const mocks = vi.hoisted(() => ({ principal: vi.fn(), client: vi.fn(), rpc: vi.fn(), query: vi.fn(), source: vi.fn(), repository: vi.fn(), privateRepository: vi.fn(), profile: vi.fn() }));
+const notice = vi.hoisted(() => ({ check: vi.fn() }));
+vi.mock("../../auth/explorerEarlyTestNoticeAccess", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../auth/explorerEarlyTestNoticeAccess")>(),
+  checkExplorerEarlyTestNoticeAccess: notice.check,
+}));
 vi.mock("../requestAuthClient", () => ({ createSupabaseRequestAuthPrincipalSource: mocks.principal }));
 vi.mock("../serviceRoleClient", () => ({ createServiceRoleClient: mocks.client }));
 vi.mock("../serviceRoleRpcExecutor", () => ({ createServiceRoleRpcExecutor: mocks.rpc }));
@@ -20,6 +25,7 @@ import { createExplorerPrivateLocalRequestDependencies, createExplorerPrivateCon
 import { getExplorerPrivateConfigurationCandidate } from "../../virtual-guide/explorerPrivateConfiguration";
 import { parseExplorerSafetyReplyRequest } from "../../virtual-guide/explorerSafetyReplyContract";
 import { createHash } from "node:crypto";
+import { EXPLORER_EARLY_TEST_NOTICE_CAPABILITY_ENV } from "../../auth/explorerEarlyTestNoticeAccess";
 
 const ACCOUNT = "10000000-0000-4000-8000-000000000001";
 const OTHER_ACCOUNT = "10000000-0000-4000-8000-000000000002";
@@ -46,6 +52,9 @@ function records(verified = principal, accountId = ACCOUNT): DeriveTrustedServer
 }
 beforeEach(() => {
   vi.resetAllMocks();
+  // Exercise the enabled capability with the notice gate permitting access.
+  vi.stubEnv(EXPLORER_EARLY_TEST_NOTICE_CAPABILITY_ENV, "enabled");
+  notice.check.mockResolvedValue({ status: "allowed", noticeVersion: null });
   mocks.profile.mockReturnValue(null);
   mocks.principal.mockReturnValue(principalPort); mocks.client.mockReturnValue(serviceClient);
   mocks.rpc.mockReturnValue(authRpc); mocks.query.mockReturnValue(authQuery);
@@ -131,7 +140,7 @@ describe("explicit private local HTTP composition", () => {
     expect(used.reserve).not.toHaveBeenCalled(); expect(open.reserve).not.toHaveBeenCalled();
   });
 });
-afterEach(() => { expect(globalThis.fetch).not.toHaveBeenCalled(); vi.restoreAllMocks(); });
+afterEach(() => { expect(globalThis.fetch).not.toHaveBeenCalled(); vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
 describe("Explorer conversation raw-cookie and request dependency boundary", () => {
   it("D01 keeps duplicate wire names, percent encoding and equals signs intact", () => {
@@ -234,6 +243,34 @@ describe("Explorer conversation raw-cookie and request dependency boundary", () 
 });
 
 describe("private v3 authenticated request factory", () => {
+  it("keeps existing authentication in every factory with the capability off and never calls the notice gate", async () => {
+    vi.stubEnv(EXPLORER_EARLY_TEST_NOTICE_CAPABILITY_ENV, undefined);
+    for (const factory of [createExplorerConversationRequestDependencies,
+      createExplorerPrivateConversationRequestDependencies, createExplorerPrivateLocalRequestDependencies]) {
+      expect(await factory(null).authenticate()).toEqual({ accountId: ACCOUNT, applicationSessionId: SESSION });
+    }
+    expect(principalPort.resolveAuthenticatedUser).toHaveBeenCalledTimes(3);
+    expect(sourcePort.loadServerAuthContextInput).toHaveBeenCalledTimes(3);
+    expect(notice.check).not.toHaveBeenCalled();
+    for (const port of Object.values(repository)) expect(port).not.toHaveBeenCalled();
+    for (const port of Object.values(privateRepository)) expect(port).not.toHaveBeenCalled();
+  });
+  it.each(["required", "unavailable", "denied"])("the installed notice gate holds all conversation factories for %s", async (status) => {
+    notice.check.mockResolvedValue({ status, noticeVersion: null });
+    for (const factory of [createExplorerConversationRequestDependencies,
+      createExplorerPrivateConversationRequestDependencies, createExplorerPrivateLocalRequestDependencies]) {
+      expect(await factory(null).authenticate()).toBeNull();
+    }
+    expect(notice.check).toHaveBeenCalledTimes(3);
+    for (const call of notice.check.mock.calls) expect(call[1]).toEqual({ accountId: ACCOUNT, applicationSessionId: SESSION });
+    for (const port of Object.values(repository)) expect(port).not.toHaveBeenCalled();
+    for (const port of Object.values(privateRepository)) expect(port).not.toHaveBeenCalled();
+  });
+  it("does not read notice state before the existing authentication succeeds", async () => {
+    principalPort.resolveAuthenticatedUser.mockResolvedValue(null);
+    expect(await createExplorerPrivateConversationRequestDependencies(null).authenticate()).toBeNull();
+    expect(notice.check).not.toHaveBeenCalled();
+  });
   it("reuses genuine request-auth composition while supplying no operational defaults", async () => {
     const dependencies = createExplorerPrivateConversationRequestDependencies("synthetic=opaque");
     expect(Object.keys(dependencies).sort()).toEqual(["authenticate", "repository"]);

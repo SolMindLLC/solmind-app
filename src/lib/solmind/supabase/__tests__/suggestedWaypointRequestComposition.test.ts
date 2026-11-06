@@ -255,6 +255,7 @@ function makeExecutor() {
 
 function makeGuideDependencies() {
   return {
+    checkExplorerNoticeAccess: async () => true,
     principalSource: {
       resolveAuthenticatedUser: vi.fn(async () => GUIDE_PRINCIPAL),
     },
@@ -274,10 +275,79 @@ const GUIDE_CREATE_REQUEST = {
 } as const;
 
 describe("resolveSuggestedWaypointRequest - server-derived authority", () => {
+  it.each([
+    { kind: "explorer.list", pageSize: 10, cursor: null },
+    { kind: "explorer.get", suggestedWaypointId: SUGGESTION_ID },
+    { kind: "explorer.mark_read", operationId: OPERATION_ID, suggestedWaypointId: SUGGESTION_ID, versionId: VERSION_ID },
+    { kind: "explorer.acknowledge", operationId: OPERATION_ID, suggestedWaypointId: SUGGESTION_ID, expectedCurrentVersionId: VERSION_ID },
+  ])("holds $kind before any feature RPC when the installed notice gate refuses", async (request) => {
+    const executor = makeExecutor();
+    const checkExplorerNoticeAccess = vi.fn().mockResolvedValue(false);
+    const result = await resolveSuggestedWaypointRequest({
+      principalSource: createInMemoryRequestAuthPrincipalSource(EXPLORER_PRINCIPAL),
+      authSource: createInMemoryAuthSource(fixture()), executor, checkExplorerNoticeAccess,
+    }, request);
+    expect(result).toEqual({ ok: false, data: null, error: SUGGESTED_WAYPOINT_REQUEST_DENIED });
+    expect(checkExplorerNoticeAccess).toHaveBeenCalledExactlyOnceWith({ accountId: EXPLORER_ACCOUNT_ID, applicationSessionId: SESSION_ID });
+    expect(executor.execute).not.toHaveBeenCalled();
+  });
+  it("fails closed on a thrown notice read and leaves Guide requests unaffected", async () => {
+    const checkExplorerNoticeAccess = vi.fn().mockRejectedValue(new Error("private detail"));
+    const deps = { ...makeGuideDependencies(), checkExplorerNoticeAccess };
+    expect((await resolveSuggestedWaypointRequest(deps, GUIDE_CREATE_REQUEST)).ok).toBe(true);
+    expect(checkExplorerNoticeAccess).not.toHaveBeenCalled();
+    deps.executor.execute.mockClear();
+    const result = await resolveSuggestedWaypointRequest({ ...deps,
+      principalSource: createInMemoryRequestAuthPrincipalSource(EXPLORER_PRINCIPAL),
+    }, { kind: "explorer.list", pageSize: 10, cursor: null });
+    expect(result.ok).toBe(false); expect(deps.executor.execute).not.toHaveBeenCalled();
+  });
+  it("preserves the Explorer feature path when the installed notice gate allows", async () => {
+    const executor = makeExecutor();
+    const checkExplorerNoticeAccess = vi.fn().mockResolvedValue(true);
+    expect((await resolveSuggestedWaypointRequest({
+      principalSource: createInMemoryRequestAuthPrincipalSource(EXPLORER_PRINCIPAL),
+      authSource: createInMemoryAuthSource(fixture()), executor, checkExplorerNoticeAccess,
+    }, { kind: "explorer.list", pageSize: 10, cursor: null })).ok).toBe(true);
+    expect(checkExplorerNoticeAccess).toHaveBeenCalledOnce(); expect(executor.execute).toHaveBeenCalledOnce();
+  });
+  it("fails closed if an untyped caller omits the required Explorer notice gate", async () => {
+    const dependencies = {
+      ...makeGuideDependencies(),
+      principalSource: createInMemoryRequestAuthPrincipalSource(EXPLORER_PRINCIPAL),
+    };
+    Reflect.deleteProperty(dependencies, "checkExplorerNoticeAccess");
+    expect(await resolveSuggestedWaypointRequest(dependencies, {
+      kind: "explorer.list", pageSize: 10, cursor: null,
+    })).toEqual({ ok: false, data: null, error: SUGGESTED_WAYPOINT_REQUEST_DENIED });
+    expect(dependencies.executor.execute).not.toHaveBeenCalled();
+  });
+  it.each([0, 1])("denies when the session expires during the notice read (%i ms after expiry)", async (delay) => {
+    const expiresAt = Date.parse(SESSION_EXPIRES_AT);
+    const now = vi.spyOn(Date, "now").mockReturnValue(expiresAt - 1);
+    const executor = makeExecutor();
+    const checkExplorerNoticeAccess = vi.fn(async () => {
+      now.mockReturnValue(expiresAt + delay);
+      return true;
+    });
+    try {
+      expect(await resolveSuggestedWaypointRequest({
+        principalSource: createInMemoryRequestAuthPrincipalSource(EXPLORER_PRINCIPAL),
+        authSource: createInMemoryAuthSource(fixture()), executor, checkExplorerNoticeAccess,
+      }, { kind: "explorer.list", pageSize: 10, cursor: null })).toEqual({
+        ok: false, data: null, error: SUGGESTED_WAYPOINT_REQUEST_DENIED,
+      });
+      expect(checkExplorerNoticeAccess).toHaveBeenCalledOnce();
+      expect(executor.execute).not.toHaveBeenCalled();
+    } finally {
+      now.mockRestore();
+    }
+  });
   it("injects the authenticated Guide account and authorized relationship", async () => {
     const executor = makeExecutor();
     const result = await resolveSuggestedWaypointRequest(
       {
+        checkExplorerNoticeAccess: async () => true,
         principalSource:
           createInMemoryRequestAuthPrincipalSource(GUIDE_PRINCIPAL),
         authSource: createInMemoryAuthSource(fixture()),
@@ -315,6 +385,7 @@ describe("resolveSuggestedWaypointRequest - server-derived authority", () => {
 
     const result = await resolveSuggestedWaypointRequest(
       {
+        checkExplorerNoticeAccess: async () => true,
         principalSource:
           createInMemoryRequestAuthPrincipalSource(EXPLORER_PRINCIPAL),
         authSource,
@@ -353,6 +424,7 @@ describe("resolveSuggestedWaypointRequest - the session binding", () => {
 
       const result = await resolveSuggestedWaypointRequest(
         {
+          checkExplorerNoticeAccess: async () => true,
           principalSource: createInMemoryRequestAuthPrincipalSource({
             ...GUIDE_PRINCIPAL,
             presentedSessionId,
@@ -381,6 +453,7 @@ describe("resolveSuggestedWaypointRequest - the session binding", () => {
 
       const result = await resolveSuggestedWaypointRequest(
         {
+          checkExplorerNoticeAccess: async () => true,
           principalSource: createInMemoryRequestAuthPrincipalSource({
             ...EXPLORER_PRINCIPAL,
             presentedSessionId,
@@ -406,6 +479,7 @@ describe("resolveSuggestedWaypointRequest - role and relationship isolation", ()
     const executor = makeExecutor();
     const result = await resolveSuggestedWaypointRequest(
       {
+        checkExplorerNoticeAccess: async () => true,
         principalSource:
           createInMemoryRequestAuthPrincipalSource(EXPLORER_PRINCIPAL),
         authSource: createInMemoryAuthSource(fixture()),
@@ -426,6 +500,7 @@ describe("resolveSuggestedWaypointRequest - role and relationship isolation", ()
     const executor = makeExecutor();
     const result = await resolveSuggestedWaypointRequest(
       {
+        checkExplorerNoticeAccess: async () => true,
         principalSource:
           createInMemoryRequestAuthPrincipalSource(GUIDE_PRINCIPAL),
         authSource: createInMemoryAuthSource(fixture()),
@@ -451,6 +526,7 @@ describe("resolveSuggestedWaypointRequest - role and relationship isolation", ()
     const executor = makeExecutor();
     const result = await resolveSuggestedWaypointRequest(
       {
+        checkExplorerNoticeAccess: async () => true,
         principalSource:
           createInMemoryRequestAuthPrincipalSource(GUIDE_PRINCIPAL),
         authSource: createInMemoryAuthSource(badFixture),
@@ -478,6 +554,7 @@ describe("resolveSuggestedWaypointRequest - role and relationship isolation", ()
       const executor = makeExecutor();
       const result = await resolveSuggestedWaypointRequest(
         {
+          checkExplorerNoticeAccess: async () => true,
           principalSource:
             createInMemoryRequestAuthPrincipalSource(GUIDE_PRINCIPAL),
           authSource: createInMemoryAuthSource(inactiveFixture),
@@ -499,6 +576,7 @@ describe("resolveSuggestedWaypointRequest - fail closed", () => {
     const executor = makeExecutor();
     const result = await resolveSuggestedWaypointRequest(
       {
+        checkExplorerNoticeAccess: async () => true,
         principalSource,
         authSource: createInMemoryAuthSource(fixture()),
         executor,
@@ -545,6 +623,7 @@ describe("resolveSuggestedWaypointRequest - fail closed", () => {
 
       const result = await resolveSuggestedWaypointRequest(
         {
+          checkExplorerNoticeAccess: async () => true,
           principalSource,
           authSource: createInMemoryAuthSource(fixture()),
           executor,
@@ -619,6 +698,7 @@ describe("resolveSuggestedWaypointRequest - fail closed", () => {
       await expect(
         resolveSuggestedWaypointRequest(
           {
+            checkExplorerNoticeAccess: async () => true,
             principalSource,
             authSource: createInMemoryAuthSource(fixture()),
             executor,
@@ -690,6 +770,7 @@ describe("resolveSuggestedWaypointRequest - fail closed", () => {
 
     const pending = resolveSuggestedWaypointRequest(
       {
+        checkExplorerNoticeAccess: async () => true,
         principalSource,
         authSource: createInMemoryAuthSource(fixture()),
         executor,
@@ -734,6 +815,7 @@ describe("resolveSuggestedWaypointRequest - fail closed", () => {
 
     const result = await resolveSuggestedWaypointRequest(
       {
+        checkExplorerNoticeAccess: async () => true,
         principalSource:
           createInMemoryRequestAuthPrincipalSource(GUIDE_PRINCIPAL),
         authSource: createInMemoryAuthSource(fixture()),
@@ -768,6 +850,7 @@ describe("resolveSuggestedWaypointRequest - fail closed", () => {
 
     const result = await resolveSuggestedWaypointRequest(
       {
+        checkExplorerNoticeAccess: async () => true,
         principalSource,
         authSource: createInMemoryAuthSource(fixture()),
         executor,
@@ -793,6 +876,7 @@ describe("resolveSuggestedWaypointRequest - fail closed", () => {
       const executor = makeExecutor();
       const result = await resolveSuggestedWaypointRequest(
         {
+          checkExplorerNoticeAccess: async () => true,
           principalSource,
           authSource: createInMemoryAuthSource(fixture()),
           executor,
@@ -821,6 +905,7 @@ describe("resolveSuggestedWaypointRequest - fail closed", () => {
     const executor = makeExecutor();
     const result = await resolveSuggestedWaypointRequest(
       {
+        checkExplorerNoticeAccess: async () => true,
         principalSource: createInMemoryRequestAuthPrincipalSource(null),
         authSource,
         executor,
@@ -841,6 +926,7 @@ describe("resolveSuggestedWaypointRequest - fail closed", () => {
     const executor = makeExecutor();
     const result = await resolveSuggestedWaypointRequest(
       {
+        checkExplorerNoticeAccess: async () => true,
         principalSource:
           createInMemoryRequestAuthPrincipalSource(GUIDE_PRINCIPAL),
         authSource,
@@ -866,6 +952,7 @@ describe("resolveSuggestedWaypointRequest - fail closed", () => {
       }),
     };
     const deps = {
+      checkExplorerNoticeAccess: async () => true,
       principalSource:
         createInMemoryRequestAuthPrincipalSource(GUIDE_PRINCIPAL),
       authSource: createInMemoryAuthSource(fixture()),
@@ -928,6 +1015,7 @@ describe("resolveSuggestedWaypointRequest - fail closed", () => {
 
       const result = await resolveSuggestedWaypointRequest(
         {
+          checkExplorerNoticeAccess: async () => true,
           principalSource: createInMemoryRequestAuthPrincipalSource(principal),
           authSource: createInMemoryAuthSource(fixture()),
           executor,
@@ -954,6 +1042,7 @@ describe("resolveSuggestedWaypointRequest - fail closed", () => {
 
     const result = await resolveSuggestedWaypointRequest(
       {
+        checkExplorerNoticeAccess: async () => true,
         principalSource:
           createInMemoryRequestAuthPrincipalSource(GUIDE_PRINCIPAL),
         authSource: createInMemoryAuthSource(fixture()),
@@ -1004,6 +1093,7 @@ describe("resolveSuggestedWaypointRequest - fail closed", () => {
 
       const result = await resolveSuggestedWaypointRequest(
         {
+          checkExplorerNoticeAccess: async () => true,
           principalSource: createInMemoryRequestAuthPrincipalSource(principal),
           authSource: createInMemoryAuthSource(fixture()),
           executor,
@@ -1031,6 +1121,7 @@ describe("resolveSuggestedWaypointRequest - fail closed", () => {
 
     const result = await resolveSuggestedWaypointRequest(
       {
+        checkExplorerNoticeAccess: async () => true,
         principalSource:
           createInMemoryRequestAuthPrincipalSource(GUIDE_PRINCIPAL),
         authSource: createInMemoryAuthSource(fixture()),
@@ -1062,6 +1153,7 @@ describe("resolveSuggestedWaypointRequest - fail closed", () => {
 
     const result = await resolveSuggestedWaypointRequest(
       {
+        checkExplorerNoticeAccess: async () => true,
         principalSource:
           createInMemoryRequestAuthPrincipalSource(GUIDE_PRINCIPAL),
         authSource: createInMemoryAuthSource(fixture()),
@@ -1081,6 +1173,7 @@ describe("resolveSuggestedWaypointRequest - fail closed", () => {
   it("fails closed when the server identifier resolver is absent or invalid", async () => {
     const executor = makeExecutor();
     const baseDeps = {
+      checkExplorerNoticeAccess: async () => true,
       principalSource:
         createInMemoryRequestAuthPrincipalSource(GUIDE_PRINCIPAL),
       authSource: createInMemoryAuthSource(fixture()),
@@ -1151,6 +1244,7 @@ describe("resolveSuggestedWaypointRequest - closed operation catalog", () => {
     const executor = makeExecutor();
     const result = await resolveSuggestedWaypointRequest(
       {
+        checkExplorerNoticeAccess: async () => true,
         principalSource:
           createInMemoryRequestAuthPrincipalSource(GUIDE_PRINCIPAL),
         authSource: createInMemoryAuthSource(fixture()),
@@ -1183,6 +1277,7 @@ describe("resolveSuggestedWaypointRequest - closed operation catalog", () => {
     const executor = makeExecutor();
     const result = await resolveSuggestedWaypointRequest(
       {
+        checkExplorerNoticeAccess: async () => true,
         principalSource:
           createInMemoryRequestAuthPrincipalSource(EXPLORER_PRINCIPAL),
         authSource: createInMemoryAuthSource(fixture()),
@@ -1203,6 +1298,7 @@ describe("resolveSuggestedWaypointRequest - closed operation catalog", () => {
     ]) {
       const result = await resolveSuggestedWaypointRequest(
         {
+          checkExplorerNoticeAccess: async () => true,
           principalSource:
             createInMemoryRequestAuthPrincipalSource(GUIDE_PRINCIPAL),
           authSource: createInMemoryAuthSource(fixture()),

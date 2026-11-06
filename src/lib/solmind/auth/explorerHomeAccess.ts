@@ -22,16 +22,23 @@ export type ExplorerHomeAccessResult =
   | Readonly<{ allowed: true; expiresAt: string; observedAt: string }>
   | Readonly<{ allowed: false; reason: typeof ROUTE_ACCESS_DENY_REASON }>;
 
-const DENIED: ExplorerHomeAccessResult = Object.freeze({
+// Server-only identity projection for account-bound gates. Never pass these IDs
+// to a page; resolveExplorerHomeAccess retains its original public projection.
+export type ExplorerHomeActorAccessResult =
+  | Readonly<{ allowed: true; expiresAt: string; observedAt: string;
+      accountId: string; applicationSessionId: string }>
+  | Readonly<{ allowed: false; reason: typeof ROUTE_ACCESS_DENY_REASON }>;
+
+const DENIED: Extract<ExplorerHomeAccessResult, { allowed: false }> = Object.freeze({
   allowed: false,
   reason: ROUTE_ACCESS_DENY_REASON,
 });
 
-export async function resolveExplorerHomeAccess(args: {
+export async function resolveExplorerHomeActorAccess(args: {
   cookies: RequestCookieAccessor;
   // Trusted server clock/test seam; never a browser-supplied timestamp.
   now?: () => Date;
-}): Promise<ExplorerHomeAccessResult> {
+}): Promise<ExplorerHomeActorAccessResult> {
   try {
     const now = args.now ?? (() => new Date());
     const principalSource = createSupabaseRequestAuthPrincipalSource({ cookies: args.cookies });
@@ -57,9 +64,20 @@ export async function resolveExplorerHomeAccess(args: {
       allowed: true,
       expiresAt: result.context.session.expiresAt,
       observedAt: observed.toISOString(),
+      accountId: result.context.identity.userAccountId,
+      applicationSessionId: result.context.session.userSessionId,
     });
   } catch {
     // No token, cookie, provider error, record or configuration value escapes.
     return DENIED;
   }
+}
+
+export async function resolveExplorerHomeAccess(args: {
+  cookies: RequestCookieAccessor;
+  now?: () => Date;
+}): Promise<ExplorerHomeAccessResult> {
+  const result = await resolveExplorerHomeActorAccess(args);
+  return result.allowed ? Object.freeze({ allowed: true,
+    expiresAt: result.expiresAt, observedAt: result.observedAt }) : DENIED;
 }

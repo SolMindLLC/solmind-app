@@ -1,6 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as supabaseBarrel from "../index";
+const notice = vi.hoisted(() => ({ check: vi.fn() }));
+vi.mock("../../auth/explorerEarlyTestNoticeAccess", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../auth/explorerEarlyTestNoticeAccess")>(),
+  checkExplorerEarlyTestNoticeAccess: notice.check,
+}));
+import { EXPLORER_EARLY_TEST_NOTICE_CAPABILITY_ENV } from "../../auth/explorerEarlyTestNoticeAccess";
 
 const mocks = vi.hoisted(() => ({
   createPrincipalSource: vi.fn(),
@@ -65,6 +71,7 @@ const cookies = Object.freeze({
 describe("createSuggestedWaypointRequestDependencies", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv(EXPLORER_EARLY_TEST_NOTICE_CAPABILITY_ENV, "enabled");
     mocks.createPrincipalSource.mockReturnValue(principalSource);
     mocks.createServiceRoleClient.mockReturnValue(serviceRoleClient);
     mocks.createServiceRoleRpcExecutor.mockReturnValue(authQueryExecutor);
@@ -76,6 +83,8 @@ describe("createSuggestedWaypointRequestDependencies", () => {
     );
     mocks.createIdentifiers.mockReturnValue(identifiers);
   });
+
+  afterEach(() => { vi.unstubAllEnvs(); });
 
   it("assembles one request-scoped concrete dependency graph", () => {
     const now = vi.fn(() => new Date("2026-08-14T12:00:00.000Z"));
@@ -101,6 +110,7 @@ describe("createSuggestedWaypointRequestDependencies", () => {
       principalSource,
       authSource,
       executor: humanExecutor,
+      checkExplorerNoticeAccess: expect.any(Function),
       relationshipSelectorExecutor,
       identifiers,
     });
@@ -113,11 +123,36 @@ describe("createSuggestedWaypointRequestDependencies", () => {
     expect(result.identifiers).toBe(identifiers);
     expect(Object.keys(result).sort()).toEqual([
       "authSource",
+      "checkExplorerNoticeAccess",
       "executor",
       "identifiers",
       "principalSource",
       "relationshipSelectorExecutor",
     ]);
+  });
+
+  it("always installs the Explorer gate and passes only its server-proved actor", async () => {
+    const result = createSuggestedWaypointRequestDependencies({ cookies });
+    const actor = { accountId: "10000000-0000-4000-8000-000000000001",
+      applicationSessionId: "20000000-0000-4000-8000-000000000001" };
+    for (const status of ["required", "unavailable", "denied", "allowed"]) {
+      notice.check.mockResolvedValue({ status, noticeVersion: null });
+      expect(await result.checkExplorerNoticeAccess!(actor)).toBe(status === "allowed");
+      expect(notice.check).toHaveBeenLastCalledWith(expect.objectContaining({ readSetting: expect.any(Function),
+        read: expect.any(Function), agree: expect.any(Function) }), actor);
+    }
+    expect(humanExecutor.execute).not.toHaveBeenCalled();
+  });
+
+  it("keeps the required Explorer check without calling the notice gate when the capability is off", async () => {
+    vi.stubEnv(EXPLORER_EARLY_TEST_NOTICE_CAPABILITY_ENV, undefined);
+    const result = createSuggestedWaypointRequestDependencies({ cookies });
+    expect(await result.checkExplorerNoticeAccess({
+      accountId: "10000000-0000-4000-8000-000000000001",
+      applicationSessionId: "20000000-0000-4000-8000-000000000001",
+    })).toBe(true);
+    expect(notice.check).not.toHaveBeenCalled();
+    expect(humanExecutor.execute).not.toHaveBeenCalled();
   });
 
   it("supplies a server clock when the caller omits one", () => {

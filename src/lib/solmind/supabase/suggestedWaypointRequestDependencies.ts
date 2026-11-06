@@ -20,6 +20,8 @@ import {
 import { createSuggestedWaypointHumanRpcExecutor } from "./suggestedWaypointRpcExecutor";
 import { createSuggestedWaypointRelationshipSelectorExecutor } from "./suggestedWaypointRelationshipSelectorExecutor";
 import { createSuggestedWaypointScopedIdentifiers } from "./suggestedWaypointScopedIdentifiers";
+import { checkExplorerEarlyTestNoticeAccess, isExplorerEarlyTestNoticeEnabled } from "../auth/explorerEarlyTestNoticeAccess";
+import { createExplorerEarlyTestNoticeRepository } from "./explorerEarlyTestNoticeRepository";
 
 if (typeof window !== "undefined") {
   throw new Error(
@@ -66,6 +68,9 @@ export function createSuggestedWaypointRequestDependencies(args: {
       principalSource,
       authSource,
       executor,
+      checkExplorerNoticeAccess: async (actor) => !isExplorerEarlyTestNoticeEnabled() || (await checkExplorerEarlyTestNoticeAccess(
+        createExplorerEarlyTestNoticeRepository(serviceRoleClient), actor,
+      )).status === "allowed",
       relationshipSelectorExecutor,
       identifiers,
     });

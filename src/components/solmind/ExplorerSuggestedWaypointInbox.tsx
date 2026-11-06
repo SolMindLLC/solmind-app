@@ -25,6 +25,7 @@ import { SOLMIND_TERMS } from "@/lib/solmind/terms";
 import { FOCUS_RING, SECONDARY_BUTTON, joinClasses } from "./ExplorerConversationScreenNotYetImplemented";
 import { ExplorerWorkspaceFrame } from "./ExplorerWorkspaceFrame";
 import { SuggestedWaypointStatusPill } from "./SuggestedWaypointStatusPill";
+import { useExplorerEarlyTestNoticeRecheck } from "@/lib/solmind/explorerEarlyTestNoticeRecheck";
 
 // The dark and amber look of the signed-in conversation screen.
 const CARD_CLASS = "rounded-3xl border border-amber-200/15 bg-[#0c0a08]/90 p-5";
@@ -61,6 +62,7 @@ function StatusPills({ item }: { item: SuggestedWaypointExplorerListItem }) {
 }
 
 export function ExplorerSuggestedWaypointInbox() {
+  const notifyExplorerEarlyTestNoticeRecheck = useExplorerEarlyTestNoticeRecheck();
   const searchParams = useSearchParams();
   const requestedFocus = searchParams.get("focus");
   const [request, setRequest] = useState<RequestState>(INITIAL_REQUEST);
@@ -118,6 +120,9 @@ export function ExplorerSuggestedWaypointInbox() {
         );
         if (controller.signal.aborted || sequence !== requestSequence.current) {
           return;
+        }
+        if (result && !result.ok && result.error !== SUGGESTED_WAYPOINT_REFRESH_REQUIRED) {
+          notifyExplorerEarlyTestNoticeRecheck();
         }
 
         if (
@@ -190,7 +195,7 @@ export function ExplorerSuggestedWaypointInbox() {
         setPending(false);
       }
     }
-  }, []);
+  }, [notifyExplorerEarlyTestNoticeRecheck]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(INITIAL_REQUEST), 0);

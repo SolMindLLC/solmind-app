@@ -402,6 +402,7 @@ describe("Guide command route contract integration", () => {
     )!;
     const result = await resolveSuggestedWaypointRequest(
       {
+        checkExplorerNoticeAccess: async () => true,
         principalSource: createInMemoryRequestAuthPrincipalSource(principal),
         authSource: createInMemoryAuthSource(fixture),
         executor,

@@ -242,6 +242,120 @@ SQL/pgTAP and browser execution, independent review, integration and publication
 remain Executor work. This builder may read only the clone and the named
 REV302b package files outside it; sibling product documentation is untouched.
 
+## Early-test notice - 2026-11-06
+
+Paul approved Option A and the corrected notice on 2026-11-06 at 09:07:10 CST
+(REV304). Only individually approved close relations using demo accounts and
+invented situations may try the early test. This notice waives no pilot,
+consent, privacy, crisis-response, provider, time-limit or counting check.
+Real information still waits for the pilot checks.
+
+src/lib/solmind/explorerEarlyTestNotice.ts owns the exact approved ASCII
+notice and version early-test-notice-2026-11-06. Wording/version changes need
+Paul's approval. Paul approved the Not now copy and the corrected unavailable
+copy on 2026-11-06 at 15:13:41 CST (REV304b); the notice itself is unchanged.
+
+REV304c adds the server-only capability SOLMIND_EARLY_TEST_NOTICE=enabled.
+auth/explorerEarlyTestNoticeAccess.ts owns its named constant
+EXPLORER_EARLY_TEST_NOTICE_CAPABILITY_ENV and isExplorerEarlyTestNoticeEnabled().
+Only that exact value enables it; absent or any other value is off. The
+variable never reaches the browser. With the capability off, the Explorer
+layout returns its children unchanged, feature notice checks pass through,
+status reports that the notice does not apply, and agreement is refused
+without recording anything. No notice setting, agreement or repository is
+read, no notice client boundary mounts, and no notice browser request or
+feature-refusal recheck runs. Existing feature authority checks stay intact.
+Operator rule: start a demo or UAT server with the capability enabled only
+when Paul turns the notice on for a named person. The variable must be in the
+server process environment when the server starts, after the migration is
+applied; a running server ignores the setting until it is restarted with the
+variable. The demo starts only through its relaunch script, which must pass
+the variable through; .env.local is never edited for this.
+
+With the capability enabled, src/app/explorer/layout.tsx reads the protected
+database setting on the server. A valid off setting renders its children
+unchanged, without a notice client boundary or browser status requests on
+mount, pathname changes, feature refusals or back-forward restore. On mounts
+ExplorerEarlyTestNotice.tsx, which hides the app's screens until a no-store
+status read permits them. Only this server-enabled boundary rechecks after
+pathname changes or feature refusals through explorerEarlyTestNoticeRecheck.ts,
+and reloads a restored browser page. Unreadable settings show the unavailable
+view. No browser storage is used. The notice heading receives focus; Not now
+makes no request, hides the app, and offers the existing logout request and
+outcome owner.
+Operator note: with the capability enabled, each gated page request,
+including an anonymous request, makes one service-role setting read whose
+10-second limit can delay that page.
+
+The data-free /explorer/conversation-preview and /explorer/compass-comparison
+review pages live at src/app/explorer/conversation-preview/page.tsx and
+src/app/explorer/compass-comparison/page.tsx, inside the Explorer layout like
+every other Explorer page. With the capability enabled, that layout applies
+the notice gate; with it off, they behave as before with no notice I/O. The
+review components need no database, account data or AI and remain unchanged.
+The notice boundary hides screens; it does
+not prevent Server Component payload construction. Explorer pages must never
+read account data on the server while the notice can apply. The existing home
+authentication guard may return only its expiry/observation times.
+
+With the capability enabled, auth/explorerEarlyTestNoticeAccess.ts reuses the
+existing Explorer home actor check. The status and same-origin JSON agreement
+handlers accept no actor/session identity; unauthenticated status calls return
+signed out before reading the setting. Every Explorer feature route
+independently checks the notice on the server before repository reads or
+commands, through the conversation request dependency or the required Explorer
+check in Suggested Waypoint composition. Both paths recheck session expiry
+after notice access. Guide/Admin request branches remain unchanged. Notice
+agreement never grants feature authority or replaces fresh existing route
+checks.
+
+When the capability is enabled, the protected database setting is still off
+by default; on requires agreement for the current account/version.
+Unreadable/malformed settings or an unsupported version fail closed even when
+the database setting's enabled field is false. Operator rule: changing the
+version while that setting is off still requires a readable, supported
+setting; a syntactically valid but unsupported version makes the Explorer
+area unavailable. A page loaded while the setting is off has no notice
+recheck. Turning that setting on takes effect on the next full page load;
+until then feature routes enforce it and the screens show their existing
+"not available" messages. Client-side navigation can retain the shared layout
+and does not replace that full page load.
+
+The single forward migration is
+supabase/migrations/20261106040000_explorer_early_test_notice.sql.
+The protected typed singleton core.explorer_early_test_notice_setting follows
+the application-setting pattern without changing integer-setting allowlists.
+identity.explorer_early_test_notice_agreement is append-only, unique by
+account/version, and stores database agreement time and true adult affirmation.
+Only deletion of its account may remove an agreement, through the account
+foreign-key cascade. Existing audit and other account foreign keys may still
+prevent account deletion; this adds no purge workflow or authority to erase
+retained audit evidence. Closed service-role RPCs bind the exact current Explorer
+account and session as the existing Explorer helpers do; the notice helper adds
+no account-wide active-session count. Existing session uniqueness and
+authentication ambiguity checks remain unchanged. Recording is idempotent, with
+one value-free audit event per new agreement. The new audit update/delete protection covers
+only notice event rows and adds no shared audit-table truncate block.
+No Guide, Admin or direct client agreement-table access is added.
+Operator note: a DELETE-based reset of audit.audit_event fails once notice
+rows exist, while TRUNCATE still drops those rows.
+
+Focused unit tests cover wording, gate cases, real route refusals without
+repository access, required request boundaries and repository arguments.
+Existing browser suites retain their assertions and run with the capability
+off without notice fixtures or a readable notice database setting. The off
+browser case checks that no status request occurs. Dedicated notice-on cases
+are skipped by default; the Executor starts the test server with
+SOLMIND_EARLY_TEST_NOTICE=enabled, supplies the migrated database and service-role
+configuration with the protected setting on, and selects
+SOLMIND_BROWSER_NOTICE_SETTING=on in the test runner. That runner flag only
+selects tests; it grants no application capability or setting authority.
+New pgTAP and browser coverage is authored; their execution is Executor work.
+This isolated builder cannot read sibling solmind-docs under the package
+limits; canonical documentation review/updates, SQL/browser runs, independent
+review, integration and publication remain Executor work.
+
+
 Version: 0.3.3
 Last Updated: 2026-10-29
 Repo: solmind-app  

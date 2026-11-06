@@ -11,6 +11,10 @@ const captured = vi.hoisted(() => ({
   effects: [] as (() => void | (() => void))[],
   actions: null as ConnectedConversationActions | null,
   updates: [] as unknown[],
+  noticeRecheck: vi.fn(),
+}));
+vi.mock("../../../lib/solmind/explorerEarlyTestNoticeRecheck", () => ({
+  useExplorerEarlyTestNoticeRecheck: () => captured.noticeRecheck,
 }));
 vi.mock("react", async (original) => {
   const actual = await original<typeof import("react")>();
@@ -42,6 +46,7 @@ beforeEach(() => {
   captured.effects = [];
   captured.actions = null;
   captured.updates = [];
+  captured.noticeRecheck.mockClear();
   vi.stubGlobal("window", { addEventListener: vi.fn(), removeEventListener: vi.fn() });
 });
 afterEach(() => {
@@ -69,6 +74,28 @@ async function loaded(turnedDownLimitReached: boolean, overrides: Partial<Explor
 }
 
 describe("Explorer conversation turned-down limit command gate", () => {
+  it.each(["denied", "unavailable"])("asks the notice boundary to recheck after a confirmed %s command response", async (error) => {
+    const f = await loaded(false);
+    f.fetch.mockResolvedValue(new Response(JSON.stringify({ version: EXPLORER_PRIVATE_RESPONSE_VERSION,
+      result: { ok: false, state: null, error }, assistance: null,
+    }), { headers: { "Content-Type": "application/json" } }));
+    f.actions.onCommand({ kind: "respond_compass_suggestion", itemId: POINT, response: "right" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(captured.noticeRecheck).toHaveBeenCalledOnce();
+    expect(f.fetch).toHaveBeenCalledOnce();
+  });
+  it("does not notify from a late command response after the page lifetime ends", async () => {
+    const f = await loaded(false);
+    let finish: (response: Response) => void = () => undefined;
+    f.fetch.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    f.actions.onCommand({ kind: "respond_compass_suggestion", itemId: POINT, response: "right" });
+    for (const cleanup of cleanups.splice(0)) cleanup();
+    finish(new Response(JSON.stringify({ version: EXPLORER_PRIVATE_RESPONSE_VERSION,
+      result: { ok: false, state: null, error: "denied" }, assistance: null,
+    }), { headers: { "Content-Type": "application/json" } }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(captured.noticeRecheck).not.toHaveBeenCalled();
+  });
   it("refuses a direct not_it intent locally after loading the limit, without sending a request", async () => {
     const f = await loaded(true);
     f.actions.onCommand({ kind: "respond_compass_suggestion", itemId: POINT, response: "not_it" });
