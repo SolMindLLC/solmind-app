@@ -127,7 +127,7 @@ function comparableInstant(value: string): string {
 // Chat step slice S3 (Paul's decision 4, decision queue 2026-11-03 12:38:07 CST; go-ahead
 // 20:50:45 CST): the saved Compass and Waypoint section, taken from the state the final
 // read returned. The safe assembler validates it, and
-// supabase/migrations/20261105050000_explorer_waypoint_drafts.sql rebuilds it from the
+// supabase/migrations/20261105060000_explorer_typed_waypoint_replies.sql rebuilds it from the
 // saved rows and compares it exactly before any provider call. Current points only (not
 // combined away), in saved display order; the saved Priority and attention (the needle
 // may be on an unplaced point); the last five needle moves (attention_changed) on a
@@ -185,7 +185,8 @@ function compassContext(state: ConversationState, formingMove: Authority["formin
         reachedEvidence: waypoint.status === "reached" ? waypoint.reachedEvidence ?? null : null })),
       drafts: state.waypointDraft === null ? [] : [{ id: state.waypointDraft.id, title: state.waypointDraft.title,
         destination: state.waypointDraft.destination, whyItMatters: state.waypointDraft.whyItMatters,
-        arrivalSignal: state.waypointDraft.arrivalSignal }],
+        arrivalSignal: state.waypointDraft.arrivalSignal, suggestedInPreviousReply:
+          previousReplyId !== undefined && state.waypointDraft.suggestionMessageId === previousReplyId }],
     },
     sourceIds: [...points.map((item) => item.id), ...heads.map((waypoint) => waypoint.id),
       ...(state.waypointDraft === null ? [] : [state.waypointDraft.id])],

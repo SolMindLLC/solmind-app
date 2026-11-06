@@ -164,7 +164,7 @@ describe("explicit private governed capability composition with synthetic proven
     const ordinary = await f.capabilities.buildContext({ actor: ACTOR, row: f.row, state: populated, command, ids, readiness,
       mode: "classification_and_reply", signal: new AbortController().signal });
     const full = JSON.parse(ordinary.request.authorizedContext) as { contractVersion: string };
-    expect(full.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2+compass-v4");
+    expect(full.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2+compass-v5");
     expect(Object.hasOwn(full, "compassContext")).toBe(true);
     expect(ordinary.evidence.p_context_source_ids).toContain(point);
     expect(f.provider.generate).not.toHaveBeenCalled(); expect(f.write).not.toHaveBeenCalled();

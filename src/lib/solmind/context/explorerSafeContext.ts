@@ -52,11 +52,11 @@ export const EXPLORER_SAFE_CONTEXT_LIMITS = Object.freeze({
 // his go-ahead at 20:50:45 CST): the saved Compass and Waypoint section. It is tied to
 // its own contract version both ways: that version requires the section and every
 // other version forbids it, so the older twelve-layer envelope keeps its exact bytes.
-// The S7a migration 20261105050000_explorer_waypoint_drafts.sql rebuilds the same
+// The S7b migration 20261105060000_explorer_typed_waypoint_replies.sql rebuilds the same
 // section from the saved rows and compares it exactly before a Send is prepared.
-export const EXPLORER_COMPASS_CONTEXT_VERSION = "explorer-compass-context.v4" as const;
+export const EXPLORER_COMPASS_CONTEXT_VERSION = "explorer-compass-context.v5" as const;
 export const EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION =
-  "wi007-v0.1+onboarding-fields-v2+compass-v4" as const;
+  "wi007-v0.1+onboarding-fields-v2+compass-v5" as const;
 // The eight saved anchors (kept here so this module adds no import edge).
 const COMPASS_ANCHORS = Object.freeze([
   "apex", "upper_left", "upper_right", "side_left", "side_right",
@@ -275,6 +275,7 @@ type CompassWaypointDraft = {
   destination: string | null;
   whyItMatters: string | null;
   arrivalSignal: string | null;
+  suggestedInPreviousReply: boolean;
 };
 
 export type ExplorerCompassContext = {
@@ -1037,12 +1038,14 @@ function parseCompassContext(value: unknown): ExplorerCompassContext {
   });
   const drafts = object.drafts.map((candidate): CompassWaypointDraft => {
     const draft = parsePlainObject(candidate);
-    assertExactKeys(draft, ["id", "title", "destination", "whyItMatters", "arrivalSignal"]);
+    assertExactKeys(draft, ["id", "title", "destination", "whyItMatters", "arrivalSignal", "suggestedInPreviousReply"]);
+    if (typeof draft.suggestedInPreviousReply !== "boolean") fail("explorer_context_invalid_envelope");
     const id = parseUuid(draft.id);
     if (pointIds.has(id) || waypointIds.has(id)) fail("explorer_context_duplicate_source");
     const field = (value: unknown) => value === null ? null : parseText(value, EXPLORER_SAFE_CONTEXT_LIMITS.compassWaypointCharacters);
     return { id, title: field(draft.title), destination: field(draft.destination),
-      whyItMatters: field(draft.whyItMatters), arrivalSignal: field(draft.arrivalSignal) };
+      whyItMatters: field(draft.whyItMatters), arrivalSignal: field(draft.arrivalSignal),
+      suggestedInPreviousReply: draft.suggestedInPreviousReply };
   });
   return {
     version: EXPLORER_COMPASS_CONTEXT_VERSION,

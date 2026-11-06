@@ -694,7 +694,7 @@ describe("Explicit held private AV3 context entry points", () => {
     const result = await build({ ...f.input, mode: "classification_and_reply" });
     expect(result.evidence.p_authorization_version).toBe(privateVersion);
     expect(assembled(result.request.authorizedContext).contractVersion).toBe(EXPLORER_PRIVATE_CONVERSATION_CONTEXT_SELECTION_VERSION);
-    expect(assembled(result.request.authorizedContext).compassContext).toEqual({ version: "explorer-compass-context.v4",
+    expect(assembled(result.request.authorizedContext).compassContext).toEqual({ version: "explorer-compass-context.v5",
       points: [], priorityId: null, attentionId: null, recentRoute: [], waypoints: [], drafts: [] });
     expect(f.read).toHaveBeenCalledOnce();
     expect(f.prepare).not.toHaveBeenCalled(); expect(f.complete).not.toHaveBeenCalled();
@@ -738,7 +738,7 @@ describe("Explicit held private AV3 context entry points", () => {
 // where the database rebuild must equal GOLDEN's content, compared as jsonb, and that content, set into the
 // context, must inspect clear.
 const sx = (n: number) => `f5120000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-const GOLDEN = '{"version":"explorer-compass-context.v4","points":[{"id":"f5120000-0000-4000-8000-000000000401","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},{"id":"f5120000-0000-4000-8000-000000000402","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},{"id":"f5120000-0000-4000-8000-000000000404","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],"priorityId":"f5120000-0000-4000-8000-000000000401","attentionId":"f5120000-0000-4000-8000-000000000402","recentRoute":[{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000401","label":"Money worries","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":true}],"waypoints":[{"id":"f5120000-0000-4000-8000-000000000421","title":"Find a calmer morning","destination":"Find a calmer morning","meaning":"Mornings set\\nmy whole day","arrivalSignal":"I start two mornings a week without rushing","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000422","title":"Walk after dinner","destination":"Walk after dinner","meaning":"It clears my head","arrivalSignal":"I walk three evenings in one week","stage":"reached","reachedEvidence":"I walked four evenings last week"},{"id":"f5120000-0000-4000-8000-000000000423","title":"Call my sister","destination":"Call my sister","meaning":"We have drifted apart","arrivalSignal":"We talk once a week for a month","stage":"released","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000425","title":"Read before bed","destination":"Read before bed","meaning":"Screens keep me awake","arrivalSignal":"I read on three nights","stage":"formed","reachedEvidence":null}],"drafts":[]}';
+const GOLDEN = '{"version":"explorer-compass-context.v5","points":[{"id":"f5120000-0000-4000-8000-000000000401","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},{"id":"f5120000-0000-4000-8000-000000000402","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},{"id":"f5120000-0000-4000-8000-000000000404","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],"priorityId":"f5120000-0000-4000-8000-000000000401","attentionId":"f5120000-0000-4000-8000-000000000402","recentRoute":[{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000401","label":"Money worries","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":true}],"waypoints":[{"id":"f5120000-0000-4000-8000-000000000421","title":"Find a calmer morning","destination":"Find a calmer morning","meaning":"Mornings set\\nmy whole day","arrivalSignal":"I start two mornings a week without rushing","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000422","title":"Walk after dinner","destination":"Walk after dinner","meaning":"It clears my head","arrivalSignal":"I walk three evenings in one week","stage":"reached","reachedEvidence":"I walked four evenings last week"},{"id":"f5120000-0000-4000-8000-000000000423","title":"Call my sister","destination":"Call my sister","meaning":"We have drifted apart","arrivalSignal":"We talk once a week for a month","stage":"released","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000425","title":"Read before bed","destination":"Read before bed","meaning":"Screens keep me awake","arrivalSignal":"I read on three nights","stage":"formed","reachedEvidence":null}],"drafts":[]}';
 function s3State(): ExplorerConversationState {
   const base = state(); const source = base.messages[0].id;
   const at = (minute: number) => `2026-11-03T09:${String(minute).padStart(2, "0")}:00.000Z`;
@@ -788,6 +788,18 @@ function privateFixture(history: ExplorerConversationState, formingAttentionMove
 }
 
 describe("Chat step slice S3 saved Compass and Waypoint section (private AV3 entries)", () => {
+  it.each([false, true])("S7b uses saved reply sequence for the draft signal despite reversed timestamps (%s)", async earlier => {
+    const history = state();
+    const previous = history.messages.findLast(message => message.role === "virtualGuide")!;
+    const laterReply = { ...previous, id: sx(902), createdAt: "2020-01-01T00:00:00Z" };
+    const draft = { id: sx(901), title: "A calmer morning", destination: "An unhurried breakfast",
+      whyItMatters: "Family time", arrivalSignal: "Two calm mornings",
+      suggestionMessageId: earlier ? previous.id : laterReply.id };
+    const f = privateFixture({ ...history, messages: [...history.messages, laterReply], waypointDraft: draft });
+    const result = await f.build(f.input);
+    expect(assembled(result.request.authorizedContext).compassContext!.drafts[0].suggestedInPreviousReply).toBe(!earlier);
+    expect(result.request.authorizedContext).not.toContain("suggestionMessageId");
+  });
   it("S7a non-empty draft context matches the single expected sample shared with SQL", async () => {
     const sql = readFileSync("supabase/tests/explorer_waypoint_drafts_test.sql", "utf8");
     const expected = sql.match(/\$waypoint_context_golden\$([\s\S]*?)\$waypoint_context_golden\$/);
@@ -814,7 +826,7 @@ describe("Chat step slice S3 saved Compass and Waypoint section (private AV3 ent
     const section = assembled(ordinary.request.authorizedContext).compassContext!;
     expect(section.waypoints[0].title).toBe("A short saved title");
     expect(section.drafts).toEqual([{ id: draft.id, title: draft.title, destination: draft.destination,
-      whyItMatters: draft.whyItMatters, arrivalSignal: draft.arrivalSignal }]);
+      whyItMatters: draft.whyItMatters, arrivalSignal: draft.arrivalSignal, suggestedInPreviousReply: true }]);
     expect(JSON.stringify(section.drafts)).not.toContain(draft.suggestionMessageId);
     expect(ordinary.evidence.p_context_source_ids).toContain(draft.id);
     const classification = await f.build({ ...f.input, mode: "classification_only" });
@@ -882,7 +894,7 @@ describe("Chat step slice S3 saved Compass and Waypoint section (private AV3 ent
     const f = privateFixture(s3State()); const result = await f.build(f.input);
     const serialized = result.request.authorizedContext;
     const context = assembled(serialized);
-    expect(context.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2+compass-v4");
+    expect(context.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2+compass-v5");
     expect(JSON.stringify(context.compassContext)).toBe(GOLDEN);
     expect(serialized).toContain(`,"compassContext":${GOLDEN},"currentSessionMessages":`);
     expect(Object.keys(context)).toEqual(["contractVersion", "aiRole", "actorRoleContext", "globalPolicy", "roleBehavior",

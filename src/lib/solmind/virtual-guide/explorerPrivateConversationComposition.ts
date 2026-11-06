@@ -15,7 +15,7 @@ import { parseExplorerPrivateConfigurationCandidate, type ExplorerPrivateConfigu
 import {
   EXPLORER_SAFETY_REQUEST_VERSION, EXPLORER_SAFETY_REPLY_PROTOCOL, explorerSafetyUnicodeValid, parseExplorerSafetyReplyRequest,
   type ExplorerSafetyReplyRequest, type ExplorerSafetyClassification, type ExplorerSafetyCompassSuggestion, type ExplorerSafetyCompassResponse,
-  type ExplorerSafetyWaypointSuggestion,
+  type ExplorerSafetyWaypointSuggestion, type ExplorerSafetyWaypointResponse,
 } from "./explorerSafetyReplyContract";
 import { invokeExplorerSafetyReply, type ExplorerSafetyReplyTransport } from "./explorerSafetyReplyInvocation";
 import type { ExplorerPrivateAssistance } from "../explorerPrivateConversationResponse";
@@ -52,7 +52,8 @@ export type ExplorerPrivateSettleParameters = ActorParameters & Readonly<{
   p_attention_item_id: string | null; p_choices: readonly Readonly<{ label: string }>[] | null;
   p_compass_suggestions: readonly ExplorerSafetyCompassSuggestion[] | null;
   p_compass_responses: readonly ExplorerSafetyCompassResponse[] | null;
-  p_waypoint_suggestion: ExplorerSafetyWaypointSuggestion | null }>;
+  p_waypoint_suggestion: ExplorerSafetyWaypointSuggestion | null;
+  p_waypoint_response: ExplorerSafetyWaypointResponse | null }>;
 export type ExplorerPrivateMutateParameters = ActorParameters & Readonly<{
   p_conversation_id: string; p_operation_id: string; p_expected_revision: number; p_command_fingerprint: string;
   p_kind: string; p_source_message_id: string | null; p_item_id: string | null; p_waypoint_id: string | null;
@@ -722,6 +723,12 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
       const previousReply = [...builderState.state.messages].reverse().find((message) => message.role === "virtualGuide");
       const waypointSuggestion = ordinaryExtras && safety.currentLevel !== null && safety.currentLevel < 2
         ? observedModel?.observation?.waypointSuggestion ?? null : null;
+      const proposedWaypointResponse = observedModel?.observation?.waypointResponse;
+      const waypointDraft = builderState.state.waypointDraft;
+      const waypointResponse = ordinaryExtras && safety.currentLevel !== null && safety.currentLevel < 2 &&
+        previousReply && waypointSuggestion === null && proposedWaypointResponse && waypointDraft &&
+        waypointDraft.id === proposedWaypointResponse.draftId && waypointDraft.suggestionMessageId === previousReply.id
+        ? proposedWaypointResponse : null;
       const proposedResponses = ordinaryExtras && safety.currentLevel !== null && safety.currentLevel < 2 && previousReply
         ? observedModel?.observation?.compass?.responses?.filter((response) =>
           builderState.state.compassItems.some((item) => item.id === response.pointId && item.formation === "forming" &&
@@ -738,7 +745,7 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
         p_delivery_interested: terminalDeliveryInterested, p_attention_item_id: attentionItemId, p_choices: choices,
         p_compass_suggestions: proposedPoints?.length ? Object.freeze(proposedPoints) : null,
         p_compass_responses: proposedResponses?.length ? Object.freeze(proposedResponses) : null,
-        p_waypoint_suggestion: waypointSuggestion };
+        p_waypoint_suggestion: waypointSuggestion, p_waypoint_response: waypointResponse };
       let settled: ExplorerPrivateRpcRow;
       try { settled = await dependencies.repository.settle(settlement); }
       catch { policy = safety.policyKnown ? { status: "known", restrictedLevel: safety.restrictedLevel, adultReflectionStopped: safety.adultReflectionStopped,

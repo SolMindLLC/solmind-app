@@ -137,7 +137,7 @@ select ok(not methodology.screen_result_valid(pg_temp.screen_result('review',
 
 -- Chat step slice S3 (2026-11-03): the serialized-methodology check accepts exactly two envelope key sets,
 -- each tied to its own contract version. Synthetic envelopes; only the keys, versions and methodology layer matter.
--- S7a amendment (2026-11-05): compass-v4 replaces compass-v3; the base envelope stays accepted.
+-- S7b amendment (2026-11-05): compass-v5 replaces compass-v4; the base envelope stays accepted.
 create function pg_temp.s3_envelope(version text,with_compass boolean) returns text language sql immutable as $$
   select (jsonb_build_object('contractVersion',version,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy','{}'::jsonb,'roleBehavior','{}'::jsonb,'crisisBehavior','{}'::jsonb,
@@ -148,7 +148,7 @@ create function pg_temp.s3_envelope(version text,with_compass boolean) returns t
 $$;
 select ok(methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2',false),
   'f5130000-0000-4000-8000-000000000001','Synthetic method.'),'S3: the existing twelve-key envelope with its version stays valid');
-select ok(methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v4',true),
+select ok(methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v5',true),
   'f5130000-0000-4000-8000-000000000001','Synthetic method.'),'S3: the envelope with the Compass section and the new version is valid');
 select ok(not methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v1',true),
   'f5130000-0000-4000-8000-000000000001','Synthetic method.'),'S5: the retired compass-v1 envelope with its section refuses');
@@ -158,15 +158,15 @@ select ok(not methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi00
   'f5130000-0000-4000-8000-000000000001','Synthetic method.'),'S6b: the retired compass-v2 envelope without its section refuses');
 select ok(not methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2',true),
   'f5130000-0000-4000-8000-000000000001','Synthetic method.'),'S3: the Compass section under the previous version refuses');
-select ok(not methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v4',false),
+select ok(not methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v5',false),
   'f5130000-0000-4000-8000-000000000001','Synthetic method.'),'S3: the new version without the Compass section refuses');
-select ok(not methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v5',true),
+select ok(not methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v6',true),
   'f5130000-0000-4000-8000-000000000001','Synthetic method.'),'S3: any other version with the Compass section refuses');
-select ok(not methodology.serialized_methodology_valid((pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v4',true)::jsonb
+select ok(not methodology.serialized_methodology_valid((pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v5',true)::jsonb
   ||'{"drafts":[]}'::jsonb)::text,'f5130000-0000-4000-8000-000000000001','Synthetic method.'),'S3: an extra top-level key still refuses');
-select ok(not methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v4',true),
+select ok(not methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v5',true),
   'f5130000-0000-4000-8000-000000000002','Synthetic method.'),'S3: the methodology version is still bound under the new version');
-select ok(not methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v4',true),
+select ok(not methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v5',true),
   'f5130000-0000-4000-8000-000000000001','Other method.'),'S3: the methodology text is still bound under the new version');
 select ok((select p.provolatile='i' and not p.prosecdef and p.proconfig@>array['search_path=""']
     and p.proowner=(select oid from pg_roles where rolname='postgres')

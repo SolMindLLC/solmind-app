@@ -20,7 +20,7 @@ const PORTS = Object.freeze({
     columns: ["outcome", "conversation_state", "dispatch_permitted", "policy_state"] }),
   settle: Object.freeze({ name: "solmind_settle_explorer_conversation_turn_v4", parameters: [...ACTOR, "p_conversation_id", "p_operation_id", "p_status", "p_reply_message_id", "p_reply_kind", "p_reply_body",
     "p_model_level", "p_model_minor_indicated", "p_protocol_version", "p_request_mode", "p_configuration_fingerprint", "p_fallback_policy_version", "p_model_policy_version", "p_trusted_response_version", "p_resource_policy_version",
-    "p_fallback_level", "p_fallback_minor_indicated", "p_delivery_interested", "p_attention_item_id", "p_choices", "p_compass_suggestions", "p_compass_responses", "p_waypoint_suggestion"], columns: ["outcome", "conversation_state", "policy_state", "saved_reply"] }),
+    "p_fallback_level", "p_fallback_minor_indicated", "p_delivery_interested", "p_attention_item_id", "p_choices", "p_compass_suggestions", "p_compass_responses", "p_waypoint_suggestion", "p_waypoint_response"], columns: ["outcome", "conversation_state", "policy_state", "saved_reply"] }),
   mutate: Object.freeze({ name: "solmind_mutate_explorer_conversation_v3", parameters: [...ACTOR, "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint", "p_kind", "p_source_message_id", "p_item_id", "p_waypoint_id", "p_label", "p_destination", "p_meaning", "p_arrival_signal", "p_evidence"],
     columns: ["outcome", "conversation_state"] }),
   arrange: Object.freeze({ name: "solmind_confirm_explorer_compass_arrangement_v1", parameters: [...ACTOR,
@@ -75,6 +75,15 @@ function parameters(input: object, expected: readonly string[]): Readonly<Record
     const property = Object.getOwnPropertyDescriptor(input, key);
     if (!property?.enumerable || !("value" in property)) throw new Error(FAILURE);
     const value: unknown = property.value;
+    if (key === "p_waypoint_response" && value !== null) {
+      if (!object(value) || Reflect.ownKeys(value).length !== 2) throw new Error(FAILURE);
+      const draft = Object.getOwnPropertyDescriptor(value, "draftId");
+      const response = Object.getOwnPropertyDescriptor(value, "response");
+      if (!draft?.enumerable || !("value" in draft) || typeof draft.value !== "string" || draft.value.length !== 36 ||
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(draft.value) ||
+          !response?.enumerable || !("value" in response) || !["right", "close", "not_it"].includes(response.value)) throw new Error(FAILURE);
+      copied[key] = Object.freeze({ draftId: draft.value, response: response.value }); continue;
+    }
     if (key === "p_waypoint_suggestion" && value !== null) {
       if (!object(value) || Reflect.ownKeys(value).length !== 4) throw new Error(FAILURE);
       const suggestion: Record<string, string> = {};

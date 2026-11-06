@@ -141,7 +141,7 @@ end $$;
 -- order, the saved Priority and attention, the last five needle moves on a current point (oldest first, each
 -- with the point's current label), the current Waypoint heads, no drafts.
 create function pg_temp.compass_context() returns jsonb language sql stable as $$
-  select jsonb_build_object('version','explorer-compass-context.v4',
+  select jsonb_build_object('version','explorer-compass-context.v5',
     'points',coalesce((select jsonb_agg(jsonb_build_object('id',c.item_id,'label',ai.solmind_exclusion_normalize_v3(c.label),
       'order',c.ord-1,'formation',case when c.formation_status='proposed' then 'forming' else 'saved' end,'anchor',c.compass_anchor,'emphasis',c.relative_emphasis)
       ||case when c.formation_status='proposed' then jsonb_build_object('suggestedInPreviousReply',coalesce(
@@ -184,7 +184,7 @@ create function pg_temp.compass_source_ids() returns uuid[] language sql stable 
       and not exists(select 1 from content.waypoint s where s.predecessor_waypoint_id=w.waypoint_id)) x
 $$;
 create function pg_temp.context_value(msg uuid,body text) returns jsonb language sql stable as $$
-  select jsonb_build_object('contractVersion','wi007-v0.1+onboarding-fields-v2+compass-v4','aiRole','solmind_virtual_guide','actorRoleContext','explorer',
+  select jsonb_build_object('contractVersion','wi007-v0.1+onboarding-fields-v2+compass-v5','aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy',jsonb_build_object('version','synthetic-policy.v1','text','Synthetic policy.'),
     'roleBehavior',jsonb_build_object('version','synthetic-behavior.v1','text','Synthetic behavior.'),
     'crisisBehavior',jsonb_build_object('version','synthetic-crisis.v1','text','Synthetic crisis.'),
@@ -459,6 +459,16 @@ select is((select to_jsonb(w) from content.waypoint w where waypoint_id=pg_temp.
 select ok((select lifecycle_status='chosen' and released_at is null and released_operation_id is null
  from content.waypoint where waypoint_id=pg_temp.gid(33003)),'Revisit never erases an old release or copies it onto the new current lifecycle');
 select is((select outcome from pg_temp.release_waypoint(32003,31002)),'exact_replay','old release retry remains a read after Revisit');
+
+select is((select outcome from pg_temp.mutate(33100,'confirm_waypoint',10011,null,null,null,
+ 'Form destination','Form meaning','Form signal')),'ok','S7b: a form-created Waypoint is chosen for the title check');
+select is((select outcome from pg_temp.revise_waypoint(33101,33100,'revise_waypoint',
+ pg_temp.answer('destination','A revised form destination'))),'ok','S7b: the form-created Waypoint is revised to a new destination');
+select ok((select successor.title='A revised form destination' and successor.destination='A revised form destination'
+ and predecessor.title='Form destination' and successor.predecessor_waypoint_id=predecessor.waypoint_id
+ from content.waypoint successor join content.waypoint predecessor on predecessor.waypoint_id=pg_temp.gid(33100)
+ where successor.waypoint_id=pg_temp.gid(33101)),
+ 'S7b: a form-created Waypoint, whose title is its destination, takes the revised destination as its title');
 
 -- All predecessors and current heads still count toward the twenty-row bound.
 do $$ declare i integer; n integer; begin

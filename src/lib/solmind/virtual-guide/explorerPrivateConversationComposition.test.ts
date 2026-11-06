@@ -23,7 +23,7 @@ function state(conversationId: string | null): ExplorerConversationState {
     messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] };
 }
 // Since chat step slice S3 (2026-11-03) the private context revision carries the saved Compass section.
-const PRIVATE_CONTEXT_VERSION = "wi007-v0.1+onboarding-fields-v2+compass-v4";
+const PRIVATE_CONTEXT_VERSION = "wi007-v0.1+onboarding-fields-v2+compass-v5";
 function fixture(contextVersion?: string) {
   const configuration = getExplorerPrivateConfigurationCandidate(); if (!configuration) throw new Error("synthetic_candidate_missing");
   const readiness: ExplorerPrivateOperationalReadiness = { configuration, configurationFingerprint: SHA, modelName: "gpt-5.6-luna", modelPolicyVersion: "synthetic-model.v1",
@@ -79,7 +79,7 @@ function fixture(contextVersion?: string) {
         globalPolicy: { version: configuration.globalPolicy.version, text: configuration.globalPolicy.text.replace(/\r\n?/g, "\n").trim() },
         roleBehavior: { version: configuration.roleBehavior.version, text: configuration.roleBehavior.text.replace(/\r\n?/g, "\n").trim() },
         crisisBehavior: { version: configuration.crisisBehavior.version, text: configuration.crisisBehavior.text.replace(/\r\n?/g, "\n").trim() },
-        ...(includeCompass ? { compassContext: { version: "explorer-compass-context.v4",
+        ...(includeCompass ? { compassContext: { version: "explorer-compass-context.v5",
           points: input.state.compassItems.map((point, order) => ({ id: point.id, label: point.label, order,
             formation: point.formation ?? "saved", anchor: point.anchor ?? null, emphasis: point.emphasis ?? null,
             ...(point.formation === "forming" ? { suggestedInPreviousReply: point.wordingMessageId !== undefined &&
@@ -114,13 +114,57 @@ describe("S7a private Waypoint composition", () => {
   const current = (): ExplorerConversationState => ({ ...state(ID.conversation), sessionStatus: "active", ending: null,
     messages: [{ id: ID.intake, role: "virtualGuide", body: "A tentative Waypoint", createdAt: "2026-11-05T10:00:00Z" }],
     waypointDraft: { id: ID.pack, ...wording, suggestionMessageId: ID.intake } });
-  it("passes one valid proposal through the 25-argument terminal intent after one ordinary provider call", async () => {
+  const typedReply = (response: unknown, level = 0, minorIndicated = false, waypointSuggestion?: unknown) => JSON.stringify({
+    protocol: "explorer-safety-reply.v2", classification: { level, minorIndicated },
+    candidateReply: { content: "We can explore that." }, waypointResponse: response,
+    ...(waypointSuggestion === undefined ? {} : { waypointSuggestion }) });
+  it.each(["right", "close", "not_it"] as const)("S7b passes a typed %s answer for the preceding saved draft in one terminal intent", async response => {
+    const f = fixture(); const saved = current(); f.setCurrent(saved);
+    f.ensure.mockImplementation(async () => ({ outcome: "reused", conversation_state: saved, policy_state: POLICY }));
+    const proposal = { draftId: ID.pack, response };
+    f.generate.mockResolvedValue(typedReply(proposal));
+    const result = await commandExplorerPrivateConversation({ command: send("That wording fits."), dependencies: f.dependencies });
+    expect(result.result.ok).toBe(true);
+    expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_reply_kind: "ordinary", p_waypoint_response: proposal });
+    expect(Object.keys(f.settle.mock.calls[0][0])).toHaveLength(26);
+  });
+  it.each(["older", "foreign", "absent", "reworded", "unchanged_rewording", "level2", "minor", "restricted", "adult", "canceled"] as const)(
+    "S7b drops the typed answer when %s without applying a browser-side transition", async reason => {
+      const f = fixture(); const original = current(); const abort = new AbortController();
+      const saved: ExplorerConversationState = reason === "older" ? { ...original, messages: [...original.messages,
+        { id: ID.version, role: "virtualGuide", body: "Another saved reply.", createdAt: "2026-11-05T10:00:01Z" }] } : original;
+      const latest = reason === "absent" ? { ...saved, waypointDraft: null } : saved;
+      f.setCurrent(latest);
+      f.ensure.mockImplementation(async () => ({ outcome: "reused", conversation_state: latest, policy_state: POLICY }));
+      if (reason === "restricted") f.setPolicy({ ...POLICY, restrictedLevel: 3 });
+      if (reason === "adult") f.setPolicy({ ...POLICY, adultReflectionStopped: true });
+      const suggestion = reason === "reworded" ? { ...wording, title: "A revised title" }
+        : reason === "unchanged_rewording" ? wording : undefined;
+      f.generate.mockImplementation(async () => {
+        if (reason === "canceled") abort.abort();
+        return typedReply({ draftId: reason === "foreign" ? ID.version : ID.pack, response: "right" },
+          reason === "level2" ? 2 : 0, reason === "minor", suggestion);
+      });
+      await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies, signal: abort.signal });
+      expect(f.settle).toHaveBeenCalledOnce();
+      expect(f.settle.mock.calls[0][0].p_waypoint_response).toBeNull();
+      if (suggestion) expect(f.settle.mock.calls[0][0].p_waypoint_suggestion).toEqual(suggestion);
+      expect(saved.waypointDraft).not.toBeNull();
+      expect(saved.waypoints).toEqual([]);
+    });
+  it("S7b refuses compass-v4 before preparing or dispatching a new turn", async () => {
+    const f = fixture("wi007-v0.1+onboarding-fields-v2+compass-v4");
+    await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(f.prepare).not.toHaveBeenCalled(); expect(f.generate).not.toHaveBeenCalled();
+  });
+  it("passes one valid proposal through the 26-argument terminal intent after one ordinary provider call", async () => {
     const f = fixture(); f.generate.mockResolvedValue(reply());
     const result = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
     expect(result.result.ok).toBe(true);
     expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
     expect(f.settle.mock.calls[0][0].p_waypoint_suggestion).toEqual(wording);
-    expect(Object.keys(f.settle.mock.calls[0][0])).toHaveLength(25);
+    expect(Object.keys(f.settle.mock.calls[0][0])).toHaveLength(26);
   });
   it.each(["level2", "level3", "minor", "restricted", "adult", "malformed", "canceled"] as const)(
     "keeps Waypoint suggestions out of %s settlement", async reason => {

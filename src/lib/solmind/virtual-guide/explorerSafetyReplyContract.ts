@@ -27,6 +27,7 @@ export type ExplorerSafetyCompassResponse = Readonly<{ pointId: string; response
 export type ExplorerSafetyWaypointSuggestion = Readonly<{
   title: string; destination: string; whyItMatters: string; arrivalSignal: string;
 }>;
+export type ExplorerSafetyWaypointResponse = Readonly<{ draftId: string; response: "right" | "close" | "not_it" }>;
 export type ExplorerSafetyCompass = Readonly<{
   attention?: string | null; suggestions?: readonly ExplorerSafetyCompassSuggestion[];
   responses?: readonly ExplorerSafetyCompassResponse[];
@@ -36,6 +37,7 @@ export type ExplorerSafetyReplyObservation = Readonly<{
   classification: ExplorerSafetyClassification; candidate: ExplorerSafetyCandidate;
   compass?: ExplorerSafetyCompass; choices?: readonly ExplorerSafetyChoice[];
   waypointSuggestion?: ExplorerSafetyWaypointSuggestion;
+  waypointResponse?: ExplorerSafetyWaypointResponse;
 }>;
 export type ExplorerSafetyReplyErrorCode =
   | "explorer_safety_invalid_request" | "explorer_safety_invalid_response"
@@ -202,7 +204,7 @@ export function parseExplorerSafetyReplyBody(rawText: unknown, mode: ExplorerSaf
   try { body = JSON.parse(rawText) as unknown; } catch { fail("explorer_safety_invalid_response"); }
   const required = ["protocol", "classification", "candidateReply"];
   const optional = body !== null && typeof body === "object"
-    ? ["compass", "choices", "waypointSuggestion"].filter(key => Object.hasOwn(body, key)) : [];
+    ? ["compass", "choices", "waypointSuggestion", "waypointResponse"].filter(key => Object.hasOwn(body, key)) : [];
   if (!dataObject(body, [...required, ...optional]) ||
     body.protocol !== EXPLORER_SAFETY_REPLY_PROTOCOL) fail("explorer_safety_invalid_response");
   const classification = parseExplorerSafetyClassification(body.classification);
@@ -211,8 +213,19 @@ export function parseExplorerSafetyReplyBody(rawText: unknown, mode: ExplorerSaf
   if (mode === "classification_only") return Object.freeze({ classification, candidate: NOT_REQUESTED });
   const parsedCompass = compass(body.compass); const parsedChoices = choices(body.choices);
   const waypointSuggestion = parseExplorerSafetyWaypointSuggestion(body.waypointSuggestion);
+  const waypointResponse = parseExplorerSafetyWaypointResponse(body.waypointResponse);
   return Object.freeze({ classification, candidate: candidate(body.candidateReply),
     ...(parsedCompass === undefined ? {} : { compass: parsedCompass }),
     ...(waypointSuggestion === undefined ? {} : { waypointSuggestion }),
+    ...(waypointResponse === undefined ? {} : { waypointResponse }),
     ...(parsedChoices === undefined ? {} : { choices: parsedChoices }) });
+}
+
+export function parseExplorerSafetyWaypointResponse(input: unknown): ExplorerSafetyWaypointResponse | undefined {
+  try {
+    if (!dataObject(input, ["draftId", "response"]) || typeof input.draftId !== "string" ||
+        input.draftId.length !== 36 || !UUID.test(input.draftId) ||
+        (input.response !== "right" && input.response !== "close" && input.response !== "not_it")) return undefined;
+    return Object.freeze({ draftId: input.draftId, response: input.response });
+  } catch { return undefined; }
 }

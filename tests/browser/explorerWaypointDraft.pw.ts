@@ -116,6 +116,77 @@ test("S7a a saved Waypoint draft refines after an exact answer retry, confirms i
   expect(sendCount).toBe(2);
 });
 
+for (const response of ["right", "not_it"] as const) {
+  test(`S7b a typed ${response} updates the forming draft and Waypoints only after Send returns saved state`, async ({ page }) => {
+    const base = cardState({ providerState: "available", compassSuggestionReplies: "available",
+      compassItems: [], priorityId: null, attentionId: null, waypoints: [] });
+    const draft = { id: DRAFT_ID, title: TITLE, destination: "Talk with my sister without rushing",
+      whyItMatters: "I want us both to feel heard", arrivalSignal: "We each finish our thought",
+      suggestionMessageId: base.messages.at(-1)!.id };
+    let current: ExplorerConversationState = { ...base, waypointDraft: draft };
+    const typedAnswer = response === "right" ? "Yes, that exact Waypoint is what I want."
+      : "No, that Waypoint is not what I want.";
+    const savedReply = "Synthetic saved reply after the typed answer.";
+    const requests: ExplorerConversationCommand[] = [];
+    let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    await page.route("**/explorer/conversation/state", route => fulfill(route, current));
+    await page.route("**/explorer/conversation/commands", async route => {
+      const command = route.request().postDataJSON() as ExplorerConversationCommand;
+      requests.push(command);
+      expect(route.request().method()).toBe("POST");
+      expect(Object.keys(command).sort()).toEqual(["body", "expectedRevision", "kind", "operationId"]);
+      expect(command.kind).toBe("send");
+      if (command.kind !== "send") throw new Error("unexpected_command");
+      expect(command.expectedRevision).toBe(base.revision);
+      expect(command.body).toBe(typedAnswer);
+      await held;
+      current = { ...current, revision: base.revision + 1, waypointDraft: null,
+        waypoints: response === "right" ? [{ id: WAYPOINT_ID, sourceMessageId: draft.suggestionMessageId,
+          title: draft.title, destination: draft.destination, meaning: draft.whyItMatters,
+          arrivalSignal: draft.arrivalSignal, status: "chosen" }] : [],
+        messages: [...base.messages,
+          { id: "20000000-0000-4000-8000-000000000097", role: "explorer", body: command.body, createdAt: "2026-11-05T15:00:00Z" },
+          { id: "30000000-0000-4000-8000-000000000097", role: "virtualGuide", body: savedReply, createdAt: "2026-11-05T15:00:01Z" },
+        ] };
+      await fulfill(route, current);
+    });
+    await page.goto("/explorer/conversation");
+    const row = page.getByRole("group", { name: `Reply to Waypoint suggestion: ${TITLE}`, exact: true });
+    const transcript = page.getByRole("list", { name: "Saved conversation", exact: true });
+    const composer = page.getByLabel("Continue the conversation", { exact: true });
+    await expect(row).toBeVisible();
+    await composer.fill(typedAnswer);
+    await page.getByRole("button", { name: "Send", exact: true }).click();
+    await expect.poll(() => requests.length).toBe(1);
+    await expect(row).toBeVisible();
+    await expect(row).toContainText("Forming");
+    await expect(transcript).not.toContainText(typedAnswer);
+    await expect(transcript).not.toContainText(savedReply);
+    release();
+    await expect(transcript).toContainText(savedReply);
+    await expect(transcript).toContainText(typedAnswer);
+    await expect(row).toHaveCount(0);
+    await expect(composer).toHaveValue("");
+    if ((page.viewportSize()?.width ?? 0) < 1024) await page.locator("#conversation-preview-drawer-opener").click();
+    const panel = page.locator((page.viewportSize()?.width ?? 0) < 1024 ? "#conversation-preview-drawer" : "#conversation-preview-panel");
+    const waypoints = panel.getByRole("region", { name: "Waypoints", exact: true });
+    await expect(waypoints).toBeVisible();
+    if (response === "right") {
+      await expect(waypoints.getByRole("heading", { name: TITLE, exact: true })).toBeVisible();
+      await expect(waypoints.getByRole("article")).toHaveCount(1);
+      for (const text of ["Formed", draft.destination, draft.whyItMatters, draft.arrivalSignal]) {
+        await expect(waypoints).toContainText(text);
+      }
+    } else {
+      await expect(waypoints.getByRole("heading", { name: TITLE, exact: true })).toHaveCount(0);
+      await expect(waypoints.getByRole("article")).toHaveCount(0);
+    }
+    expect(requests).toHaveLength(1);
+    expect(requests[0].kind).toBe("send");
+  });
+}
+
 for (const response of ["close", "not_it", "send"] as const) {
   test(`S7a the full stored-row limit holds confirmation and keeps ${response} available`, async ({ page }) => {
     const base = cardStateAtWaypointLimit();

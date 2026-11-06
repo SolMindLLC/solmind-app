@@ -2205,3 +2205,54 @@ retaining a style profile. All five prompt/role/instruction labels end in
 database, context or screen change. Existing safety, crisis, pacing, Compass,
 Waypoint and output-protocol rules remain. Paul must read the exact changed
 instruction sentences before saving or integration into the app or demo.
+
+## Chat step S7b: typed replies to the forming Waypoint - 2026-11-05
+
+Paul's decisions of 2026-11-03 12:38:07 and 2026-11-05 17:21:15 extend
+typed answers to the one forming Waypoint draft. The Virtual Guide may propose
+right, close or not_it only when the latest Explorer message clearly answers
+the exact wording from its immediately preceding saved reply. Residual risk:
+the Virtual Guide judges the typed answer's meaning, whereas a button press
+records the Explorer's explicit selection. Silence, topic changes and ambiguity
+supply no answer; when unsure the Virtual Guide asks.
+
+The additive optional waypointResponse keeps explorer-safety-reply.v2 and
+contains only draftId and response. A malformed proposal is dropped without
+losing the reply. Ordinary context becomes
+wi007-v0.1+onboarding-fields-v2+compass-v5 with explorer-compass-context.v5.
+Its proposed draft adds suggestedInPreviousReply, derived identically in
+TypeScript and SQL from its latest wording source and the preceding saved
+Virtual Guide reply. Compass-v4 is refused for new turns; classification-only
+calls keep the section-free base revision and existing source exclusions.
+
+The forward migration is
+supabase/migrations/20261105060000_explorer_typed_waypoint_replies.sql.
+Settle v4 replaces the 25-argument overload with 26 arguments, adding
+p_waypoint_response. A response requires a saved ordinary reply below level 2,
+delivery still wanted, unrestricted/adult-allowed state and
+classification_and_reply. It must target this conversation's current proposed
+draft from the immediately preceding saved Virtual Guide reply, with no answer
+receipt completed at or after that reply. A valid rewording in the same reply
+wins over its response. Right confirms exact stored wording within the existing
+Waypoint limit; not_it rejects within the 24-draft bound; a limit silently
+drops the response. Close records only the answer. Applied typed receipts keep
+only the draft id and response, with no wording snapshot. Exact replay never
+applies a response twice. The existing forming and Waypoint cards update from
+saved state without new controls.
+
+A Waypoint revision or revisit now carries a drafted title (one that differs
+from the destination) forward unchanged; neither screen asks for a title. A
+form-created Waypoint, whose title is its destination, keeps following its
+destination. All five instruction labels
+end in -20261105-s7b-r1, and changed wording, byte counts and integrity pins
+move together. Every sentence added or changed in the held curious-Virtual-Guide
+round remains unchanged. Paul must read all new instruction sentences and this
+title behavior change before anything reaches the app or demo.
+
+The app change and this migration must reach a database together. Grants,
+existing authority checks, context/RPC/provider budgets, cancellation, one-call
+and counting rules remain unchanged. SQL/pgTAP and browser execution,
+independent review, canonical sibling-document updates, integration and any
+publication remain Executor work. This builder is limited to the clone and
+the three named external files; no sibling product documentation, database
+or provider was accessed.

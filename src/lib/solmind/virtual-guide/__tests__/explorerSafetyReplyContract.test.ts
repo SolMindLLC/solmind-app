@@ -23,6 +23,36 @@ function proposedBody(proposals: Record<string, unknown>) {
     classification: { level: 0, minorIndicated: false }, candidateReply: { content: "We can explore that." }, ...proposals });
 }
 describe("S7a Waypoint proposals", () => {
+  it.each(["right", "close", "not_it"] as const)("S7b accepts one frozen %s response without changing reply v2", response => {
+    const waypointResponse = { draftId: POINT, response };
+    const result = parseExplorerSafetyReplyBody(proposedBody({ waypointResponse }), "classification_and_reply");
+    expect(result.waypointResponse).toEqual(waypointResponse);
+    expect(Object.isFrozen(result.waypointResponse)).toBe(true);
+    expect(result.candidate.kind).toBe("usable");
+    expect(EXPLORER_SAFETY_REPLY_PROTOCOL).toBe("explorer-safety-reply.v2");
+  });
+  it.each([null, {}, [], "right", [{ draftId: POINT, response: "right" }],
+    { draftId: POINT }, { response: "right" }, { draftId: null, response: "right" },
+    { draftId: POINT + "\n", response: "right" }, { draftId: "unknown", response: "right" },
+    { draftId: POINT, response: "Right" }, { draftId: POINT, response: " right " },
+    { draftId: POINT, response: "not it" }, { draftId: POINT, response: null },
+    { draftId: POINT, response: "right", extra: true }])("S7b drops malformed response %j without losing valid siblings or prose", invalid => {
+    const result = parseExplorerSafetyReplyBody(proposedBody({ waypointResponse: invalid,
+      waypointSuggestion, compass: { attention: POINT }, choices: [{ label: "Begin" }] }), "classification_and_reply");
+    expect(result.waypointResponse).toBeUndefined();
+    expect(result.waypointSuggestion).toEqual(waypointSuggestion);
+    expect(result.compass).toEqual({ attention: POINT });
+    expect(result.choices).toEqual([{ label: "Begin" }]);
+    expect(result.classification).toEqual({ level: 0, minorIndicated: false });
+    expect(result.candidate.kind).toBe("usable");
+  });
+  it("S7b keeps valid response independent of a malformed suggestion and drops it in classification-only mode", () => {
+    const waypointResponse = { draftId: POINT, response: "right" };
+    expect(parseExplorerSafetyReplyBody(proposedBody({ waypointResponse, waypointSuggestion: {} }),
+      "classification_and_reply").waypointResponse).toEqual(waypointResponse);
+    expect(parseExplorerSafetyReplyBody(proposedBody({ waypointResponse, waypointSuggestion }), "classification_only"))
+      .toEqual({ classification: { level: 0, minorIndicated: false }, candidate: { kind: "not_requested" } });
+  });
   const waypointSuggestion = { title: "Calm mornings with room to breathe", destination: "An unhurried breakfast",
     whyItMatters: "Time with my family", arrivalSignal: "Two calm breakfasts this week" };
   it("parses one exact frozen suggestion beside valid Compass and reply data", () => {
