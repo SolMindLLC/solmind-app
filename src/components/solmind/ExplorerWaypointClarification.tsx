@@ -13,6 +13,7 @@ import {
   type ExplorerConversationFormationIntent,
   type WaypointRevisionReview,
 } from "@/lib/solmind/explorerConversationFormation";
+import { waypointCapacityMessage } from "@/lib/solmind/explorerWaypointCapacity";
 
 type Component = ExplorerWaypointClarificationAnswer["component"];
 type ReviewTarget = Omit<WaypointRevisionReview, "answers">;
@@ -45,13 +46,14 @@ export function ExplorerWaypointClarification({ state, busy, readOnly = false, r
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const waypoint = state.waypoints.find(item => item.id === review.waypointId);
-  const hasSuccessor = state.waypoints.some(item => item.lifecycle?.predecessorWaypointId === review.waypointId);
+  const hasSuccessor = waypoint?.isCurrent !== true;
   const stale = waypoint === undefined || review.conversationId !== state.conversationId || review.revision !== state.revision ||
     state.sessionStatus !== "active" || hasSuccessor || (review.kind === "revise_waypoint"
       ? waypoint.status !== "chosen" || waypoint.release !== undefined
       : waypoint.status !== "reached" && waypoint.release === undefined);
-  const atLimit = state.waypoints.length >= EXPLORER_CONVERSATION_LIMITS.waypoints;
-  const blocked = busy || readOnly || state.pendingTurn || stale || atLimit;
+  const capacityMessage = waypointCapacityMessage(state, review.kind === "revisit_waypoint");
+  const capacityDescription = capacityMessage !== null ? `${id}-capacity` : undefined;
+  const blocked = busy || readOnly || state.pendingTurn || stale || capacityMessage !== null;
   const component = EXPLORER_WAYPOINT_COMPONENTS[step];
   const questionKey = component === undefined ? null : EXPLORER_WAYPOINT_QUESTION_KEYS[component];
   const changedAnswers: readonly ExplorerWaypointClarificationAnswer[] = Object.freeze(EXPLORER_WAYPOINT_COMPONENTS.flatMap(key =>
@@ -85,9 +87,9 @@ export function ExplorerWaypointClarification({ state, busy, readOnly = false, r
     <p className="text-sm leading-6 text-amber-100">This draft is kept only on this page. Closing it, navigating away or reloading discards it and leaves the saved Waypoint unchanged.</p>
     {waypoint ? <p className="break-words text-sm text-slate-300">Saved Waypoint: {waypoint.destination}</p> : null}
     {stale ? <p role="alert" className="text-sm text-amber-200">Your saved conversation or Waypoint changed. Close this draft and open a new clarification before confirming.</p> : null}
-    {atLimit ? <p role="alert" className="text-sm text-amber-200">This conversation already stores 20 Waypoint versions. Earlier versions remain available; another cannot be saved here.</p> : null}
+    {capacityMessage !== null ? <p id={capacityDescription} role="alert" tabIndex={0} className="text-sm text-amber-200">{capacityMessage}</p> : null}
     {error ? <p role="alert" className="text-sm text-amber-200">{error}</p> : null}
-    {component !== undefined && waypoint ? <fieldset disabled={blocked} className="space-y-3 rounded-xl border border-slate-700 p-3">
+    {component !== undefined && waypoint ? <fieldset disabled={blocked} aria-describedby={capacityDescription} className="space-y-3 rounded-xl border border-slate-700 p-3">
       <legend data-question-key={questionKey ?? undefined} className="px-1 text-sm font-semibold text-cyan-100">Question {step + 1} of {EXPLORER_WAYPOINT_COMPONENTS.length}</legend>
       <p className="font-semibold text-slate-100">{questions[component]}</p>
       <p className="text-sm text-slate-300">Your saved {labels[component].toLowerCase()}:</p>
@@ -100,7 +102,7 @@ export function ExplorerWaypointClarification({ state, busy, readOnly = false, r
         <button type="button" className={buttonClass} onClick={keepCurrent}>Keep this understanding</button>
         <button type="button" className={buttonClass} onClick={useAnswer} disabled={!(drafts[component] ?? "").trim()}>Use my answer</button>
       </div>
-    </fieldset> : waypoint ? <fieldset disabled={blocked} className="space-y-4 rounded-xl border border-cyan-300/50 p-3">
+    </fieldset> : waypoint ? <fieldset disabled={blocked} aria-describedby={capacityDescription} className="space-y-4 rounded-xl border border-cyan-300/50 p-3">
       <legend className="px-1 font-semibold text-slate-100">Review the complete understanding</legend>
       <dl className="space-y-4">{EXPLORER_WAYPOINT_COMPONENTS.map(key => <div key={key}>
         <dt className="font-semibold text-slate-200">{labels[key]}</dt>

@@ -13,7 +13,8 @@ export const EXPLORER_CONVERSATION_LIMITS = Object.freeze({
   messages: 100,
   compassItems: 24,
   visibleCompassItems: 8,
-  waypoints: 20,
+  // Projection/read bound only. Product capacity comes from the server.
+  waypointPage: 20,
 });
 
 export type ExplorerConversationMessage = Readonly<{
@@ -71,6 +72,9 @@ export type ExplorerWaypointLifecycle = Readonly<{
 
 export type ExplorerConversationWaypoint = Readonly<{
   id: string;
+  // Authoritative currentness; absence of a successor in a page proves nothing.
+  isCurrent: boolean;
+  createdAt: string;
   sourceMessageId: string;
   title: string;
   destination: string;
@@ -118,6 +122,17 @@ export type ExplorerConversationEnding = Readonly<{
 }>;
 export type ExplorerCompassSuggestionResponse = "right" | "close" | "not_it";
 export type ExplorerCompassSuggestionReplies = "available" | "support" | "adult_policy" | "unavailable";
+export type ExplorerWaypointCapacity = Readonly<{
+  activeCount: number;
+  activeLimit: number;
+  historyRoom: boolean;
+}>;
+export type ExplorerWaypointProjection = Readonly<{
+  kind: "current_heads";
+  limit: 20;
+  hasMore: boolean;
+  totalHeads: number;
+}>;
 export type ExplorerConversationState = Readonly<{
   version: typeof EXPLORER_CONVERSATION_VERSION;
   conversationId: string | null;
@@ -132,6 +147,8 @@ export type ExplorerConversationState = Readonly<{
   priorityId: string | null;
   attentionId: string | null;
   waypoints: readonly ExplorerConversationWaypoint[];
+  waypointCapacity: ExplorerWaypointCapacity;
+  waypointProjection: ExplorerWaypointProjection;
   waypointDraft: ExplorerConversationWaypointDraft | null;
   route?: readonly ExplorerConversationRouteEvent[];
   sessionStatus?: "active" | "ended" | null;
@@ -204,6 +221,20 @@ export function parseExplorerConversationWaypointDraft(value: unknown): Explorer
 function revision(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 2_147_483_647;
 }
+export function parseExplorerWaypointCapacity(value: unknown): ExplorerWaypointCapacity | null {
+  if (!object(value) || !keys(value, ["activeCount", "activeLimit", "historyRoom"]) ||
+      Reflect.ownKeys(value).length !== 3 ||
+      Object.keys(value).some(key => !("value" in (Object.getOwnPropertyDescriptor(value, key) ?? {}))) ||
+      !revision(value.activeCount) || !revision(value.activeLimit) || value.activeLimit < 1 ||
+      typeof value.historyRoom !== "boolean") return null;
+  return Object.freeze({ activeCount: value.activeCount, activeLimit: value.activeLimit, historyRoom: value.historyRoom });
+}
+
+export function waypointHasCapacity(state: Pick<ExplorerConversationState, "waypointCapacity">, increasesActive = true): boolean {
+  const capacity = parseExplorerWaypointCapacity(state.waypointCapacity);
+  return capacity !== null && capacity.historyRoom &&
+    (!increasesActive || capacity.activeCount < capacity.activeLimit);
+}
 function instant(value: unknown): value is string {
   if (typeof value !== "string" || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?(?:Z|\+00:00)$/.test(value)) return false;
   const milliseconds = Date.parse(value);
@@ -236,16 +267,20 @@ export function parseExplorerWaypointClarificationAnswers(value: unknown): reado
   return Object.freeze(answers);
 }
 
-function waypointLineageValid(waypoints: readonly ExplorerConversationWaypoint[]): boolean {
+// A bounded page can omit ancestors. Where both versions are present, retain
+// the full lineage checks; SQL validates complete lineage before projection.
+export function waypointLineageValid(waypoints: readonly ExplorerConversationWaypoint[]): boolean {
   const byId = new Map(waypoints.map(item => [item.id, item]));
   const predecessors = new Set<string>();
   for (const item of waypoints) {
     const lifecycle = item.lifecycle;
     if (lifecycle === undefined) continue;
     const predecessor = byId.get(lifecycle.predecessorWaypointId);
-    if (!predecessor || predecessor.id === item.id || predecessors.has(predecessor.id) ||
-        item.sourceMessageId !== predecessor.sourceMessageId) return false;
-    predecessors.add(predecessor.id);
+    if (lifecycle.predecessorWaypointId === item.id || predecessors.has(lifecycle.predecessorWaypointId) ||
+        (lifecycle.creationReason === "revision" && lifecycle.clarifications.length === 0)) return false;
+    predecessors.add(lifecycle.predecessorWaypointId);
+    if (!predecessor) continue;
+    if (predecessor.isCurrent || item.sourceMessageId !== predecessor.sourceMessageId) return false;
     if (lifecycle.creationReason === "revision"
       ? predecessor.status !== "chosen" || predecessor.release !== undefined || lifecycle.clarifications.length === 0
       : predecessor.status !== "reached" && predecessor.release === undefined) return false;
@@ -411,6 +446,70 @@ export function parseExplorerConversationCommand(value: unknown): ExplorerConver
   return Object.freeze({ ...value }) as ExplorerConversationCommand;
 }
 
+// The source message is checked by the conversation parser. Private history
+// reads carry source/conversation identities without disclosing the transcript.
+export function parseExplorerConversationWaypoint(item: unknown): ExplorerConversationWaypoint | null {
+  if (!object(item) || Reflect.ownKeys(item).length !== Object.keys(item).length ||
+      Object.keys(item).some(key => !("value" in (Object.getOwnPropertyDescriptor(item, key) ?? {})))) return null;
+  const hasReached = Object.hasOwn(item, "reachedEvidence") || Object.hasOwn(item, "reachedAt");
+  const hasRelease = Object.hasOwn(item, "release");
+  const hasWaypointLifecycle = Object.hasOwn(item, "lifecycle");
+  if (!keys(item, ["id", "isCurrent", "createdAt", "sourceMessageId", "title", "destination", "meaning", "arrivalSignal", "status", ...(hasReached ? ["reachedEvidence", "reachedAt"] : []), ...(hasRelease ? ["release"] : []), ...(hasWaypointLifecycle ? ["lifecycle"] : [])]) ||
+      !isExplorerConversationId(item.id) || typeof item.isCurrent !== "boolean" || !isExplorerConversationInstant(item.createdAt) ||
+      !isExplorerConversationId(item.sourceMessageId) ||
+      !text(item.title, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) ||
+      !text(item.destination, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) ||
+      !text(item.meaning, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) ||
+      !text(item.arrivalSignal, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) ||
+      !["chosen", "reached"].includes(item.status as string)) return null;
+  if (hasReached && (item.status === "chosen"
+    ? item.reachedEvidence !== null || item.reachedAt !== null
+    : !text(item.reachedEvidence, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) || !instant(item.reachedAt))) return null;
+  let release: ExplorerConversationWaypoint["release"];
+  if (hasRelease) {
+    const captured = item.release;
+    if (item.status !== "chosen" || !object(captured) || Reflect.ownKeys(captured).length !== 2 ||
+        !keys(captured, ["operationId", "releasedAt"]) || !isExplorerConversationId(captured.operationId) ||
+        !isExplorerConversationInstant(captured.releasedAt)) return null;
+    release = Object.freeze({ operationId: captured.operationId, releasedAt: captured.releasedAt });
+  }
+  let lifecycle: ExplorerWaypointLifecycle | undefined;
+  if (hasWaypointLifecycle) {
+    const saved = item.lifecycle;
+    if (!object(saved) || !keys(saved, ["predecessorWaypointId", "creationReason", "clarifications"]) ||
+        Reflect.ownKeys(saved).length !== 3 || !isExplorerConversationId(saved.predecessorWaypointId) ||
+        saved.predecessorWaypointId === item.id ||
+        !["revision", "revisit"].includes(saved.creationReason as string) || !Array.isArray(saved.clarifications) ||
+        saved.clarifications.length > EXPLORER_WAYPOINT_COMPONENTS.length ||
+        (saved.creationReason === "revision" && saved.clarifications.length === 0) ||
+        (item.status === "reached" && !hasReached)) return null;
+    const clarifications: ExplorerWaypointClarification[] = [];
+    let previousComponent = -1;
+    for (const answer of saved.clarifications) {
+      if (!object(answer) || !keys(answer, ["component", "questionKey", "answer", "recordedAt"]) ||
+          Reflect.ownKeys(answer).length !== 4 ||
+          !EXPLORER_WAYPOINT_COMPONENTS.includes(answer.component as ExplorerWaypointComponent) ||
+          !text(answer.answer, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) || answer.answer !== answer.answer.trim() ||
+          !isExplorerConversationInstant(answer.recordedAt)) return null;
+      const component = answer.component as ExplorerWaypointComponent;
+      const position = EXPLORER_WAYPOINT_COMPONENTS.indexOf(component);
+      if (position <= previousComponent || answer.questionKey !== EXPLORER_WAYPOINT_QUESTION_KEYS[component] ||
+          answer.answer !== item[component]) return null;
+      previousComponent = position;
+      clarifications.push(Object.freeze({ component, questionKey: EXPLORER_WAYPOINT_QUESTION_KEYS[component],
+        answer: answer.answer, recordedAt: answer.recordedAt }));
+    }
+    lifecycle = Object.freeze({ predecessorWaypointId: saved.predecessorWaypointId,
+      creationReason: saved.creationReason as ExplorerWaypointLifecycle["creationReason"],
+      clarifications: Object.freeze(clarifications) });
+  }
+  return Object.freeze({ id: item.id, isCurrent: item.isCurrent, createdAt: item.createdAt,
+    sourceMessageId: item.sourceMessageId, title: item.title, destination: item.destination,
+    meaning: item.meaning, arrivalSignal: item.arrivalSignal, status: item.status as ExplorerConversationWaypoint["status"],
+    ...(hasReached ? { reachedEvidence: item.reachedEvidence as string | null, reachedAt: item.reachedAt as string | null } : {}),
+    ...(release === undefined ? {} : { release }), ...(lifecycle === undefined ? {} : { lifecycle }) });
+}
+
 export function parseExplorerConversationResult(value: unknown): ExplorerConversationResult | null {
   if (!object(value) || !keys(value, ["ok", "state", "error"])) return null;
   if (value.ok === false && value.state === null &&
@@ -422,7 +521,7 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
   const hasRoute = Object.hasOwn(state, "route");
   const hasLifecycle = Object.hasOwn(state, "sessionStatus") || Object.hasOwn(state, "ending");
   const hasSuggestionReplies = Object.hasOwn(state, "compassSuggestionReplies");
-  if (!keys(state, ["version", "conversationId", "revision", "pendingTurn", "turnedDownLimitReached", "providerState", "messages", "compassItems", "priorityId", "attentionId", "waypoints", "waypointDraft", ...(hasRoute ? ["route"] : []), ...(hasLifecycle ? ["sessionStatus", "ending"] : []), ...(hasSuggestionReplies ? ["compassSuggestionReplies"] : [])]) ||
+  if (!keys(state, ["version", "conversationId", "revision", "pendingTurn", "turnedDownLimitReached", "providerState", "messages", "compassItems", "priorityId", "attentionId", "waypoints", "waypointDraft", "waypointCapacity", "waypointProjection", ...(hasRoute ? ["route"] : []), ...(hasLifecycle ? ["sessionStatus", "ending"] : []), ...(hasSuggestionReplies ? ["compassSuggestionReplies"] : [])]) ||
       state.version !== EXPLORER_CONVERSATION_VERSION || !revision(state.revision) ||
       typeof state.pendingTurn !== "boolean" ||
       typeof state.turnedDownLimitReached !== "boolean" ||
@@ -431,7 +530,22 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
       (hasSuggestionReplies && !["available", "support", "adult_policy", "unavailable"].includes(state.compassSuggestionReplies as string)) ||
       !Array.isArray(state.messages) || state.messages.length > EXPLORER_CONVERSATION_LIMITS.messages ||
       !Array.isArray(state.compassItems) || state.compassItems.length > EXPLORER_CONVERSATION_LIMITS.compassItems ||
-      !Array.isArray(state.waypoints) || state.waypoints.length > EXPLORER_CONVERSATION_LIMITS.waypoints) return null;
+      !Array.isArray(state.waypoints) || state.waypoints.length > EXPLORER_CONVERSATION_LIMITS.waypointPage) return null;
+  const capacityDescriptor = Object.getOwnPropertyDescriptor(state, "waypointCapacity");
+  const projectionDescriptor = Object.getOwnPropertyDescriptor(state, "waypointProjection");
+  if (!capacityDescriptor || !("value" in capacityDescriptor) ||
+      !projectionDescriptor || !("value" in projectionDescriptor)) return null;
+  const waypointCapacity = parseExplorerWaypointCapacity(capacityDescriptor.value);
+  const projection = projectionDescriptor.value;
+  if (waypointCapacity === null || !object(projection) ||
+      !keys(projection, ["kind", "limit", "hasMore", "totalHeads"]) || Reflect.ownKeys(projection).length !== 4 ||
+      Object.keys(projection).some(key => !("value" in (Object.getOwnPropertyDescriptor(projection, key) ?? {}))) ||
+      projection.kind !== "current_heads" || projection.limit !== EXPLORER_CONVERSATION_LIMITS.waypointPage ||
+      typeof projection.hasMore !== "boolean" || !revision(projection.totalHeads) ||
+      state.waypoints.length !== Math.min(projection.totalHeads, projection.limit) ||
+      projection.hasMore !== (projection.totalHeads > state.waypoints.length)) return null;
+  const waypointProjection: ExplorerWaypointProjection = Object.freeze({ kind: "current_heads", limit: 20,
+    hasMore: projection.hasMore, totalHeads: projection.totalHeads });
   const messages: ExplorerConversationMessage[] = [];
   const messageIds = new Set<string>();
   for (const message of state.messages) {
@@ -497,60 +611,10 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
   const waypoints: ExplorerConversationWaypoint[] = [];
   const waypointIds = new Set<string>();
   for (const item of state.waypoints) {
-    if (!object(item)) return null;
-    const hasReached = Object.hasOwn(item, "reachedEvidence") || Object.hasOwn(item, "reachedAt");
-    const hasRelease = Object.hasOwn(item, "release");
-    const hasWaypointLifecycle = Object.hasOwn(item, "lifecycle");
-    if (!keys(item, ["id", "sourceMessageId", "title", "destination", "meaning", "arrivalSignal", "status", ...(hasReached ? ["reachedEvidence", "reachedAt"] : []), ...(hasRelease ? ["release"] : []), ...(hasWaypointLifecycle ? ["lifecycle"] : [])]) ||
-        !id(item.id) || waypointIds.has(item.id) || !id(item.sourceMessageId) || !messageIds.has(item.sourceMessageId) ||
-        !text(item.title, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) ||
-        !text(item.destination, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) || !text(item.meaning, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) ||
-        !text(item.arrivalSignal, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) || !["chosen", "reached"].includes(item.status as string)) return null;
-    if (hasReached && (item.status === "chosen"
-      ? item.reachedEvidence !== null || item.reachedAt !== null
-      : !text(item.reachedEvidence, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) || !instant(item.reachedAt))) return null;
-    let release: ExplorerConversationWaypoint["release"];
-    if (hasRelease) {
-      const captured = item.release;
-      if (item.status !== "chosen" || !object(captured) ||
-          Reflect.ownKeys(captured).length !== 2 || !keys(captured, ["operationId", "releasedAt"]) ||
-          !isExplorerConversationId(captured.operationId) || !isExplorerConversationInstant(captured.releasedAt)) return null;
-      release = Object.freeze({ operationId: captured.operationId, releasedAt: captured.releasedAt });
-    }
-    let lifecycle: ExplorerWaypointLifecycle | undefined;
-    if (hasWaypointLifecycle) {
-      const saved = item.lifecycle;
-      if (!object(saved) || !keys(saved, ["predecessorWaypointId", "creationReason", "clarifications"]) ||
-          Reflect.ownKeys(saved).length !== 3 || !isExplorerConversationId(saved.predecessorWaypointId) ||
-          !["revision", "revisit"].includes(saved.creationReason as string) || !Array.isArray(saved.clarifications) ||
-          saved.clarifications.length > EXPLORER_WAYPOINT_COMPONENTS.length ||
-          (item.status === "reached" && !hasReached)) return null;
-      const clarifications: ExplorerWaypointClarification[] = [];
-      let previousComponent = -1;
-      for (const answer of saved.clarifications) {
-        if (!object(answer) || !keys(answer, ["component", "questionKey", "answer", "recordedAt"]) ||
-            Reflect.ownKeys(answer).length !== 4 ||
-            !EXPLORER_WAYPOINT_COMPONENTS.includes(answer.component as ExplorerWaypointComponent) ||
-            !text(answer.answer, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) || answer.answer !== answer.answer.trim() ||
-            !isExplorerConversationInstant(answer.recordedAt)) return null;
-        const component = answer.component as ExplorerWaypointComponent;
-        const position = EXPLORER_WAYPOINT_COMPONENTS.indexOf(component);
-        if (position <= previousComponent || answer.questionKey !== EXPLORER_WAYPOINT_QUESTION_KEYS[component] ||
-            answer.answer !== item[component]) return null;
-        previousComponent = position;
-        clarifications.push(Object.freeze({ component, questionKey: EXPLORER_WAYPOINT_QUESTION_KEYS[component],
-          answer: answer.answer, recordedAt: answer.recordedAt }));
-      }
-      lifecycle = Object.freeze({ predecessorWaypointId: saved.predecessorWaypointId,
-        creationReason: saved.creationReason as ExplorerWaypointLifecycle["creationReason"],
-        clarifications: Object.freeze(clarifications) });
-    }
-    waypointIds.add(item.id);
-    waypoints.push(Object.freeze({ id: item.id, sourceMessageId: item.sourceMessageId, title: item.title, destination: item.destination,
-      meaning: item.meaning, arrivalSignal: item.arrivalSignal, status: item.status as ExplorerConversationWaypoint["status"],
-      ...(hasReached ? { reachedEvidence: item.reachedEvidence as string | null, reachedAt: item.reachedAt as string | null } : {}),
-      ...(release === undefined ? {} : { release }),
-      ...(lifecycle === undefined ? {} : { lifecycle }) }));
+    const waypoint = parseExplorerConversationWaypoint(item);
+    if (!waypoint || !waypoint.isCurrent || waypointIds.has(waypoint.id) || !messageIds.has(waypoint.sourceMessageId)) return null;
+    waypointIds.add(waypoint.id);
+    waypoints.push(waypoint);
   }
   if (!waypointLineageValid(waypoints)) return null;
   const waypointDraft = parseExplorerConversationWaypointDraft(state.waypointDraft);
@@ -639,6 +703,7 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
     providerState: state.providerState as ExplorerConversationState["providerState"], messages: Object.freeze(messages),
     compassItems: Object.freeze(compassItems), priorityId: state.priorityId as string | null,
     attentionId: state.attentionId as string | null, waypoints: Object.freeze(waypoints), waypointDraft,
+    waypointCapacity, waypointProjection,
     ...(hasRoute ? { route: Object.freeze(route) } : {}),
     ...(hasSuggestionReplies ? { compassSuggestionReplies: state.compassSuggestionReplies as ExplorerCompassSuggestionReplies } : {}),
     ...(hasLifecycle ? { sessionStatus: state.sessionStatus as "active" | "ended" | null, ending } : {}) }) });

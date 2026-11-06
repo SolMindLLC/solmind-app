@@ -1,7 +1,5 @@
-import { EXPLORER_CONVERSATION_LIMITS, type ExplorerConversationState, type ExplorerConversationWaypointDraft } from "./explorerConversationContract";
-
-export const WAYPOINT_DRAFT_LIMIT_REASON =
-  'Because you already have the most Waypoints SolMind keeps, "That\'s right" is not available here. You can still choose another reply or type what you would change.';
+import { waypointHasCapacity, type ExplorerConversationState, type ExplorerConversationWaypointDraft } from "./explorerConversationContract";
+import { waypointCapacityMessage } from "./explorerWaypointCapacity";
 
 export const WAYPOINT_DRAFT_WORDING = Object.freeze({
   forming: "Forming",
@@ -12,8 +10,12 @@ export const WAYPOINT_DRAFT_WORDING = Object.freeze({
 });
 
 export function waypointLimitReached(state: ExplorerConversationState): boolean {
-  // State includes every stored row, including Reached, Released and earlier versions.
-  return state.waypoints.length >= EXPLORER_CONVERSATION_LIMITS.waypoints;
+  // Account capacity and conversation history room are authoritative server data.
+  return !waypointHasCapacity(state);
+}
+
+export function waypointDraftLimitReason(state: ExplorerConversationState): string | null {
+  return waypointCapacityMessage(state, true, true);
 }
 
 export function formingWaypointForMessage(state: ExplorerConversationState, messageId: string) {

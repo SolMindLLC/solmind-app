@@ -64,6 +64,8 @@ function authority() {
 function state(count = 2): ExplorerConversationState {
   return {
     version: EXPLORER_CONVERSATION_VERSION, conversationId: ids.conversationId,
+    waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true },
+    waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: 0 },
     revision: 7, providerState: "available", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, messages: Array.from({ length: count }, (_, index) => ({
       id: uuid(100 + index), role: index % 2 === 0 ? "explorer" as const : "virtualGuide" as const,
       body: `Saved message ${index}`, createdAt: "2026-10-24T05:00:00.000Z",
@@ -694,7 +696,7 @@ describe("Explicit held private AV3 context entry points", () => {
     const result = await build({ ...f.input, mode: "classification_and_reply" });
     expect(result.evidence.p_authorization_version).toBe(privateVersion);
     expect(assembled(result.request.authorizedContext).contractVersion).toBe(EXPLORER_PRIVATE_CONVERSATION_CONTEXT_SELECTION_VERSION);
-    expect(assembled(result.request.authorizedContext).compassContext).toEqual({ version: "explorer-compass-context.v5",
+    expect(assembled(result.request.authorizedContext).compassContext).toEqual({ version: "explorer-compass-context.v6",
       points: [], priorityId: null, attentionId: null, recentRoute: [], waypoints: [], drafts: [] });
     expect(f.read).toHaveBeenCalledOnce();
     expect(f.prepare).not.toHaveBeenCalled(); expect(f.complete).not.toHaveBeenCalled();
@@ -738,11 +740,13 @@ describe("Explicit held private AV3 context entry points", () => {
 // where the database rebuild must equal GOLDEN's content, compared as jsonb, and that content, set into the
 // context, must inspect clear.
 const sx = (n: number) => `f5120000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-const GOLDEN = '{"version":"explorer-compass-context.v5","points":[{"id":"f5120000-0000-4000-8000-000000000401","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},{"id":"f5120000-0000-4000-8000-000000000402","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},{"id":"f5120000-0000-4000-8000-000000000404","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],"priorityId":"f5120000-0000-4000-8000-000000000401","attentionId":"f5120000-0000-4000-8000-000000000402","recentRoute":[{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000401","label":"Money worries","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":true}],"waypoints":[{"id":"f5120000-0000-4000-8000-000000000421","title":"Find a calmer morning","destination":"Find a calmer morning","meaning":"Mornings set\\nmy whole day","arrivalSignal":"I start two mornings a week without rushing","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000422","title":"Walk after dinner","destination":"Walk after dinner","meaning":"It clears my head","arrivalSignal":"I walk three evenings in one week","stage":"reached","reachedEvidence":"I walked four evenings last week"},{"id":"f5120000-0000-4000-8000-000000000423","title":"Call my sister","destination":"Call my sister","meaning":"We have drifted apart","arrivalSignal":"We talk once a week for a month","stage":"released","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000425","title":"Read before bed","destination":"Read before bed","meaning":"Screens keep me awake","arrivalSignal":"I read on three nights","stage":"formed","reachedEvidence":null}],"drafts":[]}';
+const GOLDEN = '{"version":"explorer-compass-context.v6","points":[{"id":"f5120000-0000-4000-8000-000000000401","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},{"id":"f5120000-0000-4000-8000-000000000402","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},{"id":"f5120000-0000-4000-8000-000000000404","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],"priorityId":"f5120000-0000-4000-8000-000000000401","attentionId":"f5120000-0000-4000-8000-000000000402","recentRoute":[{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000401","label":"Money worries","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":true}],"waypoints":[{"id":"f5120000-0000-4000-8000-000000000425","title":"Read before bed","destination":"Read before bed","meaning":"Screens keep me awake","arrivalSignal":"I read on three nights","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000421","title":"Find a calmer morning","destination":"Find a calmer morning","meaning":"Mornings set\\nmy whole day","arrivalSignal":"I start two mornings a week without rushing","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000423","title":"Call my sister","destination":"Call my sister","meaning":"We have drifted apart","arrivalSignal":"We talk once a week for a month","stage":"released","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000422","title":"Walk after dinner","destination":"Walk after dinner","meaning":"It clears my head","arrivalSignal":"I walk three evenings in one week","stage":"reached","reachedEvidence":"I walked four evenings last week"}],"drafts":[]}';
 function s3State(): ExplorerConversationState {
   const base = state(); const source = base.messages[0].id;
   const at = (minute: number) => `2026-11-03T09:${String(minute).padStart(2, "0")}:00.000Z`;
   return { ...base,
+    waypointCapacity: { activeCount: 2, activeLimit: 20, historyRoom: true },
+    waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: 4 },
     compassItems: [
       { id: sx(401), sourceMessageId: source, label: "  Money worries ", anchor: "apex", emphasis: 3, mergedIntoItemId: null },
       { id: sx(402), sourceMessageId: source, label: "Sleep", anchor: null, emphasis: null, mergedIntoItemId: null },
@@ -763,17 +767,15 @@ function s3State(): ExplorerConversationState {
       { operationId: sx(418), revision: 9, kind: "attention_changed", compassItemId: sx(402), label: "Sleep", recordedAt: at(8) },
     ],
     waypoints: [
-      { id: sx(421), sourceMessageId: source, title: "Find a calmer morning", destination: "Find a calmer morning", meaning: "Mornings set\r\nmy whole day",
+      { id: sx(421), isCurrent: true, createdAt: "2026-11-03T10:00:00.000Z", sourceMessageId: source, title: "Find a calmer morning", destination: "Find a calmer morning", meaning: "Mornings set\r\nmy whole day",
         arrivalSignal: "I start two mornings a week without rushing", status: "chosen", reachedEvidence: null, reachedAt: null },
-      { id: sx(422), sourceMessageId: source, title: "Walk after dinner", destination: "Walk after dinner", meaning: "It clears my head",
+      { id: sx(422), isCurrent: true, createdAt: "2026-11-03T10:01:00.000Z", sourceMessageId: source, title: "Walk after dinner", destination: "Walk after dinner", meaning: "It clears my head",
         arrivalSignal: "I walk three evenings in one week", status: "reached", reachedEvidence: "  I walked four evenings last week ",
         reachedAt: "2026-11-03T11:00:00.000Z" },
-      { id: sx(423), sourceMessageId: source, title: "Call my sister", destination: "Call my sister", meaning: "We have drifted apart",
+      { id: sx(423), isCurrent: true, createdAt: "2026-11-03T10:02:00.000Z", sourceMessageId: source, title: "Call my sister", destination: "Call my sister", meaning: "We have drifted apart",
         arrivalSignal: "We talk once a week for a month", status: "chosen", reachedEvidence: null, reachedAt: null,
         release: { operationId: sx(431), releasedAt: "2026-11-03T12:00:00.000Z" } },
-      { id: sx(424), sourceMessageId: source, title: "Read before bed", destination: "Read before bed", meaning: "Screens keep me awake",
-        arrivalSignal: "I read on five nights", status: "chosen", reachedEvidence: null, reachedAt: null },
-      { id: sx(425), sourceMessageId: source, title: "Read before bed", destination: "Read before bed", meaning: "Screens keep me awake",
+      { id: sx(425), isCurrent: true, createdAt: "2026-11-03T10:04:00.000Z", sourceMessageId: source, title: "Read before bed", destination: "Read before bed", meaning: "Screens keep me awake",
         arrivalSignal: "I read on three nights", status: "chosen", reachedEvidence: null, reachedAt: null,
         lifecycle: { predecessorWaypointId: sx(424), creationReason: "revision", clarifications: [{ component: "arrivalSignal",
           questionKey: "waypoint.arrivalSignal.v1", answer: "I read on three nights", recordedAt: "2026-11-03T10:04:00.000Z" }] } },
@@ -788,6 +790,91 @@ function privateFixture(history: ExplorerConversationState, formingAttentionMove
 }
 
 describe("Chat step slice S3 saved Compass and Waypoint section (private AV3 entries)", () => {
+  it("Lane 7 matches SQL's twenty-head selection and exact source ids with active heads before newest closed heads", async () => {
+    const sql = readFileSync("supabase/tests/explorer_waypoint_active_limits_test.sql", "utf8");
+    const golden = sql.match(/\$waypoint_selection_golden\$([\s\S]*?)\$waypoint_selection_golden\$/);
+    expect(golden).not.toBeNull();
+    const expectedIds = JSON.parse(golden![1]) as string[];
+    const history = state();
+    const waypoints: ExplorerConversationState["waypoints"] = Array.from({ length: 24 }, (_, index) => ({
+      id: sx(1000 + index), isCurrent: true, sourceMessageId: history.messages[0].id,
+      createdAt: index < 2 ? "2026-11-06T09:00:00.000001Z" : `2026-11-06T09:01:${String(index).padStart(2, "0")}.000000Z`,
+      title: `Saved title ${index}`, destination: `Saved destination ${index}`, meaning: `Saved meaning ${index}`,
+      arrivalSignal: `Saved arrival ${index}`, status: index < 2 ? "chosen" as const : "reached" as const,
+      reachedEvidence: index < 2 ? null : `Explicit evidence ${index}`,
+      reachedAt: index < 2 ? null : "2026-11-06T10:00:00Z",
+    })).reverse();
+    const f = privateFixture({ ...history, waypoints,
+      waypointCapacity: { activeCount: 2, activeLimit: 20, historyRoom: true },
+      waypointProjection: { kind: "current_heads", limit: 20, hasMore: true, totalHeads: 24 } });
+    const result = await f.build(f.input);
+    const selected = assembled(result.request.authorizedContext).compassContext!.waypoints;
+    expect(selected.map(waypoint => waypoint.id)).toEqual(expectedIds);
+    expect(selected.slice(0, 2).every(waypoint => waypoint.stage === "formed")).toBe(true);
+    expect(result.evidence.p_context_source_ids).toEqual([ids.messageId, authority().onboarding.responseId,
+      f.config.methodologyContextPackVersionId, ...history.messages.map(message => message.id), ...expectedIds].sort());
+    for (const index of [2, 3, 4, 5]) {
+      expect(result.request.authorizedContext).not.toContain(sx(1000 + index));
+      expect(result.request.authorizedContext).not.toContain(`Saved destination ${index}\"`);
+    }
+    expect(result.request.authorizedContext).not.toContain("waypointCapacity");
+    expect(result.request.authorizedContext).not.toContain("waypointProjection");
+    const projected = privateFixture({ ...f.input.state,
+      waypoints: waypoints.filter(waypoint => expectedIds.includes(waypoint.id)) });
+    expect((await projected.build(projected.input)).request.authorizedContext).toBe(result.request.authorizedContext);
+    const classification = await f.build({ ...f.input, mode: "classification_only" });
+    expect(assembled(classification.request.authorizedContext)).not.toHaveProperty("compassContext");
+    for (const waypoint of waypoints) expect(classification.evidence.p_context_source_ids).not.toContain(waypoint.id);
+  });
+
+  it("Lane 7 bounds grandfathered active heads by microsecond creation time and UUID independently of array order", async () => {
+    const history = state();
+    const waypoints: ExplorerConversationState["waypoints"] = Array.from({ length: 25 }, (_, index) => ({
+      id: sx(1100 + index), isCurrent: true, sourceMessageId: history.messages[0].id,
+      createdAt: index < 2 ? "2026-11-06T09:00:00.000025Z" : `2026-11-06T09:00:00.${String(index).padStart(6, "0")}+00:00`,
+      title: "Saved title", destination: "Saved destination", meaning: "Saved meaning", arrivalSignal: "Saved arrival",
+      status: "chosen" as const, reachedEvidence: null, reachedAt: null,
+    })).reverse();
+    const f = privateFixture({ ...history, waypoints,
+      waypointCapacity: { activeCount: 25, activeLimit: 20, historyRoom: true },
+      waypointProjection: { kind: "current_heads", limit: 20, hasMore: true, totalHeads: 25 } });
+    const result = await f.build(f.input);
+    expect(assembled(result.request.authorizedContext).compassContext!.waypoints.map(waypoint => waypoint.id))
+      .toEqual([sx(1100), sx(1101), ...Array.from({ length: 18 }, (_, index) => sx(1124 - index))]);
+    expect(result.evidence.p_context_source_ids).not.toContain(sx(1106));
+    const reordered = privateFixture({ ...f.input.state, waypoints: [...waypoints].reverse() });
+    expect((await reordered.build(reordered.input)).request.authorizedContext).toBe(result.request.authorizedContext);
+  });
+
+  it("Lane 7 never infers currentness from a missing successor in partial history", async () => {
+    const history = s3State();
+    const former = { ...history.waypoints[0], id: sx(424), isCurrent: false, destination: "Omitted predecessor wording" };
+    const f = privateFixture({ ...history, waypoints: [former] });
+    const result = await f.build(f.input);
+    expect(assembled(result.request.authorizedContext).compassContext!.waypoints).toEqual([]);
+    expect(result.evidence.p_context_source_ids).not.toContain(former.id);
+    expect(result.request.authorizedContext).not.toContain(former.destination);
+  });
+
+  it("Lane 7 keeps twenty maximum-length Unicode and escaped Waypoint fields inside the unchanged context budget", async () => {
+    const history = state();
+    const text = "\u4e00".repeat(500) + '"'.repeat(250) + "\\".repeat(250);
+    const waypoints: ExplorerConversationState["waypoints"] = Array.from({ length: 20 }, (_, index) => ({
+      id: sx(1200 + index), isCurrent: true, sourceMessageId: history.messages[0].id,
+      createdAt: "2026-11-06T09:00:00Z", title: text, destination: text, meaning: text, arrivalSignal: text,
+      status: "reached" as const, reachedEvidence: text, reachedAt: "2026-11-06T10:00:00Z",
+    }));
+    const f = privateFixture({ ...history, waypoints,
+      waypointProjection: { kind: "current_heads", limit: 20, hasMore: true, totalHeads: 200 },
+      waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: false } });
+    const result = await f.build(f.input);
+    expect(assembled(result.request.authorizedContext).compassContext!.waypoints).toHaveLength(20);
+    expect(assembled(result.request.authorizedContext).compassContext!.waypoints.every(waypoint =>
+      waypoint.title === text && waypoint.destination === text && waypoint.meaning === text &&
+      waypoint.arrivalSignal === text && waypoint.reachedEvidence === text)).toBe(true);
+    expect(Buffer.byteLength(result.request.authorizedContext, "utf8")).toBeLessThanOrEqual(524_288);
+  });
+
   it.each([false, true])("S7b uses saved reply sequence for the draft signal despite reversed timestamps (%s)", async earlier => {
     const history = state();
     const previous = history.messages.findLast(message => message.role === "virtualGuide")!;
@@ -824,7 +911,7 @@ describe("Chat step slice S3 saved Compass and Waypoint section (private AV3 ent
       ? { ...waypoint, title: "A short saved title" } : waypoint), waypointDraft: draft };
     const f = privateFixture(saved); const ordinary = await f.build(f.input);
     const section = assembled(ordinary.request.authorizedContext).compassContext!;
-    expect(section.waypoints[0].title).toBe("A short saved title");
+    expect(section.waypoints.find(waypoint => waypoint.id === sx(421))?.title).toBe("A short saved title");
     expect(section.drafts).toEqual([{ id: draft.id, title: draft.title, destination: draft.destination,
       whyItMatters: draft.whyItMatters, arrivalSignal: draft.arrivalSignal, suggestedInPreviousReply: true }]);
     expect(JSON.stringify(section.drafts)).not.toContain(draft.suggestionMessageId);
@@ -894,7 +981,7 @@ describe("Chat step slice S3 saved Compass and Waypoint section (private AV3 ent
     const f = privateFixture(s3State()); const result = await f.build(f.input);
     const serialized = result.request.authorizedContext;
     const context = assembled(serialized);
-    expect(context.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2+compass-v5");
+    expect(context.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2+compass-v6");
     expect(JSON.stringify(context.compassContext)).toBe(GOLDEN);
     expect(serialized).toContain(`,"compassContext":${GOLDEN},"currentSessionMessages":`);
     expect(Object.keys(context)).toEqual(["contractVersion", "aiRole", "actorRoleContext", "globalPolicy", "roleBehavior",
@@ -940,8 +1027,8 @@ describe("Chat step slice S3 saved Compass and Waypoint section (private AV3 ent
     expect(section.attentionId).toBe(sx(402));
     expect(section.points.find(point => point.id === section.attentionId)).toMatchObject({ anchor: null, emphasis: null });
     expect(section.waypoints.map(waypoint => [waypoint.id, waypoint.stage, waypoint.reachedEvidence])).toEqual([
-      [sx(421), "formed", null], [sx(422), "reached", "I walked four evenings last week"],
-      [sx(423), "released", null], [sx(425), "formed", null]]);
+      [sx(425), "formed", null], [sx(421), "formed", null],
+      [sx(423), "released", null], [sx(422), "reached", "I walked four evenings last week"]]);
     expect(section.drafts).toEqual([]);
   });
 

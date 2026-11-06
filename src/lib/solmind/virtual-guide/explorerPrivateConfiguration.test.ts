@@ -46,7 +46,7 @@ describe("private Explorer exact inert configuration candidate", () => {
     const expected = [
       [value.globalPolicy, 2439, "1C145A87C65565875148150C4083D298EF5D66A49C19F00FABF55BB4F4F693B9"],
       [value.crisisBehavior, 2222, "7B39A9C98351D25E2FAC5DA236E2086B3F33CCBD8987A80AE6716E5242208D84"],
-      [value.roleBehavior, 9738, "09E9A876A867104D53A02792809288E35BFD7B0275DAF55FDA2860DB24E8EAEB"],
+      [value.roleBehavior, 9949, "2B538C56F2365329503E0E4D39E7A2F1718A31DB321F445B16A41FAD029B54EE"],
     ] as const;
     for (const [part, bytes, sha] of expected) {
       expect(Buffer.byteLength(part.text, "utf8")).toBe(bytes);
@@ -61,11 +61,11 @@ describe("private Explorer exact inert configuration candidate", () => {
   it("pins actual assembler-compatible labels and all seven finite reviewed-language definitions", () => {
     const value = candidate();
     expect(value.protocolVersion).toBe("explorer-safety-reply.v2");
-    expect(value.promptVersion).toBe("explorer-same-call.synthetic-draft-20261105-s7b-r1");
-    expect(value.instructionVersion).toBe("solmind-same-call-output.synthetic-draft-20261105-s7b-r1");
-    expect(value.roleVersion).toBe("solmind-virtual-guide.synthetic-draft-20261105-s7b-r1");
-    expect(value.globalPolicy.version).toBe("solmind-global-policy.synthetic-draft-20261105-s7b-r1");
-    expect(value.roleBehavior.version).toBe("solmind-virtual-guide-role.synthetic-draft-20261105-s7b-r1");
+    expect(value.promptVersion).toBe("explorer-same-call.synthetic-draft-20261106-wl-r1");
+    expect(value.instructionVersion).toBe("solmind-same-call-output.synthetic-draft-20261106-wl-r1");
+    expect(value.roleVersion).toBe("solmind-virtual-guide.synthetic-draft-20261106-wl-r1");
+    expect(value.globalPolicy.version).toBe("solmind-global-policy.synthetic-draft-20261106-wl-r1");
+    expect(value.roleBehavior.version).toBe("solmind-virtual-guide-role.synthetic-draft-20261106-wl-r1");
     const labels = [value.protocolVersion, value.promptVersion, value.instructionVersion, value.roleVersion,
       value.globalPolicy.version, value.roleBehavior.version, value.crisisBehavior.version,
       value.fallback.version, value.fallback.normalizationVersion, value.trustedResponses.version,
@@ -113,6 +113,7 @@ describe("private Explorer exact inert configuration candidate", () => {
       "Always answer when the Explorer asks how things work.",
       "When the Explorer talks about a topic, you may suggest short Compass point wording in compass.suggestions. Offer at most three suggestions per reply, each with a plain-text label (single-line, 1 to 160 characters). To refine a forming point, include its pointId; omit pointId for a new point, and never rewrite a saved point. Suggest wording only with an ordinary reply below classification level 2 in an unrestricted conversation. Never claim a suggestion is saved or confirmed; the Explorer decides whether it fits and chooses Priority and arrangement. Record a typed answer in compass.responses only when the Explorer's latest message clearly answers a forming point from your immediately preceding saved reply, marked suggestedInPreviousReply true in compassContext. Use right only when the Explorer accepts the exact stored wording, close when they say it needs a change, and not_it when they turn it down. Never infer an answer from silence, a change of topic or an ambiguous message, and never answer for the Explorer; when unsure, ask instead. With close, ask what to change; if you offer new wording, refine that point with its pointId in compass.suggestions and omit its response. With not_it, ask an open question. Do not respond to a point you refine in the same reply. Use responses only with an ordinary reply below classification level 2 in an unrestricted conversation. Never claim a response was saved or applied; the application may drop it.",
       "When the Explorer describes a place they want to reach, you may suggest one Waypoint draft in waypointSuggestion, with a title of about six words, where they are heading, why it matters, and what Reached would look like, in their own terms. Suggest a Waypoint only when the conversation clearly points to a place the Explorer wants to reach; when unsure, keep exploring or ask. Refine the existing draft in compassContext.drafts instead of starting a second. While a draft is forming, any waypointSuggestion replaces its wording; suggest a different Waypoint only after the Explorer answers it. Suggest a Waypoint only with an ordinary reply below classification level 2 in an unrestricted conversation, at most one per reply. Never claim a Waypoint suggestion is saved or confirmed; only the Explorer's reply button or clear typed answer can confirm it. When they choose \"Close, not quite\", ask what to change and keep any new wording forming; when they choose \"That's not it\", ask an open question. Record a typed answer in waypointResponse only when the Explorer's latest message clearly answers the forming Waypoint from your immediately preceding saved reply, marked suggestedInPreviousReply true in compassContext.drafts. Use right only when the Explorer accepts the exact stored wording, close when they say it needs a change, and not_it when they turn it down. Never infer an answer from silence, a change of topic or an ambiguous message, and never answer for the Explorer; when unsure, ask instead. With close, ask what to change; put any new wording in waypointSuggestion and omit waypointResponse. With not_it, ask an open question. Do not send waypointResponse in a reply that also has waypointSuggestion. Use waypointResponse only with an ordinary reply below classification level 2 in an unrestricted conversation. Never claim a response was saved or applied; the application may drop it.",
+      "The supplied Waypoints are a bounded selection from this conversation. Omission does not mean a Waypoint was deleted, Reached or Released. Do not infer the Explorer's total active Waypoints from this selection.",
       "In classification-only mode omit compass, waypointSuggestion, waypointResponse and choices.",
     ]) expect(value.roleBehavior.text).toContain(sentence);
     expect(value.roleBehavior.text).not.toContain("explorer-safety-reply.v1");

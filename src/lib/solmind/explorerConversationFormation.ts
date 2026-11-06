@@ -9,6 +9,7 @@ import {
   type ExplorerConversationMessage,
   type ExplorerConversationState,
 } from "./explorerConversationContract";
+import { waypointCapacityMessage } from "./explorerWaypointCapacity";
 
 type FormationCommand = Exclude<ExplorerConversationCommand, { kind: "send" }>;
 type WithoutOperation<T> = T extends unknown
@@ -221,9 +222,8 @@ export function buildWaypointFormationIntent(
   if (!findFormationSource(state, draft.sourceMessageId)) {
     return refuse("Choose a saved conversation message for this Waypoint.");
   }
-  if (state.waypoints.length >= EXPLORER_CONVERSATION_LIMITS.waypoints) {
-    return refuse("This conversation has reached its private Waypoint limit.");
-  }
+  const capacityMessage = waypointCapacityMessage(state);
+  if (capacityMessage !== null) return refuse(capacityMessage);
   for (const [field, value] of [
     ["destination", draft.destination],
     ["meaning", draft.meaning],
@@ -251,7 +251,7 @@ export function buildReachedFormationIntent(
 ): FormationIntentResult {
   const waypoint = state.waypoints.find(item => item.id === waypointId);
   if (!waypoint) return refuse("Choose a saved private Waypoint to review.");
-  if (state.waypoints.some(item => item.lifecycle?.predecessorWaypointId === waypoint.id)) {
+  if (waypoint.isCurrent !== true) {
     return refuse("This earlier Waypoint is retained as superseded history.");
   }
   if (waypoint.status !== "chosen") return refuse("This Waypoint is already Reached.");
@@ -281,7 +281,7 @@ export function buildWaypointReleaseFormationIntent(
   }
   const waypoint = state.waypoints.find(item => item.id === waypointId);
   if (!waypoint || waypoint.status !== "chosen" || waypoint.release !== undefined ||
-      state.waypoints.some(item => item.lifecycle?.predecessorWaypointId === waypoint.id)) {
+      waypoint.isCurrent !== true) {
     return refuse("Choose a current in-progress Waypoint to review for release.");
   }
   if (confirmed !== true) {
@@ -311,12 +311,11 @@ export function buildWaypointRevisionFormationIntent(
     return refuse("The saved conversation changed. Review the current Waypoint and your answers again.");
   }
   const waypoint = state.waypoints.find(item => item.id === review.waypointId);
-  if (!waypoint || state.waypoints.some(item => item.lifecycle?.predecessorWaypointId === waypoint.id)) {
+  if (!waypoint || waypoint.isCurrent !== true) {
     return refuse("Choose the latest saved Waypoint in this history to review.");
   }
-  if (state.waypoints.length >= EXPLORER_CONVERSATION_LIMITS.waypoints) {
-    return refuse("This conversation has reached its private Waypoint limit; saved history remains available.");
-  }
+  const capacityMessage = waypointCapacityMessage(state, review.kind === "revisit_waypoint");
+  if (capacityMessage !== null) return refuse(capacityMessage);
   const answers = parseExplorerWaypointClarificationAnswers(review.answers);
   if (answers === null) return refuse("Review each answered question once, in destination, meaning and arrival-signal order.");
   if (review.kind === "revise_waypoint") {

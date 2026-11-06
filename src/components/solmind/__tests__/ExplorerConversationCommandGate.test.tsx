@@ -25,7 +25,7 @@ vi.mock("../ExplorerConversationConnectedScreen", () => ({
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const POINT = id(3);
 function state(turnedDownLimitReached: boolean): ExplorerConversationState {
-  return { version: "explorer-conversation.v1", conversationId: id(1), revision: 3,
+  return { waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false }, version: "explorer-conversation.v1", conversationId: id(1), revision: 3,
     pendingTurn: false, turnedDownLimitReached, waypointDraft: null, providerState: "available", compassSuggestionReplies: "available",
     messages: [{ id: id(2), role: "virtualGuide", body: "A synthetic suggestion.", createdAt: "2026-11-05T12:00:00Z" }],
     compassItems: [{ id: POINT, sourceMessageId: id(2), wordingMessageId: id(2), label: "A tentative point", formation: "forming" }],
@@ -96,7 +96,7 @@ describe("S7a Waypoint draft reply command ownership", () => {
       waypointDraft: { ...WAYPOINT_DRAFT, suggestionMessageId: saved.messages.at(-1)!.id } };
   };
 
-  it("refuses confirmation locally at the full stored-row limit without sending a request", async () => {
+  it("refuses confirmation locally at the account-wide active limit without sending a request", async () => {
     const f = await loaded(false, capacityState());
     f.actions.onCommand({ kind: "respond_waypoint_draft", draftId: WAYPOINT_DRAFT.id, response: "right" });
     await vi.advanceTimersByTimeAsync(0);
@@ -121,7 +121,7 @@ describe("S7a Waypoint draft reply command ownership", () => {
 
   it("keeps a server refusal after a capacity race on the definite-conflict path without a follow-up", async () => {
     const saved = capacityState();
-    const f = await loaded(false, { ...saved, waypoints: saved.waypoints.slice(0, -1) });
+    const f = await loaded(false, { ...saved, waypointCapacity: { ...saved.waypointCapacity, activeCount: 19 } });
     f.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ version: EXPLORER_PRIVATE_RESPONSE_VERSION,
       result: { ok: false, state: null, error: "refresh_required" }, assistance: null,
     }), { status: 409, headers: { "Content-Type": "application/json" } }));

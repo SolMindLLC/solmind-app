@@ -417,14 +417,12 @@ function version(waypoint: ExplorerConversationWaypoint, earlier: boolean): Card
   });
 }
 
-// One line per Waypoint: its current version (a version no later version
-// replaced), in saved order, with the versions it replaced.
+// Currentness is authoritative even when earlier versions are outside the page.
 export function connectedWaypointLines(state: ExplorerConversationState): readonly CardWaypointLine[] {
   const byId = new Map(state.waypoints.map((waypoint) => [waypoint.id, waypoint]));
-  const replaced = new Set(state.waypoints.flatMap((waypoint) => (waypoint.lifecycle === undefined ? [] : [waypoint.lifecycle.predecessorWaypointId])));
   const lines: CardWaypointLine[] = [];
   for (const waypoint of state.waypoints) {
-    if (replaced.has(waypoint.id)) continue;
+    if (waypoint.isCurrent !== true) continue;
     const earlier: CardWaypointVersion[] = [];
     const seen = new Set([waypoint.id]);
     let previous = waypoint.lifecycle === undefined ? undefined : byId.get(waypoint.lifecycle.predecessorWaypointId);
@@ -472,10 +470,21 @@ export type WaypointListGroups = Readonly<{
   history: readonly CardWaypointLine[];
 }>;
 
-// The saved order is oldest first (by when each current version was saved), so
-// the list reverses it.
+// Preserve PostgreSQL microseconds when comparing validated UTC timestamps.
+function comparableWaypointInstant(value: string): string {
+  return value.slice(0, 19) + "." + (/\.(\d{1,6})/.exec(value)?.[1] ?? "").padEnd(6, "0");
+}
+
+// Plain code-unit order, independent of the viewer's language, matching SQL's
+// byte order for these fixed-format timestamps and lowercase UUIDs.
+function codeUnitOrder(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+// Display recency is independent of the partial projection's wire order.
 export function waypointListGroups(state: ExplorerConversationState): WaypointListGroups {
-  const newestFirst = [...connectedWaypointLines(state)].reverse();
+  const newestFirst = connectedWaypointLines({ ...state, waypoints: [...state.waypoints].sort((left, right) =>
+    codeUnitOrder(comparableWaypointInstant(right.createdAt), comparableWaypointInstant(left.createdAt)) || codeUnitOrder(left.id, right.id)) });
   return freeze({
     active: freeze(newestFirst.filter((line) => line.current.stage === "formed")),
     history: freeze(newestFirst.filter((line) => line.current.stage !== "formed")),

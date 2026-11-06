@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { CARD_LABELS, CARD_POINTS, CARD_WAYPOINTS, cardState } from "../../../../tests/browser/connectedCardFixture";
+import { CARD_LABELS, CARD_POINTS, CARD_WAYPOINTS, cardState, cardHistoryState } from "../../../../tests/browser/connectedCardFixture";
+import { parseExplorerWaypointPage } from "../explorerWaypointPortfolioContract";
 import {
   BOTTOM_ROW_PLACES,
   CONNECTED_COMPASS_WORDING,
@@ -24,6 +25,7 @@ import {
   needleHoldText,
   needleMovedText,
   pointNeedleIntent,
+  waypointListGroups,
   waypointStage,
   type NeedleHoldFlags,
 } from "../explorerConnectedCard";
@@ -32,6 +34,7 @@ import {
   parseExplorerConversationState,
   type ExplorerConversationCompassItem,
   type ExplorerConversationState,
+  type ExplorerConversationWaypoint,
 } from "../explorerConversationContract";
 
 // Chat step slices S1 and S2 (build spec 2026-11-03): the connected Compass & Waypoint card's
@@ -42,7 +45,7 @@ const SOURCE = "20000000-0000-4000-8000-000000000001";
 const POINT = (index: number) => `40000000-0000-4000-8000-00000000000${index}`;
 
 function bare(compassItems: ExplorerConversationCompassItem[], overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
-  return {
+  return { waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false },
     version: EXPLORER_CONVERSATION_VERSION, conversationId: "10000000-0000-4000-8000-000000000001", revision: 3, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null,
     providerState: "available", messages: [{ id: SOURCE, role: "explorer", body: "A synthetic message", createdAt: "2026-11-03T14:00:00.000Z" }],
     compassItems, priorityId: null, attentionId: null, waypoints: [], route: [], sessionStatus: "active", ending: null, ...overrides,
@@ -273,7 +276,8 @@ describe("connected Compass & Waypoint card mapping", () => {
   });
 
   it("ECC06 Waypoints: one line per current version with its stage, earlier versions most recent first as Earlier version", () => {
-    const lines = connectedWaypointLines(cardState());
+    expect(connectedWaypointLines(cardState()).every(line => line.earlier.length === 0)).toBe(true);
+    const lines = connectedWaypointLines(cardHistoryState());
     expect(lines.map((line) => [line.current.id, line.current.label, line.earlier.map((version) => [version.id, version.label])])).toEqual([
       [CARD_WAYPOINTS.formed, "Formed", [[CARD_WAYPOINTS.formedEarlier, "Earlier version - Formed"]]],
       [CARD_WAYPOINTS.reached, "Reached", [[CARD_WAYPOINTS.reachedEarlier, "Earlier version - Reached"]]],
@@ -284,20 +288,50 @@ describe("connected Compass & Waypoint card mapping", () => {
     const released = cardState().waypoints.find((waypoint) => waypoint.id === CARD_WAYPOINTS.released);
     expect(released && waypointStage(released)).toBe("released");
     // A longer line: every earlier version, the most recent first.
-    const base = { sourceMessageId: SOURCE, meaning: "Meaning", arrivalSignal: "Signal", status: "chosen" as const };
+    const base = { isCurrent: true, createdAt: "2026-11-03T14:00:00.000Z", sourceMessageId: SOURCE, meaning: "Meaning", arrivalSignal: "Signal", status: "chosen" as const };
     const clarify = (answer: string) => [{ component: "destination" as const, questionKey: "waypoint.destination.v1" as const, answer, recordedAt: "2026-11-03T14:00:00.000Z" }];
     const W = (index: number) => `60000000-0000-4000-8000-00000000000${index}`;
     const chain = bare([], { waypoints: [
-      { ...base, id: W(1), title: "One", destination: "One" },
-      { ...base, id: W(2), title: "Two", destination: "Two", lifecycle: { predecessorWaypointId: W(1), creationReason: "revision", clarifications: clarify("Two") } },
+      { ...base, isCurrent: false, id: W(1), title: "One", destination: "One" },
+      { ...base, isCurrent: false, id: W(2), title: "Two", destination: "Two", lifecycle: { predecessorWaypointId: W(1), creationReason: "revision", clarifications: clarify("Two") } },
       { ...base, id: W(3), title: "Three", destination: "Three", lifecycle: { predecessorWaypointId: W(2), creationReason: "revision", clarifications: clarify("Three") } },
       { ...base, id: W(4), title: "Alone", destination: "Alone" },
     ] });
-    expect(parseExplorerConversationState(chain)).not.toBeNull();
+    expect(parseExplorerWaypointPage({ kind: "history", limit: 20, hasMore: false, nextOffset: null,
+      items: chain.waypoints.map(item => ({ ...item, conversationId: chain.conversationId })) })).not.toBeNull();
     expect(connectedWaypointLines(chain).map((line) => [line.current.destination, line.earlier.map((version) => version.destination)])).toEqual([
       ["Three", ["Two", "One"]],
       ["Alone", []],
     ]);
+  });
+
+  it("ECC14 compact groups show newest heads first regardless of wire order, preserving microseconds and UUID ties", () => {
+    const W = (index: number) => `60000000-0000-4000-8000-00000000000${index}`;
+    const waypoint = (index: number, createdAt: string): ExplorerConversationWaypoint => ({
+      id: W(index), isCurrent: true, createdAt, sourceMessageId: SOURCE,
+      title: `Waypoint ${index}`, destination: `Destination ${index}`, meaning: "Meaning", arrivalSignal: "Signal", status: "chosen",
+    });
+    // Match SQL: active newest first, then closed newest first, UUID ascending on ties.
+    const wireOrder: readonly ExplorerConversationWaypoint[] = Object.freeze([
+      waypoint(4, "2026-11-03T14:00:00.123451Z"),
+      waypoint(2, "2026-11-03T14:00:00.12345Z"),
+      waypoint(3, "2026-11-03T14:00:00.123450+00:00"),
+      waypoint(1, "2026-11-03T14:00:00.12Z"),
+      { ...waypoint(7, "2026-11-03T14:10:00.000001Z"), status: "reached", reachedEvidence: "Arrived", reachedAt: "2026-11-03T15:00:00Z" },
+      { ...waypoint(5, "2026-11-03T14:10:00Z"), status: "reached", reachedEvidence: "Arrived", reachedAt: "2026-11-03T15:00:00Z" },
+      { ...waypoint(6, "2026-11-03T14:10:00.000000+00:00"), release: { operationId: "70000000-0000-4000-8000-000000000001", releasedAt: "2026-11-03T15:00:00Z" } },
+    ]);
+    for (const waypoints of [wireOrder, [...wireOrder].reverse(), [wireOrder[5], wireOrder[2], wireOrder[3], wireOrder[6], wireOrder[0], wireOrder[4], wireOrder[1]]]) {
+      const originalIds = waypoints.map(item => item.id);
+      const state = bare([], { waypoints, waypointCapacity: { activeCount: 4, activeLimit: 20, historyRoom: true },
+        waypointProjection: { kind: "current_heads", limit: 20, totalHeads: 7, hasMore: false } });
+      expect(parseExplorerConversationState(state)).not.toBeNull();
+      const groups = waypointListGroups(state);
+      expect(groups.active.map(line => line.current.id)).toEqual([W(4), W(2), W(3), W(1)]);
+      expect(groups.history.map(line => line.current.id)).toEqual([W(7), W(5), W(6)]);
+      expect(waypoints.map(item => item.id)).toEqual(originalIds);
+      expect(Object.isFrozen(groups.active) && Object.isFrozen(groups.history)).toBe(true);
+    }
   });
 
   it("ECC07 the needle is held by its own flags in a fixed order, never by an unavailable Virtual Guide", () => {

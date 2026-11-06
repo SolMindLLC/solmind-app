@@ -24,7 +24,7 @@ const ACTOR = { accountId: id(1), applicationSessionId: id(2) };
 const POLICY = { known: true, contractVersion: "explorer-conversation-safety.v1", restrictedLevel: null, adultReflectionStopped: false, version: 0 };
 const CHOICES = [{ label: "Explore this topic" }, { label: "I have a question" }];
 const COMMAND = { kind: "send", operationId: id(8), expectedRevision: 1, body: "Synthetic message about money worries." } as const;
-const COMPASS = { version: "explorer-compass-context.v5", points: [{ id: id(9), label: "Money worries", order: 0,
+const COMPASS = { version: "explorer-compass-context.v6", points: [{ id: id(9), label: "Money worries", order: 0,
   formation: "saved", anchor: null, emphasis: null }], priorityId: null, attentionId: null, recentRoute: [],
   waypoints: [{ id: id(12), title: "Review my spending", destination: "Review my spending", meaning: "Find room for rest",
     arrivalSignal: "One review completed", stage: "formed", reachedEvidence: null }], drafts: [] };
@@ -37,13 +37,13 @@ function fixture(proposals: Record<string, unknown>, options: { restrictedLevel?
     sourceVerificationReceiptSha256: SHA, resourceVerificationReceiptSha256: SHA,
     rendererVerificationReceiptSha256: SHA, signalVerificationReceiptSha256: SHA,
     methodology: { packId: id(6), versionId: id(7), contentSha256: SHA, authorizationVersion: "MV1:" + SHA } };
-  let current: ExplorerConversationState = { version: "explorer-conversation.v1", conversationId: id(3),
+  let current: ExplorerConversationState = { waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 1, hasMore: false }, version: "explorer-conversation.v1", conversationId: id(3),
     revision: 1, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable",
     messages: [{ id: id(10), role: "explorer", body: "Synthetic source about money worries.", createdAt: "2026-11-04T12:00:00Z" },
       ...(options.forming ? [{ id: id(13), role: "virtualGuide" as const, body: "Does Money worries fit?", createdAt: "2026-11-04T12:00:00.500Z" }] : [])],
     compassItems: [{ id: id(9), sourceMessageId: id(10), label: "Money worries",
       ...(options.forming ? { formation: "forming" as const, wordingMessageId: id(13) } : {}) }], priorityId: null, attentionId: null,
-    waypoints: [{ id: id(12), sourceMessageId: id(10), title: "Review my spending", destination: "Review my spending", meaning: "Find room for rest",
+    waypoints: [{ isCurrent: true, createdAt: "2026-11-06T09:00:00.000Z", id: id(12), sourceMessageId: id(10), title: "Review my spending", destination: "Review my spending", meaning: "Find room for rest",
       arrivalSignal: "One review completed", status: "chosen" }] };
   let policy = { ...POLICY, restrictedLevel: options.restrictedLevel ?? null,
     adultReflectionStopped: options.adultReflectionStopped ?? false };
@@ -110,7 +110,7 @@ function fixture(proposals: Record<string, unknown>, options: { restrictedLevel?
   });
   const buildContext = vi.fn<NonNullable<ExplorerPrivateConversationDependencies["buildContext"]>>(async input => {
     const authorizedContext = JSON.stringify({ contractVersion: input.mode === "classification_only"
-      ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v5",
+      ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v6",
       globalPolicy: { version: configuration.globalPolicy.version, text: configuration.globalPolicy.text },
       roleBehavior: { version: configuration.roleBehavior.version, text: configuration.roleBehavior.text },
       crisisBehavior: { version: configuration.crisisBehavior.version, text: configuration.crisisBehavior.text },
@@ -165,7 +165,7 @@ async function expectPreparedHttpInput(f: ReturnType<typeof fixture>, mode: "cla
   expect(prepared.p_context_source_ids).toEqual(built.evidence.p_context_source_ids);
   const context = JSON.parse(sent.input);
   expect(context.contractVersion).toBe(mode === "classification_only"
-    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v5");
+    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v6");
   if (mode === "classification_only") {
     expect(context).not.toHaveProperty("compassContext");
     for (const value of [id(9), id(12), "Money worries", "Review my spending", "Find room for rest", "One review completed"]) {

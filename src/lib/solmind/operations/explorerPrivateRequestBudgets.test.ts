@@ -17,7 +17,7 @@ const SESSION = "20000000-0000-4000-8000-000000000002";
 const SHA = "A".repeat(64);
 const ACTOR = Object.freeze({ accountId: ID, applicationSessionId: SESSION });
 const OPERATION = Object.freeze({ operationId: ID, fingerprint: SHA });
-const STATE = Object.freeze({ version: "explorer-conversation.v1" as const, conversationId: ID,
+const STATE = Object.freeze({ waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false }, version: "explorer-conversation.v1" as const, conversationId: ID,
   revision: 1, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable" as const,
   messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] });
 const ROW: ExplorerPrivateReadRow = Object.freeze({ outcome: "ok", conversation_state: STATE });
@@ -60,6 +60,10 @@ const ARRANGE: ExplorerPrivateArrangeParameters = Object.freeze({ ...ACTOR_PARAM
 const END: ExplorerPrivateEndParameters = Object.freeze({ ...ACTOR_PARAMETERS, p_conversation_id: ID,
   p_operation_id: ID, p_expected_revision: 1, p_command_fingerprint: SHA });
 const REVIEW: ExplorerPrivateReviewParameters = Object.freeze({ ...ACTOR_PARAMETERS, p_conversation_id: null });
+const HEADS = Object.freeze({ ...ACTOR_PARAMETERS, p_offset: 0 });
+const HISTORY = Object.freeze({ ...HEADS, p_conversation_id: ID });
+const CLOSURE = Object.freeze({ ...ACTOR_PARAMETERS, p_waypoint_id: ID, p_operation_id: ID,
+  p_command_fingerprint: SHA, p_kind: "release_waypoint" as const, p_reached_evidence: null });
 const SUGGESTION: ExplorerPrivateCompassSuggestionParameters = Object.freeze({ ...ACTOR_PARAMETERS, p_conversation_id: ID,
   p_operation_id: ID, p_expected_revision: 1, p_command_fingerprint: SHA, p_item_id: ID, p_response: "right" });
 const WAYPOINT_DRAFT = Object.freeze({ ...ACTOR_PARAMETERS, p_conversation_id: ID,
@@ -108,6 +112,9 @@ function fixture() {
     respondWaypointDraft: vi.fn<NonNullable<ExplorerPrivateConversationRepository["respondWaypointDraft"]>>(async () => ROW),
     end: vi.fn<NonNullable<ExplorerPrivateConversationRepository["end"]>>(async () => ROW),
     review: vi.fn<NonNullable<ExplorerPrivateConversationRepository["review"]>>(async () => ROW),
+    readWaypointHeads: vi.fn<NonNullable<ExplorerPrivateConversationRepository["readWaypointHeads"]>>(async () => ROW),
+    readWaypointHistory: vi.fn<NonNullable<ExplorerPrivateConversationRepository["readWaypointHistory"]>>(async () => ROW),
+    closeEndedWaypoint: vi.fn<NonNullable<ExplorerPrivateConversationRepository["closeEndedWaypoint"]>>(async () => ROW),
   };
   const authenticate = vi.fn<ExplorerPrivateConversationDependencies["authenticate"]>(async () => ACTOR);
   const dependencies: ExplorerPrivateConversationDependencies = { authenticate, repository };
@@ -127,10 +134,14 @@ function repositoryCalls(dependencies: ExplorerPrivateConversationDependencies) 
     respondWaypointDraft: () => dependencies.repository.respondWaypointDraft!(WAYPOINT_DRAFT),
     end: () => dependencies.repository.end!(END),
     review: () => dependencies.repository.review!(REVIEW),
+    readWaypointHeads: () => dependencies.repository.readWaypointHeads!(HEADS),
+    readWaypointHistory: () => dependencies.repository.readWaypointHistory!(HISTORY),
+    closeEndedWaypoint: () => dependencies.repository.closeEndedWaypoint!(CLOSURE),
   };
 }
 const EXPECTED_ARGUMENTS = { read: [ACTOR, OPERATION], ensure: [ENSURE], observe: [OBSERVE],
-  prepare: [PREPARE], settle: [SETTLE], pause: [ACTOR], mutate: [MUTATE], arrange: [ARRANGE], respondCompassSuggestion: [SUGGESTION], respondWaypointDraft: [WAYPOINT_DRAFT], end: [END], review: [REVIEW] };
+  prepare: [PREPARE], settle: [SETTLE], pause: [ACTOR], mutate: [MUTATE], arrange: [ARRANGE], respondCompassSuggestion: [SUGGESTION], respondWaypointDraft: [WAYPOINT_DRAFT], end: [END], review: [REVIEW],
+  readWaypointHeads: [HEADS], readWaypointHistory: [HISTORY], closeEndedWaypoint: [CLOSURE] };
 
 beforeEach(() => { vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] }); });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -148,6 +159,9 @@ describe("private request port budgets with explicit synthetic dependencies", ()
     expect(wrapped.repository).not.toHaveProperty("respondCompassSuggestion");
     expect(wrapped.repository).not.toHaveProperty("respondWaypointDraft");
     expect(wrapped.repository).not.toHaveProperty("end"); expect(wrapped.repository).not.toHaveProperty("review");
+    expect(wrapped.repository).not.toHaveProperty("readWaypointHeads");
+    expect(wrapped.repository).not.toHaveProperty("readWaypointHistory");
+    expect(wrapped.repository).not.toHaveProperty("closeEndedWaypoint");
     expect(await wrapped.authenticate()).toBe(ACTOR);
     expect(await wrapped.repository.read(ACTOR, OPERATION)).toBe(ROW);
     expect(f.repository.read).toHaveBeenCalledExactlyOnceWith(ACTOR, OPERATION);
@@ -155,7 +169,7 @@ describe("private request port budgets with explicit synthetic dependencies", ()
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it.each(["read", "ensure", "observe", "prepare", "settle", "pause", "mutate", "arrange", "respondCompassSuggestion", "respondWaypointDraft", "end", "review"] as const)(
+  it.each(["read", "ensure", "observe", "prepare", "settle", "pause", "mutate", "arrange", "respondCompassSuggestion", "respondWaypointDraft", "end", "review", "readWaypointHeads", "readWaypointHistory", "closeEndedWaypoint"] as const)(
     "bounds a stalled %s once with exact arguments and ignores a late success", async method => {
       const f = fixture(); const held = deferred<ExplorerPrivateReadRow>();
       f.repository[method].mockImplementation(() => held.promise);
@@ -272,7 +286,7 @@ describe("private request port budgets with explicit synthetic dependencies", ()
 it("propagates the supplied arrangement capability and exact arguments without reaching any other port", async () => {
   const f = fixture();
   const wrapped = withExplorerPrivateRequestBudgets(f.dependencies);
-  expect(Object.keys(wrapped.repository).sort()).toEqual(["arrange", "end", "ensure", "mutate", "observe", "pause", "prepare", "read", "respondCompassSuggestion", "respondWaypointDraft", "review", "settle"]);
+  expect(Object.keys(wrapped.repository).sort()).toEqual(["arrange", "closeEndedWaypoint", "end", "ensure", "mutate", "observe", "pause", "prepare", "read", "readWaypointHeads", "readWaypointHistory", "respondCompassSuggestion", "respondWaypointDraft", "review", "settle"]);
   expect(await wrapped.repository.arrange!(ARRANGE)).toBe(ROW);
   expect(f.repository.arrange).toHaveBeenCalledExactlyOnceWith(ARRANGE);
   expect(f.repository.arrange.mock.calls[0][0]).toBe(ARRANGE);

@@ -109,7 +109,9 @@ select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid=
 select ok(not has_function_privilege('service_role','ai.solmind_conversation_authority(uuid,uuid,uuid)','EXECUTE'),
   'internal authority helper is not an application RPC');
 
-select is((select conversation_state from public.solmind_read_explorer_conversation(pg_temp.cid(1),pg_temp.cid(50))),
+-- Lane 7 (2026-11-06) adds waypointCapacity and waypointProjection, pinned by explorer_waypoint_active_limits_test.sql;
+-- these comparisons leave out only those two fields, so every field this file owns stays pinned exactly.
+select is((select conversation_state from public.solmind_read_explorer_conversation(pg_temp.cid(1),pg_temp.cid(50)))-'waypointCapacity'-'waypointProjection',
   '{"version":"explorer-conversation.v1","conversationId":null,"revision":0,"pendingTurn":false,"turnedDownLimitReached":false,"providerState":"unavailable","sessionStatus":null,"ending":null,"messages":[],"compassItems":[],"priorityId":null,"attentionId":null,"route":[],"waypoints":[],"waypointDraft":null}'::jsonb,
   'authorized empty Discovery has the exact closed browser shape');
 select ok((select authority_context->>'authorizationVersion' ~ '^AV2:[0-9A-F]{64}$'
@@ -293,17 +295,17 @@ select is((select outcome from pg_temp.mutate(222,34,'add_compass',pg_temp.cid(6
 select is((select count(*)::integer from ai.explorer_conversation_operation where operation_id=pg_temp.cid(222)),0,
   'Compass capacity refusal has no retained operation');
 do $$ declare x integer; r record; begin
-  for x in 0..18 loop
+  for x in 0..19 loop
     select * into r from pg_temp.mutate(300+x,34+x,'confirm_waypoint',pg_temp.cid(64),null,null,null,
       'Synthetic capacity destination '||x,'Synthetic capacity meaning','Synthetic capacity arrival');
     if r.outcome is distinct from 'ok' then raise exception 'synthetic_waypoint_capacity_setup_failed'; end if;
   end loop;
 end $$;
-select is((select count(*)::integer from content.waypoint where source_ai_interaction_session_id=pg_temp.cid(51)),20,
-  '20 explicit private Waypoints fit the finite bound');
-select is((select outcome from pg_temp.mutate(319,53,'confirm_waypoint',pg_temp.cid(61),null,null,null,
-  'Synthetic twenty-first destination','Synthetic meaning','Synthetic arrival')),'unavailable','twenty-first Waypoint is refused');
-select is((select count(*)::integer from ai.explorer_conversation_operation where operation_id=pg_temp.cid(319)),0,
+select is((select count(*)::integer from content.waypoint where source_ai_interaction_session_id=pg_temp.cid(51)),21,
+  'twenty active Waypoints and the earlier Reached row remain stored');
+select is((select outcome from pg_temp.mutate(320,54,'confirm_waypoint',pg_temp.cid(61),null,null,null,
+  'Synthetic twenty-first active destination','Synthetic meaning','Synthetic arrival')),'unavailable','twenty-first active Waypoint is refused');
+select is((select count(*)::integer from ai.explorer_conversation_operation where operation_id=pg_temp.cid(320)),0,
   'Waypoint capacity refusal has no retained operation');
 -- Direct synthetic message rows isolate the pair-reservation boundary. These
 -- rows are fixture setup, not claims of RPC/provider/browser execution.
@@ -311,7 +313,7 @@ insert into ai.ai_interaction_message(ai_interaction_message_id,ai_interaction_s
   sender_type,sender_user_account_id,sender_role_context,content_text)
 select pg_temp.cid(1000+n),pg_temp.cid(51),n,'user',pg_temp.cid(1),'explorer','Synthetic capacity history '||n
   from generate_series(5,99) n;
-select is((select outcome from pg_temp.prepare_turn(3,'Synthetic turn beyond reserved pair capacity',53)),
+select is((select outcome from pg_temp.prepare_turn(3,'Synthetic turn beyond reserved pair capacity',54)),
   'unavailable','99 saved messages cannot reserve an Explorer/reply pair under the 100-message cap');
 select is((select count(*)::integer from ai.ai_context_snapshot where ai_interaction_session_id=pg_temp.cid(51)),3,
   'message-cap refusal creates no additional successor evidence');

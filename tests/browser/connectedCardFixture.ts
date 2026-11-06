@@ -2,11 +2,11 @@
 // slices S1 and S2): an arranged Compass with a Priority, the needle, points
 // on 5 of the 8 positions, a point not yet arranged, an Other paths point and
 // a combined (hidden) original, and one Waypoint at each stage, each with an
-// earlier version. No real person's words. The unit test
+// earlier version in the test-only history fixture. The wire fixture contains
+// current heads only. No real person's words. The unit test
 // src/lib/solmind/__tests__/explorerConnectedCard.test.ts proves that the
 // closed browser parser accepts it.
 import {
-  EXPLORER_CONVERSATION_LIMITS,
   EXPLORER_CONVERSATION_VERSION,
   type ExplorerConversationState,
 } from "../../src/lib/solmind/explorerConversationContract";
@@ -58,11 +58,13 @@ export const CARD_WAYPOINTS = Object.freeze({
   released: WAYPOINT("c1"),
 });
 
-export const cardState = (overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState => ({
+export const cardHistoryState = (overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState => ({
   version: EXPLORER_CONVERSATION_VERSION,
   conversationId: CARD_CONVERSATION,
   revision: 12,
   pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null,
+  waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true },
+  waypointProjection: { kind: "current_heads", limit: 20, totalHeads: 3, hasMore: false },
   providerState: "unavailable",
   messages: MESSAGES,
   compassItems: [
@@ -78,27 +80,27 @@ export const cardState = (overrides: Partial<ExplorerConversationState> = {}): E
   priorityId: CARD_POINTS.priority,
   attentionId: CARD_POINTS.attention,
   waypoints: [
-    { id: CARD_WAYPOINTS.formedEarlier, sourceMessageId: EXPLORER_SOURCE, title: "Ask my sister for a calm hour", destination: "Ask my sister for a calm hour",
+    { id: CARD_WAYPOINTS.formedEarlier, isCurrent: false, createdAt: "2026-11-02T10:00:00.000Z", sourceMessageId: EXPLORER_SOURCE, title: "Ask my sister for a calm hour", destination: "Ask my sister for a calm hour",
       meaning: "So we can talk without rushing", arrivalSignal: "We have a day and a time", status: "chosen" },
-    { id: CARD_WAYPOINTS.reachedEarlier, sourceMessageId: MESSAGES[2].id, title: "Write down what I need", destination: "Write down what I need",
+    { id: CARD_WAYPOINTS.reachedEarlier, isCurrent: false, createdAt: "2026-11-02T11:00:00.000Z", sourceMessageId: MESSAGES[2].id, title: "Write down what I need", destination: "Write down what I need",
       meaning: "So I do not lose my point", arrivalSignal: "I have three lines on paper", status: "reached",
       reachedEvidence: "I wrote three lines on Sunday.", reachedAt: "2026-11-02T20:00:00.000Z" },
-    { id: CARD_WAYPOINTS.releasedEarlier, sourceMessageId: MESSAGES[3].id, title: "Fix the budget this month", destination: "Fix the budget this month",
+    { id: CARD_WAYPOINTS.releasedEarlier, isCurrent: false, createdAt: "2026-11-02T12:00:00.000Z", sourceMessageId: MESSAGES[3].id, title: "Fix the budget this month", destination: "Fix the budget this month",
       meaning: "Money worry keeps me up", arrivalSignal: "The budget sheet is done",
       status: "chosen", release: { operationId: "70000000-0000-4000-8000-0000000000c1", releasedAt: "2026-11-02T21:00:00.000Z" } },
-    { id: CARD_WAYPOINTS.formed, sourceMessageId: EXPLORER_SOURCE, title: "Ask my sister for a calm evening", destination: "Ask my sister for a calm evening",
+    { id: CARD_WAYPOINTS.formed, isCurrent: true, createdAt: "2026-11-03T14:10:00.000Z", sourceMessageId: EXPLORER_SOURCE, title: "Ask my sister for a calm evening", destination: "Ask my sister for a calm evening",
       meaning: "So we can talk without rushing", arrivalSignal: "We have a day and a time", status: "chosen",
       lifecycle: { predecessorWaypointId: CARD_WAYPOINTS.formedEarlier, creationReason: "revision", clarifications: [
         { component: "destination", questionKey: "waypoint.destination.v1", answer: "Ask my sister for a calm evening", recordedAt: "2026-11-03T14:10:00.000Z" },
       ] } },
-    { id: CARD_WAYPOINTS.reached, sourceMessageId: MESSAGES[2].id, title: "Say what I need in one sentence", destination: "Say what I need in one sentence",
+    { id: CARD_WAYPOINTS.reached, isCurrent: true, createdAt: "2026-11-03T14:15:00.000Z", sourceMessageId: MESSAGES[2].id, title: "Say what I need in one sentence", destination: "Say what I need in one sentence",
       meaning: "So I do not lose my point", arrivalSignal: "I can say it out loud once", status: "reached",
       reachedEvidence: "I said it out loud this morning.", reachedAt: "2026-11-03T14:20:00.000Z",
       lifecycle: { predecessorWaypointId: CARD_WAYPOINTS.reachedEarlier, creationReason: "revisit", clarifications: [
         { component: "destination", questionKey: "waypoint.destination.v1", answer: "Say what I need in one sentence", recordedAt: "2026-11-03T14:15:00.000Z" },
         { component: "arrivalSignal", questionKey: "waypoint.arrivalSignal.v1", answer: "I can say it out loud once", recordedAt: "2026-11-03T14:15:00.000Z" },
       ] } },
-    { id: CARD_WAYPOINTS.released, sourceMessageId: MESSAGES[3].id, title: "Fix the budget this month", destination: "Fix the budget this month",
+    { id: CARD_WAYPOINTS.released, isCurrent: true, createdAt: "2026-11-03T14:25:00.000Z", sourceMessageId: MESSAGES[3].id, title: "Fix the budget this month", destination: "Fix the budget this month",
       meaning: "It can wait until the talk is done", arrivalSignal: "The budget sheet is done",
       status: "chosen", release: { operationId: "70000000-0000-4000-8000-0000000000c2", releasedAt: "2026-11-03T14:30:00.000Z" },
       lifecycle: { predecessorWaypointId: CARD_WAYPOINTS.releasedEarlier, creationReason: "revisit", clarifications: [
@@ -111,16 +113,16 @@ export const cardState = (overrides: Partial<ExplorerConversationState> = {}): E
   ...overrides,
 });
 
-// Capacity counts all stored rows, including the Reached, Released and earlier
-// versions above, even though they are not current chosen Waypoints.
+// Conversation wire state is partial; older versions stay in the history fixture.
+export function cardState(overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
+  const original = cardHistoryState();
+  const waypoints = overrides.waypoints ?? original.waypoints.filter(item => item.isCurrent);
+  return { ...original, waypoints,
+    waypointProjection: { kind: "current_heads", limit: 20, totalHeads: waypoints.length, hasMore: false }, ...overrides };
+}
+
+// Account-wide capacity can be full while only three local heads are displayed.
 export function cardStateAtWaypointLimit(): ExplorerConversationState {
   const state = cardState();
-  return { ...state, waypoints: [...state.waypoints,
-    ...Array.from({ length: EXPLORER_CONVERSATION_LIMITS.waypoints - state.waypoints.length }, (_, index) => ({
-      id: `60000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
-      sourceMessageId: EXPLORER_SOURCE, title: `Synthetic Waypoint ${index + 1}`,
-      destination: "A synthetic destination", meaning: "A synthetic reason",
-      arrivalSignal: "A synthetic arrival signal", status: "chosen" as const,
-    })),
-  ] };
+  return { ...state, waypointCapacity: { activeCount: 20, activeLimit: 20, historyRoom: true } };
 }

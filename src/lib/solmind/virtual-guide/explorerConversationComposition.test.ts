@@ -62,7 +62,7 @@ const denied = { ok: false, state: null, error: "denied" };
 const unavailable = { ok: false, state: null, error: "unavailable" };
 const send: ExplorerConversationCommand = Object.freeze({ kind: "send", operationId: ID.operation, expectedRevision: 4, body: "A new synthetic question" });
 function state(): ExplorerConversationState {
-  return {
+  return { waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false },
     version: EXPLORER_CONVERSATION_VERSION, conversationId: ID.conversation,
     revision: 4, providerState: "available", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null,
     messages: [{ id: ID.sourceMessage, role: "explorer", body: "An earlier saved question", createdAt: "2026-10-24T06:00:00.000Z" }],

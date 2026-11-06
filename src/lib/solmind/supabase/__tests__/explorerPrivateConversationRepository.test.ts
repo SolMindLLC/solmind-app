@@ -103,7 +103,8 @@ describe("Closed private Explorer RPC repository (synthetic client)", () => {
     }
   });
   it("S7a refuses absent or malformed draft state on read and ended review", async () => {
-    const valid = { turnedDownLimitReached: false, waypointDraft: null };
+    const valid = { turnedDownLimitReached: false, waypointDraft: null,
+      waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true } };
     const draft = { id: UUID, title: "Name", destination: null, whyItMatters: "Meaning", arrivalSignal: null, suggestionMessageId: UUID };
     for (const waypointDraft of [null, draft]) {
       const conversation_state = { ...valid, waypointDraft };
@@ -121,6 +122,7 @@ describe("Closed private Explorer RPC repository (synthetic client)", () => {
   });
   it("read and ended review require a boolean turned-down limit without changing other state fields", async () => {
     const state = { version: "explorer-conversation.v1", conversationId: UUID, revision: 0,
+      waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true },
       pendingTurn: false, waypointDraft: null, providerState: "unavailable", messages: [], compassItems: [],
       priorityId: null, attentionId: null, waypoints: [] };
     for (const turnedDownLimitReached of [false, true]) {
@@ -142,9 +144,9 @@ describe("Closed private Explorer RPC repository (synthetic client)", () => {
       expect(ended.rpc).toHaveBeenCalledOnce();
     }
   });
-  it("exposes fifteen closed ports including suggestion replies, End, ended review and the pause read, without generic access", () => {
+  it("exposes eighteen closed ports including private Waypoint pages and post-End closure, without generic access", () => {
     const f = fixture(null);
-    expect(Object.keys(f.repository).sort()).toEqual(["arrange", "category", "end", "ensure", "mutate", "observe", "pause", "prepare", "read", "release", "respondCompassSuggestion", "respondWaypointDraft", "review", "settle", "waypointRevision"]);
+    expect(Object.keys(f.repository).sort()).toEqual(["arrange", "category", "closeEndedWaypoint", "end", "ensure", "mutate", "observe", "pause", "prepare", "read", "readWaypointHeads", "readWaypointHistory", "release", "respondCompassSuggestion", "respondWaypointDraft", "review", "settle", "waypointRevision"]);
     expect(Object.isFrozen(f.repository)).toBe(true);
   });
   it("read derives exact actor fields and paired operation selectors", async () => {

@@ -3,12 +3,19 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { ExplorerConversationFormation } from "../ExplorerConversationFormation";
 import { buildAttentionFormationIntent } from "../../../lib/solmind/explorerConversationFormation";
-import { EXPLORER_CONVERSATION_VERSION, type ExplorerConversationState } from "../../../lib/solmind/explorerConversationContract";
+import { WAYPOINT_ACTIVE_LIMIT_REASON, WAYPOINT_HISTORY_LIMIT_REASON } from "../../../lib/solmind/explorerWaypointCapacity";
+import { EXPLORER_CONVERSATION_VERSION, type ExplorerConversationState, type ExplorerConversationWaypoint } from "../../../lib/solmind/explorerConversationContract";
 
-function state(overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
+type FixtureWaypoint = Omit<ExplorerConversationWaypoint, "isCurrent" | "createdAt"> & Partial<Pick<ExplorerConversationWaypoint, "isCurrent" | "createdAt">>;
+function state(overrides: Partial<Omit<ExplorerConversationState, "waypoints">> & { waypoints?: readonly FixtureWaypoint[] } = {}): ExplorerConversationState {
+  const waypoints = overrides.waypoints ?? [];
   return { version: EXPLORER_CONVERSATION_VERSION, conversationId: null, revision: 0,
+    waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true },
+    waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: waypoints.length },
     providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, messages: [], compassItems: [], priorityId: null,
-    attentionId: null, waypoints: [], ...overrides };
+    attentionId: null, ...overrides, waypoints: waypoints.map(item => ({
+      isCurrent: !waypoints.some(other => other.lifecycle?.predecessorWaypointId === item.id),
+      createdAt: "2026-10-29T10:00:00Z", ...item })) };
 }
 
 describe("Formation presentation (static proof only)", () => {
@@ -390,6 +397,8 @@ describe("Category presentation (static proof only)", () => {
     expect(html).toContain("Explorer clarification in this conversation — destination");
     expect(html).toContain("Application question: Where do you want to arrive now?");
     expect(html).toContain("kept separately from model replies");
+    expect(html).toContain("You confirmed a new current lifecycle. Earlier Reached evidence or release history does not count as current arrival. The earlier definition stays saved privately. Earlier versions cannot currently be opened.");
+    expect(html).not.toContain("Review the earlier saved version");
     expect(html).not.toContain("Revisit this Waypoint in the conversation");
     expect(html).not.toContain("Clarify this Waypoint in the conversation");
     expect(onCommand).not.toHaveBeenCalled();
@@ -408,9 +417,63 @@ describe("Category presentation (static proof only)", () => {
     expect(html).toContain("Earlier version - Formed");
     expect(html).toContain("Earlier version - Released");
     expect(html).not.toContain("Earlier version - Reached");
+    expect(html).toContain("You confirmed a revised understanding. The earlier definition stays saved privately. Earlier versions cannot currently be opened.");
+    expect(html).toContain("You confirmed a new current lifecycle. Earlier Reached evidence or release history does not count as current arrival. The earlier definition stays saved privately. Earlier versions cannot currently be opened.");
+    expect(html).not.toContain("Review the earlier saved version");
     expect(html).not.toContain("Superseded");
     // The current versions keep the old tools' own labels (decision 8: the old tools otherwise stay as they are).
     expect(html.split("In progress — chosen by you").length - 1).toBe(2);
   });
 
+});
+
+describe("Waypoint capacity explanations beside formation controls", () => {
+  const source = { id: "message-a", role: "explorer" as const, body: "Saved source", createdAt: "2026-11-06T10:00:00Z" };
+  const waypoint = { id: "waypoint-a", sourceMessageId: source.id, title: "Destination", destination: "Destination",
+    meaning: "Meaning", arrivalSignal: "Signal", status: "chosen" as const };
+  const render = (saved: ExplorerConversationState) => renderToStaticMarkup(createElement(ExplorerConversationFormation,
+    { state: saved, busy: false, onCommand: vi.fn() }));
+
+  it("describes disabled add/revisit with the server's count while leaving revision enabled", () => {
+    const current = state({ conversationId: "conversation-a", sessionStatus: "active", messages: [source],
+      waypointCapacity: { activeCount: 21, activeLimit: 20, historyRoom: true },
+      waypoints: [waypoint, { ...waypoint, id: "waypoint-b", status: "reached" }] });
+    const html = render(current);
+    const reason = WAYPOINT_ACTIVE_LIMIT_REASON.replace("{activeCount}", "21").replace("{activeLimit}", "20");
+    expect(html.split(reason).length - 1).toBe(2);
+    const clarify = /<button[^>]*>Clarify this Waypoint in the conversation<\/button>/.exec(html)?.[0];
+    expect(clarify).toBeDefined();
+    expect(clarify).not.toContain('disabled=""');
+    expect(clarify).not.toContain("aria-describedby");
+    const revisitDescription = /<button[^>]*disabled="" aria-describedby="([^"]+)"[^>]*>Revisit this Waypoint in the conversation/.exec(html)?.[1];
+    expect(revisitDescription).toBeDefined();
+    expect(html).toContain(`<p id="${revisitDescription}" role="alert" tabindex="0"`);
+    const addDescription = /<fieldset disabled="" aria-describedby="([^"]+)"/.exec(html)?.[1];
+    expect(addDescription).toBeDefined();
+    expect(html).toContain(`<p id="${addDescription}" role="alert" tabindex="0"`);
+    expect(html).toMatch(new RegExp(`<button[^>]*aria-describedby="${addDescription}"[^>]*>Confirm and save private Waypoint`));
+  });
+
+  it("explains history exhaustion first beside revision and add without blocking Reached or Release", () => {
+    const html = render(state({ conversationId: "conversation-a", sessionStatus: "active", messages: [source], waypoints: [waypoint],
+      waypointCapacity: { activeCount: 21, activeLimit: 20, historyRoom: false } }));
+    expect(html.split(WAYPOINT_HISTORY_LIMIT_REASON).length - 1).toBe(2);
+    expect(html).not.toContain("You have 21 active Waypoints");
+    expect(html).toMatch(/<button[^>]*disabled="" aria-describedby="[^"]+"[^>]*>Clarify this Waypoint in the conversation/);
+    for (const label of ["Review Reached: Destination", "Review release: Destination"]) {
+      const button = new RegExp(`<button[^>]*>${label}<\\/button>`).exec(html)?.[0];
+      expect(button).toBeDefined();
+      expect(button).not.toContain('disabled=""');
+    }
+  });
+
+  it("keeps unknown capacity closed with unavailable wording and no limit claim", () => {
+    const html = render(state({ conversationId: "conversation-a", sessionStatus: "active", messages: [source], waypoints: [waypoint],
+      waypointCapacity: null as unknown as ExplorerConversationState["waypointCapacity"] }));
+    expect(html.split("The conversation could not be loaded. Please try again.").length - 1).toBe(2);
+    expect(html).not.toContain("active Waypoints across your conversations");
+    expect(html).not.toContain("limit of 200");
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Clarify this Waypoint in the conversation/);
+    expect(html).toMatch(/<fieldset disabled="" aria-describedby="[^"]+"/);
+  });
 });

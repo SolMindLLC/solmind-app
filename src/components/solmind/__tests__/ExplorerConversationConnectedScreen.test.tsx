@@ -4,7 +4,7 @@ import { createElement, createRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CARD_LABELS, CARD_POINTS, cardState } from "../../../../tests/browser/connectedCardFixture";
+import { CARD_LABELS, CARD_POINTS, cardState, cardHistoryState } from "../../../../tests/browser/connectedCardFixture";
 import ExplorerConversationPage from "../../../app/explorer/conversation/page";
 import {
   CONNECTED_COMPASS_WORDING,
@@ -90,7 +90,7 @@ const VOID_ELEMENTS = new Set(["area", "base", "br", "col", "embed", "hr", "img"
 const CONVERSATION = "10000000-0000-4000-8000-000000000001";
 const ALL_NOTES = Object.values(notYetImplementedNotes(UNNAMED_GUIDE));
 
-const savedState = (overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState => ({
+const savedState = (overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState => ({ waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false },
   version: EXPLORER_CONVERSATION_VERSION,
   conversationId: CONVERSATION,
   revision: 2,
@@ -722,7 +722,10 @@ describe("connected Explorer conversation screen", () => {
     new RegExp(`<button aria-controls="${scope}-connected-needle-why" aria-expanded="(true|false)" class="([^"]*)" style="([^"]*)" type="button"><span class="sr-only">${DASHED_NEEDLE_WORDING.button}</span></button>`).exec(html);
 
   it("CC21 the card shows the saved Compass on its 8 positions and each Waypoint with its stage and earlier versions", () => {
-    const panel = panelOf(render(view({ state: cardState() })));
+    const partial = panelOf(render(view({ state: cardState() })));
+    expect(partial).not.toContain("Earlier versions, kept in your private history");
+    // Retain the presentation contract for explicitly supplied history rows.
+    const panel = panelOf(render(view({ state: cardHistoryState() })));
     // The Compass and Waypoints areas are connected now: their headings carry no grey label. Under the Compass
     // heading comes the button that switches views, then the Full view, shown first: since the chat card redesign
     // (Paul's decision, decision queue 2026-11-03 18:05:33 CST) "Point the needle to change topic" with no

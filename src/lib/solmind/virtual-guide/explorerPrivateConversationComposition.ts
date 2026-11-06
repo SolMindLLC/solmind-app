@@ -79,9 +79,14 @@ export type ExplorerPrivateReleaseParameters = ActorParameters & Readonly<{
 export type ExplorerPrivateEndParameters = ActorParameters & Readonly<{
   p_conversation_id: string; p_operation_id: string; p_expected_revision: number; p_command_fingerprint: string }>;
 export type ExplorerPrivateReviewParameters = ActorParameters & Readonly<{ p_conversation_id: string | null }>;
+export type ExplorerPrivateWaypointHeadsParameters = ActorParameters & Readonly<{ p_offset: number }>;
+export type ExplorerPrivateWaypointHistoryParameters = ExplorerPrivateWaypointHeadsParameters & Readonly<{ p_conversation_id: string }>;
+export type ExplorerPrivateWaypointClosureParameters = ActorParameters & Readonly<{
+  p_waypoint_id: string; p_operation_id: string; p_command_fingerprint: string;
+  p_kind: "reach_waypoint" | "release_waypoint"; p_reached_evidence: string | null }>;
 export type ExplorerPrivateConversationReviewResult = NonNullable<ReturnType<typeof parseExplorerConversationReviewResult>>;
 export type ExplorerPrivateRpcRow = Readonly<{ outcome: string; ended_conversations?: unknown; conversation_state?: unknown; authority_context?: unknown;
-  policy_state?: unknown; dispatch_permitted?: boolean; saved_reply?: boolean }>;
+  policy_state?: unknown; dispatch_permitted?: boolean; saved_reply?: boolean; waypoint_page?: unknown }>;
 export type ExplorerPrivateReadRow = ExplorerPrivateRpcRow & Readonly<{ conversation_state: unknown }>;
 export type ExplorerPrivatePauseNoticeKind = "individual" | "shared" | "individual_and_shared";
 // crisis and adults_only are private facts for the Explorer's own screen: never log them or pass them to signals.
@@ -106,6 +111,9 @@ export type ExplorerPrivateConversationRepository = Readonly<{
   release?: (parameters: ExplorerPrivateReleaseParameters) => Promise<ExplorerPrivateRpcRow>;
   end?: (parameters: ExplorerPrivateEndParameters) => Promise<ExplorerPrivateRpcRow>;
   review?: (parameters: ExplorerPrivateReviewParameters) => Promise<ExplorerPrivateRpcRow>;
+  readWaypointHeads?: (parameters: ExplorerPrivateWaypointHeadsParameters) => Promise<ExplorerPrivateRpcRow>;
+  readWaypointHistory?: (parameters: ExplorerPrivateWaypointHistoryParameters) => Promise<ExplorerPrivateRpcRow>;
+  closeEndedWaypoint?: (parameters: ExplorerPrivateWaypointClosureParameters) => Promise<ExplorerPrivateRpcRow>;
 }>;
 export type ExplorerPrivateConversationResult = Readonly<{ result: ExplorerConversationResult; assistance: ExplorerPrivateAssistance | null }>;
 export type ExplorerPrivateOperationalReadiness = Readonly<{

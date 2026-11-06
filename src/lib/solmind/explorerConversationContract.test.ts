@@ -36,17 +36,21 @@ function without(value: Record<string, unknown>, key: string): Record<string, un
 }
 function emptyState() {
   return { version: EXPLORER_CONVERSATION_VERSION, conversationId: null, revision: 0,
+    waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true },
+    waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: 0 },
     providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, messages: [], compassItems: [], priorityId: null,
     attentionId: null, waypoints: [] };
 }
 function populatedState() {
   return { version: EXPLORER_CONVERSATION_VERSION, conversationId: uuid(1), revision: 3,
+    waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true },
+    waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: 1 },
     providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, messages: [
       { id: sourceId, role: "explorer", body: "I want an unhurried morning.\nWhat could that look like?", createdAt: "2026-10-24T05:05:00.000Z" },
       { id: uuid(3), role: "virtualGuide", body: "What would tell you that you arrived?", createdAt: "2026-10-24T05:05:01.123456+00:00" },
     ], compassItems: [{ id: pointId, sourceMessageId: sourceId, label: "Calmer mornings" }],
     priorityId: pointId, attentionId: pointId, waypoints: [{
-      id: waypointId, sourceMessageId: uuid(3), title: "An unhurried morning", destination: "An unhurried morning",
+      id: waypointId, isCurrent: true, createdAt: "2026-10-24T05:05:02Z", sourceMessageId: uuid(3), title: "An unhurried morning", destination: "An unhurried morning",
       meaning: "Connecting with my family", arrivalSignal: "A calm breakfast together", status: "chosen",
     }] };
 }
@@ -449,8 +453,9 @@ describe("Explorer conversation closed result parser", () => {
     const original = populatedState();
     const messages = Array.from({ length: EXPLORER_CONVERSATION_LIMITS.messages }, (_, index) => ({ ...original.messages[0], id: uuid(100 + index) }));
     const compassItems = Array.from({ length: EXPLORER_CONVERSATION_LIMITS.compassItems }, (_, index) => ({ ...original.compassItems[0], id: uuid(300 + index), sourceMessageId: messages[0].id }));
-    const waypoints = Array.from({ length: EXPLORER_CONVERSATION_LIMITS.waypoints }, (_, index) => ({ ...original.waypoints[0], id: uuid(400 + index), sourceMessageId: messages[1].id }));
-    const maximum = { ...original, messages, compassItems, waypoints, priorityId: compassItems[0].id, attentionId: compassItems[1].id };
+    const waypoints = Array.from({ length: EXPLORER_CONVERSATION_LIMITS.waypointPage }, (_, index) => ({ ...original.waypoints[0], id: uuid(400 + index), sourceMessageId: messages[1].id }));
+    const maximum = { ...original, messages, compassItems, waypoints, priorityId: compassItems[0].id, attentionId: compassItems[1].id,
+      waypointProjection: { ...original.waypointProjection, totalHeads: 20 } };
     const parsed = parseExplorerConversationResult(success(maximum));
     expect(parsed?.ok && parsed.state.messages.length).toBe(100);
     expect(parsed?.ok && parsed.state.compassItems.length).toBe(24);
@@ -481,7 +486,8 @@ describe("Explorer conversation closed result parser", () => {
   it("preserves valid message and Waypoint Unicode/paragraphs but rejects malformed or excessive text", () => {
     const original = populatedState();
     const body = "My words\n🧭 A second paragraph";
-    const messageResult = parseExplorerConversationResult(success({ ...original, messages: [{ ...original.messages[0], body }], waypoints: [] }));
+    const messageResult = parseExplorerConversationResult(success({ ...original, messages: [{ ...original.messages[0], body }], waypoints: [],
+      waypointProjection: { ...original.waypointProjection, totalHeads: 0 } }));
     expect(messageResult?.ok && messageResult.state.messages[0].body).toBe(body);
     for (const bad of [" ", "bad\ud800text", "bad\u0000text", "x".repeat(8_193)]) {
       expect(parseExplorerConversationResult(success({ ...original, messages: [{ ...original.messages[0], body: bad }, original.messages[1]] }))).toBeNull();

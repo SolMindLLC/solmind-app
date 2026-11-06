@@ -1,7 +1,7 @@
 import type { ExplorerConversationState } from "@/lib/solmind/explorerConversationContract";
 import type { ExplorerConversationFormationIntent } from "@/lib/solmind/explorerConversationFormation";
 import { COMPASS_SUGGESTION_REPLY_HOLDS } from "@/lib/solmind/explorerCompassSuggestionReplies";
-import { completeWaypointDraft, formingWaypointForMessage, waypointLimitReached, WAYPOINT_DRAFT_LIMIT_REASON, WAYPOINT_DRAFT_WORDING as W } from "@/lib/solmind/explorerWaypointDraft";
+import { completeWaypointDraft, formingWaypointForMessage, waypointLimitReached, waypointDraftLimitReason, WAYPOINT_DRAFT_WORDING as W } from "@/lib/solmind/explorerWaypointDraft";
 import { suggestionReplyButtons } from "./ExplorerCompassSuggestionReplies";
 
 // Saved proposed wording only, within the latest suggesting message's list item.
@@ -17,6 +17,7 @@ export function ExplorerWaypointDraft({ state, messageId, held, followUpHeld, on
   const availability = state.compassSuggestionReplies ?? "unavailable";
   const title = draft.title ?? W.unnamed;
   const atLimit = waypointLimitReached(state);
+  const limitReason = waypointDraftLimitReason(state);
   const showLimitReason = atLimit && state.sessionStatus !== "ended" && availability === "available";
   return (
     <div aria-describedby={showLimitReason ? `waypoint-suggestion-limit-${draft.id}` : undefined}
@@ -43,8 +44,9 @@ export function ExplorerWaypointDraft({ state, messageId, held, followUpHeld, on
         <p className="text-sm leading-6 text-stone-300">{COMPASS_SUGGESTION_REPLY_HOLDS[availability]}</p>
       )}
       {showLimitReason && (
-        <p className="text-sm leading-6 text-stone-300" id={`waypoint-suggestion-limit-${draft.id}`}>
-          {WAYPOINT_DRAFT_LIMIT_REASON}
+        <p aria-live="polite" className="text-sm leading-6 text-stone-300" id={`waypoint-suggestion-limit-${draft.id}`}
+          role="status" tabIndex={0}>
+          {limitReason}
         </p>
       )}
     </div>

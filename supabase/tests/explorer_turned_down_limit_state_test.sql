@@ -149,7 +149,7 @@ create function pg_temp.compass_context() returns jsonb language sql stable as $
     select 'set_attention',(value->>'recordedAt')::timestamptz,'attention_changed',(value->>'pointId')::uuid,
       (value->>'revision')::integer-1,null::uuid from forming_move where value is not null
   )
-  select jsonb_build_object('version','explorer-compass-context.v5',
+  select jsonb_build_object('version','explorer-compass-context.v6',
     'points',coalesce((select jsonb_agg(jsonb_build_object('id',c.item_id,'label',ai.solmind_exclusion_normalize_v3(c.label),
       'order',c.ord-1,'formation',case when c.formation_status='proposed' then 'forming' else 'saved' end,'anchor',c.compass_anchor,'emphasis',c.relative_emphasis)
       ||case when c.formation_status='proposed' then jsonb_build_object('suggestedInPreviousReply',coalesce(
@@ -178,21 +178,23 @@ create function pg_temp.compass_context() returns jsonb language sql stable as $
       'arrivalSignal',ai.solmind_exclusion_normalize_v3(w.arrival_signal),
       'stage',case when w.lifecycle_status='reached' then 'reached' when w.released_at is not null then 'released' else 'formed' end,
       'reachedEvidence',case when w.lifecycle_status='reached' then ai.solmind_exclusion_normalize_v3(w.reached_evidence) end)
-      order by w.created_at,w.waypoint_id)
-      from content.waypoint w where w.source_ai_interaction_session_id=pg_temp.gid(6005)
-        and not exists(select 1 from content.waypoint s where s.predecessor_waypoint_id=w.waypoint_id)),'[]'::jsonb),
+      order by case when w.lifecycle_status='chosen' and w.released_at is null then 0 else 1 end,w.created_at desc,w.waypoint_id)
+      from (select h.* from content.waypoint h where h.source_ai_interaction_session_id=pg_temp.gid(6005)
+        and not exists(select 1 from content.waypoint s where s.predecessor_waypoint_id=h.waypoint_id)
+        order by case when h.lifecycle_status='chosen' and h.released_at is null then 0 else 1 end,h.created_at desc,h.waypoint_id limit 20) w),'[]'::jsonb),
     'drafts','[]'::jsonb)
 $$;
 create function pg_temp.compass_source_ids() returns uuid[] language sql stable as $$
   select coalesce(array_agg(x.id),array[]::uuid[]) from (
     select c.item_id as id from ai.explorer_conversation_compass_item c
       where c.conversation_id=pg_temp.gid(6005) and c.merged_into_item_id is null and c.formation_status is distinct from 'rejected'
-    union all select w.waypoint_id from content.waypoint w where w.source_ai_interaction_session_id=pg_temp.gid(6005)
-      and not exists(select 1 from content.waypoint s where s.predecessor_waypoint_id=w.waypoint_id)) x
+    union all select w.waypoint_id from (select h.* from content.waypoint h where h.source_ai_interaction_session_id=pg_temp.gid(6005)
+      and not exists(select 1 from content.waypoint s where s.predecessor_waypoint_id=h.waypoint_id)
+      order by case when h.lifecycle_status='chosen' and h.released_at is null then 0 else 1 end,h.created_at desc,h.waypoint_id limit 20) w) x
 $$;
 create function pg_temp.context_value(msg uuid,body text,classification_only boolean default false) returns jsonb language sql stable as $$
   select jsonb_build_object('contractVersion',case when classification_only then 'wi007-v0.1+onboarding-fields-v2'
-    else 'wi007-v0.1+onboarding-fields-v2+compass-v5' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
+    else 'wi007-v0.1+onboarding-fields-v2+compass-v6' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy',jsonb_build_object('version','synthetic-policy.v1','text','Synthetic policy.'),
     'roleBehavior',jsonb_build_object('version','synthetic-behavior.v1','text','Synthetic behavior.'),
     'crisisBehavior',jsonb_build_object('version','synthetic-crisis.v1','text','Synthetic crisis.'),
@@ -359,7 +361,7 @@ returns jsonb language sql stable security definer set search_path = '' as $$
           'clarifications',coalesce((select jsonb_agg(jsonb_build_object('component',c.component,'questionKey',c.question_key,
             'answer',c.answer_text,'recordedAt',c.created_at) order by case c.component when 'destination' then 1 when 'meaning' then 2 else 3 end)
             from content.waypoint_clarification c where c.waypoint_id=w.waypoint_id),'[]'::jsonb))) end
-      order by w.created_at,w.waypoint_id)
+      order by case when w.lifecycle_status='chosen' and w.released_at is null then 0 else 1 end,w.created_at desc,w.waypoint_id)
       from content.waypoint w where w.source_ai_interaction_session_id=p_id),'[]'::jsonb))
   from (select 1) anchor left join ai.explorer_conversation_state s on s.conversation_id=p_id
     left join ai.ai_interaction_session session_row on session_row.ai_interaction_session_id=s.conversation_id
@@ -375,7 +377,9 @@ select ok(not has_function_privilege('anon','ai.solmind_conversation_state_json(
     and not exists(select 1 from pg_proc p cross join lateral aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
       where p.oid='ai.solmind_conversation_state_json(uuid)'::regprocedure and acl.grantee=0 and acl.privilege_type='EXECUTE'),
   'TDL02: no API role or PUBLIC gains direct state access');
-select is(ai.solmind_conversation_state_json(null),
+-- Lane 7 (2026-11-06) adds waypointCapacity and waypointProjection, pinned by explorer_waypoint_active_limits_test.sql;
+-- these comparisons leave out only those two fields, so every field this file owns stays pinned exactly.
+select is(ai.solmind_conversation_state_json(null)-'waypointCapacity'-'waypointProjection',
   pg_temp.previous_state(null)||jsonb_build_object('turnedDownLimitReached',false),
   'TDL03: blank Discovery adds exactly a false boolean');
 
@@ -393,7 +397,7 @@ select is((select count(*)::integer from ai.explorer_conversation_compass_item
   'TDL04: fixture retains 23 rejected rows');
 select is(pg_temp.state()->'turnedDownLimitReached','false'::jsonb,
   'TDL05: 23 rejected rows do not reach the limit');
-select is(pg_temp.state()-'turnedDownLimitReached',pg_temp.previous_state(pg_temp.gid(6005)),
+select is(pg_temp.state()-'turnedDownLimitReached'-'waypointCapacity'-'waypointProjection',pg_temp.previous_state(pg_temp.gid(6005)),
   'TDL06: at 23 every prior state field is unchanged');
 select is((select conversation_state from public.solmind_read_explorer_conversation_v3(
     pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005))),pg_temp.state(),
@@ -413,7 +417,7 @@ select is((select count(*)::integer from ai.explorer_conversation_compass_item
   'TDL09: fixture reaches the trigger existing 24-row rejection cap');
 select is(pg_temp.state()->'turnedDownLimitReached','true'::jsonb,
   'TDL10: 24 rejected rows reach the limit');
-select is(pg_temp.state()-'turnedDownLimitReached',pg_temp.previous_state(pg_temp.gid(6005)),
+select is(pg_temp.state()-'turnedDownLimitReached'-'waypointCapacity'-'waypointProjection',pg_temp.previous_state(pg_temp.gid(6005)),
   'TDL11: at 24 every prior state field is unchanged and no extra count appears');
 select ok(not exists(select 1 from ai.explorer_conversation_compass_item c
     where c.conversation_id=pg_temp.gid(6005) and c.formation_status='rejected'
@@ -422,7 +426,7 @@ select ok(not exists(select 1 from ai.explorer_conversation_compass_item c
 select is((select conversation_state from public.solmind_read_explorer_conversation_v3(
     pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005))),pg_temp.state(),
   'TDL13: the authorized read carries the true flag and unchanged remaining fields');
-select is((select conversation_state from public.solmind_read_explorer_conversation_v3(pg_temp.gid(4),pg_temp.gid(54))),
+select is((select conversation_state from public.solmind_read_explorer_conversation_v3(pg_temp.gid(4),pg_temp.gid(54)))-'waypointCapacity'-'waypointProjection',
   pg_temp.previous_state(null)||jsonb_build_object('turnedDownLimitReached',false),
   'TDL14: another Explorer empty Discovery does not inherit the limit');
 select throws_ok($$select * from public.solmind_read_explorer_conversation_v3(
@@ -432,7 +436,7 @@ do $$ begin
   if not exists(select 1 from pg_temp.ensure_anchor(6006,4,54) where outcome='created') then raise exception 'fixture'; end if;
 end $$;
 select is((select conversation_state from public.solmind_read_explorer_conversation_v3(
-    pg_temp.gid(4),pg_temp.gid(54),pg_temp.gid(6006))),
+    pg_temp.gid(4),pg_temp.gid(54),pg_temp.gid(6006)))-'waypointCapacity'-'waypointProjection',
   pg_temp.previous_state(pg_temp.gid(6006))||jsonb_build_object('turnedDownLimitReached',false),
   'TDL16: another owned conversation counts only its own rejected rows');
 select is(pg_temp.state()->'turnedDownLimitReached','true'::jsonb,
@@ -449,14 +453,14 @@ select is(pg_temp.answer(73999,(select item_id from ai.explorer_conversation_com
 select ok(pg_temp.state()=(select state from before_refusal)
     and (select count(*) from ai.explorer_conversation_operation)=(select operations from before_refusal),
   'TDL19: the server limit refusal changes no state and records no operation');
-select is(pg_temp.state()-'turnedDownLimitReached',pg_temp.previous_state(pg_temp.gid(6005)),
+select is(pg_temp.state()-'turnedDownLimitReached'-'waypointCapacity'-'waypointProjection',pg_temp.previous_state(pg_temp.gid(6005)),
   'TDL20: the nonempty forming-point projection retains every previous field');
 
 select is((select outcome from public.solmind_end_explorer_conversation_v1(pg_temp.gid(1),pg_temp.gid(50),
     pg_temp.gid(6005),pg_temp.gid(74000),(pg_temp.state()->>'revision')::integer,pg_temp.request_sha(74000))),
   'ok','TDL21: ending the at-limit conversation retains its normal command contract');
 select is((select conversation_state from public.solmind_read_ended_explorer_conversations_v1(
-    pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005))),
+    pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005)))-'waypointCapacity'-'waypointProjection',
   pg_temp.previous_state(pg_temp.gid(6005))||jsonb_build_object('turnedDownLimitReached',true),
   'TDL22: owned ended review adds only the same limit boolean');
 select throws_ok($$select * from public.solmind_read_ended_explorer_conversations_v1(

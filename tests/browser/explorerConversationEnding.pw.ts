@@ -11,15 +11,16 @@ const POINT = "30000000-0000-4000-8000-000000000001";
 const WAYPOINT = "40000000-0000-4000-8000-000000000001";
 const ROUTE_OPERATION = "50000000-0000-4000-8000-000000000001";
 const END_OPERATION = "60000000-0000-4000-8000-000000000001";
-const empty = (): ExplorerConversationState => ({ version: "explorer-conversation.v1", conversationId: null,
+const empty = (): ExplorerConversationState => ({ waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false }, version: "explorer-conversation.v1", conversationId: null,
   revision: 0, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable", messages: [], compassItems: [], priorityId: null,
   attentionId: null, waypoints: [], route: [], sessionStatus: null, ending: null });
 const active = (): ExplorerConversationState => ({ ...empty(), conversationId: CONVERSATION, revision: 5, sessionStatus: "active",
+  waypointProjection: { kind: "current_heads", limit: 20, totalHeads: 1, hasMore: false },
   messages: [{ id: SOURCE, role: "explorer", body: "A synthetic saved message.", createdAt: "2026-10-29T07:00:00Z" }],
   compassItems: [{ id: POINT, sourceMessageId: SOURCE, label: "A saved Priority", anchor: "apex", emphasis: 3 }],
   priorityId: POINT, attentionId: POINT, route: [{ operationId: ROUTE_OPERATION, revision: 3, kind: "priority_confirmed",
     compassItemId: POINT, label: "An earlier captured direction", recordedAt: "2026-10-29T07:01:00Z" }],
-  waypoints: [{ id: WAYPOINT, sourceMessageId: SOURCE, title: "A saved destination", destination: "A saved destination", meaning: "A saved meaning",
+  waypoints: [{ isCurrent: true, createdAt: "2026-10-29T07:01:00Z", id: WAYPOINT, sourceMessageId: SOURCE, title: "A saved destination", destination: "A saved destination", meaning: "A saved meaning",
     arrivalSignal: "A saved arrival signal", status: "reached", reachedEvidence: "A saved Reached observation.", reachedAt: "2026-10-29T07:02:00Z" }] });
 const ended = (operationId = END_OPERATION): ExplorerConversationState => ({ ...active(), revision: 6, sessionStatus: "ended",
   ending: { operationId, revision: 6, endedAt: "2026-10-29T07:03:00.123456+00:00",

@@ -46,6 +46,9 @@ export function withExplorerPrivateRequestBudgets(dependencies: ExplorerPrivateC
     ...(source.release === undefined ? {} : { release: (input: Parameters<NonNullable<typeof source.release>>[0]) => bounded(() => source.release!(input), 10_000) }),
     ...(source.end === undefined ? {} : { end: (input: Parameters<NonNullable<typeof source.end>>[0]) => bounded(() => source.end!(input), 10_000) }),
     ...(source.review === undefined ? {} : { review: (input: Parameters<NonNullable<typeof source.review>>[0]) => bounded(() => source.review!(input), 10_000) }),
+    ...(source.readWaypointHeads === undefined ? {} : { readWaypointHeads: (input: Parameters<NonNullable<typeof source.readWaypointHeads>>[0]) => bounded(() => source.readWaypointHeads!(input), 10_000) }),
+    ...(source.readWaypointHistory === undefined ? {} : { readWaypointHistory: (input: Parameters<NonNullable<typeof source.readWaypointHistory>>[0]) => bounded(() => source.readWaypointHistory!(input), 10_000) }),
+    ...(source.closeEndedWaypoint === undefined ? {} : { closeEndedWaypoint: (input: Parameters<NonNullable<typeof source.closeEndedWaypoint>>[0]) => bounded(() => source.closeEndedWaypoint!(input), 10_000) }),
   });
   return Object.freeze({ authenticate: () => bounded(() => dependencies.authenticate(), 10_000), repository,
     ...(dependencies.resolveOperationalReadiness === undefined ? {} : {

@@ -960,7 +960,7 @@ describe("Chat step slice S3 saved Compass and Waypoint section", () => {
     ]);
     const section = JSON.stringify(result.context.compassContext);
     expect(section).toBe(
-      '{"version":"explorer-compass-context.v5","points":[' +
+      '{"version":"explorer-compass-context.v6","points":[' +
       '{"id":"c0000000-0000-4000-8000-000000000001","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},' +
       '{"id":"c0000000-0000-4000-8000-000000000002","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},' +
       '{"id":"c0000000-0000-4000-8000-000000000003","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],' +
@@ -1059,8 +1059,8 @@ describe("S5 forming Compass context", () => {
     });
     expectCode(input, signal === undefined ? "explorer_context_missing_required_layer" : "explorer_context_invalid_envelope");
   });
-  it("S7b refuses the previous section version under compass-v5", () => {
-    expectCode(withCompass(section => { section.version = "explorer-compass-context.v4"; }), "explorer_context_invalid_envelope");
+  it("Lane 7 refuses the previous section version under compass-v6", () => {
+    expectCode(withCompass(section => { section.version = "explorer-compass-context.v5"; }), "explorer_context_invalid_envelope");
   });
   it.each([false, true])("S6b preserves the required forming-only preceding-reply signal %s", suggestedInPreviousReply => {
     const result = assembleExplorerSafeContext(withCompass(section => {
@@ -1085,7 +1085,7 @@ describe("S5 forming Compass context", () => {
       "explorer_context_invalid_envelope");
   });
 
-  it.each(["compass-v1", "compass-v2", "compass-v3", "compass-v4", "compass-v6"])("S7b refuses the retired or unknown %s with or without a section", revision => {
+  it.each(["compass-v1", "compass-v2", "compass-v3", "compass-v4", "compass-v5", "compass-v7"])("Lane 7 refuses the retired or unknown %s with or without a section", revision => {
     const input: Record<string, unknown> = { ...compassInput(), contractVersion: "wi007-v0.1+onboarding-fields-v2+" + revision };
     expectCode(input, "explorer_context_invalid_envelope");
     delete input.compassContext;
@@ -1103,7 +1103,7 @@ describe("S5 forming Compass context", () => {
       section.recentRoute = [];
     });
     const section = assembleExplorerSafeContext(input).context.compassContext!;
-    expect(section.version).toBe("explorer-compass-context.v5");
+    expect(section.version).toBe("explorer-compass-context.v6");
     expect(section.points.map(point => point.formation)).toEqual(["saved", "forming", "saved"]);
     expect(section.attentionId).toBe(COMPASS_IDS.unplaced);
     expect(section.points[1].anchor).toBeNull();

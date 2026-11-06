@@ -1,8 +1,9 @@
 import "server-only";
 import { types } from "node:util";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { EXPLORER_COMPASS_ANCHORS, EXPLORER_CONVERSATION_LIMITS, parseExplorerConversationWaypointDraft, parseExplorerWaypointClarificationAnswers } from "../explorerConversationContract";
+import { EXPLORER_COMPASS_ANCHORS, EXPLORER_CONVERSATION_LIMITS, parseExplorerConversationWaypointDraft, parseExplorerWaypointClarificationAnswers, parseExplorerWaypointCapacity } from "../explorerConversationContract";
 import type { ExplorerPrivateConversationRepository, ExplorerPrivatePauseRow, ExplorerPrivateRpcRow } from "../virtual-guide/explorerPrivateConversationComposition";
+import { parseExplorerWaypointPage } from "../explorerWaypointPortfolioContract";
 
 const ACTOR = ["p_actor_user_account_id", "p_user_session_id"] as const;
 const METHODOLOGY = ["p_methodology_context_pack_id", "p_methodology_context_pack_version_id", "p_methodology_content_sha256", "p_methodology_authorization_version"] as const;
@@ -45,6 +46,12 @@ const PORTS = Object.freeze({
     "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint"], columns: ["outcome", "conversation_state"] }),
   review: Object.freeze({ name: "solmind_read_ended_explorer_conversations_v1", parameters: [...ACTOR, "p_conversation_id"],
     columns: ["outcome", "ended_conversations", "conversation_state"] }),
+  readWaypointHeads: Object.freeze({ name: "solmind_read_explorer_waypoint_heads_v1", parameters: [...ACTOR, "p_offset"],
+    columns: ["outcome", "waypoint_page"] }),
+  readWaypointHistory: Object.freeze({ name: "solmind_read_explorer_waypoint_history_v1", parameters: [...ACTOR, "p_conversation_id", "p_offset"],
+    columns: ["outcome", "waypoint_page"] }),
+  closeEndedWaypoint: Object.freeze({ name: "solmind_close_ended_explorer_waypoint_v1", parameters: [...ACTOR,
+    "p_waypoint_id", "p_operation_id", "p_command_fingerprint", "p_kind", "p_reached_evidence"], columns: ["outcome", "waypoint_page"] }),
   // The hard-stop pause for the signed-in Explorer's screen; writes nothing.
   pause: Object.freeze({ name: "solmind_read_explorer_ai_use_pause_v1", parameters: [...ACTOR],
     columns: ["outcome", "notice_kind", "crisis", "adults_only"] }),
@@ -63,6 +70,7 @@ const OUTCOMES: Readonly<Record<keyof typeof PORTS, readonly string[]>> = Object
   waypointRevision: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   release: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   end: ["ok", "exact_replay", "already_ended", "stale_revision", "unavailable"], review: ["ok"], pause: ["ok"],
+  readWaypointHeads: ["ok"], readWaypointHistory: ["ok"], closeEndedWaypoint: ["ok", "exact_replay", "operation_conflict", "unavailable"],
 });
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !types.isProxy(value) && !Array.isArray(value) &&
@@ -75,6 +83,7 @@ function parameters(input: object, expected: readonly string[]): Readonly<Record
     const property = Object.getOwnPropertyDescriptor(input, key);
     if (!property?.enumerable || !("value" in property)) throw new Error(FAILURE);
     const value: unknown = property.value;
+    if (key === "p_offset" && !(typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 2147483627)) throw new Error(FAILURE);
     if (key === "p_waypoint_response" && value !== null) {
       if (!object(value) || Reflect.ownKeys(value).length !== 2) throw new Error(FAILURE);
       const draft = Object.getOwnPropertyDescriptor(value, "draftId");
@@ -225,12 +234,17 @@ function parameters(input: object, expected: readonly string[]): Readonly<Record
   return Object.freeze(copied);
 }
 
-// The returned object exposes fifteen exact ports, including deliberate
-// formation, ending, owned ended review and the hard-stop pause read. There is no generic select/RPC/credential capability.
+// Exact ports include bounded owner-private history and post-End closure.
+// There is no generic select/RPC/credential capability and no route is added here.
 export function createExplorerPrivateConversationRepository(client: SupabaseClient): ExplorerPrivateConversationRepository {
   async function call(port: keyof typeof PORTS, input: object): Promise<ExplorerPrivateRpcRow> {
     try {
       const spec = PORTS[port]; const copied = parameters(input, spec.parameters);
+      if (port === "closeEndedWaypoint" &&
+          (!(copied.p_kind === "reach_waypoint" || copied.p_kind === "release_waypoint") ||
+           (copied.p_kind === "release_waypoint" ? copied.p_reached_evidence !== null :
+             typeof copied.p_reached_evidence !== "string" || !copied.p_reached_evidence.trim() ||
+             copied.p_reached_evidence.length > EXPLORER_CONVERSATION_LIMITS.waypointCharacters))) throw new Error(FAILURE);
       // A client timeout is only an abort REQUEST. Unknown acknowledgement does
       // not establish rollback/remote stop or authorize an automatic repost.
       const { data, error } = await client.rpc(spec.name, copied).abortSignal(AbortSignal.timeout(10_000));
@@ -242,6 +256,7 @@ export function createExplorerPrivateConversationRepository(client: SupabaseClie
       const row = data[0];
       if (row.conversation_state != null && (!object(row.conversation_state) ||
           typeof Object.getOwnPropertyDescriptor(row.conversation_state, "turnedDownLimitReached")?.value !== "boolean" ||
+          parseExplorerWaypointCapacity(Object.getOwnPropertyDescriptor(row.conversation_state, "waypointCapacity")?.value) === null ||
           parseExplorerConversationWaypointDraft(Object.getOwnPropertyDescriptor(row.conversation_state, "waypointDraft")?.value) === undefined)) throw new Error(FAILURE);
       if (Object.keys(row).length !== spec.columns.length || !spec.columns.every((column) => Object.hasOwn(row, column)) ||
         typeof row.outcome !== "string" || !OUTCOMES[port].includes(row.outcome) ||
@@ -250,7 +265,29 @@ export function createExplorerPrivateConversationRepository(client: SupabaseClie
         // A pause row names a closed kind, and its two flags are booleans that can be true only with a pause.
         (port === "pause" && (!NOTICE_KINDS.includes(row.notice_kind) || typeof row.crisis !== "boolean" ||
           typeof row.adults_only !== "boolean" || (row.notice_kind === null && (row.crisis || row.adults_only))))) throw new Error(FAILURE);
-      return Object.freeze({ ...row }) as ExplorerPrivateRpcRow;
+      if (Object.hasOwn(row, "waypoint_page")) {
+        if (row.waypoint_page === null) {
+          if (row.outcome === "ok" || row.outcome === "exact_replay") throw new Error(FAILURE);
+        } else {
+          const page = parseExplorerWaypointPage(row.waypoint_page);
+          const kind = port === "readWaypointHeads" ? "current_heads" : port === "readWaypointHistory" ? "history" : "closure";
+          if (!page || page.kind !== kind || (port === "readWaypointHistory" &&
+              page.items.some(item => item.conversationId !== copied.p_conversation_id)) ||
+              (port === "closeEndedWaypoint" && page.items[0].id !== copied.p_waypoint_id) ||
+              (page.hasMore && page.nextOffset !== (copied.p_offset as number) + page.limit)) throw new Error(FAILURE);
+          if (port === "closeEndedWaypoint") {
+            const closed = page.items[0];
+            if (copied.p_kind === "reach_waypoint"
+              ? closed.status !== "reached" || closed.reachedEvidence !== copied.p_reached_evidence
+              : closed.status !== "chosen" || closed.release?.operationId !== copied.p_operation_id) throw new Error(FAILURE);
+          }
+          return Object.freeze({ ...row, waypoint_page: page }) as ExplorerPrivateRpcRow;
+        }
+      }
+      return Object.freeze({ ...row, ...(row.conversation_state == null ? {} : {
+        conversation_state: Object.freeze({ ...row.conversation_state as object,
+          waypointCapacity: parseExplorerWaypointCapacity((row.conversation_state as Record<string, unknown>).waypointCapacity) }),
+      }) }) as ExplorerPrivateRpcRow;
     } catch { throw new Error(FAILURE); }
   }
   return Object.freeze({
@@ -263,6 +300,9 @@ export function createExplorerPrivateConversationRepository(client: SupabaseClie
     settle: (input) => call("settle", input), mutate: (input) => call("mutate", input),
     respondCompassSuggestion: (input) => call("respondCompassSuggestion", input),
     respondWaypointDraft: (input) => call("respondWaypointDraft", input),
+    readWaypointHeads: (input) => call("readWaypointHeads", input),
+    readWaypointHistory: (input) => call("readWaypointHistory", input),
+    closeEndedWaypoint: (input) => call("closeEndedWaypoint", input),
     arrange: (input) => call("arrange", input), category: (input) => call("category", input), release: (input) => call("release", input), waypointRevision: (input) => call("waypointRevision", input), end: (input) => call("end", input), review: (input) => call("review", input),
     pause: async (actor) => await call("pause", { p_actor_user_account_id: actor.accountId, p_user_session_id: actor.applicationSessionId }) as ExplorerPrivatePauseRow,
   });

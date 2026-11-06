@@ -3,6 +3,7 @@
 import { useId, useState, type FormEvent } from "react";
 import {
   EXPLORER_CONVERSATION_LIMITS,
+  waypointHasCapacity,
   type ExplorerConversationState,
   type ExplorerCompassAnchor,
   type ExplorerCompassArrangementItem,
@@ -23,6 +24,7 @@ import {
   type FormationIntentResult,
   type WaypointRevisionReview,
 } from "@/lib/solmind/explorerConversationFormation";
+import { waypointCapacityMessage } from "@/lib/solmind/explorerWaypointCapacity";
 
 import { ExplorerWaypointClarification } from "./ExplorerWaypointClarification";
 
@@ -155,13 +157,16 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
       arrangementIssues.push("Keep the current attention point in a visible position.");
     }
   }
-  const waypointSuccessors = new Set(state.waypoints.flatMap(item => item.lifecycle === undefined ? [] : [item.lifecycle.predecessorWaypointId]));
+  const waypointSuccessors = new Set(state.waypoints.filter(item => item.isCurrent !== true).map(item => item.id));
   const reachedReview = state.waypoints.find(item => item.id === reachedReviewId && item.status === "chosen" && item.release === undefined && !waypointSuccessors.has(item.id));
   const releaseWaypoint = state.waypoints.find(item => item.id === releaseReview?.waypointId);
   const staleRelease = releaseReview !== null && (releaseReview.conversationId !== state.conversationId ||
     releaseReview.revision !== state.revision || releaseWaypoint === undefined || releaseWaypoint.status !== "chosen" ||
-    releaseWaypoint.release !== undefined || state.sessionStatus !== "active");
+    releaseWaypoint.release !== undefined || releaseWaypoint.isCurrent !== true || state.sessionStatus !== "active");
   const hasSource = state.conversationId !== null && state.messages.length > 0;
+  const newWaypointCapacityMessage = waypointCapacityMessage(state);
+  const revisionCapacityMessage = waypointCapacityMessage(state, false);
+  const newWaypointCapacityDescription = newWaypointCapacityMessage !== null ? `${id}-waypoint-capacity` : undefined;
   const route = state.route ?? [];
   const categoryTarget = currentPoints.find(item => item.id === categoryDraft?.targetItemId);
   const staleCategory = categoryDraft !== null &&
@@ -181,7 +186,7 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
   }
   function openWaypointClarification(waypointId: string, kind: WaypointRevisionReview["kind"]) {
     if (busy || readOnly || state.pendingTurn || !state.conversationId || state.sessionStatus !== "active" ||
-        state.waypoints.length >= EXPLORER_CONVERSATION_LIMITS.waypoints || waypointSuccessors.has(waypointId)) return;
+        !waypointHasCapacity(state, kind === "revisit_waypoint") || waypointSuccessors.has(waypointId)) return;
     const waypoint = state.waypoints.find(item => item.id === waypointId);
     if (!waypoint || (kind === "revise_waypoint" ? waypoint.status !== "chosen" || waypoint.release !== undefined
       : waypoint.status !== "reached" && waypoint.release === undefined)) return;
@@ -191,7 +196,7 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
   function reviewWaypointRelease(waypointId: string) {
     if (busy || readOnly || state.pendingTurn || !state.conversationId || state.sessionStatus !== "active") return;
     const waypoint = state.waypoints.find(item => item.id === waypointId);
-    if (!waypoint || waypoint.status !== "chosen" || waypoint.release !== undefined) return;
+    if (!waypoint || waypoint.isCurrent !== true || waypoint.status !== "chosen" || waypoint.release !== undefined) return;
     setReleaseReview({ conversationId: state.conversationId, revision: state.revision, waypointId });
     setReleaseConfirmed(false);
     setError(null);
@@ -471,15 +476,18 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
         <h2 id={`${id}-waypoints-title`} className="text-xl font-semibold text-slate-100">Private Waypoints</h2>
         <p className="mt-2 text-sm leading-6 text-slate-300">A Waypoint is a meaningful place you choose to reach. It is optional, and it is not a task or a score.</p>
         {state.waypoints.length === 0 ? <p className="mt-3 text-sm text-slate-300">No Waypoint chosen. You can keep exploring without one.</p> : (
-          <ul className="mt-4 space-y-4">{state.waypoints.map(waypoint => (
+          <ul className="mt-4 space-y-4">{state.waypoints.map(waypoint => {
+            const revisiting = waypoint.status !== "chosen" || waypoint.release !== undefined;
+            const capacityMessage = revisiting ? newWaypointCapacityMessage : revisionCapacityMessage;
+            const capacityDescription = capacityMessage !== null ? `${id}-waypoint-capacity-${waypoint.id}` : undefined;
+            return (
             <li key={waypoint.id} id={`${id}-waypoint-${waypoint.id}`} className="rounded-2xl border border-slate-700 p-4">
               <h3 className="break-words font-semibold text-slate-100">{waypoint.destination}</h3>
               <p className="mt-1 text-xs font-semibold text-cyan-200">{waypointSuccessors.has(waypoint.id) ? waypoint.release !== undefined ? "Earlier version - Released" : waypoint.status === "reached" ? "Earlier version - Reached" : "Earlier version - Formed" : waypoint.release !== undefined ? "Released \u2014 kept in your private history" : waypoint.status === "reached" ? "Reached \u2014 confirmed by you" : "In progress \u2014 chosen by you"}</p>
               <dl className="mt-3 space-y-3 text-sm"><div><dt className="font-semibold text-slate-200">Why it matters</dt><dd className="mt-1 whitespace-pre-wrap break-words text-slate-300">{waypoint.meaning}</dd></div><div><dt className="font-semibold text-slate-200">Arrival signal</dt><dd className="mt-1 whitespace-pre-wrap break-words text-slate-300">{waypoint.arrivalSignal}</dd></div></dl>
               {waypoint.lifecycle !== undefined ? <details className="mt-3 rounded-xl border border-slate-700 p-3">
                 <summary className="cursor-pointer text-sm text-cyan-200">Review this {waypoint.lifecycle.creationReason === "revision" ? "revision" : "new lifecycle"} and its clarification sources</summary>
-                <p className="mt-3 text-sm text-slate-300">{waypoint.lifecycle.creationReason === "revision" ? "You confirmed a revised understanding. The earlier definition remains in history." : "You confirmed a new current lifecycle. Earlier Reached evidence or release history does not count as current arrival."}</p>
-                <a href={`#${id}-waypoint-${waypoint.lifecycle.predecessorWaypointId}`} className="mt-2 inline-block text-sm text-cyan-200 underline">Review the earlier saved version</a>
+                <p className="mt-3 text-sm text-slate-300">{waypoint.lifecycle.creationReason === "revision" ? "You confirmed a revised understanding." : "You confirmed a new current lifecycle. Earlier Reached evidence or release history does not count as current arrival."} The earlier definition stays saved privately. Earlier versions cannot currently be opened.</p>
                 {waypoint.lifecycle.clarifications.length === 0 ? <p className="mt-3 text-sm text-slate-300">You deliberately kept the earlier destination, meaning and arrival signal when confirming this new lifecycle.</p> : <ul className="mt-3 space-y-4">{waypoint.lifecycle.clarifications.map(source => <li key={source.component} className="text-sm text-slate-300">
                   <p className="font-semibold text-slate-200">Explorer clarification in this conversation {"\u2014"} {source.component === "arrivalSignal" ? "arrival signal" : source.component}</p>
                   <p className="mt-1">Application question: {source.component === "destination" ? "Where do you want to arrive now?" : source.component === "meaning" ? "Why does reaching that place matter to you now?" : "What observable signal would help you recognize arrival now?"}</p>
@@ -506,9 +514,12 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
               <details className="mt-3"><summary className="cursor-pointer text-sm text-cyan-200">Review saved source</summary><SavedSource state={state} sourceMessageId={waypoint.sourceMessageId} /></details>
               {waypoint.status === "chosen" && waypoint.release === undefined && !waypointSuccessors.has(waypoint.id) ? (!readOnly ? <button type="button" className={`${buttonClass} mt-3`} disabled={busy} onClick={() => { setReachedReviewId(waypoint.id); setReachedEvidence(""); setReachedConfirmed(false); setError(null); }}>Review Reached: {waypoint.destination}</button> : null) : waypoint.status === "reached" ? <p className="mt-3 text-sm text-slate-300">Meaningful progress does not mean your journey is over.</p> : null}
               {!readOnly && state.conversationId !== null && state.sessionStatus === "active" && waypoint.status === "chosen" && waypoint.release === undefined && !waypointSuccessors.has(waypoint.id) ? <button type="button" className={`${buttonClass} mt-3 ml-2`} disabled={busy || state.pendingTurn} onClick={() => reviewWaypointRelease(waypoint.id)}>Review release: {waypoint.destination}</button> : null}
-              {!readOnly && state.sessionStatus === "active" && !waypointSuccessors.has(waypoint.id) ? <button type="button" className={`${buttonClass} mt-3 ml-2`} disabled={busy || state.pendingTurn || state.waypoints.length >= EXPLORER_CONVERSATION_LIMITS.waypoints} onClick={() => openWaypointClarification(waypoint.id, waypoint.status === "chosen" && waypoint.release === undefined ? "revise_waypoint" : "revisit_waypoint")}>{waypoint.status === "chosen" && waypoint.release === undefined ? "Clarify this Waypoint in the conversation" : "Revisit this Waypoint in the conversation"}</button> : null}
+              {!readOnly && state.sessionStatus === "active" && !waypointSuccessors.has(waypoint.id) ? <>
+                <button type="button" className={`${buttonClass} mt-3 ml-2`} disabled={busy || state.pendingTurn || capacityMessage !== null} aria-describedby={capacityDescription} onClick={() => openWaypointClarification(waypoint.id, revisiting ? "revisit_waypoint" : "revise_waypoint")}>{revisiting ? "Revisit this Waypoint in the conversation" : "Clarify this Waypoint in the conversation"}</button>
+                {capacityMessage !== null ? <p id={capacityDescription} role="alert" tabIndex={0} className="mt-3 text-sm text-slate-300">{capacityMessage}</p> : null}
+              </> : null}
             </li>
-          ))}</ul>
+          ); })}</ul>
         )}
         {!readOnly && clarificationReview !== null ? <ExplorerWaypointClarification key={`${clarificationReview.conversationId}:${clarificationReview.revision}:${clarificationReview.waypointId}:${clarificationReview.kind}`} state={state} busy={busy} readOnly={readOnly} review={clarificationReview} onCommand={onCommand} onClose={() => setClarificationReview(null)} /> : null}
         {!readOnly && releaseReview !== null ? <fieldset disabled={busy || state.pendingTurn || staleRelease} className="mt-4 space-y-3 rounded-2xl border border-amber-300/50 p-4">
@@ -519,7 +530,7 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
             <p className="whitespace-pre-wrap break-words text-sm text-slate-300">Arrival signal: {releaseWaypoint.arrivalSignal}</p>
             <SavedSource state={state} sourceMessageId={releaseWaypoint.sourceMessageId} />
           </> : null}
-          <p className="text-sm leading-6 text-slate-300">Releasing stops treating this Waypoint as in progress. Its definition, saved source and history stay available and private. This does not mark it Reached, end the conversation or share anything.</p>
+          <p className="text-sm leading-6 text-slate-300">Releasing stops treating this Waypoint as in progress. Its definition, saved source and history stay saved and private. This does not mark it Reached, end the conversation or share anything.</p>
           {staleRelease ? <p role="alert" className="text-sm text-amber-200">Your saved conversation or Waypoint changed. Close this review and open a new one before releasing.</p> : null}
           <label className="flex items-start gap-3 text-sm text-slate-200"><input type="checkbox" className="mt-1" checked={releaseConfirmed} onChange={event => setReleaseConfirmed(event.target.checked)} />I reviewed this Waypoint and its saved source, and I choose to release it while keeping its private history.</label>
           <button type="button" className={buttonClass} disabled={!releaseConfirmed} onClick={confirmWaypointRelease}>Release this Waypoint</button>
@@ -543,7 +554,7 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
           </fieldset>
         ) : null}
         {!readOnly ? <form onSubmit={chooseWaypoint} className="mt-5 border-t border-slate-700 pt-4">
-          <fieldset disabled={busy || !hasSource || state.waypoints.length >= EXPLORER_CONVERSATION_LIMITS.waypoints} className="space-y-3">
+          <fieldset disabled={busy || !hasSource || newWaypointCapacityMessage !== null} aria-describedby={newWaypointCapacityDescription} className="space-y-3">
             <legend className="mb-3 font-semibold text-slate-100">Choose a private Waypoint</legend>
             <SourceSelect id={`${id}-waypoint-source`} state={state} value={waypointSource} onChange={value => { setWaypointSource(value); setWaypointConfirmed(false); }} />
             <SavedSource state={state} sourceMessageId={waypointSource} />
@@ -558,12 +569,12 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
             </label>
             <label className="flex items-start gap-3 text-sm text-slate-200"><input type="checkbox" className="mt-1" checked={waypointConfirmed} onChange={event => setWaypointConfirmed(event.target.checked)} />I choose this private Waypoint with the destination, meaning and arrival signal shown above.</label>
             <div className="flex flex-wrap gap-2">
-              <button type="submit" className={buttonClass} disabled={!waypointConfirmed}>Confirm and save private Waypoint</button>
+              <button type="submit" className={buttonClass} disabled={!waypointConfirmed} aria-describedby={newWaypointCapacityDescription}>Confirm and save private Waypoint</button>
               <button type="button" className={buttonClass} onClick={() => { setWaypointSource(""); setDestination(""); setMeaning(""); setArrivalSignal(""); setWaypointConfirmed(false); setError(null); }}>Clear Waypoint draft</button>
             </div>
           </fieldset>
           {!hasSource ? <p className="mt-3 text-sm text-slate-400">A saved conversation message is needed before choosing a Waypoint.</p> : null}
-          {state.waypoints.length >= EXPLORER_CONVERSATION_LIMITS.waypoints ? <p className="mt-3 text-sm text-slate-400">This conversation has reached its private Waypoint limit.</p> : null}
+          {newWaypointCapacityMessage !== null ? <p id={newWaypointCapacityDescription} role="alert" tabIndex={0} className="mt-3 text-sm text-slate-400">{newWaypointCapacityMessage}</p> : null}
         </form> : null}
       </section>
     </aside>

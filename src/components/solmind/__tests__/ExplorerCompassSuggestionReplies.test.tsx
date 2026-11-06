@@ -24,7 +24,7 @@ const LABELS = ["That's right", "Close, not quite", "That's not it"];
 const LIMIT_REASON = 'Because this conversation already keeps the most turned-down suggestions it can, "That\'s not it" is not available here. You can still choose another reply or type what you would change.';
 
 function state(overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
-  return {
+  return { waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false },
     version: EXPLORER_CONVERSATION_VERSION,
     conversationId: CONVERSATION,
     revision: 5,

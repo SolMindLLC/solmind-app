@@ -9,8 +9,8 @@ import {
 
 function request(mode: "classification_and_reply" | "classification_only" = "classification_and_reply") {
   const authorizedContext = JSON.stringify({ contractVersion: mode === "classification_only"
-    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v5",
-    ...(mode === "classification_only" ? {} : { compassContext: { version: "explorer-compass-context.v5",
+    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v6",
+    ...(mode === "classification_only" ? {} : { compassContext: { version: "explorer-compass-context.v6",
       points: [{ id: "00000000-0000-4000-8000-000000000005", label: "Saved point", order: 0,
         formation: "saved", anchor: null, emphasis: null }], priorityId: null, attentionId: null, recentRoute: [],
       waypoints: [{ id: "00000000-0000-4000-8000-000000000006", title: "Saved destination", destination: "Saved destination",
@@ -31,6 +31,14 @@ function envelope(raw: string, overrides: Record<string, unknown> = {}) {
 const RAW = '{"protocol":"explorer-safety-reply.v2","classification":{"level":4,"minorIndicated":false},"candidateReply":{"content":"\\ud800"}}';
 function adapter(fetchImpl: typeof fetch) { return createOpenAiLunaExplorerSafetyTransport({ apiKey: "synthetic-never-transmitted-key", fetchImpl }); }
 describe("Dormant injected Explorer same-call HTTP transport", () => {
+  it.each([
+    ["classification_only", 7595, "80056A5D6AC83099B311929282F8E54DFE02BDDE6188C5551D652589F9247C84"],
+    ["classification_and_reply", 7761, "AF19BC7F4B236675B677B4ED929A0CFA19B3D71393387A4FEE46C15562630D55"],
+  ] as const)("Lane 7 pins bounded-selection output instruction bytes and SHA-256 (%s)", (mode, bytes, sha256) => {
+    const text = explorerSafetyHttpInstructions(mode);
+    expect(Buffer.byteLength(text, "utf8")).toBe(bytes);
+    expect(createHash("sha256").update(text, "utf8").digest("hex").toUpperCase()).toBe(sha256);
+  });
   it.each(["classification_and_reply", "classification_only"] as const)(
     "sends one exact unchanged compact input with default model and fixed effort/no-store/no-tools and JSON outer instructions (%s)", async mode => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify(envelope(RAW)))); const input = request(mode);
@@ -43,7 +51,7 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
     expect(createHash("sha256").update(sent.input).digest("hex").toUpperCase()).toBe(input.contextFingerprint);
     const context = JSON.parse(sent.input);
     expect(context.contractVersion).toBe(mode === "classification_only"
-      ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v5");
+      ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v6");
     if (mode === "classification_only") {
       expect(context).not.toHaveProperty("compassContext");
       for (const text of ["Saved point", "Saved destination", "Saved meaning", "Saved arrival",
@@ -77,6 +85,7 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
       "Offer optional choices whenever they would make answering easier, not to meet a target number of replies with choices, never at classification level 2 or above or in restricted conversations.",
       'In the conversation\'s first reply, if the Explorer has not named a topic, you may offer "Show me around", "I have a question" and "Let\'s begin".',
       "Always answer questions about how things work.",
+      "The supplied Waypoints are a bounded selection from this conversation. Omission does not mean a Waypoint was deleted, Reached or Released. Do not infer the Explorer's total active Waypoints from this selection.",
       "compass, waypointSuggestion, waypointResponse and choices are only proposals for the authorized application flow.",
     ]) expect(text).toContain(sentence);
     expect(explorerSafetyHttpInstructions("classification_only")).toContain("candidateReply MUST be null; omit compass, waypointSuggestion, waypointResponse and choices.");

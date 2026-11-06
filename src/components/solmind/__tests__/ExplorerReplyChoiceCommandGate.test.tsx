@@ -30,7 +30,7 @@ vi.mock("../ExplorerConversationConnectedScreen", () => ({
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const LABEL = "I have a question";
 function state(overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
-  return {
+  return { waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false },
     version: "explorer-conversation.v1", conversationId: id(1), revision: 3,
     pendingTurn: false, turnedDownLimitReached: false, providerState: "available",
     compassSuggestionReplies: "available", sessionStatus: "active", ending: null,

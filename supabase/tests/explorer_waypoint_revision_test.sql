@@ -5,7 +5,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions,pg_catalog,pg_temp;
 set local statement_timeout='120s';
-select no_plan();
+select plan(74);
 
 create function pg_temp.gid(n integer) returns uuid language sql immutable as $$
   select ('f42c0000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid
@@ -141,7 +141,7 @@ end $$;
 -- order, the saved Priority and attention, the last five needle moves on a current point (oldest first, each
 -- with the point's current label), the current Waypoint heads, no drafts.
 create function pg_temp.compass_context() returns jsonb language sql stable as $$
-  select jsonb_build_object('version','explorer-compass-context.v5',
+  select jsonb_build_object('version','explorer-compass-context.v6',
     'points',coalesce((select jsonb_agg(jsonb_build_object('id',c.item_id,'label',ai.solmind_exclusion_normalize_v3(c.label),
       'order',c.ord-1,'formation',case when c.formation_status='proposed' then 'forming' else 'saved' end,'anchor',c.compass_anchor,'emphasis',c.relative_emphasis)
       ||case when c.formation_status='proposed' then jsonb_build_object('suggestedInPreviousReply',coalesce(
@@ -171,20 +171,22 @@ create function pg_temp.compass_context() returns jsonb language sql stable as $
       'arrivalSignal',ai.solmind_exclusion_normalize_v3(w.arrival_signal),
       'stage',case when w.lifecycle_status='reached' then 'reached' when w.released_at is not null then 'released' else 'formed' end,
       'reachedEvidence',case when w.lifecycle_status='reached' then ai.solmind_exclusion_normalize_v3(w.reached_evidence) end)
-      order by w.created_at,w.waypoint_id)
-      from content.waypoint w where w.source_ai_interaction_session_id=pg_temp.gid(6005)
-        and not exists(select 1 from content.waypoint s where s.predecessor_waypoint_id=w.waypoint_id)),'[]'::jsonb),
+      order by case when w.lifecycle_status='chosen' and w.released_at is null then 0 else 1 end,w.created_at desc,w.waypoint_id)
+      from (select h.* from content.waypoint h where h.source_ai_interaction_session_id=pg_temp.gid(6005)
+        and not exists(select 1 from content.waypoint s where s.predecessor_waypoint_id=h.waypoint_id)
+        order by case when h.lifecycle_status='chosen' and h.released_at is null then 0 else 1 end,h.created_at desc,h.waypoint_id limit 20) w),'[]'::jsonb),
     'drafts','[]'::jsonb)
 $$;
 create function pg_temp.compass_source_ids() returns uuid[] language sql stable as $$
   select coalesce(array_agg(x.id),array[]::uuid[]) from (
     select c.item_id as id from ai.explorer_conversation_compass_item c
       where c.conversation_id=pg_temp.gid(6005) and c.merged_into_item_id is null and c.formation_status is distinct from 'rejected'
-    union all select w.waypoint_id from content.waypoint w where w.source_ai_interaction_session_id=pg_temp.gid(6005)
-      and not exists(select 1 from content.waypoint s where s.predecessor_waypoint_id=w.waypoint_id)) x
+    union all select w.waypoint_id from (select h.* from content.waypoint h where h.source_ai_interaction_session_id=pg_temp.gid(6005)
+      and not exists(select 1 from content.waypoint s where s.predecessor_waypoint_id=h.waypoint_id)
+      order by case when h.lifecycle_status='chosen' and h.released_at is null then 0 else 1 end,h.created_at desc,h.waypoint_id limit 20) w) x
 $$;
 create function pg_temp.context_value(msg uuid,body text) returns jsonb language sql stable as $$
-  select jsonb_build_object('contractVersion','wi007-v0.1+onboarding-fields-v2+compass-v5','aiRole','solmind_virtual_guide','actorRoleContext','explorer',
+  select jsonb_build_object('contractVersion','wi007-v0.1+onboarding-fields-v2+compass-v6','aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy',jsonb_build_object('version','synthetic-policy.v1','text','Synthetic policy.'),
     'roleBehavior',jsonb_build_object('version','synthetic-behavior.v1','text','Synthetic behavior.'),
     'crisisBehavior',jsonb_build_object('version','synthetic-crisis.v1','text','Synthetic crisis.'),
@@ -470,20 +472,22 @@ select ok((select successor.title='A revised form destination' and successor.des
  where successor.waypoint_id=pg_temp.gid(33101)),
  'S7b: a form-created Waypoint, whose title is its destination, takes the revised destination as its title');
 
--- All predecessors and current heads still count toward the twenty-row bound.
+-- Predecessors use history storage; only current active heads fill the allowance.
 do $$ declare i integer; n integer; begin
- select count(*)::integer into n from content.waypoint where source_ai_interaction_session_id=pg_temp.gid(6005);
+ select ai.solmind_waypoint_active_count_v1(pg_temp.gid(1))::integer into n;
  for i in 1..20-n loop
   if not exists(select 1 from pg_temp.mutate(34000+i,'confirm_waypoint',10011,null,null,null,
    'Stored destination '||i,'Stored meaning','Observable signal') where outcome='ok') then raise exception 'synthetic_lifecycle_bound_failed'; end if;
  end loop;
 end $$;
-select is((select count(*)::integer from content.waypoint where source_ai_interaction_session_id=pg_temp.gid(6005)),20,
- 'all retained confirmed versions count, including superseded, released and Reached predecessors');
+create temp table full_active_history_count as select count(*) n from content.waypoint where source_ai_interaction_session_id=pg_temp.gid(6005);
+select is(ai.solmind_waypoint_active_count_v1(pg_temp.gid(1)),20::bigint,
+ 'twenty current active heads fit while predecessor facts remain stored');
 select is((select outcome from pg_temp.revise_waypoint(35001,33003,'revise_waypoint',pg_temp.answer('meaning','No capacity'))),
- 'unavailable','a successor at capacity refuses without dropping prior history');
-select is((select outcome from pg_temp.release_waypoint(35002,33003)),'ok','safe closure remains available at the retained bound');
-select is((select count(*)::integer from content.waypoint where source_ai_interaction_session_id=pg_temp.gid(6005)),20,'safe closure frees no retained history slot');
+ 'ok','a net-zero revision remains available at the active allowance');
+select is((select outcome from pg_temp.release_waypoint(35002,35001)),'ok','safe closure remains available at the active allowance');
+select is((select count(*) from content.waypoint where source_ai_interaction_session_id=pg_temp.gid(6005)),
+ (select n+1 from full_active_history_count),'revision adds one history record and closure removes none');
 select is((select count(*)::integer from ai.ai_model_invocation),(select invocations::integer from lifecycle_effect_before),'revision/revisit/release create no model invocation');
 select is((select count(*)::integer from ai.ai_interaction_message),(select messages::integer from lifecycle_effect_before),'application conversational answers are not inserted as AI or Explorer interaction messages');
 
@@ -496,10 +500,10 @@ select is((select outcome from public.solmind_end_explorer_conversation_v1(pg_te
  (select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005)),pg_temp.request_sha(36001))),'ok','ending remains a separate explicit closure');
 select throws_ok($$select * from pg_temp.revise_waypoint(36002,33002,'revise_waypoint',pg_temp.answer('meaning','No ended edit'))$$,
  'P0001',null,'ended conversation history cannot create a revision or reactivate a lifecycle');
-select ok((select exists(select 1 from jsonb_array_elements(conversation_state->'waypoints') w
+select ok((select exists(select 1 from jsonb_array_elements(waypoint_page->'items') w
  where w->>'id'=pg_temp.gid(31001)::text and w#>>'{lifecycle,clarifications,0,answer}'=U&'A calmer \00f0\0178\00a7\00ad week')
- from public.solmind_read_ended_explorer_conversations_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005))),
- 'owned ended review retains actual lineage and application-question/Explorer-answer history');
+ from public.solmind_read_explorer_waypoint_history_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),20)),
+ 'bounded owned history retains actual lineage and application-question/Explorer-answer history');
 -- Unknown policy remains held for new reflection; a fixture row supplies no
 -- clear-policy permission and no new model or fabricated conversation reply.
 insert into ai.ai_interaction_session(ai_interaction_session_id,session_type,actor_user_account_id,actor_role_context,

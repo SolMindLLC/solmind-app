@@ -127,14 +127,14 @@ function comparableInstant(value: string): string {
 // Chat step slice S3 (Paul's decision 4, decision queue 2026-11-03 12:38:07 CST; go-ahead
 // 20:50:45 CST): the saved Compass and Waypoint section, taken from the state the final
 // read returned. The safe assembler validates it, and
-// supabase/migrations/20261105060000_explorer_typed_waypoint_replies.sql rebuilds it from the
+// supabase/migrations/20261106000000_explorer_waypoint_active_limits.sql rebuilds it from the
 // saved rows and compares it exactly before any provider call. Current points only (not
 // combined away), in saved display order; the saved Priority and attention (the needle
 // may be on an unplaced point); the last five needle moves (attention_changed) on a
 // current point, oldest first, each with that point's current label, never the label
 // the Route captured, which may be wording from before a rename (Priority changes,
 // arrangement and category events and their before-labels are never model context);
-// the current Waypoint heads and the current proposed private Waypoint draft.
+// at most twenty current Waypoint heads and the current proposed private Waypoint draft.
 function compassContext(state: ConversationState, formingMove: Authority["formingAttentionMove"]) {
   const points = state.compassItems.filter((item) => item.mergedIntoItemId == null);
   const currentLabels = new Map(points.filter((item) => item.formation !== "forming").map((item) => [item.id, item.label]));
@@ -167,9 +167,19 @@ function compassContext(state: ConversationState, formingMove: Authority["formin
   // The next-reply signal uses current wording without creating a saved Route event.
   if (formingMove !== undefined && formingPoint !== undefined) recentRoute.push({ kind: "attention_changed",
     pointId: formingPoint.id, label: formingPoint.label, actor: "explorer", awaitingReply: true });
-  const successors = new Set(state.waypoints.flatMap((waypoint) =>
-    waypoint.lifecycle === undefined ? [] : [waypoint.lifecycle.predecessorWaypointId]));
-  const heads = state.waypoints.filter((waypoint) => !successors.has(waypoint.id));
+  // The partial projection marks current heads authoritatively. Missing successors
+  // never establish currentness. Match SQL: active first, newest creation instant
+  // first within each group, then UUID ascending, including microsecond ties.
+  const heads = state.waypoints.filter((waypoint) => waypoint.isCurrent)
+    .sort((left, right) => {
+      const leftClosed = left.status === "reached" || left.release !== undefined;
+      const rightClosed = right.status === "reached" || right.release !== undefined;
+      if (leftClosed !== rightClosed) return leftClosed ? 1 : -1;
+      const leftAt = comparableInstant(left.createdAt);
+      const rightAt = comparableInstant(right.createdAt);
+      if (leftAt !== rightAt) return leftAt > rightAt ? -1 : 1;
+      return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+    }).slice(0, EXPLORER_SAFE_CONTEXT_LIMITS.compassWaypointCount);
   return {
     section: {
       version: EXPLORER_COMPASS_CONTEXT_VERSION,

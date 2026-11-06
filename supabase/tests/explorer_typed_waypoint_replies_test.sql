@@ -15,7 +15,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions,pg_catalog,pg_temp;
 set local statement_timeout='120s';
-select plan(46);
+select plan(47);
 
 create function pg_temp.gid(n integer) returns uuid language sql immutable as $$
   select ('f47a0000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid
@@ -159,7 +159,7 @@ create function pg_temp.compass_context() returns jsonb language sql stable as $
     select 'set_attention',(value->>'recordedAt')::timestamptz,'attention_changed',(value->>'pointId')::uuid,
       (value->>'revision')::integer-1,null::uuid from forming_move where value is not null
   )
-  select jsonb_build_object('version','explorer-compass-context.v5',
+  select jsonb_build_object('version','explorer-compass-context.v6',
     'points',coalesce((select jsonb_agg(jsonb_build_object('id',c.item_id,'label',ai.solmind_exclusion_normalize_v3(c.label),
       'order',c.ord-1,'formation',case when c.formation_status='proposed' then 'forming' else 'saved' end,'anchor',c.compass_anchor,'emphasis',c.relative_emphasis)
       ||case when c.formation_status='proposed' then jsonb_build_object('suggestedInPreviousReply',
@@ -187,9 +187,10 @@ create function pg_temp.compass_context() returns jsonb language sql stable as $
       'arrivalSignal',ai.solmind_exclusion_normalize_v3(w.arrival_signal),
       'stage',case when w.lifecycle_status='reached' then 'reached' when w.released_at is not null then 'released' else 'formed' end,
       'reachedEvidence',case when w.lifecycle_status='reached' then ai.solmind_exclusion_normalize_v3(w.reached_evidence) end)
-      order by w.created_at,w.waypoint_id)
-      from content.waypoint w where w.source_ai_interaction_session_id=pg_temp.gid(6005)
-        and not exists(select 1 from content.waypoint s where s.predecessor_waypoint_id=w.waypoint_id)),'[]'::jsonb),
+      order by case when w.lifecycle_status='chosen' and w.released_at is null then 0 else 1 end,w.created_at desc,w.waypoint_id)
+      from (select h.* from content.waypoint h where h.source_ai_interaction_session_id=pg_temp.gid(6005)
+        and not exists(select 1 from content.waypoint s where s.predecessor_waypoint_id=h.waypoint_id)
+        order by case when h.lifecycle_status='chosen' and h.released_at is null then 0 else 1 end,h.created_at desc,h.waypoint_id limit 20) w),'[]'::jsonb),
     'drafts',coalesce((select jsonb_agg(jsonb_build_object('id',d.waypoint_draft_id,
       'title',ai.solmind_exclusion_normalize_v3(d.title),'destination',ai.solmind_exclusion_normalize_v3(d.destination),
       'whyItMatters',ai.solmind_exclusion_normalize_v3(d.why_it_matters),
@@ -205,14 +206,15 @@ create function pg_temp.compass_source_ids() returns uuid[] language sql stable 
   select coalesce(array_agg(x.id),array[]::uuid[]) from (
     select c.item_id as id from ai.explorer_conversation_compass_item c
       where c.conversation_id=pg_temp.gid(6005) and c.merged_into_item_id is null and c.formation_status is distinct from 'rejected'
-    union all select w.waypoint_id from content.waypoint w where w.source_ai_interaction_session_id=pg_temp.gid(6005)
-      and not exists(select 1 from content.waypoint s where s.predecessor_waypoint_id=w.waypoint_id)
+    union all select w.waypoint_id from (select h.* from content.waypoint h where h.source_ai_interaction_session_id=pg_temp.gid(6005)
+      and not exists(select 1 from content.waypoint s where s.predecessor_waypoint_id=h.waypoint_id)
+      order by case when h.lifecycle_status='chosen' and h.released_at is null then 0 else 1 end,h.created_at desc,h.waypoint_id limit 20) w
     union all select d.waypoint_draft_id from content.waypoint_draft d
       where d.source_ai_interaction_session_id=pg_temp.gid(6005) and d.draft_status='proposed') x
 $$;
 create function pg_temp.context_value(msg uuid,body text,classification_only boolean default false) returns jsonb language sql stable as $$
   select jsonb_build_object('contractVersion',case when classification_only then 'wi007-v0.1+onboarding-fields-v2'
-    else 'wi007-v0.1+onboarding-fields-v2+compass-v5' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
+    else 'wi007-v0.1+onboarding-fields-v2+compass-v6' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy',jsonb_build_object('version','synthetic-policy.v1','text','Synthetic policy.'),
     'roleBehavior',jsonb_build_object('version','synthetic-behavior.v1','text','Synthetic behavior.'),
     'crisisBehavior',jsonb_build_object('version','synthetic-crisis.v1','text','Synthetic crisis.'),
@@ -358,7 +360,7 @@ begin
     'currentSessionMessages','[]'::jsonb,
     'immediateExplorerMessage',jsonb_build_object('messageId',pg_temp.gid(20001),'explorerId',pg_temp.gid(26),
       'sessionId',pg_temp.gid(6006),'role','explorer','content','Synthetic other Explorer message.'),
-    'compassContext',jsonb_build_object('version','explorer-compass-context.v5','points','[]'::jsonb,
+    'compassContext',jsonb_build_object('version','explorer-compass-context.v6','points','[]'::jsonb,
       'priorityId',null,'attentionId',null,'recentRoute','[]'::jsonb,'waypoints','[]'::jsonb,'drafts','[]'::jsonb));
   serialization:=pg_temp.compact(context_value);
   select array_agg(id order by id) into source_ids from unnest(array[pg_temp.gid(55),pg_temp.gid(1001),pg_temp.gid(20001)]) id;
@@ -424,12 +426,16 @@ begin
     elsif case_name='level2' then model_n:=2;
     elsif case_name='classification_only' then level_n:=3;
     elsif case_name='uninterested' then interested_n:=false;
-    elsif case_name='waypoint_limit' then
+    elsif case_name in ('waypoint_limit','history_limit') then
       insert into content.waypoint(waypoint_id,guide_explorer_relationship_id,source_ai_interaction_session_id,
         source_message_id,title,destination,why_it_matters,arrival_signal,lifecycle_status,chosen_by_explorer_user_account_id,chosen_at)
         select pg_temp.gid(80000+g.n),pg_temp.gid(25),pg_temp.gid(6005),pg_temp.gid(10015),
           'Existing','Existing destination','Existing meaning','Existing signal','chosen',pg_temp.gid(1),clock_timestamp()
-        from generate_series(1,20) g(n);
+        from generate_series(1,case when case_name='history_limit' then 200 else 20 end) g(n);
+      if case_name='history_limit' then
+        update content.waypoint set lifecycle_status='reached',reached_by_explorer_user_account_id=pg_temp.gid(1),
+          reached_at=clock_timestamp(),reached_evidence='Explicit synthetic evidence';
+      end if;
     elsif case_name='rejected_limit' then
       for n in 1..24 loop
         if pg_temp.answer_draft(80000+n,draft_id,'not_it') is distinct from 'ok' then raise exception 'fixture_rejection'; end if;
@@ -513,7 +519,7 @@ end $$;
 create temp table cases as select name,pg_temp.typed_case(name) value
   from unnest(array['right','close','not_it','old','button_right','button_not_it','button_close','button_close_refined',
     'reword','same_reword','restricted','adult','level2','classification_only','uninterested',
-    'waypoint_limit','rejected_limit','incomplete','foreign','foreign_existing','missing','extra','array','uppercase','bad_id','json_null']) name;
+    'waypoint_limit','history_limit','rejected_limit','incomplete','foreign','foreign_existing','missing','extra','array','uppercase','bad_id','json_null']) name;
 
 select ok((select p.pronargs=26 and p.proargnames[26]='p_waypoint_response' and p.prosecdef
   and p.proowner='postgres'::regrole and p.proconfig @> array['search_path=""','lock_timeout=2000ms','statement_timeout=5000ms']
@@ -586,7 +592,10 @@ select ok((select value->>'saved'='false' and value->>'typedReceipts'='0' from c
   'S7b: delivery no longer wanted saves neither a reply nor a typed response');
 select ok((select value->>'saved'='true' and value->>'draftUnchanged'='true' and value->>'typedReceipts'='0'
   and value->>'waypointCount'='20' from cases where name='waypoint_limit'),
-  'S7b: the existing 20-Waypoint bound silently drops typed right and preserves the saved reply');
+  'S7b: twenty active Waypoints silently drop typed right and preserve the saved reply');
+select ok((select value->>'outcome'='ok' and value->>'saved'='true' and value->>'waypointCount'='200'
+  and value->>'draftUnchanged'='true' and value->>'typedReceipts'='0' from cases where name='history_limit'),
+  'lane 7: exhausted history silently drops typed right while the ordinary reply remains saved');
 select ok((select value->>'saved'='true' and value->>'draftUnchanged'='true' and value->>'typedReceipts'='0'
   and value->>'rejected'='24' from cases where name='rejected_limit'),
   'S7b: the 24-rejected-draft bound silently drops typed not_it and preserves the saved reply');

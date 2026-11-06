@@ -52,11 +52,11 @@ export const EXPLORER_SAFE_CONTEXT_LIMITS = Object.freeze({
 // his go-ahead at 20:50:45 CST): the saved Compass and Waypoint section. It is tied to
 // its own contract version both ways: that version requires the section and every
 // other version forbids it, so the older twelve-layer envelope keeps its exact bytes.
-// The S7b migration 20261105060000_explorer_typed_waypoint_replies.sql rebuilds the same
+// The lane 7 migration 20261106000000_explorer_waypoint_active_limits.sql rebuilds the same
 // section from the saved rows and compares it exactly before a Send is prepared.
-export const EXPLORER_COMPASS_CONTEXT_VERSION = "explorer-compass-context.v5" as const;
+export const EXPLORER_COMPASS_CONTEXT_VERSION = "explorer-compass-context.v6" as const;
 export const EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION =
-  "wi007-v0.1+onboarding-fields-v2+compass-v5" as const;
+  "wi007-v0.1+onboarding-fields-v2+compass-v6" as const;
 // The eight saved anchors (kept here so this module adds no import edge).
 const COMPASS_ANCHORS = Object.freeze([
   "apex", "upper_left", "upper_right", "side_left", "side_right",

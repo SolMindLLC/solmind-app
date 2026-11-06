@@ -10,14 +10,15 @@ const RELEASE = "a1040000-0000-4000-8000-000000000001";
 const END = "a1050000-0000-4000-8000-000000000001";
 const RELEASED_AT = "2026-10-29T15:05:00Z";
 const SOURCE_TEXT = "A retained exact private source <script>plain text only</script>.";
-const currentState = (): ExplorerConversationState => ({ version: "explorer-conversation.v1", conversationId: CONVERSATION,
+const currentState = (): ExplorerConversationState => ({ waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 1, hasMore: false }, version: "explorer-conversation.v1", conversationId: CONVERSATION,
   revision: 5, sessionStatus: "active", ending: null, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable",
   messages: [{ id: SOURCE, role: "explorer", body: SOURCE_TEXT, createdAt: "2026-10-29T15:00:00Z" }],
-  compassItems: [], priorityId: null, attentionId: null, route: [], waypoints: [{ id: WAYPOINT, sourceMessageId: SOURCE,
+  compassItems: [], priorityId: null, attentionId: null, route: [], waypoints: [{ isCurrent: true, createdAt: "2026-10-29T15:01:00Z", id: WAYPOINT, sourceMessageId: SOURCE,
     title: "A saved destination", destination: "A saved destination", meaning: "A saved meaning", arrivalSignal: "A saved arrival signal", status: "chosen",
     reachedEvidence: null, reachedAt: null }] });
 const releasedState = (operationId = RELEASE): ExplorerConversationState => { const current = currentState(); return {
-  ...current, revision: 6, waypoints: current.waypoints.map(item => ({ ...item, release: { operationId, releasedAt: RELEASED_AT } })),
+  ...current, revision: 6, waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true },
+  waypoints: current.waypoints.map(item => ({ ...item, release: { operationId, releasedAt: RELEASED_AT } })),
 }; };
 const success = (state: ExplorerConversationState) => ({ version: "explorer-private-conversation-response.v1",
   result: { ok: true, state, error: null }, assistance: null });
@@ -51,7 +52,7 @@ test("release requires deliberate source/effect review, saves one closed command
   await expect(review).toContainText("Arrival signal: A saved arrival signal");
   await expect(review.locator("blockquote")).toContainText(SOURCE_TEXT);
   await expect(review.locator("blockquote")).toContainText("Exact saved source — You");
-  await expect(review).toContainText("Its definition, saved source and history stay available and private.");
+  await expect(review).toContainText("Its definition, saved source and history stay saved and private.");
   await expect(review).toContainText("This does not mark it Reached, end the conversation or share anything.");
   const confirm = review.getByRole("button", { name: "Release this Waypoint", exact: true });
   await expect(confirm).toBeDisabled(); expect(commands).toHaveLength(0);
@@ -109,6 +110,39 @@ test("an unknown acknowledgment preserves honest uncertainty without a false Rel
   expect(bodies).toHaveLength(1); expect(JSON.parse(bodies[0]).kind).toBe("release_waypoint");
   expect(bodies.some(body => JSON.parse(body).kind === "send")).toBe(false);
 });
+
+for (const historyRoom of [true, false]) {
+  test(`lane 7 Release remains available at global twenty with historyRoom=${historyRoom}`, async ({ page }) => {
+    let current = { ...currentState(), waypointCapacity: { activeCount: 20, activeLimit: 20, historyRoom } };
+    const commands: ExplorerConversationCommand[] = [];
+    await mockCurrent(page, () => current);
+    await page.route("**/explorer/conversation/commands", route => {
+      const command = route.request().postDataJSON() as ExplorerConversationCommand;
+      commands.push(command);
+      expect(command.kind).toBe("release_waypoint");
+      current = { ...current, revision: 6, waypointCapacity: { activeCount: 19, activeLimit: 20, historyRoom },
+        waypoints: current.waypoints.map(item => ({ ...item, release: { operationId: command.operationId, releasedAt: RELEASED_AT } })) };
+      return route.fulfill({ json: success(current) });
+    });
+    await page.goto("/explorer/conversation");
+    const choose = page.getByRole("group", { name: "Choose a private Waypoint", exact: true });
+    await expect(choose.getByLabel("Where do you want to arrive?", { exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Review Reached: A saved destination", exact: true })).toBeEnabled();
+    await page.getByRole("button", { name: REVIEW_BUTTON, exact: true }).click();
+    const review = page.getByRole("group", { name: "Review before releasing this Waypoint", exact: true });
+    await review.getByLabel(CONFIRM_LABEL, { exact: true }).check();
+    await review.getByRole("button", { name: "Release this Waypoint", exact: true }).click();
+    await expect(page.getByText("Released \u2014 kept in your private history", { exact: true })).toBeVisible();
+    if (historyRoom) await expect(choose.getByLabel("Where do you want to arrive?", { exact: true })).toBeEnabled();
+    else await expect(choose.getByLabel("Where do you want to arrive?", { exact: true })).toBeDisabled();
+    expect(current.waypoints).toHaveLength(1);
+    expect(current.waypointCapacity.activeCount).toBe(19);
+    expect(commands).toHaveLength(1);
+    await page.reload();
+    await expect(page.getByRole("button", { name: REVIEW_BUTTON, exact: true })).toHaveCount(0);
+    expect(commands).toHaveLength(1);
+  });
+}
 
 test("ended review reads the captured release and source without offering commands", async ({ page }) => {
   const current: ExplorerConversationState = { ...releasedState(), revision: 7, sessionStatus: "ended",

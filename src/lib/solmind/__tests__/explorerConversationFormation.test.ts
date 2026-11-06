@@ -21,6 +21,8 @@ import {
 const source = { id: "saved-message-a", role: "explorer" as const, body: "I want calmer mornings.", createdAt: "2026-10-24T05:00:00.000Z" };
 function state(overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
   return {
+    waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true },
+    waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: 0 },
     version: EXPLORER_CONVERSATION_VERSION,
     conversationId: "conversation-a", revision: 4, providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null,
     messages: [source], compassItems: [], priorityId: null, attentionId: null, waypoints: [],
@@ -32,6 +34,7 @@ const items = [
   { id: "point-b", sourceMessageId: source.id, label: "Being heard" },
 ];
 const waypoint = {
+  isCurrent: true, createdAt: "2026-10-24T05:00:01Z",
   id: "waypoint-a", sourceMessageId: source.id, title: "A calmer start to the day", destination: "A calmer start to the day",
   meaning: "I can connect with my family", arrivalSignal: "I notice an unhurried family breakfast",
   status: "chosen" as const,
@@ -155,10 +158,19 @@ describe("Explorer-owned formation command boundaries", () => {
     expect(buildWaypointFormationIntent(state(), { ...draft, arrivalSignal: "bad\u009ftext" }).ok).toBe(false);
   });
 
-  it("bounds private Waypoints without changing or exposing existing ones", () => {
-    const full = state({ waypoints: Array.from({ length: 20 }, (_, index) => ({ ...waypoint, id: `waypoint-${index}` })) });
-    expect(buildWaypointFormationIntent(full, draft).ok).toBe(false);
-    expect(full.waypoints).toHaveLength(20);
+  it("uses global server capacity even when few Waypoints are displayed", () => {
+    const full = state({ waypoints: [waypoint], waypointCapacity: { activeCount: 20, activeLimit: 20, historyRoom: true } });
+    expect(buildWaypointFormationIntent(full, draft)).toEqual({ ok: false, command: null,
+      error: "You have 20 active Waypoints across your conversations. To help keep your focus manageable, your total must be below 20 before adding or bringing back another. Reached and Released Waypoints do not count. Review and confirm Reached for Waypoints you have reached, or release those you no longer want to pursue." });
+    expect(full.waypoints).toHaveLength(1);
+    expect(buildWaypointFormationIntent(state({ waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: false } }), draft).ok).toBe(false);
+    for (const activeCount of [0, 21]) {
+      expect(buildWaypointFormationIntent(state({ waypointCapacity: { activeCount, activeLimit: 20, historyRoom: false } }), draft))
+        .toEqual({ ok: false, command: null, error: "This conversation has reached its limit of 200 saved Waypoint versions, to keep its saved history manageable. No new Waypoint or version can be saved here. Marking one Reached or Released does not make room for another version. You can still read the Waypoints shown here, use Reached or Release where available, or end an active conversation." });
+    }
+    expect(buildWaypointFormationIntent(state({ waypointCapacity: null as unknown as ExplorerConversationState["waypointCapacity"] }), draft))
+      .toEqual({ ok: false, command: null, error: "The conversation could not be loaded. Please try again." });
+    expect(buildWaypointFormationIntent(state({ waypointCapacity: { activeCount: 19, activeLimit: 20, historyRoom: true } }), draft).ok).toBe(true);
   });
 
   it("cannot mark Reached without saved Waypoint, supporting evidence and confirmation", () => {

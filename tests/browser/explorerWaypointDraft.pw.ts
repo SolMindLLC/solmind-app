@@ -10,7 +10,8 @@ const WAYPOINT_ID = "60000000-0000-4000-8000-000000000099";
 const TITLE = "Make room for a calm conversation";
 const REFINED_TITLE = "A calmer talk with my sister";
 const TYPED_DRAFT = "Keep this unfinished thought exactly.";
-const LIMIT_REASON = 'Because you already have the most Waypoints SolMind keeps, "That\'s right" is not available here. You can still choose another reply or type what you would change.';
+const ACTIVE_LIMIT_REASON = '"That\'s right" is unavailable because you have 20 active Waypoints across your conversations. To help keep your focus manageable, your total must be below 20 before adding another. This limit does not block other replies or typing what you would change.';
+const HISTORY_LIMIT_REASON = '"That\'s right" is unavailable because this conversation has reached its limit of 200 saved Waypoint versions, to keep its saved history manageable. This limit does not block other replies or typing what you would change.';
 const fulfill = (route: Route, state: ExplorerConversationState) => route.fulfill({
   status: 200, contentType: "application/json", body: JSON.stringify({
     version: "explorer-private-conversation-response.v1", result: { ok: true, state, error: null }, assistance: null,
@@ -19,6 +20,7 @@ const fulfill = (route: Route, state: ExplorerConversationState) => route.fulfil
 
 test("S7a a saved Waypoint draft refines after an exact answer retry, confirms into Waypoints, and withdraws with an open follow-up", async ({ page }) => {
   const base = cardState({ providerState: "available", compassSuggestionReplies: "available",
+    waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true },
     compassItems: [], priorityId: null, attentionId: null, waypoints: [] });
   const initial = { id: DRAFT_ID, title: TITLE, destination: "Talk with my sister without rushing",
     whyItMatters: "I want us both to feel heard", arrivalSignal: "We each finish our thought",
@@ -46,7 +48,9 @@ test("S7a a saved Waypoint draft refines after an exact answer retry, confirms i
         expect(command.expectedRevision).toBe(14);
         const draft = current.waypointDraft!;
         current = { ...current, revision: 15, waypointDraft: null,
-          waypoints: [{ id: WAYPOINT_ID, sourceMessageId: initial.suggestionMessageId,
+          waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true },
+          waypointProjection: { kind: "current_heads", limit: 20, totalHeads: 1, hasMore: false },
+          waypoints: [{ isCurrent: true, createdAt: "2026-11-06T09:00:00.000Z", id: WAYPOINT_ID, sourceMessageId: initial.suggestionMessageId,
             title: draft.title!, destination: draft.destination!, meaning: draft.whyItMatters!,
             arrivalSignal: draft.arrivalSignal!, status: "chosen" }] };
       } else {
@@ -122,6 +126,7 @@ test("S7a a saved Waypoint draft refines after an exact answer retry, confirms i
 for (const response of ["right", "not_it"] as const) {
   test(`S7b a typed ${response} updates the forming draft and Waypoints only after Send returns saved state`, async ({ page }) => {
     const base = cardState({ providerState: "available", compassSuggestionReplies: "available",
+      waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true },
       compassItems: [], priorityId: null, attentionId: null, waypoints: [] });
     const draft = { id: DRAFT_ID, title: TITLE, destination: "Talk with my sister without rushing",
       whyItMatters: "I want us both to feel heard", arrivalSignal: "We each finish our thought",
@@ -145,7 +150,9 @@ for (const response of ["right", "not_it"] as const) {
       expect(command.body).toBe(typedAnswer);
       await held;
       current = { ...current, revision: base.revision + 1, waypointDraft: null,
-        waypoints: response === "right" ? [{ id: WAYPOINT_ID, sourceMessageId: draft.suggestionMessageId,
+        waypointCapacity: { activeCount: response === "right" ? 1 : 0, activeLimit: 20, historyRoom: true },
+        waypointProjection: { kind: "current_heads", limit: 20, totalHeads: response === "right" ? 1 : 0, hasMore: false },
+        waypoints: response === "right" ? [{ isCurrent: true, createdAt: "2026-11-06T09:00:00.000Z", id: WAYPOINT_ID, sourceMessageId: draft.suggestionMessageId,
           title: draft.title, destination: draft.destination, meaning: draft.whyItMatters,
           arrivalSignal: draft.arrivalSignal, status: "chosen" }] : [],
         messages: [...base.messages,
@@ -192,10 +199,13 @@ for (const response of ["right", "not_it"] as const) {
   });
 }
 
-for (const response of ["close", "not_it", "send"] as const) {
-  test(`S7a the full stored-row limit holds confirmation and keeps ${response} available`, async ({ page }) => {
+for (const limit of ["active", "history", "both"] as const) for (const response of ["close", "not_it", "send"] as const) {
+  test(`lane 7 the ${limit} limit holds confirmation and keeps ${response} available`, async ({ page }) => {
     const base = cardStateAtWaypointLimit();
+    const limitReason = limit === "active" ? ACTIVE_LIMIT_REASON : HISTORY_LIMIT_REASON;
     let current: ExplorerConversationState = { ...base, providerState: "available", compassSuggestionReplies: "available",
+      waypointCapacity: limit === "active" ? base.waypointCapacity
+        : { activeCount: limit === "both" ? 20 : 1, activeLimit: 20, historyRoom: false },
       waypointDraft: { id: DRAFT_ID, title: TITLE, destination: "Talk without rushing",
         whyItMatters: "I want to feel heard", arrivalSignal: "We each finish our thought",
         suggestionMessageId: base.messages.at(-1)!.id } };
@@ -228,11 +238,18 @@ for (const response of ["close", "not_it", "send"] as const) {
     const composer = page.getByLabel("Continue the conversation", { exact: true });
     await expect(right).toBeVisible();
     await expect(right).toBeDisabled();
-    await expect(row.getByText(LIMIT_REASON, { exact: true })).toHaveCount(1);
-    await expect(row).toHaveAccessibleDescription(LIMIT_REASON);
+    const reason = row.getByText(limitReason, { exact: true });
+    await expect(reason).toHaveCount(1);
+    await expect(reason).toHaveAttribute("role", "status");
+    await expect(reason).toHaveAttribute("aria-live", "polite");
+    await expect(row).toHaveAccessibleDescription(limitReason);
+    await expect(row.getByText(limit === "active" ? HISTORY_LIMIT_REASON : ACTIVE_LIMIT_REASON, { exact: true })).toHaveCount(0);
     for (const label of ["Close, not quite", "That's not it"]) {
       await expect(row.getByRole("button", { name: label, exact: true })).toBeEnabled();
     }
+    await row.getByRole("button", { name: "That's not it", exact: true }).focus();
+    await page.keyboard.press("Tab");
+    await expect(reason).toBeFocused();
     await right.evaluate(button => (button as HTMLButtonElement).click());
     expect(requests).toHaveLength(0);
     await expect(composer).toBeEnabled();
@@ -247,3 +264,26 @@ for (const response of ["close", "not_it", "send"] as const) {
     await expect(composer).toBeEnabled();
   });
 }
+
+test("lane 7 an authoritative capacity refresh re-enables right without removing local history", async ({ page }) => {
+  const base = cardStateAtWaypointLimit();
+  let current: ExplorerConversationState = { ...base, providerState: "available", compassSuggestionReplies: "available",
+    waypointDraft: { id: DRAFT_ID, title: TITLE, destination: "Talk without rushing",
+      whyItMatters: "I want to feel heard", arrivalSignal: "We each finish our thought",
+      suggestionMessageId: base.messages.at(-1)!.id } };
+  let writes = 0;
+  await page.route("**/explorer/conversation/state", route => fulfill(route, current));
+  await page.route("**/explorer/conversation/commands", route => { writes += 1; return route.abort(); });
+  await page.goto("/explorer/conversation");
+  const row = page.getByRole("group", { name: `Reply to Waypoint suggestion: ${TITLE}`, exact: true });
+  const right = row.getByRole("button", { name: "That's right", exact: true });
+  await expect(right).toBeDisabled();
+  await expect(row.getByText(ACTIVE_LIMIT_REASON, { exact: true })).toBeVisible();
+  const savedHeads = current.waypoints;
+  current = { ...current, waypointCapacity: { activeCount: 19, activeLimit: 20, historyRoom: true } };
+  await page.getByRole("button", { name: "Reload saved conversation", exact: true }).click();
+  await expect(right).toBeEnabled();
+  await expect(row.getByText(ACTIVE_LIMIT_REASON, { exact: true })).toHaveCount(0);
+  expect(current.waypoints).toBe(savedHeads);
+  expect(writes).toBe(0);
+});

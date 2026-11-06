@@ -255,14 +255,17 @@ test("the card draws the saved Compass and Waypoints, and tapping a point on the
   await expect(liveLine(group)).toHaveText("");
   await expectLiveOnlyInDrawer(page, group);
   // The saved Waypoints in the compact list (lane 8): the Formed one as a closed row, the Reached and Released
-  // ones in their closed group; opening shows the stages and earlier versions (explorerWaypointList.pw.ts).
+  // ones in their closed group (explorerWaypointList.pw.ts). Lane 7: the bounded current heads keep their stages;
+  // older versions use history pages, so an opened row shows no earlier version here.
   const waypoints = card.getByRole("region", { name: "Waypoints", exact: true });
   await expect(waypoints.getByRole("article")).toHaveCount(1);
   await waypoints.getByRole("button", { name: /Reached and released \(2\)/ }).click();
   await expect(waypoints.getByRole("article")).toHaveCount(3);
   for (const label of ["Formed", "Reached", "Released"]) await expect(waypoints.getByText(label, { exact: true })).toBeVisible();
   await waypoints.getByRole("button", { name: /Ask my sister for a calm evening/ }).click();
-  await expect(waypoints.getByText("Earlier version - Formed", { exact: true })).toBeVisible();
+  for (const label of ["Earlier version - Formed", "Earlier version - Reached", "Earlier version - Released"]) {
+    await expect(waypoints.getByText(label, { exact: true })).toHaveCount(0);
+  }
   await expectNoSidewaysScroll(page);
   await expectNoSeriousAxeViolations(page);
   expect(bodies).toHaveLength(0);

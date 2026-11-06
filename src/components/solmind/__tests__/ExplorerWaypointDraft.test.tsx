@@ -9,7 +9,9 @@ import { ExplorerConversationConnectedScreen, type ConnectedConversationView } f
 const DRAFT_ID = "80000000-0000-4000-8000-000000000001";
 const TITLE = "Make room for a calm conversation";
 const LABELS = ["That's right", "Close, not quite", "That's not it"];
-const LIMIT_REASON = 'Because you already have the most Waypoints SolMind keeps, "That\'s right" is not available here. You can still choose another reply or type what you would change.';
+const ACTIVE_LIMIT_REASON = '"That\'s right" is unavailable because you have 20 active Waypoints across your conversations. To help keep your focus manageable, your total must be below 20 before adding another. This limit does not block other replies or typing what you would change.';
+const HISTORY_LIMIT_REASON = '"That\'s right" is unavailable because this conversation has reached its limit of 200 saved Waypoint versions, to keep its saved history manageable. This limit does not block other replies or typing what you would change.';
+const UNAVAILABLE_REASON = "To keep this conversation safe, suggestion replies wait until SolMind can confirm this conversation's settings.";
 const original = cardState();
 const MESSAGE = original.messages[3].id;
 const NEXT_MESSAGE = "30000000-0000-4000-8000-000000000099";
@@ -124,25 +126,57 @@ describe("S7a private forming Waypoint card", () => {
     }
   });
 
-  it("holds only confirmation at the stored-row limit and describes the row once after its replies", () => {
+  it.each([20, 21])("holds only confirmation at %i global active Waypoints and describes the row once after its replies", activeCount => {
     const waypoints = cardStateAtWaypointLimit().waypoints;
-    const html = card(state({ waypoints }));
+    const capacity = { activeCount, activeLimit: 20, historyRoom: true };
+    const reason = ACTIVE_LIMIT_REASON.replace("20 active", `${activeCount} active`);
+    const html = card(state({ waypoints: waypoints.slice(0, 1), waypointCapacity: capacity }));
     expect(buttons(html)).toEqual([
       { label: LABELS[0], disabled: true }, { label: LABELS[1], disabled: false }, { label: LABELS[2], disabled: false },
     ]);
-    expect(plain(html).split(LIMIT_REASON)).toHaveLength(2);
+    expect(plain(html).split(reason)).toHaveLength(2);
+    expect(plain(html)).not.toContain(HISTORY_LIMIT_REASON);
     expect(html).toContain(`aria-describedby="waypoint-suggestion-limit-${DRAFT_ID}"`);
     expect(html).toContain(`id="waypoint-suggestion-limit-${DRAFT_ID}"`);
-    expect(plain(html).indexOf(LIMIT_REASON)).toBeGreaterThan(plain(html).indexOf(LABELS[2]));
-    const belowLimit = card(state({ waypoints: waypoints.slice(0, -1) }));
+    expect(html).toContain('aria-live="polite"');
+    expect(html).toContain('role="status" tabindex="0"');
+    expect(plain(html).indexOf(reason)).toBeGreaterThan(plain(html).indexOf(LABELS[2]));
+    const belowLimit = card(state({ waypoints, waypointCapacity: { ...capacity, activeCount: 19 } }));
     expect(buttons(belowLimit)).toEqual(LABELS.map(label => ({ label, disabled: false })));
-    expect(plain(belowLimit)).not.toContain(LIMIT_REASON);
+    expect(plain(belowLimit)).not.toContain(reason);
+    expect(belowLimit).not.toContain(`id="waypoint-suggestion-limit-${DRAFT_ID}"`);
     for (const overrides of [{ sessionStatus: "ended" as const }, { compassSuggestionReplies: "support" as const }]) {
-      const held = card(state({ waypoints, ...overrides }));
+      const held = card(state({ waypoints, waypointCapacity: capacity, ...overrides }));
       expect(buttons(held)).toEqual([]);
-      expect(plain(held)).not.toContain(LIMIT_REASON);
+      expect(plain(held)).not.toContain(reason);
     }
   });
+
+  it.each([0, 20, 21])("uses only the history reason when history is full with %i active Waypoints", activeCount => {
+    const html = card(state({ waypointCapacity: { activeCount, activeLimit: 20, historyRoom: false } }));
+    expect(buttons(html)).toEqual([
+      { label: LABELS[0], disabled: true }, { label: LABELS[1], disabled: false }, { label: LABELS[2], disabled: false },
+    ]);
+    expect(plain(html).split(HISTORY_LIMIT_REASON)).toHaveLength(2);
+    expect(plain(html)).not.toContain("active Waypoints across your conversations");
+    expect(html).toContain(`aria-describedby="waypoint-suggestion-limit-${DRAFT_ID}"`);
+    expect(html).toContain('aria-live="polite"');
+    expect(html).toContain('role="status" tabindex="0"');
+  });
+
+  it.each([null, undefined, { activeCount: 20, activeLimit: 20, historyRoom: null }])(
+    "holds confirmation with calm unavailable wording for unconfirmed capacity %j", waypointCapacity => {
+      const next = state({ waypointCapacity: waypointCapacity as unknown as ExplorerConversationState["waypointCapacity"] });
+      const html = card(next);
+      expect(buttons(html)).toEqual([
+        { label: LABELS[0], disabled: true }, { label: LABELS[1], disabled: false }, { label: LABELS[2], disabled: false },
+      ]);
+      expect(plain(html).split(UNAVAILABLE_REASON)).toHaveLength(2);
+      expect(plain(html)).not.toContain(ACTIVE_LIMIT_REASON);
+      expect(plain(html)).not.toContain(HISTORY_LIMIT_REASON);
+      expect(html).toContain(`aria-describedby="waypoint-suggestion-limit-${DRAFT_ID}"`);
+      expect(html).toContain('role="status" tabindex="0"');
+    });
 
   it.each(["right", "close", "not_it"] as const)("dispatches only the selected %s answer and returns focus to its message", response => {
     const onCommand = vi.fn();
@@ -156,7 +190,7 @@ describe("S7a private forming Waypoint card", () => {
   });
 
   it("shows an exact confirmed title as a closed row of the compact Waypoint list", () => {
-    const html = screen(state({ waypointDraft: null, waypoints: [{ id: DRAFT_ID, title: TITLE,
+    const html = screen(state({ waypointDraft: null, waypoints: [{ id: DRAFT_ID, isCurrent: true, createdAt: "2026-11-05T15:00:00Z", title: TITLE,
       sourceMessageId: MESSAGE, destination: draft.destination, meaning: draft.whyItMatters,
       arrivalSignal: draft.arrivalSignal, status: "chosen" }] }));
     expect(html).not.toContain("Reply to Waypoint suggestion:");

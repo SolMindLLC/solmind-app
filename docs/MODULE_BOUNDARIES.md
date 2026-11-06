@@ -1,5 +1,92 @@
 # SolMind App Module Boundaries
 
+## Lane 7: active Waypoint capacity and private history - 2026-11-06
+
+Twenty active Waypoints are allowed per durable Explorer account across all
+conversations and relationships. The canonical protected SQL count includes
+chosen current heads that are neither Reached nor Released (a private post-End
+closure counts as Reached or Released). Drafts, Guide suggestions and
+predecessor versions do not count. Existing accounts above twenty retain all
+work; only increases are blocked. Revision is net zero; revisit requires a free
+active place.
+
+The separate engineering guard is 200 saved Waypoint records per source
+conversation, counting originals and revisions. Every insertion requires
+history room; reading, Reached, Release and End remain available at the guard.
+The protected SQL policy owns both numbers. Required waypointCapacity
+{activeCount, activeLimit, historyRoom} comes from the authenticated v3 read,
+which supplies it even without a current conversation; the base state builder
+returns null capacity when there is no owner. A missing, null or malformed
+capacity fails closed.
+
+The conversation projection is explicitly partial: at most 20 authoritative
+current heads, with identity, creation time, provenance and projection metadata.
+Separate owner-private head and history RPCs return at most 20 records per
+page. Currentness and account capacity must never be inferred from absence in
+a partial array. SQL retains and validates the complete lineage.
+
+Interim display gap: earlier versions of revised or revisited Waypoints are
+no longer visible on the connected card, compact list or ended review. The
+owner-private history RPC preserves read access, but has no route or screen
+in this increment. Further current heads outside the bounded projection also
+stay saved and private without a screen to open them. Paul accepted this gap
+for saving now for the demo (decision queue 2026-11-06 15:13:41 CST, item 2).
+The private Your Waypoints section must be built next, before any real Explorer
+uses SolMind. Release now says history stays saved and private; revised and
+revisited details explain that earlier definitions stay saved privately and
+cannot currently be opened. The earlier-version link is hidden until that
+private section exists.
+The compact list sorts each group newest first independently of projection
+order. The legacy formation tools and ended review follow the same order
+(active heads first, then closed heads, newest first within each group);
+before this change they showed the oldest first. Paul approved active-first
+ordering on every screen in the same decision.
+
+Append-only private post-End closure is a narrow exception to frozen ended
+history: an eligible Explorer may close an originally owned current head across
+earlier Guide relationships after fresh current eligibility and consent checks.
+Reached requires known-clear, adult-allowed policy and explicit evidence;
+Release retains its existing policy allowance. Authenticated exact replay,
+the account owner lock, one terminal fact and transactional audit are required.
+The original conversation, ending revision/time, transcript, Route and source
+provenance stay unchanged. No after-End revision, revisit, reactivation or
+Guide access is authorized. The private Your Waypoints screen is later work;
+this increment adds no route or page.
+
+Ordinary model context is compass-v6 / explorer-compass-context.v6 and includes
+at most 20 same-conversation heads: active heads first, then newest closed
+heads, with deterministic matching SQL/TypeScript selection and source ids.
+Compass-v5 is refused for new turns; classification_only is unchanged.
+The bounded-selection instruction and its five version labels, byte counts
+and integrity pins move together. Paul approved that instruction as written
+in the decision queue on 2026-11-06 at 15:13:41 CST. Classification-only context
+stays unchanged; its shared HTTP instruction text also receives the
+bounded-selection sentence. Existing request/provider budgets, cancellation,
+one-call rules and Send counting stay unchanged.
+
+The four limit sentences are Paul's approved wording (decision queue
+2026-11-06 15:13:41 CST, item 2) and change only with his approval.
+src/lib/solmind/explorerWaypointCapacity.ts owns their named constants and
+waypointCapacityMessage selects the explanation from the server's
+waypointCapacity, never a count of the visible list; activeCount and
+activeLimit also come only from those server facts. A false historyRoom chooses
+the 200-version explanation first, including when both limits apply. Otherwise,
+an active count at or above the limit explains refusals to add, confirm a draft
+or revisit.
+The active limit never blocks or explains a revision. Missing, null or
+malformed capacity fails closed with the existing calm unavailable wording,
+never a limit sentence. Forming drafts use the approved "That's right"
+variants. Each explanation stays beside its affected control, including a
+disabled control, with keyboard access and the existing screen-reader
+announcement behavior.
+
+The application change and
+supabase/migrations/20261106000000_explorer_waypoint_active_limits.sql
+must reach the database together. Earlier migrations remain immutable;
+reverting the application alone after longer history or closure facts exist
+is unsafe. SQL/pgTAP and browser execution, canonical sibling-document updates,
+independent review and integration remain Executor work.
+
 > Source reconciliation, 2026-10-21. Explorer login, direct-token request checks
 > and shared logout are banked under SL-069. Dated actual evidence and limits
 > remain in the execution ledger. Connected Guide source and October 21
@@ -3360,7 +3447,8 @@ wi007-v0.1+onboarding-fields-v2+compass-v1, the same layers plus `compassContext
 Amendment 2026-11-04 (S5): the ordinary AV3 revision is now `wi007-v0.1+onboarding-fields-v2+compass-v2`, requiring `explorer-compass-context.v2`; classification_only and AV2 keep the section-free base revision.
 Amendment 2026-11-05 (S6b): ordinary AV3 now uses compass-v3 / explorer-compass-context.v3 (forming points add suggestedInPreviousReply); the current inspector is in 20261105030000_explorer_typed_suggestion_replies.sql; compass-v2 is refused.
 Owners: src/lib/solmind/context/explorerSafeContext.ts (the section
-shape, limits of 24 points, 5 Route events and 20 Waypoints, the label and text limits,
+shape, limits of 24 points, 5 Route events and 20 selected Waypoint heads (a context
+bound independent of active capacity and stored history), the label and text limits,
 and the version tie: this revision requires the section, every other revision forbids
 it); explorerConversationContext.ts (fills it from the read state for the AV3 entries
 only: current points in saved display order, the saved Priority and attention, the last
@@ -4077,7 +4165,7 @@ content.waypoint_draft is Explorer-private, with RLS enabled, zero policies
 and no direct anon, authenticated or service_role grants. It allows one
 proposed draft per conversation, draft_kind new only, nullable forming fields,
 and at most 24 rejected rows per conversation. Drafts do not consume the
-existing 20-Waypoint limit. Only settlement rewrites proposed wording.
+account-wide active allowance (lane 7, 2026-11-06). Only settlement rewrites proposed wording.
 Confirmed and rejected drafts are immutable; rejected details never enter
 browser state or model context.
 
@@ -4122,12 +4210,12 @@ both Compass and Waypoint rows. At the Waypoint limit only "That's right"
 is disabled, with the approved reason once beneath the row and a local
 command refusal before any request. Close, not_it and typing keep their
 existing gates; a server refusal after a race keeps the definite-conflict path.
-The browser's waypoints array contains every row counted by the server,
-including Reached, Released and earlier versions retained by revisions.
-Both screen and command gate use its length and the existing
-EXPLORER_CONVERSATION_LIMITS.waypoints constant; no new state flag is needed.
-SQL coverage exercises Release, Reached, revision and history guards on a
-draft-confirmed Waypoint, plus this complete count. The SQL and TypeScript
+Amendment 2026-11-06 (lane 7): the browser's waypoints array is an
+explicitly partial projection of at most 20 current heads. Required server
+waypointCapacity supplies the account-wide active count, active limit and
+conversation history room; screen and command gates never count local rows.
+SQL coverage exercises Release, Reached, revision and separate active/history
+guards on a draft-confirmed Waypoint. The SQL and TypeScript
 context tests share one non-empty draft golden in the SQL test.
 
 All five prompt/role/instruction labels end in -20261105-s7a-r2; wording,

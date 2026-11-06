@@ -15,7 +15,7 @@ const success = (state: ExplorerConversationState) => ({
 });
 const isWide = (page: Page) => (page.viewportSize()?.width ?? 0) >= 1024;
 
-// Five more chosen Waypoints after the fixture's own three, oldest first, as the server saves them.
+// Five more chosen Waypoints; manyWaypoints returns SQL's active-first, newest-first projection.
 const EXTRA = [
   ["Plan the first two sentences", "Know how I will start the talk", "So I do not freeze at the start", "I can say the first two sentences"],
   ["Pick a quiet place to talk", "Pick a quiet place to talk", "Noise makes me lose my point", "We have a place we both like"],
@@ -29,7 +29,8 @@ function manyWaypoints(withDraft: boolean): ExplorerConversationState {
   const base = cardState();
   const source = base.messages[0].id;
   const extra = EXTRA.map(([title, destination, meaning, arrivalSignal], index) => ({
-    id: `60000000-0000-4000-8000-0000000000e${index}`, sourceMessageId: source, title, destination, meaning, arrivalSignal,
+    id: `60000000-0000-4000-8000-0000000000e${index}`, isCurrent: true, createdAt: `2026-11-03T15:0${index}:00.000Z`,
+    sourceMessageId: source, title, destination, meaning, arrivalSignal,
     status: "chosen" as const,
   }));
   const draft = withDraft ? {
@@ -37,7 +38,12 @@ function manyWaypoints(withDraft: boolean): ExplorerConversationState {
     destination: "Agree on a day with my sister", whyItMatters: "So neither of us is rushed",
     arrivalSignal: "We both said yes to a day", suggestionMessageId: base.messages[3].id,
   } : null;
-  return { ...base, waypoints: [...base.waypoints, ...extra], waypointDraft: draft };
+  const formed = base.waypoints.filter(waypoint => waypoint.status === "chosen" && !waypoint.release);
+  const closed = base.waypoints.filter(waypoint => waypoint.status === "reached" || waypoint.release).reverse();
+  const waypoints = [...extra.reverse(), ...formed, ...closed];
+  return { ...base, waypoints, waypointDraft: draft,
+    waypointCapacity: { activeCount: formed.length + extra.length, activeLimit: 20, historyRoom: true },
+    waypointProjection: { kind: "current_heads", limit: 20, totalHeads: waypoints.length, hasMore: false } };
 }
 
 // The Waypoints region in the wide panel, or on a phone inside the opened Compass & Waypoint drawer.
@@ -60,7 +66,7 @@ async function openList(page: Page, state: ExplorerConversationState): Promise<L
 
 const rowButtons = (list: Locator) => list.locator("article h4 button");
 
-test("three rows show first, the forming draft first and then the newest; then five; then all; then three again", async ({ page }) => {
+test("SQL newest-first projection: three rows show first, the forming draft first and then the newest; then five; then all; then three again", async ({ page }) => {
   const list = await openList(page, manyWaypoints(true));
   await expect(rowButtons(list)).toHaveCount(3);
   await expect(rowButtons(list).nth(0)).toHaveAccessibleName(`${DRAFT_TITLE} Forming`);
@@ -107,11 +113,15 @@ test("Reached and Released Waypoints are in a closed group that names their coun
   await expect(list.getByRole("button", { name: /Say what I need in one sentence/ })).toHaveCount(0);
   await group.click();
   await expect(group).toHaveAttribute("aria-expanded", "true");
+  await expect(rowButtons(list).nth(3)).toHaveAccessibleName("Fix the budget this month Released");
+  await expect(rowButtons(list).nth(4)).toHaveAccessibleName("Say what I need in one sentence Reached");
   const reached = list.getByRole("button", { name: /Say what I need in one sentence/ });
   await expect(reached).toHaveAccessibleName(/Reached$/);
   await expect(list.getByRole("button", { name: /Fix the budget this month/ })).toHaveAccessibleName(/Released$/);
   await reached.click();
-  await expect(list.getByText(/^Earlier version - Reached/)).toBeVisible();
+  await expect(list.getByText("I can say it out loud once", { exact: true })).toBeVisible();
+  // The current-head projection has no earlier versions until the private history screen exists.
+  await expect(list.getByText(/^Earlier version/)).toHaveCount(0);
 });
 
 test("a conversation with three or fewer Waypoints has no Show buttons", async ({ page }) => {

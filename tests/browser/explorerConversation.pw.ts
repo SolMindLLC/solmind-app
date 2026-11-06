@@ -11,7 +11,7 @@ test.use({ trace: "off", screenshot: "off", video: "off" });
 const CONVERSATION = "10000000-0000-4000-8000-000000000001";
 const EXPLORER_MESSAGE = "20000000-0000-4000-8000-000000000001";
 const GUIDE_MESSAGE = "30000000-0000-4000-8000-000000000001";
-const emptyState = (providerState: ExplorerConversationState["providerState"] = "available"): ExplorerConversationState => ({
+const emptyState = (providerState: ExplorerConversationState["providerState"] = "available"): ExplorerConversationState => ({ waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false },
   version: EXPLORER_CONVERSATION_VERSION, conversationId: null, revision: 0, providerState, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null,
   messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [],
 });
@@ -93,12 +93,13 @@ test("F02 explicit arrangement is saved once and read back after reload without 
 test("F01 saved Route and Reached evidence remain reviewable after reload without a command", async ({ page }) => {
   const pointId = "40000000-0000-4000-8000-000000000001";
   const state: ExplorerConversationState = { ...savedState(), revision: 5,
+    waypointProjection: { kind: "current_heads", limit: 20, totalHeads: 1, hasMore: false },
     compassItems: [{ id: pointId, sourceMessageId: EXPLORER_MESSAGE, label: "Current point label" }],
     priorityId: pointId, attentionId: pointId,
     route: [{ operationId: "50000000-0000-4000-8000-000000000001", revision: 3,
       kind: "priority_confirmed", compassItemId: pointId, label: "Captured earlier direction",
       recordedAt: "2026-10-29T07:00:00.123456+00:00" }],
-    waypoints: [{ id: "60000000-0000-4000-8000-000000000001", sourceMessageId: GUIDE_MESSAGE,
+    waypoints: [{ isCurrent: true, createdAt: "2026-10-29T06:59:00Z", id: "60000000-0000-4000-8000-000000000001", sourceMessageId: GUIDE_MESSAGE,
       title: "One calm choice", destination: "One calm choice", meaning: "Room for what matters", arrivalSignal: "I can name a next step",
       status: "reached", reachedEvidence: "I named a next step. <script>not markup</script>",
       reachedAt: "2026-10-29T07:01:00.123456+00:00" }] };

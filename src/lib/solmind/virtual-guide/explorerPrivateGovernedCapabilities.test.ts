@@ -20,6 +20,8 @@ const ACTOR = Object.freeze({ accountId: uuid(4), applicationSessionId: uuid(5) 
 const EXPECTED_SCOPE = Object.freeze({ type: "guide" as const, id: GUIDE });
 const SHA = "A".repeat(64);
 const STATE = Object.freeze({ version: "explorer-conversation.v1" as const, conversationId: uuid(6),
+  waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true },
+  waypointProjection: { kind: "current_heads" as const, limit: 20 as const, hasMore: false, totalHeads: 0 },
   revision: 0, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable" as const,
   messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] });
 function fixture() {
@@ -143,10 +145,12 @@ describe("explicit private governed capability composition with synthetic proven
     if (!readiness) throw new Error("synthetic_readiness_missing");
     const source = uuid(50); const point = uuid(51); const waypoint = uuid(52);
     const populated = { ...STATE,
+      waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true },
+      waypointProjection: { kind: "current_heads" as const, limit: 20 as const, hasMore: false, totalHeads: 1 },
       messages: [{ id: source, role: "explorer" as const, body: "Synthetic saved message.", createdAt: "2026-11-04T09:00:00.000Z" }],
       compassItems: [{ id: point, sourceMessageId: source, label: "Synthetic point", anchor: null, emphasis: null, mergedIntoItemId: null }],
       priorityId: null, attentionId: point,
-      waypoints: [{ id: waypoint, sourceMessageId: source, title: "Synthetic destination", destination: "Synthetic destination", meaning: "Synthetic meaning",
+      waypoints: [{ id: waypoint, isCurrent: true, createdAt: "2026-11-04T09:00:00.000Z", sourceMessageId: source, title: "Synthetic destination", destination: "Synthetic destination", meaning: "Synthetic meaning",
         arrivalSignal: "Synthetic arrival", status: "chosen" as const, reachedEvidence: null, reachedAt: null }] };
     const ids = { conversationId: STATE.conversationId, logicalOperationId: uuid(40), messageId: uuid(41),
       snapshotId: uuid(42), invocationId: uuid(43), replyId: uuid(44) };
@@ -164,7 +168,7 @@ describe("explicit private governed capability composition with synthetic proven
     const ordinary = await f.capabilities.buildContext({ actor: ACTOR, row: f.row, state: populated, command, ids, readiness,
       mode: "classification_and_reply", signal: new AbortController().signal });
     const full = JSON.parse(ordinary.request.authorizedContext) as { contractVersion: string };
-    expect(full.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2+compass-v5");
+    expect(full.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2+compass-v6");
     expect(Object.hasOwn(full, "compassContext")).toBe(true);
     expect(ordinary.evidence.p_context_source_ids).toContain(point);
     expect(f.provider.generate).not.toHaveBeenCalled(); expect(f.write).not.toHaveBeenCalled();

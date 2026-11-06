@@ -22,7 +22,7 @@ const CHOICES = ["Show me around", "I have a question", "Let's begin"];
 const DRAFT = "Keep this unfinished typed thought exactly.";
 
 function savedState(overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
-  return {
+  return { waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false },
     version: EXPLORER_CONVERSATION_VERSION,
     conversationId: CONVERSATION,
     revision: 3,

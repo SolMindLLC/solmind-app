@@ -26,6 +26,13 @@ or validation expectations change.
 
 ## Repository Scope
 
+Private Explorer Waypoints use account-wide active capacity and a separate
+per-conversation history guard, enforced by protected SQL helpers. Conversation
+state carries authoritative capacity and a bounded current-head projection;
+owner-private head and history reads are paginated. Append-only post-End closure
+records preserve the original conversation and do not expand Guide access.
+Application and migration versions must move together when these contracts change.
+
 The current app pairs an interactive deterministic Explorer prototype with
 static MVP0 preview pages and several foundation-first backend modules. These
 surfaces are development and review artifacts. Explorer email-code sign-in, a protected

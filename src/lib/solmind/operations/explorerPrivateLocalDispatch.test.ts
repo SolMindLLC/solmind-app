@@ -52,7 +52,7 @@ function fixture(options: { body?: string; ledger?: ReturnType<typeof fakeLedger
   const policy = { contractVersion: "explorer-conversation-safety.v1", known: true, version: 1,
     restrictedLevel: options.restricted ? 4 : null, adultReflectionStopped: options.adultStopped ?? false };
   const mode = options.restricted || options.adultStopped ? "classification_only" as const : "classification_and_reply" as const;
-  const initial = { version: "explorer-conversation.v1" as const, conversationId: ids.conversationId,
+  const initial = { waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false }, version: "explorer-conversation.v1" as const, conversationId: ids.conversationId,
     revision: 0, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "available" as const, messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] };
   const authority = { accountId: actor.accountId, applicationSessionId: actor.applicationSessionId, explorerId: profile.explorerId,
     guideId: profile.guideId, authorizationVersion: AV3, applicationSessionExpiresAt: profile.expiresAt };
@@ -60,8 +60,8 @@ function fixture(options: { body?: string; ledger?: ReturnType<typeof fakeLedger
     conversation_state: { ...initial, revision: 1, pendingTurn: true,
       messages: [{ id: ids.messageId, role: "explorer", body: command.body, createdAt: new Date().toISOString() }] } };
   const serialized = JSON.stringify({ contractVersion: mode === "classification_only"
-    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v5",
-    ...(mode === "classification_only" ? {} : { compassContext: { version: "explorer-compass-context.v5",
+    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v6",
+    ...(mode === "classification_only" ? {} : { compassContext: { version: "explorer-compass-context.v6",
       points: [], priorityId: null, attentionId: null, recentRoute: [], waypoints: [], drafts: [] } }),
     immediateExplorerMessage: { content: command.body } });
   const request = { contractVersion: "explorer-safety-request.v2" as const, invocationId: ids.invocationId, explorerId: profile.explorerId,

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
   EXPLORER_CONVERSATION_LIMITS,
+  waypointHasCapacity,
   type ExplorerConversationCommand,
   type ExplorerConversationError,
   type ExplorerConversationState,
@@ -277,6 +278,8 @@ export function ExplorerConversation() {
     if (busyRef.current || pendingRef.current !== null || current === null || current.pendingTurn || current.sessionStatus === "ended") return;
     if (intent.kind === "end_conversation" && (current.conversationId === null || intent.conversationId !== current.conversationId)) return;
     if (intent.kind === "send" && current.providerState !== "available") return;
+    if ((intent.kind === "confirm_waypoint" || intent.kind === "revisit_waypoint" || intent.kind === "revise_waypoint") &&
+        !waypointHasCapacity(current, intent.kind !== "revise_waypoint")) return;
     // A reply choice sends exactly the latest saved choice as an ordinary Send,
     // with its own intent so the Explorer's typed draft is kept across retries.
     if (intent.kind === "reply_choice" && (endReview !== null || current.providerState !== "available" ||

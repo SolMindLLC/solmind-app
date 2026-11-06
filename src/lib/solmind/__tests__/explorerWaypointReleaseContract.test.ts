@@ -9,11 +9,14 @@ const uuid = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(1
 const command = { kind: "release_waypoint", operationId: uuid(7), expectedRevision: 4, waypointId: uuid(3) };
 const capture = () => ({ operationId: uuid(7), releasedAt: "2026-10-29T15:00:00.123456+00:00" });
 const legacyWaypoint = {
+  isCurrent: true, createdAt: "2026-10-29T14:01:00Z",
   id: uuid(3), sourceMessageId: uuid(2), title: "An unhurried morning", destination: "An unhurried morning",
   meaning: "Connecting with my family", arrivalSignal: "A calm breakfast together", status: "chosen",
 };
 function state(waypoint: unknown = legacyWaypoint) {
   return { version: EXPLORER_CONVERSATION_VERSION, conversationId: uuid(1), revision: 5,
+    waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true },
+    waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: 1 },
     providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, messages: [
       { id: uuid(2), role: "explorer", body: "I want time for my family.", createdAt: "2026-10-29T14:00:00.000Z" },
     ], compassItems: [], priorityId: null, attentionId: null, waypoints: [waypoint],

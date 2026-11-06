@@ -8,7 +8,7 @@ const GUIDE_MESSAGE = "30000000-0000-4000-8000-000000000001";
 const CHOICES = [{ label: "Show me around" }, { label: "I have a question" }, { label: "Let's begin" }];
 
 function state(overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
-  return {
+  return { waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false },
     version: EXPLORER_CONVERSATION_VERSION,
     conversationId: "10000000-0000-4000-8000-000000000001",
     revision: 3,
