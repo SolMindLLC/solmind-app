@@ -2834,3 +2834,39 @@ ended conversation never shows it. The three starting choices ("Show me around",
 Virtual Guide's first reply in the first conversation each day until the tour
 is taken. No instruction sentence changes. Presentation
 only: no database, context, provider or command change.
+
+## Earlier decisions recorded at the sprint close - 2026-11-07
+
+Recorded at the close of sprint PRJ01-SPR001 (durability register
+solmind-sprints/PRJ01-SPR001/Validation_Workspaces/Sprint_Durability_Closeout_Register_2026-11-07_R01.md):
+these decisions were in the decision queue
+(solmind-sprints/PRJ01-SPR001/Decision_Queue/Current_Action_Queue.md) but not in
+these notes. History and boundaries only; nothing here is new authority.
+
+- Speaker icons: Paul chose face Y3 and flare L1 of the round-3 options
+  (decision queue 2026-10-30 19:20:08 CDT), built in commit 41db35a, and kept
+  them on the test site ("Keep these", decision queue 2026-10-31 01:05:09 CDT).
+  That closed the speaker-label decision, with the sky-blue "You" kept; the
+  Executor took it as the end of his interim-screen review, his condition for
+  connecting the conversation screen.
+- Role symbols on the sign-in screens: set D2, a hiking boot for the Explorer,
+  a helping hand for the Guide and a key for the Admin (decision queue
+  2026-10-02 09:23:37 CDT).
+- Build notes: the layout is accepted as built: the toggle on every signed-in
+  page, Admin included; on phones the top bar wraps to three rows; the old
+  read-only tools on an ended conversation's review are not marked violet
+  (decision queue 2026-11-04 11:28:50 CST).
+- Demo logins: the current demo Explorer, Guide and Admin logins stay
+  unchanged; the demo display names Paul set for the course-based demo wait for
+  that later demo (decision queue 2026-11-04 22:21:18 CST).
+- The 2026-11-05 morning test was a generic demo with the existing sample
+  methodology and no saved demo data changed; the course-based methodology pack
+  and its test procedure are deferred (decision queue 2026-11-04 22:14:57 CST).
+- For that later course-based demo (decision queue 2026-11-04 21:59:51 CST):
+  the course slide deck may be read and distilled through Anthropic's service;
+  Paul has permission to use the course; the Executor read his answer as also
+  covering sending a pack made from it to OpenAI with each Virtual Guide reply
+  in demo test runs, and stated that reading back to him. Files naming real
+  clients stay out of any pack, and no course content goes to GPT-6 Astra or
+  any other reader without its own go-ahead. The demo accounts are operated by
+  Paul with synthetic data.
