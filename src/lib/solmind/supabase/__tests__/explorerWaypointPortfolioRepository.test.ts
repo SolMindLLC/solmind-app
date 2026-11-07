@@ -62,11 +62,11 @@ describe("closed private Waypoint repository ports", () => {
   });
   it("requires and freezes server capacity, including grandfathered counts", async () => {
     const state = { turnedDownLimitReached: false, waypointDraft: null };
-    for (const waypointCapacity of [undefined, null, {}, { activeCount: 0, activeLimit: 20, historyRoom: "true" }]) {
+    for (const waypointCapacity of [undefined, null, {}, { activeCount: 0, activeLimit: 20, historyRoom: "true", conversationRoom: true }]) {
       const f = fixture({ outcome: "ok", conversation_state: { ...state, waypointCapacity }, authority_context: null, policy_state: null });
       await expect(f.repository.read({ accountId: ID, applicationSessionId: ID })).rejects.toThrow();
     }
-    const waypointCapacity = { activeCount: 21, activeLimit: 20, historyRoom: false };
+    const waypointCapacity = { activeCount: 21, activeLimit: 20, historyRoom: false, conversationRoom: true };
     const f = fixture({ outcome: "ok", conversation_state: { ...state, waypointCapacity }, authority_context: null, policy_state: null });
     const result = await f.repository.read({ accountId: ID, applicationSessionId: ID });
     expect(result.conversation_state).toEqual({ ...state, waypointCapacity });

@@ -42,7 +42,7 @@ function manyWaypoints(withDraft: boolean): ExplorerConversationState {
   const closed = base.waypoints.filter(waypoint => waypoint.status === "reached" || waypoint.release).reverse();
   const waypoints = [...extra.reverse(), ...formed, ...closed];
   return { ...base, waypoints, waypointDraft: draft,
-    waypointCapacity: { activeCount: formed.length + extra.length, activeLimit: 20, historyRoom: true },
+    waypointCapacity: { activeCount: formed.length + extra.length, activeLimit: 20, historyRoom: true, conversationRoom: true },
     waypointProjection: { kind: "current_heads", limit: 20, totalHeads: waypoints.length, hasMore: false } };
 }
 

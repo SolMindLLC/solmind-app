@@ -832,12 +832,16 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
           builderState.state.compassItems.some((item) => item.id === suggestion.pointId &&
             item.formation === "forming" && !item.mergedIntoItemId)) : undefined;
       const previousReply = [...builderState.state.messages].reverse().find((message) => message.role === "virtualGuide");
-      const waypointSuggestion = ordinaryExtras && safety.currentLevel !== null && safety.currentLevel < 2
+      const proposedWaypointSuggestion = ordinaryExtras && safety.currentLevel !== null && safety.currentLevel < 2
         ? observedModel?.observation?.waypointSuggestion ?? null : null;
+      // Lane 12: once this conversation holds five different Waypoints, new or refined draft wording is dropped (the
+      // reply is kept); SQL still refuses a sixth Waypoint on every path. A same-reply suggestion excludes a typed
+      // answer even when this drops it, so the exclusion below uses the proposal as received.
+      const waypointSuggestion = builderState.state.waypointCapacity.conversationRoom ? proposedWaypointSuggestion : null;
       const proposedWaypointResponse = observedModel?.observation?.waypointResponse;
       const waypointDraft = builderState.state.waypointDraft;
       const waypointResponse = ordinaryExtras && safety.currentLevel !== null && safety.currentLevel < 2 &&
-        previousReply && waypointSuggestion === null && proposedWaypointResponse && waypointDraft &&
+        previousReply && proposedWaypointSuggestion === null && proposedWaypointResponse && waypointDraft &&
         waypointDraft.id === proposedWaypointResponse.draftId && waypointDraft.suggestionMessageId === previousReply.id
         ? proposedWaypointResponse : null;
       const proposedResponses = ordinaryExtras && safety.currentLevel !== null && safety.currentLevel < 2 && previousReply

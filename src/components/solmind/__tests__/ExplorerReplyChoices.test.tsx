@@ -20,7 +20,7 @@ const POINT = "40000000-0000-4000-8000-000000000001";
 const CHOICES = ["Show me around", "I have a question", "Let's begin"];
 
 function state(overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
-  return { waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false },
+  return { waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false },
     version: EXPLORER_CONVERSATION_VERSION,
     conversationId: CONVERSATION,
     revision: 3,

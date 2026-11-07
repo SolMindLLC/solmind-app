@@ -34,7 +34,7 @@ vi.mock("../ExplorerConversationConnectedScreen", () => ({
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const POINT = id(3);
 function state(turnedDownLimitReached: boolean): ExplorerConversationState {
-  return { waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false }, version: "explorer-conversation.v1", conversationId: id(1), revision: 3,
+  return { waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false }, version: "explorer-conversation.v1", conversationId: id(1), revision: 3,
     pendingTurn: false, turnedDownLimitReached, waypointDraft: null, providerState: "available", compassSuggestionReplies: "available",
     messages: [{ id: id(2), role: "virtualGuide", body: "A synthetic suggestion.", createdAt: "2026-11-05T12:00:00Z" }],
     compassItems: [{ id: POINT, sourceMessageId: id(2), wordingMessageId: id(2), label: "A tentative point", formation: "forming" }],
@@ -318,7 +318,7 @@ describe("Confirmed That's right follow-up for both suggestion kinds", () => {
   function confirmed(): ExplorerConversationState {
     return { ...state(false), revision: 4, waypointDraft: null,
       compassItems: [{ id: POINT, sourceMessageId: id(2), label: "A tentative point", formation: "saved" }],
-      waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true },
+      waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true, conversationRoom: true },
       waypointProjection: { kind: "current_heads", limit: 20, totalHeads: 1, hasMore: false },
       waypoints: [{ id: id(50), sourceMessageId: id(2), title: WAYPOINT_DRAFT.title,
         destination: WAYPOINT_DRAFT.destination, meaning: WAYPOINT_DRAFT.whyItMatters,

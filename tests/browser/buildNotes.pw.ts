@@ -26,7 +26,7 @@ const message = (index: number, role: "explorer" | "virtualGuide", body: string)
   body,
   createdAt: `2026-10-30T14:0${index}:00.000Z`,
 });
-const savedState = (): ExplorerConversationState => ({ waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false },
+const savedState = (): ExplorerConversationState => ({ waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false },
   version: EXPLORER_CONVERSATION_VERSION, conversationId: "10000000-0000-4000-8000-000000000001", revision: 4, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null,
   providerState: "unavailable", compassItems: [], priorityId: null, attentionId: null, waypoints: [], route: [],
   sessionStatus: "active", ending: null,

@@ -7,7 +7,7 @@ test("category review requires confirmation and retains combined sources without
   const first = { id: id(11), sourceMessageId: id(21), label: "Focus A", anchor: null, emphasis: null, mergedIntoItemId: null as string | null };
   const second = { id: id(12), sourceMessageId: id(22), label: "Focus B", anchor: null, emphasis: null, mergedIntoItemId: null as string | null };
   let state = { version: "explorer-conversation.v1", conversationId: id(1), revision: 1, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable",
-    waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true },
+    waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true },
     waypointProjection: { kind: "current_heads", limit: 20, totalHeads: 0, hasMore: false },
     messages: [{ id: id(21), role: "explorer", body: "Exact original first source.", createdAt: "2026-10-29T10:00:00Z" },
       { id: id(22), role: "virtualGuide", body: "Exact original second source.", createdAt: "2026-10-29T10:00:01Z" }],

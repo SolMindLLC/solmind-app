@@ -166,7 +166,9 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
     releaseWaypoint.release !== undefined || releaseWaypoint.isCurrent !== true || state.sessionStatus !== "active");
   const hasSource = state.conversationId !== null && state.messages.length > 0;
   const newWaypointCapacityMessage = waypointCapacityMessage(state);
-  const revisionCapacityMessage = waypointCapacityMessage(state, false);
+  // A revisit continues an existing Waypoint: history and an active place, never one of the conversation's five.
+  const revisitCapacityMessage = waypointCapacityMessage(state, "revisit");
+  const revisionCapacityMessage = waypointCapacityMessage(state, "revision");
   const newWaypointCapacityDescription = newWaypointCapacityMessage !== null ? `${id}-waypoint-capacity` : undefined;
   const route = state.route ?? [];
   const categoryTarget = currentPoints.find(item => item.id === categoryDraft?.targetItemId);
@@ -187,7 +189,7 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
   }
   function openWaypointClarification(waypointId: string, kind: WaypointRevisionReview["kind"]) {
     if (busy || readOnly || state.pendingTurn || !state.conversationId || state.sessionStatus !== "active" ||
-        !waypointHasCapacity(state, kind === "revisit_waypoint") || waypointSuccessors.has(waypointId)) return;
+        !waypointHasCapacity(state, kind === "revisit_waypoint" ? "revisit" : "revision") || waypointSuccessors.has(waypointId)) return;
     const waypoint = state.waypoints.find(item => item.id === waypointId);
     if (!waypoint || (kind === "revise_waypoint" ? waypoint.status !== "chosen" || waypoint.release !== undefined
       : waypoint.status !== "reached" && waypoint.release === undefined)) return;
@@ -479,7 +481,7 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
         {state.waypoints.length === 0 ? <p className="mt-3 text-sm text-slate-300">No Waypoint chosen. You can keep exploring without one.</p> : (
           <ul className="mt-4 space-y-4">{state.waypoints.map(waypoint => {
             const revisiting = waypoint.status !== "chosen" || waypoint.release !== undefined;
-            const capacityMessage = revisiting ? newWaypointCapacityMessage : revisionCapacityMessage;
+            const capacityMessage = revisiting ? revisitCapacityMessage : revisionCapacityMessage;
             const capacityDescription = capacityMessage !== null ? `${id}-waypoint-capacity-${waypoint.id}` : undefined;
             return (
             <li key={waypoint.id} id={`${id}-waypoint-${waypoint.id}`} className="rounded-2xl border border-slate-700 p-4">

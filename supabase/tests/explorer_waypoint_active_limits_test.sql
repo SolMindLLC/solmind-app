@@ -7,7 +7,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions,pg_catalog,pg_temp;
 set local statement_timeout='120s';
-select plan(44);
+select plan(52);
 
 create function pg_temp.gid(n integer) returns uuid language sql immutable as $$
   select ('f42c0000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid
@@ -386,69 +386,15 @@ returns void language sql as $$
     title,destination,why_it_matters,arrival_signal,lifecycle_status,chosen_by_explorer_user_account_id,chosen_at,
     reached_by_explorer_user_account_id,reached_at,reached_evidence)
   select pg_temp.gid(50000+n),pg_temp.gid(25),pg_temp.gid(conversation_n),
-    case when conversation_n=6005 then pg_temp.gid(10011) else pg_temp.gid(70051) end,
+    case conversation_n when 6005 then pg_temp.gid(10011) when 8005 then pg_temp.gid(80051) else pg_temp.gid(70051) end,
     'Synthetic title','Synthetic destination','Synthetic meaning','Synthetic signal',
     case when reached then 'reached' else 'chosen' end,pg_temp.gid(1),clock_timestamp(),
     case when reached then pg_temp.gid(1) end,case when reached then clock_timestamp() end,
     case when reached then 'Explicit synthetic evidence' end from generate_series(first_n,last_n) n
 $$;
-create function pg_temp.capacity_case(kind_name text) returns jsonb language plpgsql as $$
-declare result jsonb; saved text; before_count bigint; next_command text;
-begin
-  begin
-    if kind_name='history' then perform pg_temp.fill_waypoints(1,176,true);
-    else perform pg_temp.fill_waypoints(1,case when kind_name='grandfathered' then 19 else 18 end); end if;
-    before_count:=ai.solmind_waypoint_active_count_v1(pg_temp.gid(1));
-    result:=jsonb_build_object('beforeCount',before_count,'capacity',pg_temp.read_state()->'waypointCapacity',
-      'storedBefore',(select count(*) from content.waypoint));
-    select outcome into saved from pg_temp.mutate(80001,'confirm_waypoint',10011,null,null,null,'New destination','New meaning','New signal');
-    result:=result||jsonb_build_object('manual',saved,'revision',pg_temp.revise(80002,pg_temp.sx(1000)),
-      'revisit',pg_temp.revise(80003,pg_temp.sx(1002),'revisit_waypoint'));
-    if kind_name='history' then
-      select outcome into saved from public.solmind_mutate_explorer_conversation_v3(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),
-        pg_temp.gid(80004),(select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005)),
-        'confirm_reached',pg_temp.request_sha(80004),null,null,pg_temp.sx(1001),null,null,null,null,'Explicit evidence');
-    else
-      select outcome into saved from public.solmind_release_explorer_waypoint_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),
-        pg_temp.gid(80004),(select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005)),
-        pg_temp.request_sha(80004),pg_temp.sx(1001));
-    end if;
-    result:=result||jsonb_build_object('closure',saved,'afterCount',ai.solmind_waypoint_active_count_v1(pg_temp.gid(1)),
-      'storedAfter',(select count(*) from content.waypoint));
-    if kind_name='history' then
-      select outcome into saved from public.solmind_release_explorer_waypoint_v1(
-        pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),pg_temp.gid(80005),
-        (select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005)),pg_temp.request_sha(80005),pg_temp.sx(1000));
-      select outcome into next_command from public.solmind_end_explorer_conversation_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),
-        pg_temp.gid(80006),(select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005)),pg_temp.request_sha(80006));
-      result:=result||jsonb_build_object('release',saved,'end',next_command);
-    end if;
-    raise exception using errcode='P0710',message='rollback_synthetic_fixture';
-  exception when sqlstate 'P0710' then null; end;
-  return result;
-end $$;
-
-create temp table capacities as select name,pg_temp.capacity_case(name) value
-from unnest(array['active','grandfathered','history']) name;
-select ok((select value->>'manual'='unavailable' and value->>'revision'='ok' and value->>'revisit'='unavailable'
-  from capacities where name='active'),'at twenty, manual and revisit increases refuse while net-zero revision works');
-select ok((select value->>'beforeCount'='21' and value->>'manual'='unavailable' and value->>'revision'='ok'
-  and value->>'closure'='ok' and value->>'afterCount'='20' from capacities where name='grandfathered'),
-  'grandfathered excess heads are retained, revisable and closable but cannot increase');
-select ok((select value#>>'{capacity,historyRoom}'='false' and value->>'manual'='unavailable'
-  and value->>'revision'='unavailable' and value->>'revisit'='unavailable'
-  and value->>'closure'='ok' and value->>'release'='ok' and value->>'end'='ok' and value->>'storedAfter'='200' from capacities where name='history'),
-  'the history guard refuses every insertion but preserves Reached, Release, End and all two hundred rows');
-
 create function pg_temp.end_current(op_n integer default 81000) returns text language sql as $$
   select outcome from public.solmind_end_explorer_conversation_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),
     pg_temp.gid(op_n),(select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005)),pg_temp.request_sha(op_n))
-$$;
-create function pg_temp.close_old(op_n integer,waypoint uuid,kind_name text default 'release_waypoint',
-  actor_n integer default 1,session_n integer default 50,evidence text default null)
-returns text language sql as $$
-  select outcome from public.solmind_close_ended_explorer_waypoint_v1(pg_temp.gid(actor_n),pg_temp.gid(session_n),waypoint,
-    pg_temp.gid(op_n),pg_temp.request_sha(op_n),kind_name,evidence)
 $$;
 create function pg_temp.start_second(known boolean default true,restricted boolean default false,adult boolean default false)
 returns void language plpgsql as $$
@@ -465,6 +411,141 @@ begin
     sender_type,sender_user_account_id,sender_role_context,content_text)
   values(pg_temp.gid(70051),pg_temp.gid(7005),1,'user',pg_temp.gid(1),'explorer','Second conversation source.');
 end $$;
+-- Lane 12: 6005's base fixture holds 24 original Waypoints (the context-selection golden needs them), so a new Waypoint
+-- can no longer be formed there. Scenarios that form new Waypoints run in a fresh second conversation (7005).
+create function pg_temp.mutate_in(conv_n integer,op_n integer,kind_name text,source_n integer,
+  destination_text text,meaning_text text,arrival_text text)
+returns table(outcome text,conversation_state jsonb) language sql as $$
+  select * from public.solmind_mutate_explorer_conversation_v3(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(conv_n),
+    pg_temp.gid(op_n),coalesce(
+      (select initial_revision from ai.explorer_conversation_operation where actor_user_account_id=pg_temp.gid(1) and operation_id=pg_temp.gid(op_n)),
+      (select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(conv_n))),
+    kind_name,pg_temp.request_sha(op_n),pg_temp.gid(source_n),null,null,null,destination_text,meaning_text,arrival_text,null)
+$$;
+create function pg_temp.revise_in(conv_n integer,op_n integer,waypoint uuid,kind_name text default 'revise_waypoint')
+returns text language sql as $$
+  select outcome from public.solmind_confirm_explorer_waypoint_revision_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(conv_n),
+    pg_temp.gid(op_n),coalesce(
+      (select initial_revision from ai.explorer_conversation_operation where actor_user_account_id=pg_temp.gid(1) and operation_id=pg_temp.gid(op_n)),
+      (select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(conv_n))),
+    pg_temp.request_sha(op_n),kind_name,waypoint,'[{"component":"meaning","answer":"Explicit revised meaning"}]')
+$$;
+create function pg_temp.conversation_capacity(conv_n integer) returns jsonb language sql as $$
+  select conversation_state->'waypointCapacity' from public.solmind_read_explorer_conversation_v3(
+    pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(conv_n))
+$$;
+-- Lane 12: stored history rows as a revision chain (each row continues the one before), so a conversation can reach
+-- the 200-version guard while holding few different Waypoints. Returns the chain's current head.
+create function pg_temp.revision_chain(conv_n integer,source_n integer,root uuid,first_n integer,last_n integer)
+returns uuid language plpgsql as $$
+declare previous uuid:=root; n integer;
+begin
+  for n in first_n..last_n loop
+    insert into content.waypoint(waypoint_id,guide_explorer_relationship_id,source_ai_interaction_session_id,source_message_id,
+      title,destination,why_it_matters,arrival_signal,lifecycle_status,chosen_by_explorer_user_account_id,chosen_at,
+      predecessor_waypoint_id,creation_reason)
+    values(pg_temp.gid(52000+n),pg_temp.gid(25),pg_temp.gid(conv_n),pg_temp.gid(source_n),'Revised '||n,'Revised '||n,
+      'Synthetic meaning','Synthetic signal','chosen',pg_temp.gid(1),clock_timestamp(),previous,'revision');
+    previous:=pg_temp.gid(52000+n);
+  end loop;
+  return previous;
+end $$;
+-- Lane 12: Waypoints that only fill the active allowance live in their own ended conversation (8005), so the
+-- five-per-conversation rule never decides a test about the active limit; the conversation under test (7005,
+-- since 6005 already holds 24 originals) keeps its own few original Waypoints.
+create function pg_temp.filler_conversation() returns void language plpgsql as $$
+begin
+  insert into ai.ai_interaction_session(ai_interaction_session_id,session_type,actor_user_account_id,actor_role_context,
+    guide_profile_id,explorer_profile_id,guide_explorer_relationship_id,practice_id,metadata)
+  values(pg_temp.gid(8005),'explorer_reflection',pg_temp.gid(1),'explorer',pg_temp.gid(23),pg_temp.gid(24),pg_temp.gid(25),
+    pg_temp.gid(22),jsonb_build_object('restricted_mode',false));
+  insert into ai.explorer_conversation_state(conversation_id,actor_user_account_id,safety_contract_version,
+    restricted_level,adult_reflection_stopped,safety_version)
+  values(pg_temp.gid(8005),pg_temp.gid(1),'explorer-conversation-safety.v1',null,false,0);
+  insert into ai.ai_interaction_message(ai_interaction_message_id,ai_interaction_session_id,sequence_number,
+    sender_type,sender_user_account_id,sender_role_context,content_text)
+  values(pg_temp.gid(80051),pg_temp.gid(8005),1,'user',pg_temp.gid(1),'explorer','Filler conversation source.');
+  update ai.ai_interaction_session set session_status='ended',ended_at=clock_timestamp()
+    where ai_interaction_session_id=pg_temp.gid(8005);
+end $$;
+create function pg_temp.capacity_case(kind_name text) returns jsonb language plpgsql as $$
+declare result jsonb; saved text; before_count bigint; next_command text; i integer; a uuid; b uuid; c uuid;
+begin
+  begin
+    -- Lane 12: each case runs in a fresh conversation (7005) holding three Waypoints of its own (A and C chosen, B
+    -- Reached), well below five, so every refusal below is decided by the limit it names.
+    if pg_temp.end_current(80090) is distinct from 'ok' then raise exception 'fixture_capacity_end'; end if;
+    perform pg_temp.start_second();
+    for i in 1..3 loop
+      if (select outcome from pg_temp.mutate_in(7005,80090+i,'confirm_waypoint',70051,'Capacity '||i,'Capacity meaning',
+        'Capacity signal'))<>'ok' then raise exception 'fixture_capacity_form'; end if;
+    end loop;
+    select w.waypoint_id into strict a from content.waypoint w where w.source_ai_interaction_session_id=pg_temp.gid(7005) and w.destination='Capacity 1';
+    select w.waypoint_id into strict b from content.waypoint w where w.source_ai_interaction_session_id=pg_temp.gid(7005) and w.destination='Capacity 2';
+    select w.waypoint_id into strict c from content.waypoint w where w.source_ai_interaction_session_id=pg_temp.gid(7005) and w.destination='Capacity 3';
+    if (select outcome from public.solmind_mutate_explorer_conversation_v3(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(7005),
+      pg_temp.gid(80094),(select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(7005)),
+      'confirm_reached',pg_temp.request_sha(80094),null,null,b,null,null,null,null,'Explicit evidence'))<>'ok'
+      then raise exception 'fixture_capacity_reached'; end if;
+    -- Active now: 6005's two chosen heads (still active after End) plus A and C.
+    if kind_name='history' then a:=pg_temp.revision_chain(7005,70051,a,1,197);
+    else perform pg_temp.filler_conversation();
+      perform pg_temp.fill_waypoints(1,case when kind_name='grandfathered' then 17 else 16 end,false,8005); end if;
+    before_count:=ai.solmind_waypoint_active_count_v1(pg_temp.gid(1));
+    result:=jsonb_build_object('beforeCount',before_count,'capacity',pg_temp.conversation_capacity(7005),
+      'storedBefore',(select count(*) from content.waypoint where source_ai_interaction_session_id=pg_temp.gid(7005)));
+    select outcome into saved from pg_temp.mutate_in(7005,80001,'confirm_waypoint',70051,'New destination','New meaning','New signal');
+    result:=result||jsonb_build_object('manual',saved);
+    result:=result||jsonb_build_object('revision',pg_temp.revise_in(7005,80002,a));
+    result:=result||jsonb_build_object('revisit',pg_temp.revise_in(7005,80003,b,'revisit_waypoint'));
+    if kind_name='history' then
+      select outcome into saved from public.solmind_mutate_explorer_conversation_v3(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(7005),
+        pg_temp.gid(80004),(select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(7005)),
+        'confirm_reached',pg_temp.request_sha(80004),null,null,c,null,null,null,null,'Explicit evidence');
+    else
+      select outcome into saved from public.solmind_release_explorer_waypoint_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(7005),
+        pg_temp.gid(80004),(select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(7005)),
+        pg_temp.request_sha(80004),c);
+    end if;
+    result:=result||jsonb_build_object('closure',saved);
+    result:=result||jsonb_build_object('afterCount',ai.solmind_waypoint_active_count_v1(pg_temp.gid(1)),
+      'storedAfter',(select count(*) from content.waypoint where source_ai_interaction_session_id=pg_temp.gid(7005)));
+    if kind_name='history' then
+      select outcome into saved from public.solmind_release_explorer_waypoint_v1(
+        pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(7005),pg_temp.gid(80005),
+        (select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(7005)),pg_temp.request_sha(80005),a);
+      select outcome into next_command from public.solmind_end_explorer_conversation_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(7005),
+        pg_temp.gid(80006),(select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(7005)),pg_temp.request_sha(80006));
+      result:=result||jsonb_build_object('release',saved,'end',next_command,
+        'storedEnd',(select count(*) from content.waypoint where source_ai_interaction_session_id=pg_temp.gid(7005)));
+    end if;
+    raise exception using errcode='P0710',message='rollback_synthetic_fixture';
+  exception when sqlstate 'P0710' then null; end;
+  return result;
+end $$;
+
+create temp table capacities as select name,pg_temp.capacity_case(name) value
+from unnest(array['active','grandfathered','history']) name;
+select ok((select value->>'manual'='unavailable' and value->>'revision'='ok' and value->>'revisit'='unavailable'
+  and value->>'beforeCount'='20' and value#>>'{capacity,conversationRoom}'='true' and value#>>'{capacity,historyRoom}'='true'
+  from capacities where name='active'),'at twenty, manual and revisit increases refuse while net-zero revision works');
+select ok((select value->>'beforeCount'='21' and value->>'manual'='unavailable' and value->>'revision'='ok'
+  and value->>'closure'='ok' and value->>'afterCount'='20' and value#>>'{capacity,conversationRoom}'='true'
+  from capacities where name='grandfathered'),
+  'grandfathered excess heads are retained, revisable and closable but cannot increase');
+select ok((select value#>>'{capacity,historyRoom}'='false' and value#>>'{capacity,conversationRoom}'='true'
+  and (value#>>'{capacity,activeCount}')::integer<20 and value->>'storedBefore'='200' and value->>'manual'='unavailable'
+  and value->>'revision'='unavailable' and value->>'revisit'='unavailable'
+  and value->>'closure'='ok' and value->>'release'='ok' and value->>'end'='ok' and value->>'storedAfter'='200'
+  and value->>'storedEnd'='200' from capacities where name='history'),
+  'the history guard refuses every insertion but preserves Reached, Release, End and all two hundred rows');
+
+create function pg_temp.close_old(op_n integer,waypoint uuid,kind_name text default 'release_waypoint',
+  actor_n integer default 1,session_n integer default 50,evidence text default null)
+returns text language sql as $$
+  select outcome from public.solmind_close_ended_explorer_waypoint_v1(pg_temp.gid(actor_n),pg_temp.gid(session_n),waypoint,
+    pg_temp.gid(op_n),pg_temp.request_sha(op_n),kind_name,evidence)
+$$;
 create function pg_temp.closure_case(case_name text) returns jsonb language plpgsql as $$
 declare result jsonb; before_state jsonb; saved text; replayed text; err text; duplicate_err text; head uuid:=pg_temp.sx(1000);
   actor_n integer:=1; session_n integer:=50; kind_name text:='release_waypoint'; evidence text;
@@ -492,7 +573,8 @@ begin
     end if;
     result:=jsonb_build_object('noConversationCapacity',(select conversation_state->'waypointCapacity'
       from public.solmind_read_explorer_conversation_v3(pg_temp.gid(1),pg_temp.gid(50))));
-    if case_name='global' then perform pg_temp.start_second(); perform pg_temp.fill_waypoints(1,18,false,7005); end if;
+    if case_name='global' then perform pg_temp.start_second(); perform pg_temp.filler_conversation();
+      perform pg_temp.fill_waypoints(1,17,false,8005); perform pg_temp.fill_waypoints(18,18,false,7005); end if;
     if case_name in ('current_restricted','current_unknown','current_adult') then
       perform pg_temp.start_second(case_name<>'current_unknown',case_name='current_restricted',case_name='current_adult'); end if;
     if case_name='historical_relationship' then
@@ -511,7 +593,9 @@ begin
       -- Every row has the fact, both conversations are on the page, and each row matches its own conversation.
       'headsSplit',(select coalesce(bool_and(coalesce((i->>'conversationEnded')::boolean
             =(i->>'conversationId'<>pg_temp.gid(7005)::text),false)),false)
-          and count(*) filter (where not (i ? 'conversationEnded'))=0 and count(distinct i->>'conversationId')=2
+          and count(*) filter (where not (i ? 'conversationEnded'))=0
+          and count(*) filter (where i->>'conversationId'=pg_temp.gid(7005)::text)>0
+          and count(*) filter (where i->>'conversationId'<>pg_temp.gid(7005)::text)>0
         from public.solmind_read_explorer_waypoint_heads_v1(pg_temp.gid(1),pg_temp.gid(50),0) r,
           jsonb_array_elements(r.waypoint_page->'items') i),
       'historyHasNoEndedFact',(select bool_and(not (i ? 'conversationEnded'))
@@ -687,31 +771,43 @@ select ok(not methodology.serialized_methodology_valid(replace(pg_temp.compact(p
   'compass-v7','compass-v5'),pg_temp.gid(1001),(select content_markdown from methodology.methodology_context_pack_version where methodology_context_pack_version_id=pg_temp.gid(1001))),
   'the prior compass-v5 envelope is refused for new ordinary turns');
 create function pg_temp.capacity_replays() returns jsonb language plpgsql as $$
-declare result jsonb; before_state jsonb; manual text; revision text; draft text; expected integer;
+declare result jsonb; before_state jsonb; manual text; revision text; draft text; expected integer; formed uuid;
 begin
   begin
-    if (select outcome from pg_temp.mutate(85000,'confirm_waypoint',10011,null,null,null,'New destination','New meaning','New signal'))<>'ok'
-      or pg_temp.revise(85001,pg_temp.sx(1000))<>'ok' then raise exception 'fixture_replay_setup'; end if;
+    if pg_temp.end_current(85099) is distinct from 'ok' then raise exception 'fixture_replay_end'; end if;
+    perform pg_temp.start_second();
+    insert into ai.ai_interaction_message(ai_interaction_message_id,ai_interaction_session_id,sequence_number,
+      sender_type,ai_role,content_text)
+    values(pg_temp.gid(70052),pg_temp.gid(7005),2,'ai','solmind_virtual_guide','Second conversation Guide reply.');
+    if (select outcome from pg_temp.mutate_in(7005,85000,'confirm_waypoint',70051,'New destination','New meaning','New signal'))<>'ok'
+      then raise exception 'fixture_replay_setup'; end if;
+    select w.waypoint_id into formed from content.waypoint w where w.source_ai_interaction_session_id=pg_temp.gid(7005);
+    if pg_temp.revise_in(7005,85001,formed)<>'ok' then raise exception 'fixture_replay_revise'; end if;
     -- An actual saved reply provides the source; the guarded synthetic setup
     -- exposes it as settlement does before installing the proposed draft.
-    update ai.explorer_conversation_state set pending_operation_id=pg_temp.gid(10020) where conversation_id=pg_temp.gid(6005);
+    -- Synthetic: 7005's completed send is a copy of 6005's settled send (operation 10020), pointed at 7005's own
+    -- source and saved Guide reply, so the draft below has a saved reply in its own conversation.
+    insert into ai.explorer_conversation_operation select (jsonb_populate_record(null::ai.explorer_conversation_operation,
+      to_jsonb(o)||jsonb_build_object('operation_id',pg_temp.gid(70059),'conversation_id',pg_temp.gid(7005),
+        'message_id',pg_temp.gid(70051),'reply_message_id',pg_temp.gid(70052)))).*
+      from ai.explorer_conversation_operation o where o.actor_user_account_id=pg_temp.gid(1) and o.operation_id=pg_temp.gid(10020);
+    update ai.explorer_conversation_state set pending_operation_id=pg_temp.gid(70059) where conversation_id=pg_temp.gid(7005);
     insert into content.waypoint_draft(waypoint_draft_id,guide_explorer_relationship_id,source_ai_interaction_session_id,
       title,destination,why_it_matters,arrival_signal,source_message_id,suggestion_message_id)
-    values(pg_temp.gid(85010),pg_temp.gid(25),pg_temp.gid(6005),'Draft title','Draft destination','Draft meaning','Draft signal',pg_temp.gid(10025),pg_temp.gid(10025));
-    update ai.explorer_conversation_state set pending_operation_id=null where conversation_id=pg_temp.gid(6005);
-    select st.revision into expected from ai.explorer_conversation_state st where st.conversation_id=pg_temp.gid(6005);
-    if (select outcome from public.solmind_respond_explorer_waypoint_draft_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),
+    values(pg_temp.gid(85010),pg_temp.gid(25),pg_temp.gid(7005),'Draft title','Draft destination','Draft meaning','Draft signal',pg_temp.gid(70052),pg_temp.gid(70052));
+    update ai.explorer_conversation_state set pending_operation_id=null where conversation_id=pg_temp.gid(7005);
+    select st.revision into expected from ai.explorer_conversation_state st where st.conversation_id=pg_temp.gid(7005);
+    if (select outcome from public.solmind_respond_explorer_waypoint_draft_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(7005),
       pg_temp.gid(85002),expected,pg_temp.request_sha(85002),pg_temp.gid(85010),'right'))<>'ok' then raise exception 'fixture_replay_draft'; end if;
-    perform pg_temp.fill_waypoints(1,17);
-    before_state:=pg_temp.read_state();
-    select outcome into manual from pg_temp.mutate(85000,'confirm_waypoint',10011,null,null,null,'New destination','New meaning','New signal');
-    select outcome into revision from public.solmind_confirm_explorer_waypoint_revision_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),
-      pg_temp.gid(85001),(select initial_revision from ai.explorer_conversation_operation where operation_id=pg_temp.gid(85001)),
-      pg_temp.request_sha(85001),'revise_waypoint',pg_temp.sx(1000),'[{"component":"meaning","answer":"Explicit revised meaning"}]');
-    select outcome into draft from public.solmind_respond_explorer_waypoint_draft_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),
+    perform pg_temp.filler_conversation(); perform pg_temp.fill_waypoints(1,17,false,8005);
+    before_state:=(select conversation_state from public.solmind_read_explorer_conversation_v3(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(7005)));
+    select outcome into manual from pg_temp.mutate_in(7005,85000,'confirm_waypoint',70051,'New destination','New meaning','New signal');
+    select pg_temp.revise_in(7005,85001,formed) into revision;
+    select outcome into draft from public.solmind_respond_explorer_waypoint_draft_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(7005),
       pg_temp.gid(85002),expected,pg_temp.request_sha(85002),pg_temp.gid(85010),'right');
     result:=jsonb_build_object('manual',manual,'revision',revision,'draft',draft,
-      'activeCount',ai.solmind_waypoint_active_count_v1(pg_temp.gid(1)),'unchanged',before_state=pg_temp.read_state());
+      'activeCount',ai.solmind_waypoint_active_count_v1(pg_temp.gid(1)),
+      'unchanged',before_state=(select conversation_state from public.solmind_read_explorer_conversation_v3(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(7005))));
     raise exception using errcode='P0713',message='rollback_synthetic_fixture';
   exception when sqlstate 'P0713' then null; end;
   return result;
@@ -786,5 +882,91 @@ select ok((select value->>'classification'='clear' and value->>'classificationCl
 select ok((select value->>'endedUnchanged'='true' and value->>'waypointUnchanged'='true'
   and value->>'closureEvidence'='Lane 7 older private arrival evidence canary ZQX.' from context_canary),
   'the closure evidence remains private while every original ended-conversation and Waypoint fact remains unchanged');
+-- Lane 12: at most five different Waypoints form in one conversation, counting Reached and Released ones.
+create function pg_temp.five_case() returns jsonb language plpgsql as $$
+declare result jsonb; i integer; saved text; before_state jsonb; second_id uuid; third_id uuid; fourth_id uuid;
+begin
+  begin
+    -- 6005 already holds 24 different Waypoints from before this rule (2 chosen, 22 Reached). All are kept; nothing new
+    -- may form there, while a revision and a revisit, which continue an existing Waypoint, still work.
+    result:=jsonb_build_object('legacyCapacity',pg_temp.conversation_capacity(6005),
+      'legacyHeads',pg_temp.read_state()#>'{waypointProjection,totalHeads}',
+      'legacyManual',(select outcome from pg_temp.mutate(86000,'confirm_waypoint',10011,null,null,null,
+        'Legacy new destination','Legacy new meaning','Legacy new signal')));
+    result:=result||jsonb_build_object('legacyRevision',pg_temp.revise(86001,pg_temp.sx(1000)),
+      'legacyRevisit',pg_temp.revise(86002,pg_temp.sx(1002),'revisit_waypoint'));
+    result:=result||jsonb_build_object('legacyActive',ai.solmind_waypoint_active_count_v1(pg_temp.gid(1)));
+    if pg_temp.end_current(86003) is distinct from 'ok' then raise exception 'fixture_five_end'; end if;
+    perform pg_temp.start_second();
+    for i in 1..4 loop
+      if (select outcome from pg_temp.mutate_in(7005,86010+i,'confirm_waypoint',70051,
+        'Five destination '||i,'Five meaning','Five signal'))<>'ok' then raise exception 'fixture_five_form'; end if;
+    end loop;
+    result:=result||jsonb_build_object('fourCapacity',pg_temp.conversation_capacity(7005));
+    -- A separately formed Waypoint with the same wording as the first is still a different Waypoint.
+    select outcome into saved from pg_temp.mutate_in(7005,86015,'confirm_waypoint',70051,'Five destination 1','Five meaning','Five signal');
+    result:=result||jsonb_build_object('fifth',saved,'fiveCapacity',pg_temp.conversation_capacity(7005));
+    before_state:=(select conversation_state from public.solmind_read_explorer_conversation_v3(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(7005)));
+    select outcome into saved from pg_temp.mutate_in(7005,86016,'confirm_waypoint',70051,'Sixth destination','Sixth meaning','Sixth signal');
+    result:=result||jsonb_build_object('sixth',saved,
+      'sixthUnchanged',before_state=(select conversation_state from public.solmind_read_explorer_conversation_v3(
+        pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(7005))),
+      'fifthReplay',(select outcome from pg_temp.mutate_in(7005,86015,'confirm_waypoint',70051,'Five destination 1','Five meaning','Five signal')),
+      'activeAtSixth',ai.solmind_waypoint_active_count_v1(pg_temp.gid(1)));
+    -- Reached and Released Waypoints keep their places; a revision continues one and uses none.
+    select w.waypoint_id into second_id from content.waypoint w where w.source_ai_interaction_session_id=pg_temp.gid(7005) and w.destination='Five destination 2';
+    select w.waypoint_id into third_id from content.waypoint w where w.source_ai_interaction_session_id=pg_temp.gid(7005) and w.destination='Five destination 3';
+    select w.waypoint_id into fourth_id from content.waypoint w where w.source_ai_interaction_session_id=pg_temp.gid(7005) and w.destination='Five destination 4';
+    result:=result||jsonb_build_object('revision',pg_temp.revise_in(7005,86017,second_id));
+    select outcome into saved from public.solmind_release_explorer_waypoint_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(7005),
+      pg_temp.gid(86018),(select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(7005)),
+      pg_temp.request_sha(86018),third_id);
+    result:=result||jsonb_build_object('release',saved);
+    select outcome into saved from public.solmind_mutate_explorer_conversation_v3(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(7005),
+      pg_temp.gid(86019),(select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(7005)),
+      'confirm_reached',pg_temp.request_sha(86019),null,null,fourth_id,null,null,null,null,'Explicit evidence');
+    result:=result||jsonb_build_object('reached',saved);
+    select outcome into saved from pg_temp.mutate_in(7005,86020,'confirm_waypoint',70051,'Seventh destination','Seventh meaning','Seventh signal');
+    result:=result||jsonb_build_object('afterClosures',saved,
+      'originals',(select count(*) from content.waypoint where source_ai_interaction_session_id=pg_temp.gid(7005)
+        and predecessor_waypoint_id is null),
+      'rows',(select count(*) from content.waypoint where source_ai_interaction_session_id=pg_temp.gid(7005)),
+      'active',ai.solmind_waypoint_active_count_v1(pg_temp.gid(1)),'finalCapacity',pg_temp.conversation_capacity(7005));
+    raise exception using errcode='P0714',message='rollback_synthetic_fixture';
+  exception when sqlstate 'P0714' then null; end;
+  return result;
+end $$;
+create temp table five as select pg_temp.five_case() value;
+select ok((select value#>>'{legacyCapacity,conversationRoom}'='false' and value#>>'{legacyCapacity,historyRoom}'='true'
+  and value#>>'{legacyCapacity,activeCount}'='2' and value->>'legacyHeads'='24' from five),
+  'lane 12: a conversation already above five keeps all 24 Waypoints and reports no room for another');
+select ok((select value->>'legacyManual'='unavailable' and value->>'legacyRevision'='ok' and value->>'legacyRevisit'='ok'
+  and value->>'legacyActive'='3' from five),
+  'lane 12: above five, a new Waypoint is refused while a revision and a revisit still work');
+select ok((select value#>>'{fourCapacity,conversationRoom}'='true' and value->>'fifth'='ok'
+  and value#>>'{fiveCapacity,conversationRoom}'='false' from five),
+  'lane 12: four leave room; a fifth with the same wording as an earlier one is separate and fills the conversation');
+select ok((select value->>'sixth'='unavailable' and value->>'sixthUnchanged'='true' and value->>'fifthReplay'='exact_replay'
+  and (value->>'activeAtSixth')::integer<20 from five),
+  'lane 12: a sixth is refused below the active allowance, changes nothing, and an exact replay of the fifth still answers');
+select ok((select value->>'revision'='ok' and value->>'release'='ok' and value->>'reached'='ok'
+  and value->>'afterClosures'='unavailable' and value->>'originals'='5' and value->>'rows'='6' and value->>'active'='6'
+  and value#>>'{finalCapacity,conversationRoom}'='false' from five),
+  'lane 12: Reached and Released Waypoints keep their places and a revision uses none');
+select ok((select count(*)=2 and bool_and(p.prosecdef and p.proowner='postgres'::regrole and p.proconfig @> array['search_path=""']
+  and not has_function_privilege('anon',p.oid,'EXECUTE') and not has_function_privilege('authenticated',p.oid,'EXECUTE')
+  and not has_function_privilege('service_role',p.oid,'EXECUTE'))
+  from pg_proc p where p.oid in ('ai.solmind_waypoint_root_room_v1(uuid,uuid)'::regprocedure,
+    'ai.solmind_waypoint_insert_allowed_v2(uuid,uuid,boolean,boolean)'::regprocedure)),
+  'lane 12: the new counting helpers are protected from API roles');
+select is((select array_agg(p.oid::regprocedure::text order by p.oid::regprocedure::text) from pg_proc p
+  where p.prosrc like '%solmind_waypoint_insert_allowed_v1(%'),
+  array['ai.solmind_apply_waypoint_draft_response(uuid,uuid,uuid,uuid,text,text,uuid,text,timestamp with time zone,boolean)',
+    'solmind_mutate_explorer_conversation(uuid,uuid,uuid,uuid,integer,text,text,uuid,uuid,uuid,text,text,text,text,text)'],
+  'lane 12: only the two callers that form a new original use the old check, which now also spends one of the five places');
+select ok((select ai.solmind_waypoint_capacity_v1(pg_temp.gid(1),null)->>'conversationRoom'='true'
+  and not ai.solmind_waypoint_root_room_v1(pg_temp.gid(1),null)
+  and not ai.solmind_waypoint_insert_allowed_v2(pg_temp.gid(1),null,false,true)),
+  'lane 12: before a first Send the capacity facts report room, while the guard still refuses an insert without a conversation');
 select * from finish();
 rollback;

@@ -8,14 +8,14 @@ const SOURCE = "a0020000-0000-4000-8000-000000000001";
 const ORIGINAL = "a0030000-0000-4000-8000-000000000001";
 const SUCCESSOR = "a0030000-0000-4000-8000-000000000002";
 const now = "2026-10-29T15:00:00Z";
-const initial = (reached = false): ExplorerConversationState => ({ waypointCapacity: { activeCount: reached ? 0 : 1, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 1, hasMore: false }, version: "explorer-conversation.v1", conversationId: CONVERSATION, revision: 5, sessionStatus: "active", ending: null, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable", messages: [{ id: SOURCE, role: "explorer", body: "A private synthetic source.", createdAt: now }], compassItems: [], priorityId: null, attentionId: null, route: [], waypoints: [{ isCurrent: true, createdAt: "2026-10-29T14:59:00Z", id: ORIGINAL, sourceMessageId: SOURCE, title: "A saved destination", destination: "A saved destination", meaning: "A saved meaning", arrivalSignal: "A saved signal", status: reached ? "reached" : "chosen", reachedEvidence: reached ? "An earlier actual test observation" : null, reachedAt: reached ? now : null }] });
+const initial = (reached = false): ExplorerConversationState => ({ waypointCapacity: { activeCount: reached ? 0 : 1, activeLimit: 20, historyRoom: true, conversationRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 1, hasMore: false }, version: "explorer-conversation.v1", conversationId: CONVERSATION, revision: 5, sessionStatus: "active", ending: null, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable", messages: [{ id: SOURCE, role: "explorer", body: "A private synthetic source.", createdAt: now }], compassItems: [], priorityId: null, attentionId: null, route: [], waypoints: [{ isCurrent: true, createdAt: "2026-10-29T14:59:00Z", id: ORIGINAL, sourceMessageId: SOURCE, title: "A saved destination", destination: "A saved destination", meaning: "A saved meaning", arrivalSignal: "A saved signal", status: reached ? "reached" : "chosen", reachedEvidence: reached ? "An earlier actual test observation" : null, reachedAt: reached ? now : null }] });
 const success = (state: ExplorerConversationState) => ({ version: "explorer-private-conversation-response.v1", result: { ok: true, state, error: null }, assistance: null });
 async function setup(page: Page, current: () => ExplorerConversationState) {
   await page.route("**/explorer/conversation/state", route => route.fulfill({ json: success(current()) }));
 }
 
 test("clarification at twenty active uses one app question at a time and saves only after complete explicit review", async ({ page }) => {
-  let state = { ...initial(), waypointCapacity: { activeCount: 20, activeLimit: 20, historyRoom: true } };
+  let state = { ...initial(), waypointCapacity: { activeCount: 20, activeLimit: 20, historyRoom: true, conversationRoom: true } };
   const commands: ExplorerConversationCommand[] = [];
   await setup(page, () => state);
   await page.route("**/explorer/conversation/commands", async route => {
@@ -67,14 +67,14 @@ test("clarification at twenty active uses one app question at a time and saves o
 });
 
 test("all-Keep revisit starts a new chosen lifecycle without inheriting earlier Reached evidence", async ({ page }) => {
-  let state = { ...initial(true), waypointCapacity: { activeCount: 19, activeLimit: 20, historyRoom: true } };
+  let state = { ...initial(true), waypointCapacity: { activeCount: 19, activeLimit: 20, historyRoom: true, conversationRoom: true } };
   const commands: ExplorerConversationCommand[] = [];
   await setup(page, () => state);
   await page.route("**/explorer/conversation/commands", async route => {
     const command = route.request().postDataJSON() as Extract<ExplorerConversationCommand, { kind: "revisit_waypoint" }>;
     commands.push(command); expect(command.kind).toBe("revisit_waypoint"); expect(command.answers).toEqual([]);
     const predecessor = state.waypoints[0];
-    state = { ...state, revision: 6, waypointCapacity: { activeCount: 20, activeLimit: 20, historyRoom: true },
+    state = { ...state, revision: 6, waypointCapacity: { activeCount: 20, activeLimit: 20, historyRoom: true, conversationRoom: true },
       waypoints: [{ ...predecessor, id: SUCCESSOR, createdAt: now, status: "chosen", reachedEvidence: null, reachedAt: null, lifecycle: { predecessorWaypointId: ORIGINAL, creationReason: "revisit", clarifications: [] } }] };
     await route.fulfill({ json: success(state) });
   });
@@ -101,7 +101,7 @@ test("all-Keep revisit starts a new chosen lifecycle without inheriting earlier 
 });
 
 test("lane 7 revisit needs active room and revision needs history room", async ({ page }) => {
-  let state = { ...initial(true), waypointCapacity: { activeCount: 20, activeLimit: 20, historyRoom: true } };
+  let state = { ...initial(true), waypointCapacity: { activeCount: 20, activeLimit: 20, historyRoom: true, conversationRoom: true } };
   let writes = 0;
   await setup(page, () => state);
   await page.route("**/explorer/conversation/commands", route => { writes += 1; return route.abort(); });
@@ -120,12 +120,12 @@ test("lane 7 revisit needs active room and revision needs history room", async (
   await expect(revisitReason).toHaveAttribute("role", "alert");
   await revisit.evaluate(button => (button as HTMLButtonElement).click());
   expect(writes).toBe(0);
-  state = { ...initial(), waypointCapacity: { activeCount: 25, activeLimit: 20, historyRoom: true } };
+  state = { ...initial(), waypointCapacity: { activeCount: 25, activeLimit: 20, historyRoom: true, conversationRoom: true } };
   await page.getByRole("button", { name: "Reload saved conversation", exact: true }).click();
   const clarify = page.getByRole("button", { name: "Clarify this Waypoint in the conversation", exact: true });
   await expect(clarify).toBeEnabled();
   await clarify.click();
-  state = { ...state, waypointCapacity: { ...state.waypointCapacity, historyRoom: false } };
+  state = { ...state, waypointCapacity: { ...state.waypointCapacity, historyRoom: false, conversationRoom: true } };
   await page.getByRole("button", { name: "Reload saved conversation", exact: true }).click();
   await expect(clarify).toBeDisabled();
   const historyReason = "This conversation has reached its limit of 200 saved Waypoint versions, to keep its saved history manageable. No new Waypoint or version can be saved here. Marking one Reached or Released does not make room for another version. You can still read the Waypoints shown here, use Reached or Release where available, or end an active conversation.";

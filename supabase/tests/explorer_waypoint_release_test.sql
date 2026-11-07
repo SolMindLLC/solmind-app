@@ -343,6 +343,22 @@ select is((select outcome from pg_temp.release_waypoint(28006,27001)),'unavailab
 select is(pg_temp.read_state(),(select value from pending_state),'pending refusal preserves all saved state');
 select ok(not exists(select 1 from ai.explorer_conversation_operation where operation_id=pg_temp.gid(28006)),'pending refusal creates no release operation');
 select is((select outcome from pg_temp.settle_private(2)),'ok','owned synthetic pending turn settles separately');
+-- Lane 12: an ended earlier conversation (9905) holds the earlier saved Waypoints used below to fill the
+-- active allowance; it is set up before the effect snapshot so its one source message is not counted as new.
+do $$ begin
+  insert into ai.ai_interaction_session(ai_interaction_session_id,session_type,actor_user_account_id,actor_role_context,
+    guide_profile_id,explorer_profile_id,guide_explorer_relationship_id,practice_id,metadata)
+  values(pg_temp.gid(9905),'explorer_reflection',pg_temp.gid(1),'explorer',pg_temp.gid(23),pg_temp.gid(24),pg_temp.gid(25),
+    pg_temp.gid(22),jsonb_build_object('restricted_mode',false));
+  insert into ai.explorer_conversation_state(conversation_id,actor_user_account_id,safety_contract_version,
+    restricted_level,adult_reflection_stopped,safety_version)
+  values(pg_temp.gid(9905),pg_temp.gid(1),'explorer-conversation-safety.v1',null,false,0);
+  insert into ai.ai_interaction_message(ai_interaction_message_id,ai_interaction_session_id,sequence_number,
+    sender_type,sender_user_account_id,sender_role_context,content_text)
+  values(pg_temp.gid(99051),pg_temp.gid(9905),1,'user',pg_temp.gid(1),'explorer','Earlier conversation source.');
+  update ai.ai_interaction_session set session_status='ended',ended_at=clock_timestamp()
+    where ai_interaction_session_id=pg_temp.gid(9905);
+end $$;
 create temp table release_effect_before as select
  (select count(*) from ai.ai_model_invocation) invocations,(select count(*) from ai.ai_interaction_message) messages;
 
@@ -388,17 +404,24 @@ select throws_ok($$delete from ai.explorer_conversation_operation where operatio
  'P0001','solmind_explorer_private_immutable','completed release operation cannot be deleted');
 
 -- Released history stays stored and frees an account-wide active place.
+-- Lane 12: at most five different Waypoints form here (27001, 27002, 27003, 27005, then 27021), so 27004 and
+-- 27006-27020 are earlier saved history from an ended conversation (9905), inserted directly as stored rows.
 do $$ declare i integer; begin
- for i in 2..20 loop
+ foreach i in array array[2,3,5] loop
   if not exists(select 1 from pg_temp.mutate(27000+i,'confirm_waypoint',10011,null,null,null,
    'Synthetic retained destination '||i,'Synthetic retained meaning','Observable synthetic signal') where outcome='ok')
    then raise exception 'synthetic_release_bound_fixture_failed'; end if;
  end loop;
+ insert into content.waypoint(waypoint_id,guide_explorer_relationship_id,source_ai_interaction_session_id,source_message_id,
+  title,destination,why_it_matters,arrival_signal,lifecycle_status,chosen_by_explorer_user_account_id,chosen_at)
+ select pg_temp.gid(27000+g.n),pg_temp.gid(25),pg_temp.gid(9905),pg_temp.gid(99051),'Synthetic retained destination '||g.n,
+  'Synthetic retained destination '||g.n,'Synthetic retained meaning','Observable synthetic signal','chosen',pg_temp.gid(1),clock_timestamp()
+ from generate_series(4,20) g(n) where g.n<>5;
 end $$;
 select is(ai.solmind_waypoint_active_count_v1(pg_temp.gid(1)),19::bigint,'Released history does not occupy an active place');
 select is((select outcome from pg_temp.mutate(27021,'confirm_waypoint',10011,null,null,null,'One freed place','Meaning','Signal')),'ok','a new chosen Waypoint uses the place freed by Release');
 select is((select outcome from pg_temp.release_waypoint(28011,27002)),'ok','safe release remains available at the full active allowance');
-select is((select count(*)::integer from content.waypoint where source_ai_interaction_session_id=pg_temp.gid(6005)),21,'release at capacity does not physically remove a row');
+select is((select count(*)::integer from content.waypoint where source_ai_interaction_session_id in (pg_temp.gid(6005),pg_temp.gid(9905))),21,'release at capacity does not physically remove a row');
 select throws_ok($$update content.waypoint set destination='Unreleased definition rewritten' where waypoint_id=pg_temp.gid(27003)$$,
  'P0001','solmind_explorer_private_immutable','current chosen definition also cannot be edited directly');
 
@@ -444,10 +467,11 @@ select ok((select safety_contract_version is null and restricted_level is null a
 
 select is((select outcome from public.solmind_end_explorer_conversation_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),pg_temp.gid(28100),
  (select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005)),pg_temp.request_sha(28100))),'ok','ending remains a separately confirmed action');
-select throws_ok($$select * from pg_temp.release_waypoint(28015,27004)$$,'P0001',null,'ended conversation review cannot release or reactivate a Waypoint');
+select throws_ok($$select * from pg_temp.release_waypoint(28015,27021)$$,'P0001',null,'ended conversation review cannot release or reactivate a Waypoint');
 select ok((select exists(select 1 from jsonb_array_elements(waypoint_page->'items') w
  where w->>'id'=pg_temp.gid(27001)::text and w#>>'{release,operationId}'=pg_temp.gid(28008)::text)
- from public.solmind_read_explorer_waypoint_history_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),20)),
+ from public.solmind_read_explorer_waypoint_history_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),0)),
+ -- Lane 12: this conversation now holds fewer than twenty rows, so the lineage is on the first page.
  'bounded owned history retains the oldest release capture and original source');
 select is((select count(*)::integer from ai.ai_model_invocation),(select invocations::integer from release_effect_before),'all release operations create no model invocation');
 select is((select count(*)::integer from ai.ai_interaction_message),(select messages::integer+1 from release_effect_before),'release creates no message; only the explicit legacy fixture source was added');

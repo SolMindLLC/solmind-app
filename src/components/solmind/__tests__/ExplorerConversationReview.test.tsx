@@ -5,7 +5,7 @@ import { ExplorerConversationReview, ExplorerEndedConversationReadback } from ".
 import type { ExplorerConversationState } from "../../../lib/solmind/explorerConversationContract";
 
 function ended(overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
-  return { waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false }, version: "explorer-conversation.v1", conversationId: "conversation-a", revision: 4,
+  return { waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false }, version: "explorer-conversation.v1", conversationId: "conversation-a", revision: 4,
     pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable", messages: [], compassItems: [], priorityId: null, attentionId: null,
     waypoints: [], route: [], sessionStatus: "ended", ending: { operationId: "end-operation", revision: 4,
       endedAt: "2026-10-29T07:04:00.123456+00:00", directionsTaken: "Actual saved ending <script>plain text</script>.", routeThroughRevision: 3 }, ...overrides };

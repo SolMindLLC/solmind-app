@@ -91,7 +91,7 @@ const VOID_ELEMENTS = new Set(["area", "base", "br", "col", "embed", "hr", "img"
 const CONVERSATION = "10000000-0000-4000-8000-000000000001";
 const ALL_NOTES = Object.values(notYetImplementedNotes(UNNAMED_GUIDE));
 
-const savedState = (overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState => ({ waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false },
+const savedState = (overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState => ({ waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false },
   version: EXPLORER_CONVERSATION_VERSION,
   conversationId: CONVERSATION,
   revision: 2,

@@ -64,7 +64,7 @@ function authority() {
 function state(count = 2): ExplorerConversationState {
   return {
     version: EXPLORER_CONVERSATION_VERSION, conversationId: ids.conversationId,
-    waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true },
+    waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true },
     waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: 0 },
     revision: 7, providerState: "available", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, messages: Array.from({ length: count }, (_, index) => ({
       id: uuid(100 + index), role: index % 2 === 0 ? "explorer" as const : "virtualGuide" as const,
@@ -745,7 +745,7 @@ function s3State(): ExplorerConversationState {
   const base = state(); const source = base.messages[0].id;
   const at = (minute: number) => `2026-11-03T09:${String(minute).padStart(2, "0")}:00.000Z`;
   return { ...base,
-    waypointCapacity: { activeCount: 2, activeLimit: 20, historyRoom: true },
+    waypointCapacity: { activeCount: 2, activeLimit: 20, historyRoom: true, conversationRoom: true },
     waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: 4 },
     compassItems: [
       { id: sx(401), sourceMessageId: source, label: "  Money worries ", anchor: "apex", emphasis: 3, mergedIntoItemId: null },
@@ -916,7 +916,7 @@ describe("Chat step slice S3 saved Compass and Waypoint section (private AV3 ent
       reachedAt: index < 2 ? null : "2026-11-06T10:00:00Z",
     })).reverse();
     const f = privateFixture({ ...history, waypoints,
-      waypointCapacity: { activeCount: 2, activeLimit: 20, historyRoom: true },
+      waypointCapacity: { activeCount: 2, activeLimit: 20, historyRoom: true, conversationRoom: true },
       waypointProjection: { kind: "current_heads", limit: 20, hasMore: true, totalHeads: 24 } });
     const result = await f.build(f.input);
     const selected = assembled(result.request.authorizedContext).compassContext!.waypoints;
@@ -947,7 +947,7 @@ describe("Chat step slice S3 saved Compass and Waypoint section (private AV3 ent
       status: "chosen" as const, reachedEvidence: null, reachedAt: null,
     })).reverse();
     const f = privateFixture({ ...history, waypoints,
-      waypointCapacity: { activeCount: 25, activeLimit: 20, historyRoom: true },
+      waypointCapacity: { activeCount: 25, activeLimit: 20, historyRoom: true, conversationRoom: true },
       waypointProjection: { kind: "current_heads", limit: 20, hasMore: true, totalHeads: 25 } });
     const result = await f.build(f.input);
     expect(assembled(result.request.authorizedContext).compassContext!.waypoints.map(waypoint => waypoint.id))
@@ -977,7 +977,7 @@ describe("Chat step slice S3 saved Compass and Waypoint section (private AV3 ent
     }));
     const f = privateFixture({ ...history, waypoints,
       waypointProjection: { kind: "current_heads", limit: 20, hasMore: true, totalHeads: 200 },
-      waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: false } });
+      waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: false, conversationRoom: true } });
     const result = await f.build(f.input);
     expect(assembled(result.request.authorizedContext).compassContext!.waypoints).toHaveLength(20);
     expect(assembled(result.request.authorizedContext).compassContext!.waypoints.every(waypoint =>

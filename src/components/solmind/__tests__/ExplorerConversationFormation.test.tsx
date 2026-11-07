@@ -3,14 +3,14 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { ExplorerConversationFormation } from "../ExplorerConversationFormation";
 import { buildAttentionFormationIntent } from "../../../lib/solmind/explorerConversationFormation";
-import { WAYPOINT_ACTIVE_LIMIT_REASON, WAYPOINT_HISTORY_LIMIT_REASON } from "../../../lib/solmind/explorerWaypointCapacity";
+import { WAYPOINT_ACTIVE_LIMIT_REASON, WAYPOINT_CONVERSATION_LIMIT_REASON, WAYPOINT_HISTORY_LIMIT_REASON } from "../../../lib/solmind/explorerWaypointCapacity";
 import { EXPLORER_CONVERSATION_VERSION, type ExplorerConversationState, type ExplorerConversationWaypoint } from "../../../lib/solmind/explorerConversationContract";
 
 type FixtureWaypoint = Omit<ExplorerConversationWaypoint, "isCurrent" | "createdAt"> & Partial<Pick<ExplorerConversationWaypoint, "isCurrent" | "createdAt">>;
 function state(overrides: Partial<Omit<ExplorerConversationState, "waypoints">> & { waypoints?: readonly FixtureWaypoint[] } = {}): ExplorerConversationState {
   const waypoints = overrides.waypoints ?? [];
   return { version: EXPLORER_CONVERSATION_VERSION, conversationId: null, revision: 0,
-    waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true },
+    waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true },
     waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: waypoints.length },
     providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, messages: [], compassItems: [], priorityId: null,
     attentionId: null, ...overrides, waypoints: waypoints.map(item => ({
@@ -436,7 +436,7 @@ describe("Waypoint capacity explanations beside formation controls", () => {
 
   it("describes disabled add/revisit with the server's count while leaving revision enabled", () => {
     const current = state({ conversationId: "conversation-a", sessionStatus: "active", messages: [source],
-      waypointCapacity: { activeCount: 21, activeLimit: 20, historyRoom: true },
+      waypointCapacity: { activeCount: 21, activeLimit: 20, historyRoom: true, conversationRoom: true },
       waypoints: [waypoint, { ...waypoint, id: "waypoint-b", status: "reached" }] });
     const html = render(current);
     const reason = WAYPOINT_ACTIVE_LIMIT_REASON.replace("{activeCount}", "21").replace("{activeLimit}", "20");
@@ -454,9 +454,25 @@ describe("Waypoint capacity explanations beside formation controls", () => {
     expect(html).toMatch(new RegExp(`<button[^>]*aria-describedby="${addDescription}"[^>]*>Confirm and save private Waypoint`));
   });
 
+  it("lane 12: at five here, holds only a new Waypoint with the five reason while revisit and revision stay available", () => {
+    const html = render(state({ conversationId: "conversation-a", sessionStatus: "active", messages: [source],
+      waypointCapacity: { activeCount: 3, activeLimit: 20, historyRoom: true, conversationRoom: false },
+      waypoints: [waypoint, { ...waypoint, id: "waypoint-b", status: "reached" }] }));
+    expect(html.split(WAYPOINT_CONVERSATION_LIMIT_REASON).length - 1).toBe(1);
+    expect(html).not.toContain("active Waypoints across your conversations");
+    const addDescription = /<fieldset disabled="" aria-describedby="([^"]+)"/.exec(html)?.[1];
+    expect(addDescription).toBeDefined();
+    expect(html).toContain(`<p id="${addDescription}" role="alert" tabindex="0"`);
+    for (const label of ["Revisit this Waypoint in the conversation", "Clarify this Waypoint in the conversation"]) {
+      const button = new RegExp(`<button[^>]*>${label}<\/button>`).exec(html)?.[0];
+      expect(button).toBeDefined();
+      expect(button).not.toContain('disabled=""');
+    }
+  });
+
   it("explains history exhaustion first beside revision and add without blocking Reached or Release", () => {
     const html = render(state({ conversationId: "conversation-a", sessionStatus: "active", messages: [source], waypoints: [waypoint],
-      waypointCapacity: { activeCount: 21, activeLimit: 20, historyRoom: false } }));
+      waypointCapacity: { activeCount: 21, activeLimit: 20, historyRoom: false, conversationRoom: true } }));
     expect(html.split(WAYPOINT_HISTORY_LIMIT_REASON).length - 1).toBe(2);
     expect(html).not.toContain("You have 21 active Waypoints");
     expect(html).toMatch(/<button[^>]*disabled="" aria-describedby="[^"]+"[^>]*>Clarify this Waypoint in the conversation/);

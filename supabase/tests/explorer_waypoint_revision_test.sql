@@ -374,6 +374,22 @@ select is((select outcome from pg_temp.revise_waypoint(31000,30001,'revise_waypo
  'unavailable','pending turn blocks a new revision without settling it');
 select is(pg_temp.read_state(),(select value from pending_before_revision),'pending refusal retains complete state');
 select is((select outcome from pg_temp.settle_private(2)),'ok','the synthetic pending turn settles independently');
+-- Lane 12: an ended earlier conversation (9905) holds the earlier saved Waypoints used below to fill the
+-- active allowance; it is set up before the effect snapshot so its one source message is not counted as new.
+do $$ begin
+  insert into ai.ai_interaction_session(ai_interaction_session_id,session_type,actor_user_account_id,actor_role_context,
+    guide_profile_id,explorer_profile_id,guide_explorer_relationship_id,practice_id,metadata)
+  values(pg_temp.gid(9905),'explorer_reflection',pg_temp.gid(1),'explorer',pg_temp.gid(23),pg_temp.gid(24),pg_temp.gid(25),
+    pg_temp.gid(22),jsonb_build_object('restricted_mode',false));
+  insert into ai.explorer_conversation_state(conversation_id,actor_user_account_id,safety_contract_version,
+    restricted_level,adult_reflection_stopped,safety_version)
+  values(pg_temp.gid(9905),pg_temp.gid(1),'explorer-conversation-safety.v1',null,false,0);
+  insert into ai.ai_interaction_message(ai_interaction_message_id,ai_interaction_session_id,sequence_number,
+    sender_type,sender_user_account_id,sender_role_context,content_text)
+  values(pg_temp.gid(99051),pg_temp.gid(9905),1,'user',pg_temp.gid(1),'explorer','Earlier conversation source.');
+  update ai.ai_interaction_session set session_status='ended',ended_at=clock_timestamp()
+    where ai_interaction_session_id=pg_temp.gid(9905);
+end $$;
 create temp table lifecycle_effect_before as select
  (select count(*) from ai.ai_model_invocation) invocations,(select count(*) from ai.ai_interaction_message) messages;
 
@@ -473,12 +489,16 @@ select ok((select successor.title='A revised form destination' and successor.des
  'S7b: a form-created Waypoint, whose title is its destination, takes the revised destination as its title');
 
 -- Predecessors use history storage; only current active heads fill the allowance.
-do $$ declare i integer; n integer; begin
+-- Lane 12: this conversation already holds its different Waypoints (at most five), so the rest of the active allowance
+-- is earlier saved history from an ended conversation (9905), inserted directly as stored rows.
+do $$ declare n integer; begin
  select ai.solmind_waypoint_active_count_v1(pg_temp.gid(1))::integer into n;
- for i in 1..20-n loop
-  if not exists(select 1 from pg_temp.mutate(34000+i,'confirm_waypoint',10011,null,null,null,
-   'Stored destination '||i,'Stored meaning','Observable signal') where outcome='ok') then raise exception 'synthetic_lifecycle_bound_failed'; end if;
- end loop;
+ insert into content.waypoint(waypoint_id,guide_explorer_relationship_id,source_ai_interaction_session_id,source_message_id,
+  title,destination,why_it_matters,arrival_signal,lifecycle_status,chosen_by_explorer_user_account_id,chosen_at)
+ select pg_temp.gid(34000+i),pg_temp.gid(25),pg_temp.gid(9905),pg_temp.gid(99051),'Stored destination '||i,
+  'Stored destination '||i,'Stored meaning','Observable signal','chosen',pg_temp.gid(1),clock_timestamp()
+ from generate_series(1,20-n) i;
+ if ai.solmind_waypoint_active_count_v1(pg_temp.gid(1))<>20 then raise exception 'synthetic_lifecycle_bound_failed'; end if;
 end $$;
 create temp table full_active_history_count as select count(*) n from content.waypoint where source_ai_interaction_session_id=pg_temp.gid(6005);
 select is(ai.solmind_waypoint_active_count_v1(pg_temp.gid(1)),20::bigint,
@@ -502,7 +522,8 @@ select throws_ok($$select * from pg_temp.revise_waypoint(36002,33002,'revise_way
  'P0001',null,'ended conversation history cannot create a revision or reactivate a lifecycle');
 select ok((select exists(select 1 from jsonb_array_elements(waypoint_page->'items') w
  where w->>'id'=pg_temp.gid(31001)::text and w#>>'{lifecycle,clarifications,0,answer}'=U&'A calmer \00f0\0178\00a7\00ad week')
- from public.solmind_read_explorer_waypoint_history_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),20)),
+ from public.solmind_read_explorer_waypoint_history_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),0)),
+ -- Lane 12: this conversation now holds fewer than twenty rows, so the lineage is on the first page.
  'bounded owned history retains actual lineage and application-question/Explorer-answer history');
 -- Unknown policy remains held for new reflection; a fixture row supplies no
 -- clear-policy permission and no new model or fabricated conversation reply.

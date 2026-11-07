@@ -51,7 +51,7 @@ export function ExplorerWaypointClarification({ state, busy, readOnly = false, r
     state.sessionStatus !== "active" || hasSuccessor || (review.kind === "revise_waypoint"
       ? waypoint.status !== "chosen" || waypoint.release !== undefined
       : waypoint.status !== "reached" && waypoint.release === undefined);
-  const capacityMessage = waypointCapacityMessage(state, review.kind === "revisit_waypoint");
+  const capacityMessage = waypointCapacityMessage(state, review.kind === "revisit_waypoint" ? "revisit" : "revision");
   const capacityDescription = capacityMessage !== null ? `${id}-capacity` : undefined;
   const blocked = busy || readOnly || state.pendingTurn || stale || capacityMessage !== null;
   const component = EXPLORER_WAYPOINT_COMPONENTS[step];

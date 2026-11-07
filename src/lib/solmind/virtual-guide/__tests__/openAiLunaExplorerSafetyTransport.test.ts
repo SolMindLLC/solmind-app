@@ -34,7 +34,7 @@ function adapter(fetchImpl: typeof fetch) { return createOpenAiLunaExplorerSafet
 describe("Dormant injected Explorer same-call HTTP transport", () => {
   it.each([
     ["classification_only", 7708, "420277CE05E665636B6640ADF18F638E3265F6F4C9090414DF83D07A1BFCB9C5"],
-    ["classification_and_reply", 8749, "40528E78E2D6E7211D713344109372D64F3F8945621BA25E872657DBEFC1887D"],
+    ["classification_and_reply", 9830, "3D5A42EACD78D715B87882F315E81A4910D8F065F18A9DF814B03F1CBE977E96"],
   ] as const)("Lane 7 pins bounded-selection output instruction bytes and SHA-256 (%s)", (mode, bytes, sha256) => {
     const text = explorerSafetyHttpInstructions(mode);
     expect(Buffer.byteLength(text, "utf8")).toBe(bytes);
@@ -103,6 +103,18 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
     expect(ordinary.split(sentence)).toHaveLength(2);
     expect(classification).not.toContain(sentence);
   });
+  it.each([
+    "Each conversation can form at most five different Waypoints, including any later Reached or Released; revising or revisiting an existing Waypoint does not make it a different Waypoint.",
+    "For this limit, each entry in compassContext.waypoints represents one different Waypoint from this conversation; entries in compassContext.drafts do not count.",
+    "When compassContext.waypoints contains five or more entries, omit waypointSuggestion, including refinements of a forming draft, and do not propose right in waypointResponse. At that limit, if the Explorer wants another Waypoint, explain that the limit helps keep each conversation focused. They can keep talking here or, when they choose, end this conversation, then open With your Virtual Guide and send a message to start another.",
+    "At that limit, if the Explorer says a forming draft is close, talk through what they would change without offering new draft wording.",
+    "Do not suggest Reached or Release as a way to make another place in this conversation, and do not repeat the new-conversation invitation when the Explorer has moved on.",
+  ])("lane 12 tells ordinary replies about five different Waypoints per conversation: %s", sentence => {
+    const ordinary = explorerSafetyHttpInstructions("classification_and_reply");
+    expect(ordinary.split(sentence)).toHaveLength(2);
+    expect(explorerSafetyHttpInstructions("classification_only")).not.toContain(sentence);
+    expect(ordinary.indexOf(sentence)).toBeGreaterThan(ordinary.indexOf("When the Explorer describes a place they want to reach"));
+  });
   it("CV teaches Explorer-voice labels and explains the ordinary-only verified choice marker", () => {
     const voice = "Write every choice label as the Explorer's own reply, in their voice, as a complete answer to your question or invitation, never as a question to you or as your own words.";
     const marker = "When compassContext.immediateMessageIsReplyChoice is true, the immediate Explorer message is their selection from the choices in your immediately preceding saved reply; respond to the selected option rather than treating its words as a question to you.";
@@ -120,7 +132,7 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
       expect({ bytes: Buffer.byteLength(text, "utf8"),
         sha256: createHash("sha256").update(text, "utf8").digest("hex").toUpperCase() })
         .toEqual(mode === "classification_and_reply"
-          ? { bytes: 8749, sha256: "40528E78E2D6E7211D713344109372D64F3F8945621BA25E872657DBEFC1887D" }
+          ? { bytes: 9830, sha256: "3D5A42EACD78D715B87882F315E81A4910D8F065F18A9DF814B03F1CBE977E96" }
           : { bytes: 7708, sha256: "420277CE05E665636B6640ADF18F638E3265F6F4C9090414DF83D07A1BFCB9C5" });
     });
   it("S6b instructions bound typed responses to a clear answer to the preceding saved suggestion", () => {

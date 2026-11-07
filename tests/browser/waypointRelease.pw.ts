@@ -10,14 +10,14 @@ const RELEASE = "a1040000-0000-4000-8000-000000000001";
 const END = "a1050000-0000-4000-8000-000000000001";
 const RELEASED_AT = "2026-10-29T15:05:00Z";
 const SOURCE_TEXT = "A retained exact private source <script>plain text only</script>.";
-const currentState = (): ExplorerConversationState => ({ waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 1, hasMore: false }, version: "explorer-conversation.v1", conversationId: CONVERSATION,
+const currentState = (): ExplorerConversationState => ({ waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true, conversationRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 1, hasMore: false }, version: "explorer-conversation.v1", conversationId: CONVERSATION,
   revision: 5, sessionStatus: "active", ending: null, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable",
   messages: [{ id: SOURCE, role: "explorer", body: SOURCE_TEXT, createdAt: "2026-10-29T15:00:00Z" }],
   compassItems: [], priorityId: null, attentionId: null, route: [], waypoints: [{ isCurrent: true, createdAt: "2026-10-29T15:01:00Z", id: WAYPOINT, sourceMessageId: SOURCE,
     title: "A saved destination", destination: "A saved destination", meaning: "A saved meaning", arrivalSignal: "A saved arrival signal", status: "chosen",
     reachedEvidence: null, reachedAt: null }] });
 const releasedState = (operationId = RELEASE): ExplorerConversationState => { const current = currentState(); return {
-  ...current, revision: 6, waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true },
+  ...current, revision: 6, waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true },
   waypoints: current.waypoints.map(item => ({ ...item, release: { operationId, releasedAt: RELEASED_AT } })),
 }; };
 const success = (state: ExplorerConversationState) => ({ version: "explorer-private-conversation-response.v1",
@@ -113,14 +113,14 @@ test("an unknown acknowledgment preserves honest uncertainty without a false Rel
 
 for (const historyRoom of [true, false]) {
   test(`lane 7 Release remains available at global twenty with historyRoom=${historyRoom}`, async ({ page }) => {
-    let current = { ...currentState(), waypointCapacity: { activeCount: 20, activeLimit: 20, historyRoom } };
+    let current = { ...currentState(), waypointCapacity: { activeCount: 20, activeLimit: 20, historyRoom, conversationRoom: true } };
     const commands: ExplorerConversationCommand[] = [];
     await mockCurrent(page, () => current);
     await page.route("**/explorer/conversation/commands", route => {
       const command = route.request().postDataJSON() as ExplorerConversationCommand;
       commands.push(command);
       expect(command.kind).toBe("release_waypoint");
-      current = { ...current, revision: 6, waypointCapacity: { activeCount: 19, activeLimit: 20, historyRoom },
+      current = { ...current, revision: 6, waypointCapacity: { activeCount: 19, activeLimit: 20, historyRoom, conversationRoom: true },
         waypoints: current.waypoints.map(item => ({ ...item, release: { operationId: command.operationId, releasedAt: RELEASED_AT } })) };
       return route.fulfill({ json: success(current) });
     });

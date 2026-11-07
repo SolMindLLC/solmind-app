@@ -20,7 +20,7 @@ const POLICY = { known: true, contractVersion: "explorer-conversation-safety.v1"
 const RAW = JSON.stringify({ protocol: "explorer-safety-reply.v2", classification: { level: 0, minorIndicated: false }, candidateReply: { content: "One saved synthetic reply." } });
 function state(conversationId: string | null): ExplorerConversationState {
   return { version: "explorer-conversation.v1", conversationId, revision: 0, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable",
-    waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true },
+    waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true },
     waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: 0 },
     messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] };
 }
@@ -396,6 +396,37 @@ describe("S7a private Waypoint composition", () => {
     expect(f.settle.mock.calls[0][0].p_waypoint_suggestion).toEqual(wording);
     expect(f.settle.mock.calls[0][0].p_failure_reason).toBeNull();
     expect(Object.keys(f.settle.mock.calls[0][0])).toHaveLength(27);
+  });
+  const fiveHere = (): ExplorerConversationState => {
+    const saved = current();
+    return { ...saved, waypointCapacity: { ...saved.waypointCapacity, conversationRoom: false } };
+  };
+  it("lane 12 drops new or refined draft wording once this conversation holds five Waypoints, keeping the reply", async () => {
+    const f = fixture(); const full = fiveHere(); f.setCurrent(full);
+    f.ensure.mockImplementation(async () => ({ outcome: "reused", conversation_state: full, policy_state: POLICY }));
+    f.generate.mockResolvedValue(reply(0, false, { ...wording, title: "Another new Waypoint" }));
+    const result = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(result.result.ok).toBe(true);
+    expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_reply_kind: "ordinary", p_reply_body: "What would you change?",
+      p_waypoint_suggestion: null, p_waypoint_response: null, p_failure_reason: null });
+    expect(Object.keys(f.settle.mock.calls[0][0])).toHaveLength(27);
+  });
+  it.each(["right", "close", "not_it"] as const)("lane 12 still passes a typed %s at five for SQL to decide", async response => {
+    const f = fixture(); const full = fiveHere(); f.setCurrent(full);
+    f.ensure.mockImplementation(async () => ({ outcome: "reused", conversation_state: full, policy_state: POLICY }));
+    const proposal = { draftId: ID.pack, response };
+    f.generate.mockResolvedValue(typedReply(proposal));
+    await commandExplorerPrivateConversation({ command: send("That wording fits."), dependencies: f.dependencies });
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_waypoint_suggestion: null, p_waypoint_response: proposal });
+  });
+  it("lane 12 keeps a same-reply rewording's exclusion of a typed answer even when five drops the rewording", async () => {
+    const f = fixture(); const full = fiveHere(); f.setCurrent(full);
+    f.ensure.mockImplementation(async () => ({ outcome: "reused", conversation_state: full, policy_state: POLICY }));
+    f.generate.mockResolvedValue(typedReply({ draftId: ID.pack, response: "right" }, 0, false, { ...wording, title: "A revised title" }));
+    await commandExplorerPrivateConversation({ command: send("That wording fits."), dependencies: f.dependencies });
+    expect(f.settle).toHaveBeenCalledOnce();
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_waypoint_suggestion: null, p_waypoint_response: null });
   });
   it.each(["level2", "level3", "minor", "restricted", "adult", "malformed", "canceled"] as const)(
     "keeps Waypoint suggestions out of %s settlement", async reason => {
@@ -1083,7 +1114,7 @@ describe("private conversation-confirmed Waypoint successor",()=>{
  const command={kind:"revise_waypoint" as const,operationId:ID.operation,expectedRevision:0,waypointId:ID.actor,
   answers:[{component:"destination" as const,answer:"A clarified destination"}]};
  const current=()=>({...state(ID.conversation),sessionStatus:"active" as const,ending:null,messages:[{id:ID.intake,role:"explorer" as const,body:"Synthetic saved source",createdAt:"2026-10-29T14:00:00Z"}],
-  waypointCapacity:{activeCount:1,activeLimit:20,historyRoom:true},waypointProjection:{kind:"current_heads" as const,limit:20 as const,hasMore:false,totalHeads:1},
+  waypointCapacity:{activeCount:1,activeLimit:20,historyRoom:true,conversationRoom:true},waypointProjection:{kind:"current_heads" as const,limit:20 as const,hasMore:false,totalHeads:1},
   waypoints:[{id:ID.actor,isCurrent:true,createdAt:"2026-10-29T14:00:00Z",sourceMessageId:ID.intake,title: "Old destination", destination:"Old destination",meaning:"It matters",arrivalSignal:"Visible signal",status:"chosen" as const}]});
  const saved=()=>{const before=current();return {...before,revision:1,waypoints:[{...before.waypoints[0],id:ID.operation,destination:command.answers[0].answer,
   lifecycle:{predecessorWaypointId:ID.actor,creationReason:"revision" as const,clarifications:[{...command.answers[0],questionKey:"waypoint.destination.v1" as const,recordedAt:"2026-10-29T15:30:00Z"}]}}]};};
@@ -1111,7 +1142,7 @@ it("does not claim a confirmed successor from an unrelated well-formed repositor
  const source={id:ID.intake,role:"explorer" as const,body:"Synthetic saved source",createdAt:"2026-10-29T14:00:00Z"};
  const prior={id:ID.actor,isCurrent:true,createdAt:"2026-10-29T14:00:00Z",sourceMessageId:ID.intake,title: "Old destination", destination:"Old destination",meaning:"It matters",arrivalSignal:"Visible signal",status:"chosen" as const};
  const current={...state(ID.conversation),sessionStatus:"active" as const,ending:null,messages:[source],waypoints:[prior],
-  waypointCapacity:{activeCount:1,activeLimit:20,historyRoom:true},waypointProjection:{kind:"current_heads" as const,limit:20 as const,hasMore:false,totalHeads:1}};
+  waypointCapacity:{activeCount:1,activeLimit:20,historyRoom:true,conversationRoom:true},waypointProjection:{kind:"current_heads" as const,limit:20 as const,hasMore:false,totalHeads:1}};
  const successor={...prior,id:ID.operation,destination:command.answers[0].answer,lifecycle:{predecessorWaypointId:ID.actor,creationReason:"revision" as const,
   clarifications:[{...command.answers[0],questionKey:"waypoint.destination.v1" as const,recordedAt:"2026-10-29T15:30:00Z"}]}};
  for(const returned of [current,{...current,revision:1,waypoints:[{...successor,id:ID.explorer}]},
@@ -1869,7 +1900,7 @@ describe("Crisis checks omit saved Compass context before preparation", () => {
     const f = fixture(); const policy = { ...POLICY, ...changedPolicy };
     f.setPolicy(policy);
     const populated: ExplorerConversationState = { ...state(ID.conversation),
-      waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true },
+      waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true, conversationRoom: true },
       waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: 1 },
       messages: [{ id: source, role: "explorer", body: "Synthetic saved message.", createdAt: "2026-11-04T12:00:00Z" }],
       compassItems: [{ id: point, sourceMessageId: source, label: "Private saved point" }],

@@ -52,7 +52,7 @@ function fixture(options: { body?: string; ledger?: ReturnType<typeof fakeLedger
   const policy = { contractVersion: "explorer-conversation-safety.v1", known: true, version: 1,
     restrictedLevel: options.restricted ? 4 : null, adultReflectionStopped: options.adultStopped ?? false };
   const mode = options.restricted || options.adultStopped ? "classification_only" as const : "classification_and_reply" as const;
-  const initial = { waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false }, version: "explorer-conversation.v1" as const, conversationId: ids.conversationId,
+  const initial = { waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false }, version: "explorer-conversation.v1" as const, conversationId: ids.conversationId,
     revision: 0, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "available" as const, messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] };
   const authority = { accountId: actor.accountId, applicationSessionId: actor.applicationSessionId, explorerId: profile.explorerId,
     guideId: profile.guideId, authorizationVersion: AV3, applicationSessionExpiresAt: profile.expiresAt };

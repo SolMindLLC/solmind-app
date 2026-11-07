@@ -10,7 +10,7 @@ const dependencies = Object.freeze({ synthetic: "read-only injected port marker"
 const denied = { ok: false, state: null, error: "denied" };
 const unavailable = { ok: false, state: null, error: "unavailable" };
 const empty = { ok: true, error: null, state: { version: "explorer-conversation.v1", conversationId: null,
-  waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true },
+  waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true },
   waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: 0 },
   revision: 0, providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] } };
 function request(query = "", cookie?: string) {

@@ -5,7 +5,7 @@ const id = (value: number) => `00000000-0000-4000-8000-${String(value).padStart(
 function state() {
   return {
     version: EXPLORER_CONVERSATION_VERSION, conversationId: id(1), revision: 4,
-    waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true },
+    waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true },
     waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: 0 },
     pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable", messages: [
       { id: id(2), role: "explorer", body: "A synthetic question.", createdAt: "2026-11-04T10:00:00.000Z" },

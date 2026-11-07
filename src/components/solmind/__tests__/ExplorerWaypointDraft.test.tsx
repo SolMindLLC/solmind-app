@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { cardState, cardStateAtWaypointLimit } from "../../../../tests/browser/connectedCardFixture";
 import type { ExplorerConversationState } from "../../../lib/solmind/explorerConversationContract";
 import { ExplorerWaypointDraft } from "../ExplorerWaypointDraft";
+import { WAYPOINT_CONVERSATION_LIMIT_REASON, WAYPOINT_DRAFT_CONVERSATION_LIMIT_REASON } from "../../../lib/solmind/explorerWaypointCapacity";
 import { ExplorerConversationConnectedScreen, type ConnectedConversationView } from "../ExplorerConversationConnectedScreen";
 
 const DRAFT_ID = "80000000-0000-4000-8000-000000000001";
@@ -128,7 +129,7 @@ describe("S7a private forming Waypoint card", () => {
 
   it.each([20, 21])("holds only confirmation at %i global active Waypoints and describes the row once after its replies", activeCount => {
     const waypoints = cardStateAtWaypointLimit().waypoints;
-    const capacity = { activeCount, activeLimit: 20, historyRoom: true };
+    const capacity = { activeCount, activeLimit: 20, historyRoom: true, conversationRoom: true };
     const reason = ACTIVE_LIMIT_REASON.replace("20 active", `${activeCount} active`);
     const html = card(state({ waypoints: waypoints.slice(0, 1), waypointCapacity: capacity }));
     expect(buttons(html)).toEqual([
@@ -153,7 +154,7 @@ describe("S7a private forming Waypoint card", () => {
   });
 
   it.each([0, 20, 21])("uses only the history reason when history is full with %i active Waypoints", activeCount => {
-    const html = card(state({ waypointCapacity: { activeCount, activeLimit: 20, historyRoom: false } }));
+    const html = card(state({ waypointCapacity: { activeCount, activeLimit: 20, historyRoom: false, conversationRoom: true } }));
     expect(buttons(html)).toEqual([
       { label: LABELS[0], disabled: true }, { label: LABELS[1], disabled: false }, { label: LABELS[2], disabled: false },
     ]);
@@ -164,7 +165,35 @@ describe("S7a private forming Waypoint card", () => {
     expect(html).toContain('role="status" tabindex="0"');
   });
 
-  it.each([null, undefined, { activeCount: 20, activeLimit: 20, historyRoom: null }])(
+  it.each([3, 20, 21])("lane 12: at five here with %i active, holds only That's right with the five-Waypoint reason", activeCount => {
+    const capacity = { activeCount, activeLimit: 20, historyRoom: true, conversationRoom: false };
+    const html = card(state({ waypointCapacity: capacity }));
+    expect(buttons(html)).toEqual([
+      { label: LABELS[0], disabled: true }, { label: LABELS[1], disabled: false }, { label: LABELS[2], disabled: false },
+    ]);
+    expect(plain(html).split(plain(WAYPOINT_DRAFT_CONVERSATION_LIMIT_REASON))).toHaveLength(2);
+    expect(plain(html)).not.toContain("active Waypoints across your conversations");
+    expect(html).toContain(`aria-describedby="waypoint-suggestion-limit-${DRAFT_ID}"`);
+    expect(html).toContain('role="status" tabindex="0"');
+    const history = card(state({ waypointCapacity: { ...capacity, historyRoom: false } }));
+    expect(plain(history)).toContain(HISTORY_LIMIT_REASON);
+    expect(plain(history)).not.toContain(plain(WAYPOINT_DRAFT_CONVERSATION_LIMIT_REASON));
+  });
+
+  it("lane 12: the Waypoint card shows the quiet five-Waypoint notice, also without a forming draft, and not once ended", () => {
+    const capacity = { activeCount: 2, activeLimit: 20, historyRoom: true, conversationRoom: false };
+    for (const waypointDraft of [draft, null]) {
+      const html = screen(state({ waypointDraft, waypointCapacity: capacity }));
+      expect(plain(html)).toContain(WAYPOINT_CONVERSATION_LIMIT_REASON);
+    }
+    expect(plain(screen(state({ waypointDraft: null }))) ).not.toContain(WAYPOINT_CONVERSATION_LIMIT_REASON);
+    expect(plain(screen(state({ waypointDraft: null, waypointCapacity: { ...capacity, conversationRoom: true, activeCount: 20 } }))))
+      .not.toContain(WAYPOINT_CONVERSATION_LIMIT_REASON);
+    expect(plain(screen(state({ sessionStatus: "ended", waypointDraft: null, waypointCapacity: capacity }), { ended: true })))
+      .not.toContain(WAYPOINT_CONVERSATION_LIMIT_REASON);
+  });
+
+  it.each([null, undefined, { activeCount: 20, activeLimit: 20, historyRoom: null, conversationRoom: true }])(
     "holds confirmation with calm unavailable wording for unconfirmed capacity %j", waypointCapacity => {
       const next = state({ waypointCapacity: waypointCapacity as unknown as ExplorerConversationState["waypointCapacity"] });
       const html = card(next);

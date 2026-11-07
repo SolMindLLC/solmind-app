@@ -13,7 +13,7 @@ const waypoint = { id: "waypoint-a", sourceMessageId: source.id, title: "A calm 
 const release = { operationId: "release-operation", releasedAt: "2026-10-29T15:00:00Z" };
 function state(overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
   return { version: EXPLORER_CONVERSATION_VERSION, conversationId: "conversation-a", revision: 4,
-    waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true },
+    waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true, conversationRoom: true },
     waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: 1 },
     providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, messages: [source], compassItems: [],
     priorityId: null, attentionId: null, waypoints: [waypoint], sessionStatus: "active", ending: null,
@@ -49,7 +49,7 @@ describe("review-bound private Waypoint Release intent", () => {
   });
 
   it("keeps saved history and waits for server capacity after release without claiming Reached", () => {
-    const current = state({ waypointCapacity: { activeCount: 20, activeLimit: 20, historyRoom: true },
+    const current = state({ waypointCapacity: { activeCount: 20, activeLimit: 20, historyRoom: true, conversationRoom: true },
       waypoints: Array.from({ length: 20 }, (_, i) => ({ ...waypoint, id: `waypoint-${i}`, ...(i ? { release } : {}) })) });
     expect(buildWaypointReleaseFormationIntent(current, "waypoint-0", 4, true).ok).toBe(true);
     expect(buildWaypointFormationIntent(current, { sourceMessageId: source.id, destination: "New",
@@ -57,7 +57,7 @@ describe("review-bound private Waypoint Release intent", () => {
     expect(current.waypoints).toHaveLength(20);
     expect(current.waypoints.every(item => item.status === "chosen")).toBe(true);
     expect(current.waypoints[0]).not.toHaveProperty("release");
-    const refreshed = state({ ...current, waypointCapacity: { activeCount: 19, activeLimit: 20, historyRoom: true } });
+    const refreshed = state({ ...current, waypointCapacity: { activeCount: 19, activeLimit: 20, historyRoom: true, conversationRoom: true } });
     expect(buildWaypointFormationIntent(refreshed, { sourceMessageId: source.id, destination: "New",
       meaning: "New meaning", arrivalSignal: "New signal", confirmed: true }).ok).toBe(true);
     expect(buildReachedFormationIntent(state({ waypoints: [{ ...waypoint, release }] }), waypoint.id,

@@ -37,7 +37,7 @@ function fixture(proposals: Record<string, unknown>, options: { restrictedLevel?
     sourceVerificationReceiptSha256: SHA, resourceVerificationReceiptSha256: SHA,
     rendererVerificationReceiptSha256: SHA, signalVerificationReceiptSha256: SHA,
     methodology: { packId: id(6), versionId: id(7), contentSha256: SHA, authorizationVersion: "MV1:" + SHA } };
-  let current: ExplorerConversationState = { waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 1, hasMore: false }, version: "explorer-conversation.v1", conversationId: id(3),
+  let current: ExplorerConversationState = { waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 1, hasMore: false }, version: "explorer-conversation.v1", conversationId: id(3),
     revision: 1, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable",
     messages: [{ id: id(10), role: "explorer", body: "Synthetic source about money worries.", createdAt: "2026-11-04T12:00:00Z" },
       ...(options.pacingReady ? [{ id: id(14), role: "explorer" as const, body: "Synthetic concern in my own words.", createdAt: "2026-11-04T12:00:00.250Z" }] : []),

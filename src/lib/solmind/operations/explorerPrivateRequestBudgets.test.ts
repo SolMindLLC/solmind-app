@@ -17,7 +17,7 @@ const SESSION = "20000000-0000-4000-8000-000000000002";
 const SHA = "A".repeat(64);
 const ACTOR = Object.freeze({ accountId: ID, applicationSessionId: SESSION });
 const OPERATION = Object.freeze({ operationId: ID, fingerprint: SHA });
-const STATE = Object.freeze({ waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false }, version: "explorer-conversation.v1" as const, conversationId: ID,
+const STATE = Object.freeze({ waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false }, version: "explorer-conversation.v1" as const, conversationId: ID,
   revision: 1, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable" as const,
   messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] });
 const ROW: ExplorerPrivateReadRow = Object.freeze({ outcome: "ok", conversation_state: STATE });

@@ -5,18 +5,18 @@ import { ExplorerWaypointClarification } from "../ExplorerWaypointClarification"
 import { type ExplorerConversationState } from "../../../lib/solmind/explorerConversationContract";
 
 const current = (): ExplorerConversationState => ({ version: "explorer-conversation.v1", conversationId: "conversation-a", revision: 3, sessionStatus: "active", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable", messages: [], compassItems: [], priorityId: null, attentionId: null,
-  waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true },
+  waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true, conversationRoom: true },
   waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: 1 },
   waypoints: [{ id: "waypoint-a", isCurrent: true, createdAt: "2026-10-29T10:00:00Z", sourceMessageId: "message-a", title: "Earlier destination <script>", destination: "Earlier destination <script>", meaning: "Earlier meaning", arrivalSignal: "Earlier signal", status: "chosen" }] });
 const review = { conversationId: "conversation-a", revision: 3, waypointId: "waypoint-a", kind: "revise_waypoint" as const };
 
 describe("Application-authored Waypoint conversation (static proof only)", () => {
   it("permits net-zero revision above the active allowance and explains exhausted history first", () => {
-    const state = { ...current(), waypointCapacity: { activeCount: 25, activeLimit: 20, historyRoom: true } };
+    const state = { ...current(), waypointCapacity: { activeCount: 25, activeLimit: 20, historyRoom: true, conversationRoom: true } };
     const render = (saved: ExplorerConversationState) => renderToStaticMarkup(createElement(ExplorerWaypointClarification,
       { state: saved, review, busy: false, onCommand: vi.fn(), onClose: vi.fn() }));
     expect(render(state)).not.toContain('<fieldset disabled=""');
-    const full = render({ ...state, waypointCapacity: { ...state.waypointCapacity, historyRoom: false } });
+    const full = render({ ...state, waypointCapacity: { ...state.waypointCapacity, historyRoom: false, conversationRoom: true } });
     expect(full).toContain('<fieldset disabled=""');
     expect(full).toContain("This conversation has reached its limit of 200 saved Waypoint versions, to keep its saved history manageable. No new Waypoint or version can be saved here. Marking one Reached or Released does not make room for another version. You can still read the Waypoints shown here, use Reached or Release where available, or end an active conversation.");
     expect(full).not.toContain("You have 25 active Waypoints");
@@ -28,7 +28,7 @@ describe("Application-authored Waypoint conversation (static proof only)", () =>
   it("shows the server's active count for revisits and calm unavailable wording for null capacity", () => {
     const state = current();
     const closed = { ...state, waypoints: state.waypoints.map(item => ({ ...item, status: "reached" as const })),
-      waypointCapacity: { activeCount: 21, activeLimit: 20, historyRoom: true } };
+      waypointCapacity: { activeCount: 21, activeLimit: 20, historyRoom: true, conversationRoom: true } };
     const render = (saved: ExplorerConversationState, kind: "revise_waypoint" | "revisit_waypoint") => renderToStaticMarkup(createElement(ExplorerWaypointClarification,
       { state: saved, review: { ...review, kind }, busy: false, onCommand: vi.fn(), onClose: vi.fn() }));
     const html = render(closed, "revisit_waypoint");

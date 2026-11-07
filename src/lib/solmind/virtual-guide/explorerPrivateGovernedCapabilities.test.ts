@@ -20,7 +20,7 @@ const ACTOR = Object.freeze({ accountId: uuid(4), applicationSessionId: uuid(5) 
 const EXPECTED_SCOPE = Object.freeze({ type: "guide" as const, id: GUIDE });
 const SHA = "A".repeat(64);
 const STATE = Object.freeze({ version: "explorer-conversation.v1" as const, conversationId: uuid(6),
-  waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true },
+  waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true },
   waypointProjection: { kind: "current_heads" as const, limit: 20 as const, hasMore: false, totalHeads: 0 },
   revision: 0, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable" as const,
   messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] });
@@ -145,7 +145,7 @@ describe("explicit private governed capability composition with synthetic proven
     if (!readiness) throw new Error("synthetic_readiness_missing");
     const source = uuid(50); const point = uuid(51); const waypoint = uuid(52);
     const populated = { ...STATE,
-      waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true },
+      waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true, conversationRoom: true },
       waypointProjection: { kind: "current_heads" as const, limit: 20 as const, hasMore: false, totalHeads: 1 },
       messages: [{ id: source, role: "explorer" as const, body: "Synthetic saved message.", createdAt: "2026-11-04T09:00:00.000Z" }],
       compassItems: [{ id: point, sourceMessageId: source, label: "Synthetic point", anchor: null, emphasis: null, mergedIntoItemId: null }],

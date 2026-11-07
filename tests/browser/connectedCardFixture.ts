@@ -63,7 +63,7 @@ export const cardHistoryState = (overrides: Partial<ExplorerConversationState> =
   conversationId: CARD_CONVERSATION,
   revision: 12,
   pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null,
-  waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true },
+  waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true, conversationRoom: true },
   waypointProjection: { kind: "current_heads", limit: 20, totalHeads: 3, hasMore: false },
   providerState: "unavailable",
   messages: MESSAGES,
@@ -124,5 +124,5 @@ export function cardState(overrides: Partial<ExplorerConversationState> = {}): E
 // Account-wide capacity can be full while only three local heads are displayed.
 export function cardStateAtWaypointLimit(): ExplorerConversationState {
   const state = cardState();
-  return { ...state, waypointCapacity: { activeCount: 20, activeLimit: 20, historyRoom: true } };
+  return { ...state, waypointCapacity: { activeCount: 20, activeLimit: 20, historyRoom: true, conversationRoom: true } };
 }

@@ -26,7 +26,7 @@ type Reply = keyof typeof REPLIES;
 type SuggestionCommand = Extract<ExplorerConversationCommand, { kind: "respond_compass_suggestion" }>;
 
 function savedState(overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
-  return { waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false },
+  return { waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false },
     version: EXPLORER_CONVERSATION_VERSION,
     conversationId: CONVERSATION,
     revision: 5,

@@ -15,7 +15,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions,pg_catalog,pg_temp;
 set local statement_timeout='120s';
-select plan(47);
+select plan(49);
 
 create function pg_temp.gid(n integer) returns uuid language sql immutable as $$
   select ('f47a0000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid
@@ -427,15 +427,53 @@ begin
     elsif case_name='classification_only' then level_n:=3;
     elsif case_name='uninterested' then interested_n:=false;
     elsif case_name in ('waypoint_limit','history_limit') then
-      insert into content.waypoint(waypoint_id,guide_explorer_relationship_id,source_ai_interaction_session_id,
-        source_message_id,title,destination,why_it_matters,arrival_signal,lifecycle_status,chosen_by_explorer_user_account_id,chosen_at)
-        select pg_temp.gid(80000+g.n),pg_temp.gid(25),pg_temp.gid(6005),pg_temp.gid(10015),
-          'Existing','Existing destination','Existing meaning','Existing signal','chosen',pg_temp.gid(1),clock_timestamp()
-        from generate_series(1,case when case_name='history_limit' then 200 else 20 end) g(n);
-      if case_name='history_limit' then
-        update content.waypoint set lifecycle_status='reached',reached_by_explorer_user_account_id=pg_temp.gid(1),
-          reached_at=clock_timestamp(),reached_evidence='Explicit synthetic evidence';
+      -- Lane 12: the active-limit case fills the allowance from an ended earlier conversation (9905), so the
+      -- five-per-conversation rule never decides it; the 200-version guard is per conversation and stays here.
+      if case_name='waypoint_limit' then
+        insert into ai.ai_interaction_session(ai_interaction_session_id,session_type,actor_user_account_id,actor_role_context,
+          guide_profile_id,explorer_profile_id,guide_explorer_relationship_id,practice_id,metadata)
+        values(pg_temp.gid(9905),'explorer_reflection',pg_temp.gid(1),'explorer',pg_temp.gid(23),pg_temp.gid(24),pg_temp.gid(25),
+          pg_temp.gid(22),jsonb_build_object('restricted_mode',false));
+        insert into ai.explorer_conversation_state(conversation_id,actor_user_account_id,safety_contract_version,
+          restricted_level,adult_reflection_stopped,safety_version)
+        values(pg_temp.gid(9905),pg_temp.gid(1),'explorer-conversation-safety.v1',null,false,0);
+        insert into ai.ai_interaction_message(ai_interaction_message_id,ai_interaction_session_id,sequence_number,
+          sender_type,sender_user_account_id,sender_role_context,content_text)
+        values(pg_temp.gid(99051),pg_temp.gid(9905),1,'user',pg_temp.gid(1),'explorer','Earlier conversation source.');
+        update ai.ai_interaction_session set session_status='ended',ended_at=clock_timestamp()
+          where ai_interaction_session_id=pg_temp.gid(9905);
       end if;
+      if case_name='history_limit' then
+        -- Lane 12: 200 saved versions of one Waypoint (one original and 199 revisions), so the five-Waypoint rule cannot
+        -- decide this case; only the head is current, and it is Reached, so no active place is used.
+        for i in 1..200 loop
+          insert into content.waypoint(waypoint_id,guide_explorer_relationship_id,source_ai_interaction_session_id,
+            source_message_id,title,destination,why_it_matters,arrival_signal,lifecycle_status,chosen_by_explorer_user_account_id,
+            chosen_at,predecessor_waypoint_id,creation_reason)
+          values(pg_temp.gid(80000+i),pg_temp.gid(25),pg_temp.gid(6005),pg_temp.gid(10015),'Existing','Existing destination',
+            'Existing meaning','Existing signal','chosen',pg_temp.gid(1),clock_timestamp(),
+            case when i>1 then pg_temp.gid(80000+i-1) end,case when i>1 then 'revision' end);
+        end loop;
+        update content.waypoint set lifecycle_status='reached',reached_by_explorer_user_account_id=pg_temp.gid(1),
+          reached_at=clock_timestamp(),reached_evidence='Explicit synthetic evidence' where waypoint_id=pg_temp.gid(80200);
+      else
+        insert into content.waypoint(waypoint_id,guide_explorer_relationship_id,source_ai_interaction_session_id,
+          source_message_id,title,destination,why_it_matters,arrival_signal,lifecycle_status,chosen_by_explorer_user_account_id,chosen_at)
+          select pg_temp.gid(80000+g.n),pg_temp.gid(25),pg_temp.gid(9905),pg_temp.gid(99051),
+            'Existing','Existing destination','Existing meaning','Existing signal','chosen',pg_temp.gid(1),clock_timestamp()
+            from generate_series(1,20) g(n);
+      end if;
+    elsif case_name in ('conversation_fifth','conversation_limit') then
+      -- Lane 12: earlier different Waypoints of this same conversation, three of them Reached (Reached still counts).
+      insert into content.waypoint(waypoint_id,guide_explorer_relationship_id,source_ai_interaction_session_id,source_message_id,
+        title,destination,why_it_matters,arrival_signal,lifecycle_status,chosen_by_explorer_user_account_id,chosen_at,
+        reached_by_explorer_user_account_id,reached_at,reached_evidence)
+        select pg_temp.gid(80300+g.n),pg_temp.gid(25),pg_temp.gid(6005),pg_temp.gid(10015),
+          'Earlier','Earlier destination '||g.n,'Earlier meaning','Earlier signal',
+          case when g.n<=3 then 'reached' else 'chosen' end,pg_temp.gid(1),clock_timestamp(),
+          case when g.n<=3 then pg_temp.gid(1) end,case when g.n<=3 then clock_timestamp() end,
+          case when g.n<=3 then 'Explicit synthetic evidence' end
+        from generate_series(1,case when case_name='conversation_limit' then 5 else 4 end) g(n);
     elsif case_name='rejected_limit' then
       for n in 1..24 loop
         if pg_temp.answer_draft(80000+n,draft_id,'not_it') is distinct from 'ok' then raise exception 'fixture_rejection'; end if;
@@ -519,7 +557,7 @@ end $$;
 create temp table cases as select name,pg_temp.typed_case(name) value
   from unnest(array['right','close','not_it','old','button_right','button_not_it','button_close','button_close_refined',
     'reword','same_reword','restricted','adult','level2','classification_only','uninterested',
-    'waypoint_limit','history_limit','rejected_limit','incomplete','foreign','foreign_existing','missing','extra','array','uppercase','bad_id','json_null']) name;
+    'waypoint_limit','history_limit','conversation_fifth','conversation_limit','rejected_limit','incomplete','foreign','foreign_existing','missing','extra','array','uppercase','bad_id','json_null']) name;
 
 select ok((select p.pronargs=27 and p.proargnames[26]='p_waypoint_response' and p.prosecdef
   and p.proowner='postgres'::regrole and p.proconfig @> array['search_path=""','lock_timeout=2000ms','statement_timeout=5000ms']
@@ -594,8 +632,19 @@ select ok((select value->>'saved'='true' and value->>'draftUnchanged'='true' and
   and value->>'waypointCount'='20' from cases where name='waypoint_limit'),
   'S7b: twenty active Waypoints silently drop typed right and preserve the saved reply');
 select ok((select value->>'outcome'='ok' and value->>'saved'='true' and value->>'waypointCount'='200'
-  and value->>'draftUnchanged'='true' and value->>'typedReceipts'='0' from cases where name='history_limit'),
+  and value->>'draftUnchanged'='true' and value->>'typedReceipts'='0'
+  and value#>>'{state,waypointCapacity,conversationRoom}'='true' and value#>>'{state,waypointCapacity,historyRoom}'='false'
+  from cases where name='history_limit'),
   'lane 7: exhausted history silently drops typed right while the ordinary reply remains saved');
+select ok((select value->>'outcome'='ok' and value->>'saved'='true' and value->>'typedReceipts'='1'
+  and value#>>'{draft,draft_status}'='confirmed' and value->>'waypointCount'='5'
+  and value#>>'{state,waypointCapacity,conversationRoom}'='false' from cases where name='conversation_fifth'),
+  'lane 12: with four earlier Waypoints here, a typed right forms the fifth and fills this conversation');
+select ok((select value->>'outcome'='ok' and value->>'saved'='true' and value->>'draftUnchanged'='true'
+  and value->>'typedReceipts'='0' and value->>'waypointCount'='5'
+  and value#>>'{state,waypointCapacity,conversationRoom}'='false' and value#>>'{state,waypointCapacity,activeCount}'='2'
+  from cases where name='conversation_limit'),
+  'lane 12: with five here, a typed right forms nothing below the active allowance while the reply is still saved');
 select ok((select value->>'saved'='true' and value->>'draftUnchanged'='true' and value->>'typedReceipts'='0'
   and value->>'rejected'='24' from cases where name='rejected_limit'),
   'S7b: the 24-rejected-draft bound silently drops typed not_it and preserves the saved reply');

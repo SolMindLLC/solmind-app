@@ -13,6 +13,7 @@ import {
 } from "@/lib/solmind/explorerConnectedCard";
 import type { ExplorerConversationState, ExplorerConversationWaypointDraft } from "@/lib/solmind/explorerConversationContract";
 import { WAYPOINT_DRAFT_WORDING } from "@/lib/solmind/explorerWaypointDraft";
+import { waypointConversationLimitNotice } from "@/lib/solmind/explorerWaypointCapacity";
 
 import { IconArchive, IconCheck, IconFlag, IconHistory, IconMapPin } from "./ExplorerConversationScreenIcons";
 
@@ -189,6 +190,8 @@ export function ConnectedWaypointCard({ scope, state }: Readonly<{ scope: string
 
   const groups = state === null ? { active: [], history: [] } : waypointListGroups(state);
   const draft = state === null || state.sessionStatus === "ended" ? null : state.waypointDraft;
+  // Lane 12: shown while the conversation is open; an ended conversation forms nothing anyway.
+  const conversationLimit = state === null || state.sessionStatus === "ended" ? null : waypointConversationLimitNotice(state);
   const rows: ListRow[] = [
     ...(draft === null ? [] : [{ key: `draft-${draft.id}`, kind: "draft" as const, draft }]),
     ...groups.active.map((line) => ({ key: line.current.id, kind: "line" as const, line })),
@@ -241,6 +244,9 @@ export function ConnectedWaypointCard({ scope, state }: Readonly<{ scope: string
         <IconMapPin className="text-amber-300" />
         {W.heading}
       </h3>
+      {conversationLimit === null ? null : (
+        <p className="text-sm leading-6 text-stone-300">{conversationLimit}</p>
+      )}
       {state === null ? (
         <p className="text-sm leading-6 text-stone-300">{W.notLoaded}</p>
       ) : rows.length === 0 && groups.history.length === 0 ? (

@@ -38,7 +38,7 @@ vi.mock("../ExplorerConversationConnectedScreen", () => ({
 const id = (n: number) => `80000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const state: ExplorerConversationState = { version: "explorer-conversation.v1", conversationId: id(1), revision: 0,
   pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "available", compassSuggestionReplies: "available",
-  waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true },
+  waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true },
   waypointProjection: { kind: "current_heads", limit: 20, totalHeads: 0, hasMore: false },
   messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] };
 const draft = "My thought stays in the conversation.";

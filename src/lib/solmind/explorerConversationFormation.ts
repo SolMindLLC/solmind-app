@@ -314,7 +314,7 @@ export function buildWaypointRevisionFormationIntent(
   if (!waypoint || waypoint.isCurrent !== true) {
     return refuse("Choose the latest saved Waypoint in this history to review.");
   }
-  const capacityMessage = waypointCapacityMessage(state, review.kind === "revisit_waypoint");
+  const capacityMessage = waypointCapacityMessage(state, review.kind === "revisit_waypoint" ? "revisit" : "revision");
   if (capacityMessage !== null) return refuse(capacityMessage);
   const answers = parseExplorerWaypointClarificationAnswers(review.answers);
   if (answers === null) return refuse("Review each answered question once, in destination, meaning and arrival-signal order.");

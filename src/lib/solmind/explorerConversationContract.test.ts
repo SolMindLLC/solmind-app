@@ -36,14 +36,14 @@ function without(value: Record<string, unknown>, key: string): Record<string, un
 }
 function emptyState() {
   return { version: EXPLORER_CONVERSATION_VERSION, conversationId: null, revision: 0,
-    waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true },
+    waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true },
     waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: 0 },
     providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, messages: [], compassItems: [], priorityId: null,
     attentionId: null, waypoints: [] };
 }
 function populatedState() {
   return { version: EXPLORER_CONVERSATION_VERSION, conversationId: uuid(1), revision: 3,
-    waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true },
+    waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true, conversationRoom: true },
     waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: 1 },
     providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, messages: [
       { id: sourceId, role: "explorer", body: "I want an unhurried morning.\nWhat could that look like?", createdAt: "2026-10-24T05:05:00.000Z" },

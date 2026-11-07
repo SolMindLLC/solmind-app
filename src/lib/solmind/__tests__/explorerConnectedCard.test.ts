@@ -45,7 +45,7 @@ const SOURCE = "20000000-0000-4000-8000-000000000001";
 const POINT = (index: number) => `40000000-0000-4000-8000-00000000000${index}`;
 
 function bare(compassItems: ExplorerConversationCompassItem[], overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState {
-  return { waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false },
+  return { waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false },
     version: EXPLORER_CONVERSATION_VERSION, conversationId: "10000000-0000-4000-8000-000000000001", revision: 3, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null,
     providerState: "available", messages: [{ id: SOURCE, role: "explorer", body: "A synthetic message", createdAt: "2026-11-03T14:00:00.000Z" }],
     compassItems, priorityId: null, attentionId: null, waypoints: [], route: [], sessionStatus: "active", ending: null, ...overrides,
@@ -323,7 +323,7 @@ describe("connected Compass & Waypoint card mapping", () => {
     ]);
     for (const waypoints of [wireOrder, [...wireOrder].reverse(), [wireOrder[5], wireOrder[2], wireOrder[3], wireOrder[6], wireOrder[0], wireOrder[4], wireOrder[1]]]) {
       const originalIds = waypoints.map(item => item.id);
-      const state = bare([], { waypoints, waypointCapacity: { activeCount: 4, activeLimit: 20, historyRoom: true },
+      const state = bare([], { waypoints, waypointCapacity: { activeCount: 4, activeLimit: 20, historyRoom: true, conversationRoom: true },
         waypointProjection: { kind: "current_heads", limit: 20, totalHeads: 7, hasMore: false } });
       expect(parseExplorerConversationState(state)).not.toBeNull();
       const groups = waypointListGroups(state);

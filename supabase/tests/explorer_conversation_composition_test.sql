@@ -294,16 +294,36 @@ select is((select outcome from pg_temp.mutate(222,34,'add_compass',pg_temp.cid(6
   'unavailable','twenty-fifth Compass item is refused without dropping saved content');
 select is((select count(*)::integer from ai.explorer_conversation_operation where operation_id=pg_temp.cid(222)),0,
   'Compass capacity refusal has no retained operation');
+-- Lane 12: at most five different Waypoints form in one conversation, so this conversation forms three more (four with
+-- the earlier Reached one) and an ended earlier conversation (9951) holds the other seventeen active Waypoints as stored
+-- rows; the twenty-first attempt below is this conversation's fifth, refused only by the active allowance.
 do $$ declare x integer; r record; begin
-  for x in 0..19 loop
+  for x in 0..2 loop
     select * into r from pg_temp.mutate(300+x,34+x,'confirm_waypoint',pg_temp.cid(64),null,null,null,
       'Synthetic capacity destination '||x,'Synthetic capacity meaning','Synthetic capacity arrival');
     if r.outcome is distinct from 'ok' then raise exception 'synthetic_waypoint_capacity_setup_failed'; end if;
   end loop;
+  insert into ai.ai_interaction_session(ai_interaction_session_id,session_type,actor_user_account_id,actor_role_context,
+    guide_profile_id,explorer_profile_id,guide_explorer_relationship_id,practice_id,metadata)
+  values(pg_temp.cid(9951),'explorer_reflection',pg_temp.cid(1),'explorer',pg_temp.cid(23),pg_temp.cid(24),pg_temp.cid(25),
+    pg_temp.cid(22),jsonb_build_object('restricted_mode',false));
+  insert into ai.explorer_conversation_state(conversation_id,actor_user_account_id,safety_contract_version,
+    restricted_level,adult_reflection_stopped,safety_version)
+  values(pg_temp.cid(9951),pg_temp.cid(1),'explorer-conversation-safety.v1',null,false,0);
+  insert into ai.ai_interaction_message(ai_interaction_message_id,ai_interaction_session_id,sequence_number,
+    sender_type,sender_user_account_id,sender_role_context,content_text)
+  values(pg_temp.cid(99511),pg_temp.cid(9951),1,'user',pg_temp.cid(1),'explorer','Earlier conversation source.');
+  update ai.ai_interaction_session set session_status='ended',ended_at=clock_timestamp()
+    where ai_interaction_session_id=pg_temp.cid(9951);
+  insert into content.waypoint(waypoint_id,guide_explorer_relationship_id,source_ai_interaction_session_id,source_message_id,
+    title,destination,why_it_matters,arrival_signal,lifecycle_status,chosen_by_explorer_user_account_id,chosen_at)
+  select pg_temp.cid(9600+g.n),pg_temp.cid(25),pg_temp.cid(9951),pg_temp.cid(99511),'Synthetic capacity destination '||g.n,
+    'Synthetic capacity destination '||g.n,'Synthetic capacity meaning','Synthetic capacity arrival','chosen',pg_temp.cid(1),clock_timestamp()
+  from generate_series(3,19) g(n);
 end $$;
-select is((select count(*)::integer from content.waypoint where source_ai_interaction_session_id=pg_temp.cid(51)),21,
+select is((select count(*)::integer from content.waypoint where source_ai_interaction_session_id in (pg_temp.cid(51),pg_temp.cid(9951))),21,
   'twenty active Waypoints and the earlier Reached row remain stored');
-select is((select outcome from pg_temp.mutate(320,54,'confirm_waypoint',pg_temp.cid(61),null,null,null,
+select is((select outcome from pg_temp.mutate(320,37,'confirm_waypoint',pg_temp.cid(61),null,null,null,
   'Synthetic twenty-first active destination','Synthetic meaning','Synthetic arrival')),'unavailable','twenty-first active Waypoint is refused');
 select is((select count(*)::integer from ai.explorer_conversation_operation where operation_id=pg_temp.cid(320)),0,
   'Waypoint capacity refusal has no retained operation');
@@ -313,7 +333,7 @@ insert into ai.ai_interaction_message(ai_interaction_message_id,ai_interaction_s
   sender_type,sender_user_account_id,sender_role_context,content_text)
 select pg_temp.cid(1000+n),pg_temp.cid(51),n,'user',pg_temp.cid(1),'explorer','Synthetic capacity history '||n
   from generate_series(5,99) n;
-select is((select outcome from pg_temp.prepare_turn(3,'Synthetic turn beyond reserved pair capacity',54)),
+select is((select outcome from pg_temp.prepare_turn(3,'Synthetic turn beyond reserved pair capacity',37)),
   'unavailable','99 saved messages cannot reserve an Explorer/reply pair under the 100-message cap');
 select is((select count(*)::integer from ai.ai_context_snapshot where ai_interaction_session_id=pg_temp.cid(51)),3,
   'message-cap refusal creates no additional successor evidence');

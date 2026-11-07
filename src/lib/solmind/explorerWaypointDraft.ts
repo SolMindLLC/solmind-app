@@ -15,7 +15,7 @@ export function waypointLimitReached(state: ExplorerConversationState): boolean 
 }
 
 export function waypointDraftLimitReason(state: ExplorerConversationState): string | null {
-  return waypointCapacityMessage(state, true, true);
+  return waypointCapacityMessage(state, "new", true);
 }
 
 export function formingWaypointForMessage(state: ExplorerConversationState, messageId: string) {

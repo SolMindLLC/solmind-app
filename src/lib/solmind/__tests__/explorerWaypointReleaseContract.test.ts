@@ -15,7 +15,7 @@ const legacyWaypoint = {
 };
 function state(waypoint: unknown = legacyWaypoint) {
   return { version: EXPLORER_CONVERSATION_VERSION, conversationId: uuid(1), revision: 5,
-    waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true },
+    waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true, conversationRoom: true },
     waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: 1 },
     providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, messages: [
       { id: uuid(2), role: "explorer", body: "I want time for my family.", createdAt: "2026-10-29T14:00:00.000Z" },

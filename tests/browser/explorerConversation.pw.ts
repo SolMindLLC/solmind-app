@@ -11,7 +11,7 @@ test.use({ trace: "off", screenshot: "off", video: "off" });
 const CONVERSATION = "10000000-0000-4000-8000-000000000001";
 const EXPLORER_MESSAGE = "20000000-0000-4000-8000-000000000001";
 const GUIDE_MESSAGE = "30000000-0000-4000-8000-000000000001";
-const emptyState = (providerState: ExplorerConversationState["providerState"] = "available"): ExplorerConversationState => ({ waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false },
+const emptyState = (providerState: ExplorerConversationState["providerState"] = "available"): ExplorerConversationState => ({ waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false },
   version: EXPLORER_CONVERSATION_VERSION, conversationId: null, revision: 0, providerState, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null,
   messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [],
 });

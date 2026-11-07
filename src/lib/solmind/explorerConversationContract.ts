@@ -126,7 +126,12 @@ export type ExplorerWaypointCapacity = Readonly<{
   activeCount: number;
   activeLimit: number;
   historyRoom: boolean;
+  // Lane 12: whether this conversation can still form a different Waypoint (fewer than five originals).
+  conversationRoom: boolean;
 }>;
+// What a capacity check is for: a new Waypoint needs every room, a revisit history and an active place,
+// and a revision only history.
+export type ExplorerWaypointCapacityPurpose = "new" | "revisit" | "revision";
 export type ExplorerWaypointProjection = Readonly<{
   kind: "current_heads";
   limit: 20;
@@ -226,18 +231,21 @@ function revision(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 2_147_483_647;
 }
 export function parseExplorerWaypointCapacity(value: unknown): ExplorerWaypointCapacity | null {
-  if (!object(value) || !keys(value, ["activeCount", "activeLimit", "historyRoom"]) ||
-      Reflect.ownKeys(value).length !== 3 ||
+  if (!object(value) || !keys(value, ["activeCount", "activeLimit", "historyRoom", "conversationRoom"]) ||
+      Reflect.ownKeys(value).length !== 4 ||
       Object.keys(value).some(key => !("value" in (Object.getOwnPropertyDescriptor(value, key) ?? {}))) ||
       !revision(value.activeCount) || !revision(value.activeLimit) || value.activeLimit < 1 ||
-      typeof value.historyRoom !== "boolean") return null;
-  return Object.freeze({ activeCount: value.activeCount, activeLimit: value.activeLimit, historyRoom: value.historyRoom });
+      typeof value.historyRoom !== "boolean" || typeof value.conversationRoom !== "boolean") return null;
+  return Object.freeze({ activeCount: value.activeCount, activeLimit: value.activeLimit, historyRoom: value.historyRoom,
+    conversationRoom: value.conversationRoom });
 }
 
-export function waypointHasCapacity(state: Pick<ExplorerConversationState, "waypointCapacity">, increasesActive = true): boolean {
+export function waypointHasCapacity(state: Pick<ExplorerConversationState, "waypointCapacity">,
+  purpose: ExplorerWaypointCapacityPurpose = "new"): boolean {
   const capacity = parseExplorerWaypointCapacity(state.waypointCapacity);
   return capacity !== null && capacity.historyRoom &&
-    (!increasesActive || capacity.activeCount < capacity.activeLimit);
+    (purpose !== "new" || capacity.conversationRoom) &&
+    (purpose === "revision" || capacity.activeCount < capacity.activeLimit);
 }
 function instant(value: unknown): value is string {
   if (typeof value !== "string" || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?(?:Z|\+00:00)$/.test(value)) return false;

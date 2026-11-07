@@ -11,7 +11,7 @@ const POINT = "30000000-0000-4000-8000-000000000001";
 const WAYPOINT = "40000000-0000-4000-8000-000000000001";
 const ROUTE_OPERATION = "50000000-0000-4000-8000-000000000001";
 const END_OPERATION = "60000000-0000-4000-8000-000000000001";
-const empty = (): ExplorerConversationState => ({ waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false }, version: "explorer-conversation.v1", conversationId: null,
+const empty = (): ExplorerConversationState => ({ waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 0, hasMore: false }, version: "explorer-conversation.v1", conversationId: null,
   revision: 0, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable", messages: [], compassItems: [], priorityId: null,
   attentionId: null, waypoints: [], route: [], sessionStatus: null, ending: null });
 const active = (): ExplorerConversationState => ({ ...empty(), conversationId: CONVERSATION, revision: 5, sessionStatus: "active",

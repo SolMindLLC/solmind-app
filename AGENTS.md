@@ -8,6 +8,77 @@ This version has breaking changes - APIs, conventions, and file structure may al
 
 # SolMind App Agent Instructions
 
+## Five Waypoints per conversation (lane 12) - 2026-11-06
+
+Paul's rule (decision queue 2026-11-05 19:38:45 CST, Waypoint limits rule 2;
+execution/07 item 32 (b)): at most five different Waypoints form in one
+conversation, counting any later Reached or Released. A different Waypoint is
+an original version (no predecessor) the Explorer chose in that conversation;
+a separately formed one counts even with identical wording, drafts do not
+count, and revisions and revisits continue an existing Waypoint and use no
+place. Conversations already above five keep everything; only a further new
+Waypoint is refused. Built on the recommended defaults of the decision card
+(Validation_Workspaces/Five_Waypoints_Per_Conversation_Decisions_For_Paul_2026-11-06.md);
+Paul approved them, the wording sheet and the fifth Guide sentence in the decision
+queue on 2026-11-07 at 08:02:45 CST.
+
+The forward migration
+supabase/migrations/20261106060000_explorer_five_waypoints_per_conversation.sql
+adds protected ai.solmind_waypoint_root_room_v1 and
+ai.solmind_waypoint_insert_allowed_v2 (history, active and, for a new
+Waypoint, the conversation's five), replaces ai.solmind_waypoint_insert_allowed_v1
+in place to call v2 with creates_root equal to increases_active (its two
+remaining callers, manual confirm_waypoint and the draft response helper for
+"That's right" and a typed right, both form a new Waypoint), replaces
+public.solmind_confirm_explorer_waypoint_revision_v1 in place to call v2 with
+creates_root false (revisit and revision), and adds conversationRoom to
+ai.solmind_waypoint_capacity_v1 (true before a first Send, when there is no
+conversation yet; the guard still refuses an insert without one). Exact replay
+still returns before any capacity check. No table, RLS policy or grant changes.
+
+waypointCapacity is now {activeCount, activeLimit, historyRoom,
+conversationRoom}; the closed parser requires all four. waypointHasCapacity and
+waypointCapacityMessage take a purpose, "new", "revisit" or "revision". The
+explanation order is the 200-version guard, then (new only) this
+conversation's five, then (new or revisit) the 20 active Waypoints: releasing
+an active Waypoint never makes room here. The current tools give revisits
+their own explanation (history and active) instead of the new-Waypoint one.
+The forming draft holds only "That's right", with its reason; the other replies
+and typing stay available. The connected Waypoint card shows a quiet static
+notice (no live region) while the conversation is open and full, also with no
+forming draft. The draft row's polite status and the current tools' alert keep
+their existing announcements, so both can speak when both are shown (as for the
+lane 7 limits; the current tools are marked for removal).
+
+Settlement drops new or refined waypointSuggestion wording when the
+authenticated state has no conversationRoom; the reply, choices and other
+proposals are kept. A same-reply suggestion still excludes a typed
+waypointResponse when it is dropped (the exclusion uses the proposal as
+received). SQL refuses a sixth Waypoint on every path regardless, and a refused
+typed right keeps the saved reply.
+
+The five Virtual Guide sentences (GPT-6 Astra's REV313 drafts, the third
+replaced by Astra's REV316 wording, which also stops refining a forming draft
+and gives the end-then-start route only at the limit, and a fifth for "Close,
+not quite" at the limit, approved by Paul 2026-11-07 08:02:45) are in the role text and
+only in the ordinary-reply HTTP instructions; the classification-only HTTP
+instruction bytes are unchanged, while the role text (sent as context in both
+modes) carries the sentences and the new labels. All five labels end in
+-20261106-w5-r1; the role pin is 11717 bytes, the ordinary HTTP pin 9830.
+
+Known limits: a tab that is behind (another tab formed the fifth Waypoint)
+is refused as out of date before any capacity check and is told to reload; the
+uncertain-save answer for a capacity refusal remains possible only when the
+conversation's revision did not change, as for the 20-active limit across
+conversations. Test fixtures: Waypoints that only fill the 20-active allowance
+are stored in an ended earlier conversation, and 200-version cases are revision
+chains, so each refusal is decided by the limit it names (a mutation check
+removing each guard in turn fails exactly its own tests). The revision and
+release suites now read the first history page, and the drafts suite's lineage
+case shows two heads; the offset-20 page and the 20-head projection remain
+covered by the lane 7 suite. The application and this migration must reach a
+database together.
+
 ## Your Waypoints section - 2026-11-06
 
 execution/07 item 43 (Paul's decisions, decision queue 2026-11-06 09:03:09 CST
