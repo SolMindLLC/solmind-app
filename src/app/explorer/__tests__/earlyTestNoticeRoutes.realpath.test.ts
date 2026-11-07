@@ -77,6 +77,9 @@ import { GET as conversationReview } from "../conversations/state/route";
 import { GET as waypointList } from "../waypoints/suggestions/route";
 import { GET as waypointDetail } from "../waypoints/[suggestedWaypointId]/detail/route";
 import { POST as waypointCommand } from "../waypoints/[suggestedWaypointId]/commands/route";
+import { GET as yourWaypointsState } from "../waypoints/your-waypoints/state/route";
+import { GET as yourWaypointsHistory } from "../waypoints/your-waypoints/history/route";
+import { POST as yourWaypointsCommand } from "../waypoints/your-waypoints/commands/route";
 import { GET as noticeStatus } from "../early-test-notice/status/route";
 import { POST as noticeAgree } from "../early-test-notice/agree/route";
 import ExplorerPage from "../page";
@@ -176,6 +179,26 @@ const CASES = [
     }), waypointContext()),
     feature: "solmind_mark_suggested_waypoint_read",
     denied: { ok: false, outcome: null, suggestedWaypointId: null, error: SUGGESTED_WAYPOINT_COMMAND_DENIED },
+  },
+  {
+    route: "GET /explorer/waypoints/your-waypoints/state",
+    invoke: () => yourWaypointsState(request("/explorer/waypoints/your-waypoints/state")),
+    feature: "solmind_read_explorer_waypoint_heads_v1",
+    denied: { version: "explorer-your-waypoints.v1", kind: "list", ok: false, items: null, hasMore: false, nextOffset: null, error: "denied" },
+  },
+  {
+    route: "GET /explorer/waypoints/your-waypoints/history",
+    invoke: () => yourWaypointsHistory(request(`/explorer/waypoints/your-waypoints/history?conversationId=${SUGGESTION}&waypointId=${VERSION}`)),
+    feature: "solmind_read_explorer_waypoint_history_v1",
+    denied: { version: "explorer-your-waypoints.v1", kind: "history", ok: false, waypointId: null, versions: null, complete: false, error: "denied" },
+  },
+  {
+    route: "POST /explorer/waypoints/your-waypoints/commands",
+    invoke: () => yourWaypointsCommand(request("/explorer/waypoints/your-waypoints/commands", {
+      kind: "release_waypoint", operationId: OPERATION, waypointId: VERSION,
+    })),
+    feature: "solmind_close_ended_explorer_waypoint_v1",
+    denied: { version: "explorer-your-waypoints.v1", kind: "close", ok: false, replay: false, item: null, error: "denied" },
   },
 ];
 

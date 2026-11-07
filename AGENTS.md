@@ -8,6 +8,75 @@ This version has breaking changes - APIs, conventions, and file structure may al
 
 # SolMind App Agent Instructions
 
+## Your Waypoints section - 2026-11-06
+
+execution/07 item 43 (Paul's decisions, decision queue 2026-11-06 09:03:09 CST
+items 1 and 3, and 15:13:41 CST item 2) adds the private "Your Waypoints"
+section above Waypoint Suggestions on /explorer/waypoints. The page title is
+now "Waypoints"; the Suggestions section keeps every read, command, live region
+and text and becomes an h2 (its inner headings h3).
+src/components/solmind/ExplorerYourWaypoints.tsx lists the signed-in
+Explorer's current Waypoints from every conversation, 20 per page, in SQL's
+order (active first, then Reached and Released, newest first), with one row
+open at a time, the Reached and released group collapsed, earlier versions on
+request, and Reached and Release reviews for Waypoints from ended
+conversations. A Waypoint whose conversation has not ended reads "From a
+conversation that has not ended" and links to the Explorer's conversation instead. Its live region is aria-live polite without the status
+role, so the Suggestions section keeps the page's one status region.
+src/lib/solmind/explorerYourWaypoints.ts owns the wording, all of it the
+Executor's draft for Paul's wording read, including
+YOUR_WAYPOINTS_EARLIER_VERSIONS_POINTER, which replaces the conversation
+tools' "Earlier versions cannot currently be opened." The earlier-version link
+on the conversation card stays hidden.
+
+src/lib/solmind/explorerYourWaypointsContract.ts owns the closed browser
+shapes (explorer-your-waypoints.v1): the list (current-head page items with
+their conversationEnded display fact), the history (the current Waypoint, then its
+predecessors, with complete), the close command (release_waypoint, or
+reach_waypoint with trimmed 1 to 1,000 character evidence under the
+conversation's existing text rule, isExplorerConversationText) and the close
+result (one closed Waypoint from an ended conversation, with replay).
+src/lib/solmind/supabase/explorerYourWaypointsComposition.ts is server-only:
+it authenticates through createExplorerPrivateConversationRequestDependencies
+with no capabilities (sign-in, early-test notice and 10-second port budgets;
+no local run profile, configuration or provider), reads the current-head page,
+walks one conversation's history pages (at most eleven reads; a row repeated
+when a version saved during the walk shifts the pages is skipped) until the
+lineage is complete, and closes with the existing closeEndedWaypoint port and
+a server-computed SHA-256 fingerprint of the exact reviewed request. It reads
+no transcript, active selector, configuration, context or provider, and gives
+no Guide access. conversationEnded is display only; SQL alone allows a closure
+(ended conversation, original owner, chosen head, Reached policy).
+
+The three thin routes under src/app/explorer/waypoints/your-waypoints/ are
+GET state (only an optional offset, a multiple of 20), GET history (exactly
+conversationId and waypointId) and POST commands (no query, trusted origin,
+readSameOriginJsonWriteRequest, exact-key body). All are no-store with
+value-free failures, and they join the early-test notice real-path test.
+An uncertain save (no answer, an unreadable answer or "unavailable") keeps the
+review open and locked with the same operation and exact request, so pressing
+the button again is an exact replay; conflict and denial close the review and
+reload the list, and after an uncertain attempt they say the outcome could not
+be confirmed. A closure moves a Waypoint from the active rows to the closed
+rows and shifts later offsets, so after a save every shown page is read again
+from offset 0 and the saved Waypoint stays in view; Show more waits while that
+reload or a save runs, a reload that takes over clears a pending Show more, no
+row opens or closes during a save, focus returns to the Waypoint's row after a
+refusal (and is restored by a reload only if it was lost), and a failed reload
+adds its sentence after the outcome sentence.
+
+The forward migration supabase/migrations/20261106050000_explorer_your_waypoints_ended_fact.sql
+replaces ai.solmind_waypoint_page_v1 in place (same signature, owner, settings
+and privileges) so each current-head row carries conversationEnded: whether its
+own source conversation has ended (status ended with an end time, the test the
+post-End closure applies), in any Guide relationship. The ended-conversation
+list covers only the current relationship, so it cannot tell a Waypoint from an
+ended conversation with an earlier Guide apart from one in the open
+conversation. History pages and closure results carry no such fact; the
+portfolio parser requires it on current-head pages and refuses it elsewhere.
+No table, RLS policy or grant changes. The application and this migration must
+reach a database together.
+
 ## Second test-run review fixes - 2026-11-06 (REV306b)
 
 This isolated fix round follows BUILD_SPEC.md and BUILD_SPEC_ROUND1.md in the
@@ -136,15 +205,14 @@ a partial array. SQL retains and validates the complete lineage.
 
 Interim display gap: earlier versions of revised or revisited Waypoints are
 no longer visible on the connected card, compact list or ended review. The
-owner-private history RPC preserves read access, but has no route or screen
-in this increment. Further current heads outside the bounded projection also
-stay saved and private without a screen to open them. Paul accepted this gap
-for saving now for the demo (decision queue 2026-11-06 15:13:41 CST, item 2).
-The private Your Waypoints section must be built next, before any real Explorer
-uses SolMind. Release now says history stays saved and private; revised and
-revisited details explain that earlier definitions stay saved privately and
-cannot currently be opened. The earlier-version link is hidden until that
-private section exists.
+owner-private history RPC preserves read access; the Your Waypoints section
+(above) is now its route and screen, and further current heads outside the
+bounded projection are listed there too. Paul accepted the interim gap for
+saving now for the demo (decision queue 2026-11-06 15:13:41 CST, item 2), with
+the Your Waypoints section built next. Release now says history stays saved
+and private; revised and revisited details point to earlier versions in Your
+Waypoints (draft wording for Paul's read). The earlier-version link on the
+conversation card stays hidden.
 The compact list sorts each group newest first independently of projection
 order. The legacy formation tools and ended review follow the same order
 (active heads first, then closed heads, newest first within each group);
@@ -159,8 +227,7 @@ Release retains its existing policy allowance. Authenticated exact replay,
 the account owner lock, one terminal fact and transactional audit are required.
 The original conversation, ending revision/time, transcript, Route and source
 provenance stay unchanged. No after-End revision, revisit, reactivation or
-Guide access is authorized. The private Your Waypoints screen is later work;
-this increment adds no route or page.
+Guide access is authorized. The private Your Waypoints screen (above) is its route and page.
 
 Ordinary model context is compass-v7 / explorer-compass-context.v7 and includes
 at most 20 same-conversation heads: active heads first, then newest closed

@@ -262,6 +262,9 @@ test("workspace frame (Waypoints inbox): the toggle hides and shows the blue lab
   };
   await page.route("**/explorer/waypoints/suggestions?**", (route) =>
     fulfillJson(route, { ok: true, data: { items: [item], next_cursor: null, total_count: 1 }, error: null }));
+  // The private Your Waypoints section is answered with an empty list.
+  await page.route("**/explorer/waypoints/your-waypoints/state**", (route) => fulfillJson(route, {
+    version: "explorer-your-waypoints.v1", kind: "list", ok: true, items: [], hasMore: false, nextOffset: null, error: null }));
   await page.goto("/explorer/waypoints");
   await expect(page.getByRole("link", { name: /Protect one evening each week for recovery/ })).toBeVisible();
   const toggle = toggleOf(page);

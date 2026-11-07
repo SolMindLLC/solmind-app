@@ -56,6 +56,11 @@ const expectNoSeriousAxeViolations = async (page: Page) => {
 };
 
 test.describe("authenticated Explorer Suggested Waypoint inbox", () => {
+  // The private Your Waypoints section above is answered with an empty list, so these suites never reach its real route.
+  test.beforeEach(async ({ page }) => {
+    await page.route("**/explorer/waypoints/your-waypoints/state**", route => fulfillJson(route, {
+      version: "explorer-your-waypoints.v1", kind: "list", ok: true, items: [], hasMore: false, nextOffset: null, error: null }));
+  });
   test("shows delivered states, opens by keyboard, and restores row focus", async ({ page }) => {
     await page.route("**/explorer/waypoints/suggestions?**", (route) => fulfillJson(route, success([
       item(),

@@ -4,7 +4,9 @@ import {
   type ExplorerConversationWaypoint,
 } from "./explorerConversationContract";
 
-export type ExplorerWaypointPortfolioItem = ExplorerConversationWaypoint & Readonly<{ conversationId: string }>;
+// conversationEnded is present only on current-head pages: whether the row's own source conversation has ended
+// (migration 20261106050000), across every Guide relationship. History and closure pages never carry it.
+export type ExplorerWaypointPortfolioItem = ExplorerConversationWaypoint & Readonly<{ conversationId: string; conversationEnded?: boolean }>;
 export type ExplorerWaypointPage = Readonly<{
   kind: "current_heads" | "history" | "closure";
   limit: number;
@@ -40,13 +42,14 @@ export function parseExplorerWaypointPage(value: unknown): ExplorerWaypointPage 
     for (let index = 0; index < value.items.length; index++) {
       const descriptor = Object.getOwnPropertyDescriptor(value.items, String(index));
       if (!descriptor?.enumerable || !("value" in descriptor) || !record(descriptor.value)) return null;
-      const { conversationId, ...fields } = descriptor.value;
+      const { conversationId, conversationEnded, ...fields } = descriptor.value;
       if (!isExplorerConversationId(conversationId)) return null;
+      if (value.kind === "current_heads" ? typeof conversationEnded !== "boolean" : Object.hasOwn(descriptor.value, "conversationEnded")) return null;
       const waypoint = parseExplorerConversationWaypoint(fields);
       if (waypoint === null || ids.has(waypoint.id) ||
           (value.kind !== "history" && !waypoint.isCurrent)) return null;
       ids.add(waypoint.id);
-      items.push(Object.freeze({ ...waypoint, conversationId }));
+      items.push(Object.freeze({ ...waypoint, conversationId, ...(value.kind === "current_heads" ? { conversationEnded: conversationEnded as boolean } : {}) }));
     }
     if (value.kind === "closure" && (value.hasMore || items.length !== 1 ||
         (items[0].status !== "reached" && items[0].release === undefined))) return null;

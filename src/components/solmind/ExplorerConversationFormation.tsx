@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useState, type FormEvent } from "react";
+import { YOUR_WAYPOINTS_EARLIER_VERSIONS_POINTER } from "@/lib/solmind/explorerYourWaypoints";
 import {
   EXPLORER_CONVERSATION_LIMITS,
   waypointHasCapacity,
@@ -487,7 +488,7 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
               <dl className="mt-3 space-y-3 text-sm"><div><dt className="font-semibold text-slate-200">Why it matters</dt><dd className="mt-1 whitespace-pre-wrap break-words text-slate-300">{waypoint.meaning}</dd></div><div><dt className="font-semibold text-slate-200">Arrival signal</dt><dd className="mt-1 whitespace-pre-wrap break-words text-slate-300">{waypoint.arrivalSignal}</dd></div></dl>
               {waypoint.lifecycle !== undefined ? <details className="mt-3 rounded-xl border border-slate-700 p-3">
                 <summary className="cursor-pointer text-sm text-cyan-200">Review this {waypoint.lifecycle.creationReason === "revision" ? "revision" : "new lifecycle"} and its clarification sources</summary>
-                <p className="mt-3 text-sm text-slate-300">{waypoint.lifecycle.creationReason === "revision" ? "You confirmed a revised understanding." : "You confirmed a new current lifecycle. Earlier Reached evidence or release history does not count as current arrival."} The earlier definition stays saved privately. Earlier versions cannot currently be opened.</p>
+                <p className="mt-3 text-sm text-slate-300">{waypoint.lifecycle.creationReason === "revision" ? "You confirmed a revised understanding." : "You confirmed a new current lifecycle. Earlier Reached evidence or release history does not count as current arrival."} The earlier definition stays saved privately. {YOUR_WAYPOINTS_EARLIER_VERSIONS_POINTER}</p>
                 {waypoint.lifecycle.clarifications.length === 0 ? <p className="mt-3 text-sm text-slate-300">You deliberately kept the earlier destination, meaning and arrival signal when confirming this new lifecycle.</p> : <ul className="mt-3 space-y-4">{waypoint.lifecycle.clarifications.map(source => <li key={source.component} className="text-sm text-slate-300">
                   <p className="font-semibold text-slate-200">Explorer clarification in this conversation {"\u2014"} {source.component === "arrivalSignal" ? "arrival signal" : source.component}</p>
                   <p className="mt-1">Application question: {source.component === "destination" ? "Where do you want to arrive now?" : source.component === "meaning" ? "Why does reaching that place matter to you now?" : "What observable signal would help you recognize arrival now?"}</p>

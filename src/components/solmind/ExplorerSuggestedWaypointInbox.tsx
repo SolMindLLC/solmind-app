@@ -24,6 +24,8 @@ import { SUGGESTED_WAYPOINT_REFRESH_REQUIRED } from "@/lib/solmind/suggestedWayp
 import { SOLMIND_TERMS } from "@/lib/solmind/terms";
 import { FOCUS_RING, SECONDARY_BUTTON, joinClasses } from "./ExplorerConversationScreenNotYetImplemented";
 import { ExplorerWorkspaceFrame } from "./ExplorerWorkspaceFrame";
+import { ExplorerYourWaypoints } from "./ExplorerYourWaypoints";
+import { YOUR_WAYPOINTS_WORDING } from "@/lib/solmind/explorerYourWaypoints";
 import { SuggestedWaypointStatusPill } from "./SuggestedWaypointStatusPill";
 import { useExplorerEarlyTestNoticeRecheck } from "@/lib/solmind/explorerEarlyTestNoticeRecheck";
 
@@ -255,9 +257,12 @@ export function ExplorerSuggestedWaypointInbox() {
             <SuggestedWaypointStatusPill surface="dark" tone="private">◆ Private Explorer view</SuggestedWaypointStatusPill>
           </div>
 
+          {/* The Waypoints page (execution/07 item 43): the private Your Waypoints section first, then the
+              Waypoint Suggestions from the Guide, whose reads, commands and text are unchanged. */}
+          <h1 className="mb-8 font-serif text-3xl leading-tight text-stone-50 sm:text-4xl">{YOUR_WAYPOINTS_WORDING.pageHeading}</h1>
+          <ExplorerYourWaypoints />
           <section aria-labelledby="suggestion-inbox-title" aria-busy={pending}>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-300">Waypoints</p>
-            <h1 id="suggestion-inbox-title" className="mt-2 font-serif text-3xl leading-tight text-stone-50 sm:text-4xl">Waypoint Suggestions</h1>
+            <h2 id="suggestion-inbox-title" className="font-serif text-2xl leading-tight text-stone-50 sm:text-3xl">Waypoint Suggestions</h2>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-stone-300">
               Suggestions from your Guide remain suggestions, not assignments. You decide what to do with them.
             </p>
@@ -269,14 +274,14 @@ export function ExplorerSuggestedWaypointInbox() {
 
             {viewState === "denied" && (
               <div className="mt-7 rounded-2xl border border-amber-400/70 bg-amber-950/60 p-5 text-amber-50">
-                <h2 className="font-serif text-xl">Waypoint Suggestions unavailable</h2>
+                <h3 className="font-serif text-xl">Waypoint Suggestions unavailable</h3>
                 <p className="mt-2 text-sm leading-6">This Explorer workspace cannot open the requested suggestions.</p>
               </div>
             )}
 
             {viewState === "failed" && page === null && (
               <div className="mt-7 rounded-2xl border border-rose-400/60 bg-rose-950/50 p-5 text-rose-50">
-                <h2 className="font-serif text-xl">Could not load Waypoint Suggestions</h2>
+                <h3 className="font-serif text-xl">Could not load Waypoint Suggestions</h3>
                 <p className="mt-2 text-sm leading-6">Nothing was changed. Try loading the inbox again.</p>
                 <button type="button" className={joinClasses("mt-4", SECONDARY_BUTTON)} onClick={() => void load(request)}>Try again</button>
               </div>
@@ -299,7 +304,7 @@ export function ExplorerSuggestedWaypointInbox() {
 
                 {page.items.length === 0 ? (
                   <div className={joinClasses("mt-5", CARD_CLASS)}>
-                    <h2 className="font-serif text-xl text-stone-50">No suggestions yet</h2>
+                    <h3 className="font-serif text-xl text-stone-50">No suggestions yet</h3>
                     <p className="mt-2 text-sm text-stone-300">Suggestions from your Guide will appear here after they are delivered.</p>
                   </div>
                 ) : (

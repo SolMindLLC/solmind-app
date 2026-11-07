@@ -397,7 +397,7 @@ describe("Category presentation (static proof only)", () => {
     expect(html).toContain("Explorer clarification in this conversation — destination");
     expect(html).toContain("Application question: Where do you want to arrive now?");
     expect(html).toContain("kept separately from model replies");
-    expect(html).toContain("You confirmed a new current lifecycle. Earlier Reached evidence or release history does not count as current arrival. The earlier definition stays saved privately. Earlier versions cannot currently be opened.");
+    expect(html).toContain("You confirmed a new current lifecycle. Earlier Reached evidence or release history does not count as current arrival. The earlier definition stays saved privately. You can open earlier versions in Your Waypoints on the Waypoints page.");
     expect(html).not.toContain("Review the earlier saved version");
     expect(html).not.toContain("Revisit this Waypoint in the conversation");
     expect(html).not.toContain("Clarify this Waypoint in the conversation");
@@ -417,8 +417,8 @@ describe("Category presentation (static proof only)", () => {
     expect(html).toContain("Earlier version - Formed");
     expect(html).toContain("Earlier version - Released");
     expect(html).not.toContain("Earlier version - Reached");
-    expect(html).toContain("You confirmed a revised understanding. The earlier definition stays saved privately. Earlier versions cannot currently be opened.");
-    expect(html).toContain("You confirmed a new current lifecycle. Earlier Reached evidence or release history does not count as current arrival. The earlier definition stays saved privately. Earlier versions cannot currently be opened.");
+    expect(html).toContain("You confirmed a revised understanding. The earlier definition stays saved privately. You can open earlier versions in Your Waypoints on the Waypoints page.");
+    expect(html).toContain("You confirmed a new current lifecycle. Earlier Reached evidence or release history does not count as current arrival. The earlier definition stays saved privately. You can open earlier versions in Your Waypoints on the Waypoints page.");
     expect(html).not.toContain("Review the earlier saved version");
     expect(html).not.toContain("Superseded");
     // The current versions keep the old tools' own labels (decision 8: the old tools otherwise stay as they are).

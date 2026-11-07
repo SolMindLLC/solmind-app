@@ -60,7 +60,7 @@ test("clarification at twenty active uses one app question at a time and saves o
   await page.reload();
   await expect(page.getByRole("region", { name: "Waypoint clarification — application prompt", exact: true })).toHaveCount(0);
   await page.getByText("Review this revision and its clarification sources", { exact: true }).click();
-  await expect(tools.getByText("You confirmed a revised understanding. The earlier definition stays saved privately. Earlier versions cannot currently be opened.", { exact: true })).toBeVisible();
+  await expect(tools.getByText("You confirmed a revised understanding. The earlier definition stays saved privately. You can open earlier versions in Your Waypoints on the Waypoints page.", { exact: true })).toBeVisible();
   await expect(tools.getByRole("link", { name: "Review the earlier saved version", exact: true, includeHidden: true })).toHaveCount(0);
   await expect(page.getByText("Explorer clarification in this conversation — destination", { exact: true })).toBeVisible();
   expect(commands).toHaveLength(1);
@@ -93,7 +93,7 @@ test("all-Keep revisit starts a new chosen lifecycle without inheriting earlier 
   expect(state.waypoints[0].lifecycle?.predecessorWaypointId).toBe(ORIGINAL);
   expect(state.waypointCapacity.activeCount).toBe(20);
   await tools.getByText("Review this new lifecycle and its clarification sources", { exact: true }).click();
-  await expect(tools.getByText("You confirmed a new current lifecycle. Earlier Reached evidence or release history does not count as current arrival. The earlier definition stays saved privately. Earlier versions cannot currently be opened.", { exact: true })).toBeVisible();
+  await expect(tools.getByText("You confirmed a new current lifecycle. Earlier Reached evidence or release history does not count as current arrival. The earlier definition stays saved privately. You can open earlier versions in Your Waypoints on the Waypoints page.", { exact: true })).toBeVisible();
   await expect(tools.getByRole("link", { name: "Review the earlier saved version", exact: true, includeHidden: true })).toHaveCount(0);
   await expect(page.getByText(/Superseded/)).toHaveCount(0);
   await expect(page.getByText("In progress — chosen by you", { exact: true })).toBeVisible();

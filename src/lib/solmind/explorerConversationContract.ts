@@ -201,6 +201,10 @@ function text(value: unknown, maximum: number, multiline = false): value is stri
   }
   return true;
 }
+// The same bounded text rule for the private Your Waypoints contract (explorerYourWaypointsContract.ts).
+export function isExplorerConversationText(value: unknown, maximum: number, multiline = false): value is string {
+  return text(value, maximum, multiline);
+}
 export function parseExplorerConversationWaypointDraft(value: unknown): ExplorerConversationWaypointDraft | null | undefined {
   if (value === null) return null;
   if (!object(value) || !keys(value, ["id", "title", "destination", "whyItMatters", "arrivalSignal", "suggestionMessageId"]) ||

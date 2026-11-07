@@ -7,7 +7,9 @@ const ACTOR = { p_actor_user_account_id: ID, p_user_session_id: ID };
 const item = { id: ID, conversationId: ID, sourceMessageId: ID, isCurrent: true,
   createdAt: "2026-11-06T10:00:00.000Z", title: "Title", destination: "Destination", meaning: "Reason",
   arrivalSignal: "Arrival", status: "chosen", release: { operationId: ID, releasedAt: "2026-11-06T11:00:00.000Z" } };
-const page = (kind: string) => ({ kind, limit: 20, items: [item], hasMore: false, nextOffset: null });
+// Current-head pages carry each row's conversationEnded fact (migration 20261106050000).
+const page = (kind: string) => ({ kind, limit: 20, items: [kind === "current_heads" ? { ...item, conversationEnded: true } : item],
+  hasMore: false, nextOffset: null });
 const closure = { ...ACTOR, p_waypoint_id: ID, p_operation_id: ID, p_command_fingerprint: "A".repeat(64),
   p_kind: "release_waypoint" as const, p_reached_evidence: null };
 function fixture(row: unknown) {
@@ -55,7 +57,7 @@ describe("closed private Waypoint repository ports", () => {
     const foreign = fixture({ outcome: "ok", waypoint_page: page("history") });
     await expect(foreign.repository.readWaypointHistory!({ ...ACTOR, p_conversation_id: "00000000-0000-4000-8000-000000000002", p_offset: 0 })).rejects.toThrow();
     const malformed = fixture({ outcome: "ok", waypoint_page: { ...page("current_heads"), hasMore: true,
-      nextOffset: 40, items: Array.from({ length: 20 }, (_, index) => ({ ...item, id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}` })) } });
+      nextOffset: 40, items: Array.from({ length: 20 }, (_, index) => ({ ...item, conversationEnded: true, id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}` })) } });
     await expect(malformed.repository.readWaypointHeads!({ ...ACTOR, p_offset: 0 })).rejects.toThrow();
   });
   it("requires and freezes server capacity, including grandfathered counts", async () => {

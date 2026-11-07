@@ -7,7 +7,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions,pg_catalog,pg_temp;
 set local statement_timeout='120s';
-select plan(40);
+select plan(44);
 
 create function pg_temp.gid(n integer) returns uuid language sql immutable as $$
   select ('f42c0000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid
@@ -504,6 +504,19 @@ begin
       result:=result||jsonb_build_object('readPrior',(select outcome from public.solmind_read_explorer_waypoint_history_v1(
         pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),0)));
     end if;
+    -- Each current-head row says whether its own source conversation has ended (migration 20261106050000).
+    result:=result||jsonb_build_object('headsEnded',(select jsonb_object_agg(i->>'id',i->'conversationEnded')
+        from public.solmind_read_explorer_waypoint_heads_v1(pg_temp.gid(1),pg_temp.gid(50),0) r,
+          jsonb_array_elements(r.waypoint_page->'items') i),
+      -- Every row has the fact, both conversations are on the page, and each row matches its own conversation.
+      'headsSplit',(select coalesce(bool_and(coalesce((i->>'conversationEnded')::boolean
+            =(i->>'conversationId'<>pg_temp.gid(7005)::text),false)),false)
+          and count(*) filter (where not (i ? 'conversationEnded'))=0 and count(distinct i->>'conversationId')=2
+        from public.solmind_read_explorer_waypoint_heads_v1(pg_temp.gid(1),pg_temp.gid(50),0) r,
+          jsonb_array_elements(r.waypoint_page->'items') i),
+      'historyHasNoEndedFact',(select bool_and(not (i ? 'conversationEnded'))
+        from public.solmind_read_explorer_waypoint_history_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),0) r,
+          jsonb_array_elements(r.waypoint_page->'items') i));
     if case_name='wrong_actor' then actor_n:=4; session_n:=54;
     elsif case_name='guide' then actor_n:=2; session_n:=56;
     elsif case_name='expired' then update identity.user_session set expires_at=clock_timestamp()-interval '1 minute' where user_session_id=pg_temp.gid(50);
@@ -584,6 +597,18 @@ select ok((select value#>>'{noConversationCapacity,activeCount}'='2' and value#>
 select ok((select value->>'globalBefore'='20' and value->>'blockedBefore'='unavailable' and value->>'afterCount'='19'
   and value->>'newAfter'='ok' and value->>'replayAfterCapacity'='exact_replay' from closures where name='global'),
   'global capacity spans conversations and post-End closure frees exactly one place with replay after capacity changes');
+select ok((select value->'headsEnded'->>(pg_temp.sx(1000)::text)='true' from closures where name='historical_relationship'),
+  'a head from an ended conversation in an earlier Guide relationship is marked ended on the current-head page');
+select ok((select value->'headsEnded'->>(pg_temp.sx(1000)::text)='false' and value->>'historyHasNoEndedFact'='true'
+  from closures where name='active_source'),
+  'a head from a conversation that has not ended is marked not ended, and history pages carry no ended fact');
+select ok((select value->>'headsSplit'='true' from closures where name='global'),
+  'with one ended and one open conversation, every current-head row carries its own conversation''s ended fact');
+select ok((select p.prosecdef and pg_get_userbyid(p.proowner)='postgres' and p.proconfig=array['search_path=""']
+  and not has_function_privilege('anon',p.oid,'execute') and not has_function_privilege('authenticated',p.oid,'execute')
+  and not has_function_privilege('service_role',p.oid,'execute')
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='ai' and p.proname='solmind_waypoint_page_v1'),
+  'the replaced page helper keeps security definer, owner postgres, an empty search path and no API-role execute');
 select ok((select value->>'readPrior'='ok' and value->>'outcome'='ok' from closures where name='historical_relationship'),
   'fresh current eligibility permits only owner-private history and closure across earlier relationships');
 select ok((select bool_and(value->>'outcome' is null and value->>'error' is not null and value->>'closureCount'='0' and value->>'auditDelta'='0')
