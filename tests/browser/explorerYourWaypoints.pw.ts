@@ -400,4 +400,110 @@ test.describe("Your Waypoints on the Waypoints page", () => {
     await expect(row(page, 1)).toBeFocused();
   });
 
+  // Correction D-2 (2026-11-09; REV335d finding 1): an older reload must never put back what a later save changed.
+  test("a second review waits while an uncertain save's reload runs, so the older read never undoes it", async ({ page }) => {
+    let attempts = 0;
+    let reads = 0;
+    let releaseReload!: () => void;
+    const reloadGate = new Promise<void>(resolve => { releaseReload = resolve; });
+    await page.route("**/explorer/waypoints/suggestions?**", route => fulfillJson(route, { ok: true, data: { items: [], next_cursor: null, total_count: 0 }, error: null }));
+    await page.route("**/explorer/waypoints/your-waypoints/state**", async route => {
+      reads += 1;
+      if (reads === 1) return fulfillJson(route, list([waypoint(1, ENDED, true), waypoint(2, ENDED, true)]));
+      await reloadGate;
+      // The uncertain first release did save.
+      return fulfillJson(route, list([
+        waypoint(1, ENDED, true, { release: { operationId: id(7), releasedAt: "2026-11-06T18:00:00.000Z" } }), waypoint(2, ENDED, true)]));
+    });
+    await page.route("**/explorer/waypoints/your-waypoints/commands", async route => {
+      attempts += 1;
+      if (attempts === 1) return route.abort("failed");
+      const body = route.request().postDataJSON() as { operationId: string };
+      await fulfillJson(route, { version: VERSION, kind: "close", ok: true, replay: false, error: null,
+        item: waypoint(2, ENDED, true, { release: { operationId: body.operationId, releasedAt: "2026-11-06T18:05:00.000Z" } }) });
+    });
+    await page.goto("/explorer/waypoints");
+    await row(page, 1).click();
+    await section(page).getByRole("button", { name: "Release", exact: true }).click();
+    await section(page).getByRole("checkbox").check();
+    await section(page).getByRole("button", { name: "Release this Waypoint" }).click();
+    await expect(notice(page)).toHaveText(/To avoid saving it twice/);
+    await section(page).getByRole("button", { name: "Close and show what is saved" }).click();
+    // The reload is held: a second review cannot start until it has finished.
+    await row(page, 2).click();
+    const releaseTwo = section(page).getByRole("button", { name: "Release", exact: true });
+    await expect(releaseTwo).toBeDisabled();
+    // The reason is shown in place, beside the buttons, and goes when the reload ends.
+    const refreshing = section(page).getByText(
+      "Your Waypoints are being refreshed so they show what is saved now. Mark Reached and Release will be available again when that finishes.");
+    await expect(refreshing).toBeVisible();
+    await expect(releaseTwo).toHaveAccessibleDescription(/being refreshed/);
+    releaseReload();
+    await expect(releaseTwo).toBeEnabled();
+    await expect(refreshing).toHaveCount(0);
+    await releaseTwo.click();
+    await section(page).getByRole("checkbox").check();
+    await section(page).getByRole("button", { name: "Release this Waypoint" }).click();
+    await expect(notice(page)).toHaveText("Saved. This Waypoint is released.");
+    await expect(section(page).getByRole("button", { name: "Reached and released (2)" })).toBeVisible();
+    expect(reads).toBe(2);
+    expect(attempts).toBe(2);
+  });
+
+  // Correction D-3 (2026-11-09; REV335d finding 2): whether focus was lost is judged after the reload's update.
+  const conflictThenReload = async (page: Page, reloaded: unknown[], gate?: Promise<void>) => {
+    let reads = 0;
+    await page.route("**/explorer/waypoints/suggestions?**", route => fulfillJson(route, { ok: true, data: { items: [], next_cursor: null, total_count: 0 }, error: null }));
+    await page.route("**/explorer/waypoints/your-waypoints/state**", async route => {
+      reads += 1;
+      if (reads === 1) return fulfillJson(route, list([waypoint(1, ENDED, true), waypoint(2, ENDED, true)]));
+      if (gate !== undefined) await gate;
+      return fulfillJson(route, list(reloaded));
+    });
+    await page.route("**/explorer/waypoints/your-waypoints/commands", route =>
+      fulfillJson(route, { version: VERSION, kind: "close", ok: false, replay: false, item: null, error: "conflict" }));
+    await page.goto("/explorer/waypoints");
+    await row(page, 1).click();
+    await section(page).getByRole("button", { name: "Release", exact: true }).click();
+    await section(page).getByRole("checkbox").check();
+    await section(page).getByRole("button", { name: "Release this Waypoint" }).click();
+    await expect(notice(page)).toHaveText(/nothing was saved/);
+    return () => reads;
+  };
+  const releasedOne = () => waypoint(1, ENDED, true, { release: { operationId: id(7), releasedAt: "2026-11-06T18:00:00.000Z" } });
+
+  // Both hold the reload, so focus is first back on the row, still in place, before the update moves or removes it.
+  test("after a refused save, a reload that moves the Waypoint into the closed group keeps focus on its row", async ({ page }) => {
+    let releaseReload!: () => void;
+    const reloadGate = new Promise<void>(resolve => { releaseReload = resolve; });
+    const reads = await conflictThenReload(page, [releasedOne(), waypoint(2, ENDED, true)], reloadGate);
+    await expect.poll(reads).toBe(2);
+    await expect(row(page, 1)).toBeFocused();
+    releaseReload();
+    await expect(section(page).getByRole("button", { name: "Reached and released (1)" })).toHaveAttribute("aria-expanded", "true");
+    await expect(row(page, 1)).toBeFocused();
+  });
+
+  test("after a refused save, a reload in which the Waypoint is gone moves focus to the section heading", async ({ page }) => {
+    let releaseReload!: () => void;
+    const reloadGate = new Promise<void>(resolve => { releaseReload = resolve; });
+    const reads = await conflictThenReload(page, [waypoint(2, ENDED, true)], reloadGate);
+    await expect.poll(reads).toBe(2);
+    await expect(row(page, 1)).toBeFocused();
+    releaseReload();
+    await expect(row(page, 1)).toHaveCount(0);
+    await expect(section(page).getByRole("heading", { name: "Your Waypoints", exact: true })).toBeFocused();
+  });
+
+  test("after a refused save, focus the Explorer moved elsewhere stays there when the reload moves the Waypoint", async ({ page }) => {
+    let releaseReload!: () => void;
+    const reloadGate = new Promise<void>(resolve => { releaseReload = resolve; });
+    await conflictThenReload(page, [releasedOne(), waypoint(2, ENDED, true)], reloadGate);
+    await expect(row(page, 1)).toBeFocused();
+    await row(page, 2).focus();
+    releaseReload();
+    await expect(section(page).getByRole("button", { name: "Reached and released (1)" })).toBeVisible();
+    await expect(row(page, 2)).toBeFocused();
+  });
+
 });

@@ -75,4 +75,7 @@ export const YOUR_WAYPOINTS_WORDING = Object.freeze({
   uncertainClosed: "Showing your Waypoints as they are saved now, so you can see whether the change was saved.",
   closeUncertain: "Close and show what is saved",
   reloadFailed: "Your Waypoints could not be loaded again, so this list may be out of date. Load the page again to see them.",
+  // Shown under Mark Reached and Release while every shown page is read again (correction D-2, 2026-11-09).
+  reloadingActions:
+    "Your Waypoints are being refreshed so they show what is saved now. Mark Reached and Release will be available again when that finishes.",
 });

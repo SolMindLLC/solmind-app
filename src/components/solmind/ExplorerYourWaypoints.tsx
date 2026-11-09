@@ -81,7 +81,9 @@ export function ExplorerYourWaypoints() {
   const [items, setItems] = useState<readonly ExplorerYourWaypointItem[]>([]);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
-  // True while every shown page is being read again after a change; Show more waits for it.
+  // True while every shown page is being read again after a change; Show more waits for it, and so do starting and
+  // submitting a review, so a read that began before a save can never put back what the save changed (correction
+  // D-2, 2026-11-09).
   const [reloading, setReloading] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [closedGroupOpen, setClosedGroupOpen] = useState(false);
@@ -96,6 +98,8 @@ export function ExplorerYourWaypoints() {
   const submitButton = useRef<HTMLButtonElement | null>(null);
   const sectionHeading = useRef<HTMLHeadingElement | null>(null);
   const pendingFocus = useRef<string | null>(null);
+  // The row a reload should give focus back to if the update loses it (correction D-3, 2026-11-09).
+  const reloadFocus = useRef<string | null>(null);
   const loadSequence = useRef(0);
   // The latest list for the asynchronous loaders, which run after renders.
   const itemsRef = useRef<readonly ExplorerYourWaypointItem[]>([]);
@@ -164,11 +168,11 @@ export function ExplorerYourWaypoints() {
         offset = result.hasMore ? result.nextOffset : null;
       }
       if (keep !== undefined && !all.some(item => item.id === keep.id)) all.push(keep);
+      // The row is recorded before the update; whether focus was lost is judged after it, because the update itself
+      // can remove or move the focused row (the effect below).
+      reloadFocus.current = focusId;
       setItems(all);
       setNextOffset(more ? offset : null);
-      // Restore focus only if it was lost meanwhile, so it never jumps away from where the Explorer moved it.
-      const active = document.activeElement;
-      if (focusId !== null && (active === null || active === document.body)) pendingFocus.current = focusId;
     } finally {
       if (sequence === loadSequence.current) setReloading(false);
     }
@@ -178,6 +182,16 @@ export function ExplorerYourWaypoints() {
     const timer = window.setTimeout(() => void loadFirst(), 0);
     return () => window.clearTimeout(timer);
   }, [loadFirst]);
+
+  // After a reload has updated the list: restore focus only if the update lost it, so focus never jumps away from where
+  // the Explorer moved it. Declared before the effect below, which then places it (correction D-3).
+  useEffect(() => {
+    const wanted = reloadFocus.current;
+    if (wanted === null) return;
+    reloadFocus.current = null;
+    const active = document.activeElement;
+    if (active === null || active === document.body) pendingFocus.current = wanted;
+  }, [items]);
 
   // Focus goes to a control that is rendered: a row in the collapsed group opens the group first; a row that is gone
   // falls back to the section heading.
@@ -229,7 +243,7 @@ export function ExplorerYourWaypoints() {
   };
 
   const startReview = (kind: Review["kind"], waypointId: string) => {
-    if (saving || review?.uncertain === true) return;
+    if (saving || reloading || review?.uncertain === true) return;
     setNotice("");
     setReview({ kind, waypointId, operationId: crypto.randomUUID(), evidence: "", confirmed: false, uncertain: false });
   };
@@ -245,7 +259,7 @@ export function ExplorerYourWaypoints() {
   };
 
   const submit = async () => {
-    if (review === null || saving || !review.confirmed) return;
+    if (review === null || saving || reloading || !review.confirmed) return;
     const evidence = review.evidence.trim();
     if (review.kind === "reach_waypoint" && evidence.length === 0) return;
     const command: ExplorerYourWaypointsCloseCommand = review.kind === "reach_waypoint"
@@ -377,12 +391,18 @@ export function ExplorerYourWaypoints() {
               </p>
             ) : null}
             {stage === "formed" && item.conversationEnded && reviewing === null ? (
-              <div className="flex flex-wrap gap-2">
-                <button type="button" className={SECONDARY_BUTTON} disabled={saving || review?.uncertain === true}
-                  onClick={() => startReview("reach_waypoint", item.id)}>{W.reachButton}</button>
-                <button type="button" className={SECONDARY_BUTTON} disabled={saving || review?.uncertain === true}
-                  onClick={() => startReview("release_waypoint", item.id)}>{W.releaseButton}</button>
-              </div>
+              <>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" className={SECONDARY_BUTTON} disabled={saving || reloading || review?.uncertain === true}
+                    aria-describedby={reloading ? `${panelId}-refreshing` : undefined}
+                    onClick={() => startReview("reach_waypoint", item.id)}>{W.reachButton}</button>
+                  <button type="button" className={SECONDARY_BUTTON} disabled={saving || reloading || review?.uncertain === true}
+                    aria-describedby={reloading ? `${panelId}-refreshing` : undefined}
+                    onClick={() => startReview("release_waypoint", item.id)}>{W.releaseButton}</button>
+                </div>
+                {/* Why the two buttons wait, in place, while the shown pages are read again (correction D-2). */}
+                {reloading ? <p id={`${panelId}-refreshing`} className="text-sm leading-6 text-stone-300">{W.reloadingActions}</p> : null}
+              </>
             ) : null}
             {reviewing !== null ? (
               <div role="group" aria-labelledby={`${panelId}-review`}
@@ -413,7 +433,7 @@ export function ExplorerYourWaypoints() {
                   <button type="button" ref={submitButton}
                     className={joinClasses(PRIMARY_BUTTON, "disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:cursor-wait aria-disabled:opacity-70")}
                     disabled={!reviewing.confirmed || (reviewing.kind === "reach_waypoint" && reviewing.evidence.trim().length === 0)}
-                    aria-disabled={saving || undefined} onClick={() => void submit()}>
+                    aria-disabled={saving || reloading || undefined} onClick={() => void submit()}>
                     {reviewing.kind === "reach_waypoint" ? W.reachedSubmit : W.releaseSubmit}
                   </button>
                   <button type="button" className={SECONDARY_BUTTON} disabled={saving} onClick={closeReview}>
