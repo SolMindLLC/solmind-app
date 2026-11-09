@@ -56,7 +56,16 @@ if (!existsSync(buildId)) {
   if (newer.length > 0) {
     problems.push(`The build is older than ${newer.length} source file(s), for example ${newer[0]}. Run \`next build\` again.`);
   }
+  // A build must have its served pages: a BUILD_ID alone, or an empty or missing output folder, checks nothing
+  // (REV335d finding 3, correction D-4).
+  const missing = [".next/server", ".next/static"].filter((folder) => !existsSync(path.join(root, folder)));
+  if (missing.length > 0) {
+    problems.push(`No built pages: ${missing.join(" and ")} missing. Run \`next build\` for this release candidate first.`);
+  }
   const builtPaths = [...listFiles(".next/server"), ...listFiles(".next/static")];
+  if (builtPaths.filter(isScannedBuilt).length === 0) {
+    problems.push("No built pages to check under .next/server and .next/static. Run `next build` for this release candidate first.");
+  }
   built = scanFiles(read(builtPaths, isScannedBuilt), isScannedBuilt);
 }
 

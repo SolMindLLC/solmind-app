@@ -525,6 +525,128 @@ describe("Held private Explorer controller: explicit synthetic ports only", () =
     expect(output.result.ok && output.result.state.messages).toEqual([]);
     expect(output.assistance).toMatchObject({ kind: "support", persisted: false }); expect(f.signal).toHaveBeenCalledOnce();
   });
+  // REV341b finding 1 (correction D-10): a refused, failed or timed-out ensure must not drop the support assistance the
+  // phrase check already calls for. A timeout reaches this controller as a rejection from the budget wrapper.
+  it.each([
+    ["rejects (as a timeout does)", (f: ReturnType<typeof fixture>) => f.ensure.mockRejectedValue(new Error("ensure timed out"))],
+    ["is refused", (f: ReturnType<typeof fixture>) => f.ensure.mockResolvedValue({ outcome: "denied", conversation_state: null, policy_state: POLICY })],
+    ["is out of date", (f: ReturnType<typeof fixture>) => f.ensure.mockResolvedValue({ outcome: "stale_revision", conversation_state: null, policy_state: POLICY })],
+  ] as const)("keeps crisis support when ensure %s, after one marker and a fresh read, without retrying or saving", async (_case, arrange) => {
+    const f = fixture(); arrange(f);
+    const output = await commandExplorerPrivateConversation({ command: send("I want to kill myself"), dependencies: f.dependencies });
+    expect(output.assistance).toMatchObject({ kind: "support", persisted: false });
+    expect(f.signal).toHaveBeenCalledOnce(); expect(f.ensure).toHaveBeenCalledOnce();
+    // The replaced ensure mock records no step of its own: the marker and the fresh read follow the pause read directly.
+    expect(f.order).toEqual(["read", "configuration", "pause", "signal", "read"]);
+    for (const port of [f.observe, f.prepare, f.settle, f.generate]) expect(port).not.toHaveBeenCalled();
+    expect(JSON.stringify(output)).not.toContain("I want to kill myself");
+  });
+  it.each([
+    ["returns nothing", (f: ReturnType<typeof fixture>) => f.ensure.mockResolvedValue(null as unknown as ExplorerPrivateRpcRow)],
+    ["reports success with no conversation", (f: ReturnType<typeof fixture>) => f.ensure.mockResolvedValue({ outcome: "created", conversation_state: state(null), policy_state: POLICY })],
+  ] as const)("keeps crisis support when ensure %s", async (_case, arrange) => {
+    const f = fixture(); arrange(f);
+    const output = await commandExplorerPrivateConversation({ command: send("I want to kill myself"), dependencies: f.dependencies });
+    expect(output.assistance).toMatchObject({ kind: "support", persisted: false }); expect(f.signal).toHaveBeenCalledOnce();
+    for (const port of [f.observe, f.prepare, f.settle, f.generate]) expect(port).not.toHaveBeenCalled();
+  });
+  it("keeps the adult-policy assistance when ensure fails on a message the phrase check reads as from someone under 18", async () => {
+    const f = fixture(); f.ensure.mockRejectedValue(new Error("unknown private persistence"));
+    const output = await commandExplorerPrivateConversation({ command: send("I am a minor"), dependencies: f.dependencies });
+    expect(output.assistance).toMatchObject({ kind: "adult_policy", persisted: false });
+    expect(f.signal).toHaveBeenCalledOnce(); expect(f.observe).not.toHaveBeenCalled(); expect(f.prepare).not.toHaveBeenCalled();
+    expect(f.order).toEqual(["read", "configuration", "pause", "signal", "read"]);
+    expect(JSON.stringify(output)).not.toContain("I am a minor");
+  });
+  it("combines a stricter policy from the fresh read with the phrase check after a failed ensure", async () => {
+    const f = fixture(); const original = f.read.getMockImplementation()!;
+    f.read.mockImplementationOnce(original).mockImplementationOnce(async () => ({ ...await original(), policy_state: { ...POLICY, adultReflectionStopped: true, version: 1 } }));
+    f.ensure.mockRejectedValue(new Error("ensure timed out"));
+    const output = await commandExplorerPrivateConversation({ command: send("I want to kill myself"), dependencies: f.dependencies });
+    expect(output.assistance).toMatchObject({ kind: "support", persisted: false,
+      body: "Synthetic support plus adult-policy failure assistance. No saved reply is claimed." });
+  });
+  it("keeps crisis support after a failed ensure when the marker cannot be written", async () => {
+    const f = fixture(); f.signal.mockRejectedValue(new Error("signal sink unavailable"));
+    f.ensure.mockRejectedValue(new Error("ensure timed out"));
+    const output = await commandExplorerPrivateConversation({ command: send("I want to kill myself"), dependencies: f.dependencies });
+    expect(output.assistance).toMatchObject({ kind: "support", persisted: false }); expect(f.read).toHaveBeenCalledTimes(2);
+  });
+  it("returns failed after the marker and the read when the caller cancels during a failed ensure", async () => {
+    const f = fixture(); const controller = new AbortController();
+    f.ensure.mockImplementation(async () => { controller.abort(); throw new Error("ensure aborted"); });
+    const output = await commandExplorerPrivateConversation({ command: send("I want to kill myself"), dependencies: f.dependencies, signal: controller.signal });
+    expect(output).toEqual({ result: { ok: false, state: null, error: "unavailable" }, assistance: null });
+    expect(f.signal).toHaveBeenCalledOnce(); expect(f.read).toHaveBeenCalledTimes(2);
+  });
+  it("reports a duplicate of this Send that committed meanwhile as its exact replay after a failed ensure", async () => {
+    const f = fixture(); const original = f.read.getMockImplementation()!;
+    f.read.mockImplementationOnce(original).mockImplementationOnce(async () => ({ outcome: "exact_replay", conversation_state: state(ID.conversation), policy_state: null }));
+    f.ensure.mockResolvedValue({ outcome: "stale_revision", conversation_state: null, policy_state: POLICY });
+    const output = await commandExplorerPrivateConversation({ command: send("I want to kill myself"), dependencies: f.dependencies });
+    expect((f.read.mock.calls[1] as unknown[])[1]).toMatchObject({ operationId: ID.operation });
+    expect(output.result.ok && output.result.state.conversationId).toBe(ID.conversation); expect(output.assistance).toBeNull();
+    for (const port of [f.observe, f.prepare, f.settle, f.generate]) expect(port).not.toHaveBeenCalled();
+  });
+  it("keeps crisis support from the first read's policy when ensure fails on an ordinary message", async () => {
+    const f = fixture(); f.setPolicy({ ...POLICY, restrictedLevel: 3, version: 1 });
+    f.ensure.mockResolvedValue({ outcome: "denied", conversation_state: null, policy_state: POLICY });
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(output.assistance).toMatchObject({ kind: "support", persisted: false }); expect(f.signal).toHaveBeenCalledOnce();
+  });
+  it.each([
+    ["rejects", (f: ReturnType<typeof fixture>) => f.ensure.mockRejectedValue(new Error("ensure timed out")), "unavailable"],
+    ["is refused", (f: ReturnType<typeof fixture>) => f.ensure.mockResolvedValue({ outcome: "denied", conversation_state: null, policy_state: POLICY }), "denied"],
+  ] as const)("leaves an ordinary message's outcome unchanged when ensure %s: no assistance, no marker, no second read", async (_case, arrange, error) => {
+    const f = fixture(); arrange(f);
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(output).toEqual({ result: { ok: false, state: null, error }, assistance: null });
+    expect(f.signal).not.toHaveBeenCalled(); expect(f.read).toHaveBeenCalledOnce();
+    for (const port of [f.observe, f.prepare, f.settle, f.generate]) expect(port).not.toHaveBeenCalled();
+  });
+  // REV341b finding 2 (correction D-11): critical policy that the failure path's final read returns also chooses the
+  // assistance, as when another tab sets urgent handling meanwhile.
+  function policyFromRead(f: ReturnType<typeof fixture>, from: number, policyState: Record<string, unknown>) {
+    const original = f.read.getMockImplementation()!; let reads = 0;
+    f.read.mockImplementation(async () => { reads += 1; const row = await original(); return reads >= from ? { ...row, policy_state: policyState } : row; });
+  }
+  it("chooses support when a preparation failure's final read shows urgent handling set meanwhile, after one marker and another read", async () => {
+    const f = fixture(); policyFromRead(f, 2, { ...POLICY, restrictedLevel: 3, version: 1 });
+    f.observe.mockResolvedValue({ outcome: "unavailable", policy_state: POLICY });
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(output.assistance).toMatchObject({ kind: "support", persisted: false });
+    expect(f.signal).toHaveBeenCalledOnce(); expect(f.read).toHaveBeenCalledTimes(3);
+    for (const port of [f.prepare, f.settle, f.generate]) expect(port).not.toHaveBeenCalled();
+  });
+  it("chooses support when an uncertain settlement's final read shows urgent handling set meanwhile", async () => {
+    const f = fixture(); policyFromRead(f, 3, { ...POLICY, restrictedLevel: 3, version: 1 });
+    f.settle.mockRejectedValue(new Error("lost acknowledgment"));
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(output.assistance).toMatchObject({ kind: "support", persisted: false });
+    expect(f.signal).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce(); expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.read).toHaveBeenCalledTimes(4); expect(f.signal).toHaveBeenCalledWith("settlement_unconfirmed", expect.anything());
+  });
+  it("keeps urgent handling the failed-reply path's first read showed when its later read fails", async () => {
+    const f = fixture(); const original = f.read.getMockImplementation()!; let reads = 0;
+    f.read.mockImplementation(async () => {
+      reads += 1; const row = await original();
+      if (reads === 4) throw new Error("read timed out");
+      return reads >= 3 ? { ...row, policy_state: { ...POLICY, restrictedLevel: 3, version: 1 } } : row;
+    });
+    f.generate.mockRejectedValue(new Error("transport failed"));
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(output.assistance).toMatchObject({ kind: "support", persisted: false });
+    expect(f.signal).toHaveBeenCalledOnce(); expect(f.read).toHaveBeenCalledTimes(5);
+  });
+  it("adds the adults-only wording when the final read of an already critical failure adds that stop", async () => {
+    const f = fixture(); f.setPolicy({ ...POLICY, restrictedLevel: 3, version: 1 });
+    policyFromRead(f, 2, { ...POLICY, restrictedLevel: 3, adultReflectionStopped: true, version: 2 });
+    f.observe.mockResolvedValue({ outcome: "unavailable", policy_state: POLICY });
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    expect(output.assistance).toMatchObject({ kind: "support", persisted: false,
+      body: "Synthetic support plus adult-policy failure assistance. No saved reply is claimed." });
+    expect(f.signal).toHaveBeenCalledOnce(); expect(f.read).toHaveBeenCalledTimes(2);
+  });
   it("does not repost failed/unknown fallback observation or dispatch without its confirmation", async () => {
     const f = fixture(); f.observe.mockRejectedValue(new Error("unknown private persistence"));
     await commandExplorerPrivateConversation({ command: send("I am a minor"), dependencies: f.dependencies });

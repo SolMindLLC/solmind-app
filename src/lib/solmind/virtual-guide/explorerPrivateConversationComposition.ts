@@ -665,11 +665,34 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
       return await pausedResult(pauseRow, policy, phrase);
     }
     if (input.signal?.aborted) return failed();
-    const ensuredRow = await dependencies.repository.ensure({ ...base(actor), ...methodology,
-      p_candidate_conversation_id: scoped(actor, "new", command.operationId, "conversation"),
-      p_expected_revision: command.expectedRevision, p_configuration_fingerprint: readiness.configurationFingerprint });
-    const ensured = stateResult(["created", "reused"].includes(ensuredRow.outcome) ? { ...ensuredRow, outcome: "ok" } : ensuredRow, true);
-    if (!ensured.ok || !ensured.state.conversationId) return Object.freeze({ result: ensured.ok ? failed().result : ensured, assistance: null });
+    // A refused, failed or timed-out ensure keeps the safety facts already known: the first read's policy and this
+    // message's phrase check. When they are critical, the content-free marker is sent and, after a fresh authenticated
+    // read, the static support assistance is returned with that read's result; creation is never retried and the
+    // message is never saved. Otherwise the earlier outcome stands, with no assistance (REV341b finding 1). The fresh read
+    // carries this operation, so a duplicate of this Send that committed meanwhile is returned as its exact replay.
+    async function ensureRefused(original: ExplorerConversationResult, firstPolicy: ExplorerConversationPolicy): Promise<ExplorerPrivateConversationResult> {
+      let known = firstPolicy;
+      let facts = combineExplorerSafety({ policy: known, fallback: phrase, model: null });
+      if (facts.restrictedLevel === null && !facts.adultReflectionStopped) return Object.freeze({ result: original, assistance: null });
+      try { await ownedCapability((signal) => emitSignal("preparation_unavailable", signal), 1000); }
+      catch { /* Critical assistance remains available when its marker cannot be written. */ }
+      const fresh = await freshRead(dependencies, actor, sendOperation);
+      if (input.signal?.aborted) return failed();
+      if (fresh.row?.outcome === "exact_replay") return replayedSend(fresh.row, capacity(), actor, sendCommand, dependencies, input.signal);
+      known = retainKnownPolicy(known, parseExplorerPrivatePolicy(fresh.row?.policy_state));
+      facts = combineExplorerSafety({ policy: known, fallback: phrase, model: null });
+      return Object.freeze({ result: fresh.result, assistance: failureAssistanceFor(facts, failureAssistance) });
+    }
+    // The read of the returned row is inside the same guard, so a missing or unreadable row is a failed ensure too.
+    let ensuredRow: ExplorerPrivateRpcRow;
+    let ensured: ExplorerConversationResult;
+    try {
+      ensuredRow = await dependencies.repository.ensure({ ...base(actor), ...methodology,
+        p_candidate_conversation_id: scoped(actor, "new", command.operationId, "conversation"),
+        p_expected_revision: command.expectedRevision, p_configuration_fingerprint: readiness.configurationFingerprint });
+      ensured = stateResult(["created", "reused"].includes(ensuredRow.outcome) ? { ...ensuredRow, outcome: "ok" } : ensuredRow, true);
+    } catch { return await ensureRefused(failed().result, policy); }
+    if (!ensured.ok || !ensured.state.conversationId) return await ensureRefused(ensured.ok ? failed().result : ensured, policy);
     const ids = deriveExplorerPrivateTurnIds(actor, ensured.state.conversationId, command.operationId);
     policy = parseExplorerPrivatePolicy(ensuredRow.policy_state);
     let fallback: ExplorerFallbackObservation = { status: "unavailable" };
@@ -685,6 +708,8 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
         catch { /* Assistance is not suppressed by signal failure or a hung signal port. */ }
       }
       let fresh = await freshRead(dependencies, actor);
+      // Policy this read shows is kept even if a later read on the failed-reply path fails (review of D-11, finding 1).
+      const seenPolicy = retainKnownPolicy(rememberedPolicy, parseExplorerPrivatePolicy(fresh.row?.policy_state));
       let available = false;
       // A confirmed failed reply does not make operational readiness unavailable.
       // Recheck readiness, then identity and current state after that awaited check.
@@ -694,7 +719,7 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
         available = refreshed.readiness !== null;
         fresh = refreshed.fresh;
         if (fresh.row !== null) {
-          const latestPolicy = retainKnownPolicy(rememberedPolicy, parseExplorerPrivatePolicy(fresh.row.policy_state));
+          const latestPolicy = retainKnownPolicy(seenPolicy, parseExplorerPrivatePolicy(fresh.row.policy_state));
           if (latestPolicy.status === "known" && (latestPolicy.restrictedLevel !== null || latestPolicy.adultReflectionStopped)) {
             rememberedPolicy = latestPolicy;
             return transient(marker, persistence);
@@ -702,6 +727,15 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
         }
       }
       if (input.signal?.aborted) return failed();
+      // The final read's policy also chooses the assistance (REV341b finding 2). Newly critical facts send the marker
+      // once and read again (the call below, now critical); facts that were already critical take whatever stricter
+      // policy that final read adds, such as the adults-only stop.
+      const finalPolicy = fresh.row !== null ? retainKnownPolicy(seenPolicy, parseExplorerPrivatePolicy(fresh.row.policy_state)) : seenPolicy;
+      const finalSafety = combineExplorerSafety({ policy: retainKnownPolicy(finalPolicy, policy), fallback, model: knownModel });
+      if (!critical && (finalSafety.restrictedLevel !== null || finalSafety.adultReflectionStopped)) {
+        rememberedPolicy = finalPolicy;
+        return transient(marker, persistence);
+      }
       const current = fresh.result;
       if (replyFailed && !critical) {
         const retry = failedReplyRetryResult(current, available, ids.messageId, dependencies);
@@ -710,7 +744,7 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
       // No generated candidate, saved-record claim or private state without a
       // separate fresh authenticated read. Static assistance remains transient.
       void persistence;
-      return Object.freeze({ result: current, assistance: failureAssistanceFor(safety, failureAssistance) });
+      return Object.freeze({ result: current, assistance: failureAssistanceFor(finalSafety, failureAssistance) });
     }
     // Observe or prepare refused the Send as paused: keep the policy it returned, so a failure from here still has
     // the critical facts, then read the pause again for its current kind. A failed re-read rejects into the

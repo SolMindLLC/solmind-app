@@ -82,6 +82,13 @@ function freezeJson(value: unknown): unknown {
   return value;
 }
 
+// Server-owned limits for reading the body (REV341a finding 1, correction D-5): a client that stops sending for the idle
+// limit, an upload that passes the total limit, or a request cancelled mid-read, ends in the fixed denial instead of an
+// open-ended wait. Each received chunk restarts the idle limit, so a slow upload that keeps progressing is accepted.
+export const SOLMIND_JSON_WRITE_BODY_IDLE_MS = 5_000 as const;
+export const SOLMIND_JSON_WRITE_BODY_TOTAL_MS = 15_000 as const;
+const BODY_STOPPED = Symbol("solmind_json_write_body_stopped");
+
 async function readBoundedBody(
   request: Request,
   declaredLength: number | null,
@@ -89,32 +96,65 @@ async function readBoundedBody(
   if (request.body === null) {
     return null;
   }
+  const signal = request.signal as AbortSignal | undefined;
+  if (signal?.aborted) {
+    return null;
+  }
 
   const reader = request.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
+  let stop!: () => void;
+  const stopped = new Promise<typeof BODY_STOPPED>((resolve) => {
+    stop = () => resolve(BODY_STOPPED);
+  });
+  let idle = setTimeout(() => stop(), SOLMIND_JSON_WRITE_BODY_IDLE_MS);
+  const whole = setTimeout(() => stop(), SOLMIND_JSON_WRITE_BODY_TOTAL_MS);
+  const onAbort = (): void => stop();
+  signal?.addEventListener("abort", onAbort, { once: true });
+  // Cancellation is started, never awaited: a source whose cleanup never settles cannot hold the denial.
+  const abandon = (): void => {
+    try {
+      reader.cancel().catch(() => undefined);
+    } catch {
+      // The fixed denied result remains the only outward effect.
+    }
+  };
   try {
     while (true) {
-      const next = await reader.read();
+      const pending = reader.read();
+      pending.catch(() => undefined);
+      const next = await Promise.race([pending, stopped]);
+      if (next === BODY_STOPPED) {
+        abandon();
+        return null;
+      }
       if (next.done) {
         break;
       }
       total += next.value.byteLength;
       if (total > SOLMIND_JSON_WRITE_BODY_MAX_BYTES) {
-        await reader.cancel();
+        abandon();
         return null;
       }
       chunks.push(next.value);
+      if (next.value.byteLength > 0) {
+        clearTimeout(idle);
+        idle = setTimeout(() => stop(), SOLMIND_JSON_WRITE_BODY_IDLE_MS);
+      }
     }
   } catch {
-    try {
-      await reader.cancel();
-    } catch {
-      // The fixed denied result remains the only outward effect.
-    }
+    abandon();
     return null;
   } finally {
-    reader.releaseLock();
+    clearTimeout(idle);
+    clearTimeout(whole);
+    signal?.removeEventListener("abort", onAbort);
+    try {
+      reader.releaseLock();
+    } catch {
+      // A read still pending after the limit; the stream is already being cancelled.
+    }
   }
 
   if (total === 0 || (declaredLength !== null && declaredLength !== total)) {

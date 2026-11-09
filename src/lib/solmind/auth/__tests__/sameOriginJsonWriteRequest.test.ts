@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  SOLMIND_JSON_WRITE_BODY_IDLE_MS,
+  SOLMIND_JSON_WRITE_BODY_TOTAL_MS,
   SOLMIND_JSON_WRITE_BODY_MAX_BYTES,
   SOLMIND_JSON_WRITE_REQUEST_DENIED,
   readSameOriginJsonWriteRequest,
@@ -265,6 +267,127 @@ describe("readSameOriginJsonWriteRequest", () => {
 
     expectDenied(await guard(guarded));
     expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  // REV341a finding 1 (correction D-5): the body read has an idle limit and a total limit, honours the request's cancellation, and
+  // never waits on cleanup.
+  it("denies and cancels a body that stops partway once the idle limit passes, not before", async () => {
+    vi.useFakeTimers();
+    try {
+      const cancel = vi.fn();
+      const guarded = rawRequest({
+        body: new ReadableStream<Uint8Array>({
+          start(controller) { controller.enqueue(encoder.encode('{"kind":')); },
+          cancel,
+        }),
+      });
+      let settled = false;
+      const pending = guard(guarded).finally(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(SOLMIND_JSON_WRITE_BODY_IDLE_MS - 1);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expectDenied(await pending);
+      expect(cancel).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("denies at once, without waiting for the limit, when the request is cancelled during a read", async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      const cancel = vi.fn();
+      const guarded = {
+        ...rawRequest({
+          body: new ReadableStream<Uint8Array>({ start(stream) { stream.enqueue(encoder.encode("{")); }, cancel }),
+        }),
+        signal: controller.signal,
+      } as Request;
+      const pending = guard(guarded);
+      await vi.advanceTimersByTimeAsync(0);
+      controller.abort();
+      expectDenied(await pending);
+      expect(cancel).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("accepts a slow body that keeps arriving in pieces, and leaves no timer behind", async () => {
+    vi.useFakeTimers();
+    try {
+      let stream!: ReadableStreamDefaultController<Uint8Array>;
+      const guarded = rawRequest({ body: new ReadableStream<Uint8Array>({ start(controller) { stream = controller; } }) });
+      const pending = guard(guarded);
+      stream.enqueue(encoder.encode('{"kind":'));
+      await vi.advanceTimersByTimeAsync(4_000);
+      stream.enqueue(encoder.encode('"guide.save_draft"'));
+      await vi.advanceTimersByTimeAsync(4_000);
+      stream.enqueue(encoder.encode("}"));
+      await vi.advanceTimersByTimeAsync(4_000);
+      stream.close();
+      const result = await pending;
+      expect(result).toEqual({ ok: true, value: { kind: "guide.save_draft" }, error: null });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("denies an upload that keeps progressing past the total limit", async () => {
+    vi.useFakeTimers();
+    try {
+      let stream!: ReadableStreamDefaultController<Uint8Array>;
+      const cancel = vi.fn();
+      const guarded = rawRequest({ body: new ReadableStream<Uint8Array>({ start(controller) { stream = controller; }, cancel }) });
+      let settled = false;
+      const pending = guard(guarded).finally(() => { settled = true; });
+      // A piece every 4 seconds keeps the idle limit from firing; only the total limit can end the read.
+      let elapsed = 0;
+      while (elapsed + 4_000 < SOLMIND_JSON_WRITE_BODY_TOTAL_MS) {
+        stream.enqueue(encoder.encode(" "));
+        await vi.advanceTimersByTimeAsync(4_000);
+        elapsed += 4_000;
+        expect(settled).toBe(false);
+      }
+      stream.enqueue(encoder.encode(" "));
+      await vi.advanceTimersByTimeAsync(SOLMIND_JSON_WRITE_BODY_TOTAL_MS - elapsed - 1);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expectDenied(await pending);
+      expect(cancel).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("denies an already cancelled request without reading its body", async () => {
+    const getReader = vi.fn();
+    const controller = new AbortController();
+    controller.abort();
+    const guarded = {
+      ...rawRequest({ body: { getReader } as unknown as ReadableStream<Uint8Array> }),
+      signal: controller.signal,
+    } as Request;
+    expectDenied(await guard(guarded));
+    expect(getReader).not.toHaveBeenCalled();
+  });
+
+  it("returns the denial for an over-cap body even when the stream's cleanup never settles", async () => {
+    vi.useFakeTimers();
+    try {
+      const guarded = rawRequest({
+        body: new ReadableStream<Uint8Array>({
+          start(controller) { controller.enqueue(new Uint8Array(SOLMIND_JSON_WRITE_BODY_MAX_BYTES + 1)); },
+          cancel: () => new Promise<void>(() => undefined),
+        }),
+      });
+      expectDenied(await guard(guarded));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not allow hostile Host or forwarded headers to substitute for Origin", async () => {
