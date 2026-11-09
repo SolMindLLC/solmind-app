@@ -101,6 +101,31 @@
 //     refused connection does, it held no cookie text. The request is tried
 //     once, and it is denied. The library's request code sets no time limit
 //     on that request.
+//   - The deadline (correction D-14, 2026-11-09, accepted from REV341c
+//     finding 1; it is a later correction, not one of step 6's adapter
+//     changes listed in contract 25 Section 19). The whole check, from the
+//     cookie checks to the library's answer, runs under the fail-closed
+//     wrapper's deadline of REQUEST_AUTH_PROVIDER_DEADLINE_MS, 3 seconds,
+//     measured on the monotonic clock from before the check starts: the
+//     limit logout gives the same Supabase Auth call (IDENTITY_TIMEOUT in
+//     logoutDependencies), below the 10-second wait the private
+//     conversation requests give this check, so the deadline here ends
+//     first. Past it, or when the caller's optional signal aborts (no caller
+//     has one today), the request is denied, and an answer or error that
+//     arrives later is ignored, so no later record loading follows.
+//   - What the deadline does not do. The library's request itself is
+//     abandoned, not stopped. Stopping it would need a fetch of this
+//     module's own handed to the library, and this module hands the library
+//     no function: the client options are exactly the four auth settings
+//     (pinned by tests TKA-001 and TKA-006), and Section 19 lists the
+//     adapter's changes. So an abandoned request keeps its connection and
+//     pending work until the platform's own fetch limits end it (by default
+//     300 seconds without headers, or without body data), and under a
+//     stalled Supabase Auth repeated requests can accumulate such work. When
+//     a request with no headers ends that way, the library prints the
+//     platform's error, as for an unreachable Supabase Auth above; a stalled
+//     body ends without a print. Aborting the request is a separate decision
+//     for Paul. This module still reads no clock or timer of its own.
 
 import "server-only";
 
@@ -139,6 +164,10 @@ export const REQUEST_AUTH_ANON_KEY_ENV = "NEXT_PUBLIC_SUPABASE_ANON_KEY" as cons
 // configuration failure). It names no variable value and no origin.
 export const REQUEST_AUTH_SESSION_COOKIE_POLICY_UNAVAILABLE =
   "SolMind server configuration error: the session cookie policy is unavailable." as const;
+
+// The deadline over the whole request-auth check, in milliseconds (the
+// deadline note above). Exported so tests can assert it.
+export const REQUEST_AUTH_PROVIDER_DEADLINE_MS = 3_000 as const;
 
 type RequestAuthEnv = { supabaseUrl: string; anonKey: string };
 
@@ -203,13 +232,16 @@ function readPresentedSessionId(
 
 // Build a request-scoped Supabase request-auth principal source.
 //   - cookies: the injected RequestCookieAccessor built at the composition root.
+//   - signal: the request's cancellation, where the caller has one (optional).
 //
 // Config is validated eagerly at construction (throws server-side on misconfig).
 // Per-request verification is wrapped in the banked fail-closed posture, so any
 // getUser error, missing/blank user, unexpected shape, or thrown/rejected call
-// resolves to null rather than throwing to the caller.
+// resolves to null rather than throwing to the caller, and so does a check that
+// passes its deadline or is cancelled.
 export function createSupabaseRequestAuthPrincipalSource(args: {
   cookies: RequestCookieAccessor;
+  signal?: AbortSignal;
 }): SolMindRequestAuthPrincipalSource {
   const { cookies } = args;
   const { supabaseUrl, anonKey } = readRequestAuthEnv();
@@ -280,5 +312,5 @@ export function createSupabaseRequestAuthPrincipalSource(args: {
       },
       presentedSessionId,
     );
-  });
+  }, { deadlineMs: REQUEST_AUTH_PROVIDER_DEADLINE_MS, signal: args.signal });
 }

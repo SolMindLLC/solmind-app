@@ -415,6 +415,17 @@ function runSmtpDialogue(
     let pending = "";
     let replyCode: string | null = null;
     let replyCharacters = 0;
+    // Correction D-15 (2026-11-09; REV341c finding 2): the time limit is also
+    // an absolute monotonic deadline, taken before the connection opens and
+    // checked as each reply chunk arrives (onData). Every command, the
+    // message and the acceptance of a final 250 happen only inside that
+    // handler, after the check. A busy event loop can process a reply before
+    // the timer below has run; past the deadline nothing more is written, the
+    // connection is destroyed, and the outcome is what the timer would give:
+    // `ambiguous` once the message has started, otherwise `timeout`.
+    const started = performance.now();
+    const expired = (): boolean =>
+      performance.now() - started >= configuration.timeoutMilliseconds;
 
     const socket = createConnection({
       host: configuration.host,
@@ -492,6 +503,10 @@ function runSmtpDialogue(
     // that arrives in a later chunk is read as the reply to the next command.
     function onData(chunk: Buffer): void {
       if (settled) {
+        return;
+      }
+      if (expired()) {
+        finishWithoutReply("timeout");
         return;
       }
       // Refuse a chunk that would take the unread text past one whole reply

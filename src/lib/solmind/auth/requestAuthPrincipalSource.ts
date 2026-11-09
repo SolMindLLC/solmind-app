@@ -25,6 +25,9 @@
 //     cookies(), no headers(), no Next.js server APIs, and no browser APIs, and
 //     performs no IO of its own. The real server-only @supabase/ssr adapter is a
 //     later, separately-approved slice and is intentionally NOT added here.
+//     Its one timer, and its readings of the monotonic clock
+//     (performance.now), belong to the optional deadline of the fail-closed
+//     wrapper below (correction D-14, 2026-11-09).
 
 import { type SupabaseAuthenticatedUser } from "./serverAuthContext";
 
@@ -78,19 +81,98 @@ export function createInMemoryRequestAuthPrincipalSource(
 // This is pure orchestration over an injected resolver. It is NOT the request
 // auth adapter: it opens no cookies, reads no headers, and imports no
 // @supabase/ssr. The future server-only adapter MAY build on it.
+//
+// Correction D-14 (2026-11-09; REV341c finding 1): a resolver that never
+// settles, such as a provider check whose answer stalls, would otherwise keep
+// the request waiting with no end. With a deadline, or a caller's
+// cancellation signal, the wrapper denies (null) when the deadline passes or
+// the signal aborts, whichever comes first; an answer that arrives later is
+// ignored, a later rejection is consumed, and the timer and the listener are
+// removed. The deadline is an absolute monotonic time taken before the
+// resolver is called, so an answer that a busy event loop processes before
+// the overdue timer has run is still denied. A signal that has already
+// aborted denies without calling the resolver, and one that aborts while the
+// resolver's own synchronous part runs denies too. Without either option the
+// behavior is unchanged. The wrapper cannot stop the resolver's own work; it
+// only stops waiting for it.
+export type FailClosedRequestAuthOptions = Readonly<{
+  // How long the resolver may take, in milliseconds: a positive whole number
+  // no larger than a timer can hold (2,147,483,647).
+  deadlineMs?: number;
+  // The caller's cancellation, where the caller has one.
+  signal?: AbortSignal;
+}>;
+
+// The largest delay a Node.js timer holds; a larger one fires after 1 ms.
+const MAXIMUM_TIMER_MILLISECONDS = 2_147_483_647;
+
 export function createFailClosedRequestAuthPrincipalSource(
   resolve: RequestAuthPrincipalResolver,
+  options: FailClosedRequestAuthOptions = {},
 ): SolMindRequestAuthPrincipalSource {
+  const { deadlineMs, signal } = options;
+  if (
+    deadlineMs !== undefined &&
+    !(Number.isSafeInteger(deadlineMs) && deadlineMs > 0 && deadlineMs <= MAXIMUM_TIMER_MILLISECONDS)
+  ) {
+    throw new Error("SolMind server configuration error: the request-auth deadline is invalid.");
+  }
   return {
     async resolveAuthenticatedUser() {
+      if (signal?.aborted) {
+        return null;
+      }
+      // Taken before the resolver runs, so the deadline covers all of it.
+      const startedAt = performance.now();
+      const overdue = (): boolean =>
+        deadlineMs !== undefined && performance.now() - startedAt >= deadlineMs;
+      let pending: Promise<SupabaseAuthenticatedUser | null>;
       try {
-        const principal = await resolve();
-        // A null/absent result is the deny signal; normalize anything falsy to
-        // null so the caller only ever sees a principal or null.
-        return principal ?? null;
+        pending = Promise.resolve(resolve());
       } catch {
         // Swallow: no token, cookie, or secret may leak through an error path.
         return null;
+      }
+      // A null/absent result is the deny signal; normalize anything falsy to
+      // null so the caller only ever sees a principal or null. A rejection
+      // becomes null here too, so it is consumed even when it comes late.
+      const settled = pending.then(
+        (principal) => principal ?? null,
+        () => null,
+      );
+      if (deadlineMs === undefined && signal === undefined) {
+        return settled;
+      }
+      let ended = false;
+      let end: () => void = () => undefined;
+      const denied = new Promise<null>((settle) => {
+        end = () => {
+          ended = true;
+          settle(null);
+        };
+      });
+      // The timer ends the wait at the deadline measured from startedAt.
+      const timer =
+        deadlineMs === undefined
+          ? undefined
+          : setTimeout(end, Math.max(0, deadlineMs - (performance.now() - startedAt)));
+      signal?.addEventListener("abort", end, { once: true });
+      if (signal?.aborted) {
+        // Aborted while the resolver's synchronous part ran, before the
+        // listener existed.
+        end();
+      }
+      try {
+        const principal = await Promise.race([settled, denied]);
+        // Past the deadline or after cancellation, even an answer that won the
+        // race is not used: the timer may not have run yet on a busy event
+        // loop, so the monotonic clock is read again here.
+        return ended || overdue() ? null : principal;
+      } finally {
+        if (timer !== undefined) {
+          clearTimeout(timer);
+        }
+        signal?.removeEventListener("abort", end);
       }
     },
   };

@@ -36,6 +36,7 @@ import {
 import { SOLMIND_TRUSTED_APP_ORIGIN_ENV } from "../../auth/trustedApplicationOrigin";
 import {
   REQUEST_AUTH_ANON_KEY_ENV,
+  REQUEST_AUTH_PROVIDER_DEADLINE_MS,
   REQUEST_AUTH_SESSION_COOKIE_POLICY_UNAVAILABLE,
   REQUEST_AUTH_URL_ENV,
   createSupabaseRequestAuthPrincipalSource,
@@ -932,6 +933,158 @@ describe("createSupabaseRequestAuthPrincipalSource - the session-binding cookie 
       expect(JSON.stringify(result)).not.toContain(SECRET_MARKER);
     }
     // The console spies' own check runs in afterEach.
+  });
+});
+
+// Correction D-14 (2026-11-09; REV341c finding 1): a deadline over the whole
+// check and the caller's optional cancellation, owned by the fail-closed
+// wrapper, so this module still hands the library no function and reads no
+// timer of its own (TKA-001 and TKA-006 above stay unchanged).
+describe("createSupabaseRequestAuthPrincipalSource - the deadline and cancellation (D-14)", () => {
+  function stalledGetUser() {
+    let answer: (value: unknown) => void = () => undefined;
+    getUser.mockImplementation(
+      () =>
+        new Promise((settle) => {
+          answer = settle;
+        }),
+    );
+    return (value: unknown) => answer(value);
+  }
+
+  async function settledYet(promise: Promise<unknown>): Promise<boolean> {
+    let settled = false;
+    void promise.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    return settled;
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("RAD-010 the deadline is 3 seconds, the limit logout gives the same Supabase Auth call", () => {
+    expect(REQUEST_AUTH_PROVIDER_DEADLINE_MS).toBe(3_000);
+    const logout = readFileSync(resolve(process.cwd(), "src/lib/solmind/supabase/logoutDependencies.ts"), "utf8");
+    expect(logout).toContain("const IDENTITY_TIMEOUT = 3_000;");
+  });
+
+  it("RAD-011 a getUser that never answers (stalled headers or body) is denied at the deadline, not before", async () => {
+    vi.useFakeTimers();
+    stalledGetUser();
+
+    const result = source().resolveAuthenticatedUser();
+    await vi.advanceTimersByTimeAsync(REQUEST_AUTH_PROVIDER_DEADLINE_MS - 1);
+    expect(await settledYet(result)).toBe(false);
+    expect(getUser.mock.calls).toEqual([[ACCESS_TOKEN]]);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(result).resolves.toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("RAD-012 a valid identity that arrives after the deadline is ignored, and so is a late refusal that quotes the token", async () => {
+    vi.useFakeTimers();
+    const answer = stalledGetUser();
+    const result = source().resolveAuthenticatedUser();
+    await vi.advanceTimersByTimeAsync(REQUEST_AUTH_PROVIDER_DEADLINE_MS);
+    answer({ data: { user: { id: AUTH_USER_ID } }, error: null });
+    await expect(result).resolves.toBeNull();
+
+    const refusal = stalledGetUser();
+    const second = source().resolveAuthenticatedUser();
+    await vi.advanceTimersByTimeAsync(REQUEST_AUTH_PROVIDER_DEADLINE_MS);
+    refusal({ data: { user: null }, error: { message: `invalid JWT ${ACCESS_TOKEN}`, status: 403 } });
+    const denied = await second;
+    expect(denied).toBeNull();
+    expect(JSON.stringify(denied)).not.toContain(SECRET_MARKER);
+    // The console spies' own check runs in afterEach.
+  });
+
+  it("RAD-019 a valid identity that a busy event loop processes at the deadline, before the timer has run, is denied", async () => {
+    // Only the timer functions are faked, so the deadline's timer never runs;
+    // getUser moves the monotonic clock to the deadline before it answers.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const realNow = performance.now.bind(performance);
+    let offset = 0;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => realNow() + offset);
+    try {
+      getUser.mockImplementation(async () => {
+        offset += REQUEST_AUTH_PROVIDER_DEADLINE_MS;
+        return { data: { user: { id: AUTH_USER_ID } }, error: null };
+      });
+      await expect(source().resolveAuthenticatedUser()).resolves.toBeNull();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("RAD-013 an answer inside the deadline is used as before", async () => {
+    vi.useFakeTimers();
+    const answer = stalledGetUser();
+    const result = source().resolveAuthenticatedUser();
+    await vi.advanceTimersByTimeAsync(REQUEST_AUTH_PROVIDER_DEADLINE_MS - 1);
+    answer({ data: { user: { id: AUTH_USER_ID } }, error: null });
+    await expect(result).resolves.toEqual({
+      providerName: "supabase",
+      providerUserId: AUTH_USER_ID,
+      presentedSessionId: SESSION_ID,
+    });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("RAD-014 a cancelled request is denied: already aborted, nothing is read or asked; aborted while waiting, at once", async () => {
+    verifiedUser();
+    const getAll = vi.fn(() => requestCookies());
+    const early = new AbortController();
+    early.abort();
+    const before = createSupabaseRequestAuthPrincipalSource({
+      cookies: { getAll, setAll: () => undefined },
+      signal: early.signal,
+    });
+    await expect(before.resolveAuthenticatedUser()).resolves.toBeNull();
+    expect(getAll).not.toHaveBeenCalled();
+    expect(createClientMock).not.toHaveBeenCalled();
+    expect(getUser).not.toHaveBeenCalled();
+
+    vi.useFakeTimers();
+    const answer = stalledGetUser();
+    const late = new AbortController();
+    const waiting = createSupabaseRequestAuthPrincipalSource({
+      cookies: createInMemoryRequestCookieAccessor(requestCookies()),
+      signal: late.signal,
+    }).resolveAuthenticatedUser();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(await settledYet(waiting)).toBe(false);
+    late.abort();
+    await expect(waiting).resolves.toBeNull();
+    answer({ data: { user: { id: AUTH_USER_ID } }, error: null });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("RAD-015 the adapter's code hands the deadline and the signal to the fail-closed wrapper, and still sets no timer itself", () => {
+    const text = readFileSync(resolve(process.cwd(), "src/lib/solmind/supabase/requestAuthClient.ts"), "utf8");
+    const code = text
+      .split(/\r?\n/)
+      .map((line) => {
+        const at = line.indexOf("//");
+        return at < 0 ? line : line.slice(0, at);
+      })
+      .join("\n");
+    expect(code).toContain("{ deadlineMs: REQUEST_AUTH_PROVIDER_DEADLINE_MS, signal: args.signal }");
+    expect(code.match(/createFailClosedRequestAuthPrincipalSource\(/g)).toEqual([
+      "createFailClosedRequestAuthPrincipalSource(",
+    ]);
+    for (const absent of ["setTimeout", "clearTimeout", "AbortController", "Promise.race"]) {
+      expect(code, absent).not.toContain(absent);
+    }
   });
 });
 

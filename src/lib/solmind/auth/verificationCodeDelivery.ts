@@ -436,6 +436,15 @@ export async function deliverVerificationCode(
   let timer: ReturnType<typeof setTimeout> | undefined;
   let graceTimer: ReturnType<typeof setTimeout> | undefined;
   let ceilingReached = false;
+  // Correction D-15 (2026-11-09; REV341c finding 2): the ceiling is also an
+  // absolute monotonic deadline, taken before the attempt starts. A busy event
+  // loop can process the transport's result before the ceiling's timer has
+  // run; a result processed at or past the deadline then follows the same
+  // rule as one processed after the timer (below), so a late success is never
+  // reported.
+  const started = performance.now();
+  const pastCeiling = (): boolean =>
+    ceilingReached || performance.now() - started >= timeoutMilliseconds;
   // At the ceiling the transport is aborted and given one turn of the event
   // loop to report. A transport that knows the message had started, like the
   // local one, settles on abort with `ambiguous`, and that result wins. Any
@@ -464,12 +473,13 @@ export async function deliverVerificationCode(
   //     literal `ambiguous` (or a rejection) may win, and any other value,
   //     including one outside the set, gives `timeout`, not `ambiguous`.
   // The branch depends on when the fulfilment is processed, not on when the
-  // transport settled.
+  // transport settled: past the ceiling means the timer has run or the
+  // deadline has passed (correction D-15).
   const attempt = new Promise<unknown>((resolve) => {
     resolve(send(request, controller.signal));
   }).then(
     (value): VerificationCodeDeliveryOutcome =>
-      ceilingReached ? (value === "ambiguous" ? "ambiguous" : "timeout") : toOutcome(value),
+      pastCeiling() ? (value === "ambiguous" ? "ambiguous" : "timeout") : toOutcome(value),
     () => "ambiguous" as const,
   );
 

@@ -55,6 +55,7 @@ import {
 import { SOLMIND_TRUSTED_APP_ORIGIN_ENV } from "../../auth/trustedApplicationOrigin";
 import {
   REQUEST_AUTH_ANON_KEY_ENV,
+  REQUEST_AUTH_PROVIDER_DEADLINE_MS,
   REQUEST_AUTH_URL_ENV,
   createSupabaseRequestAuthPrincipalSource,
 } from "../requestAuthClient";
@@ -492,6 +493,89 @@ function recordingAccessor(cookies: RequestCookie[]): {
     setAll,
   };
 }
+
+// Correction D-14 (2026-11-09; REV341c finding 1): Supabase Auth takes the
+// one request and its answer stalls. The fail-closed wrapper's deadline
+// denies the request; the library's request is abandoned, not stopped (the
+// adapter hands the library no function), so the fetch stub here simply never
+// settles. Only setTimeout and clearTimeout are faked, and only inside the
+// recorded run, so the recorder's own short wait runs on real time. The
+// wrapper's monotonic clock (performance.now) is held still in the run, so the
+// deadline's timer is set to exactly 3 seconds and these tests can say "not
+// before"; RAD-017 and RAD-019 cover a clock that moves without the timer.
+describe("request-auth adapter with the real Supabase library -a stalled Supabase Auth answer (correction D-14)", () => {
+  async function deniedAtTheDeadline(afterDeadline: () => void = () => undefined) {
+    return recordEverySink(async () => {
+      const heldClock = vi.spyOn(performance, "now").mockReturnValue(performance.now());
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      try {
+        const pending = source(requestCookies(sessionValue())).resolveAuthenticatedUser();
+        let settled = false;
+        void pending.then(() => {
+          settled = true;
+        });
+        await vi.advanceTimersByTimeAsync(REQUEST_AUTH_PROVIDER_DEADLINE_MS - 1);
+        const settledBefore = settled;
+        await vi.advanceTimersByTimeAsync(1);
+        afterDeadline();
+        const result = await pending;
+        return { settledBefore, result };
+      } finally {
+        vi.useRealTimers();
+        heldClock.mockRestore();
+      }
+    });
+  }
+
+  it("PRL-020 stalled headers: the request reaches Supabase Auth and no answer comes; it is denied at the deadline, not before, and nothing is printed", async () => {
+    fetchMock.mockImplementation(() => new Promise<Response>(() => undefined));
+    const recorded = await deniedAtTheDeadline();
+    expect(recorded.value).toEqual({ settledBefore: false, result: null });
+    expect(requestedPaths()).toEqual(["/auth/v1/user"]);
+    expect(recorded.lines).toEqual([]);
+    expect(recorded.unhandled).toEqual([]);
+  });
+
+  it("PRL-021 stalled body: the headers of a success arrive and the body never ends; it is denied at the deadline and nothing is printed", async () => {
+    fetchMock.mockImplementation(
+      async () =>
+        new Response(new ReadableStream<Uint8Array>({ start() {} }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    const recorded = await deniedAtTheDeadline();
+    expect(recorded.value).toEqual({ settledBefore: false, result: null });
+    expect(requestedPaths()).toEqual(["/auth/v1/user"]);
+    expect(recorded.lines).toEqual([]);
+    expect(recorded.unhandled).toEqual([]);
+  });
+
+  it("PRL-022 a valid identity that arrives just after the deadline is denied", async () => {
+    let answer: (response: Response) => void = () => undefined;
+    fetchMock.mockImplementation(
+      () =>
+        new Promise<Response>((settle) => {
+          answer = settle;
+        }),
+    );
+    const recorded = await deniedAtTheDeadline(() =>
+      answer(jsonResponse({ id: AUTH_USER_ID, aud: "authenticated" }, 200)),
+    );
+    expect(recorded.value).toEqual({ settledBefore: false, result: null });
+    expect(recorded.lines).toEqual([]);
+    expect(recorded.unhandled).toEqual([]);
+  });
+
+  it("PRL-023 control: the same valid identity inside the deadline is accepted", async () => {
+    fetchMock.mockImplementation(async () => jsonResponse({ id: AUTH_USER_ID, aud: "authenticated" }, 200));
+    await expect(source(requestCookies(sessionValue())).resolveAuthenticatedUser()).resolves.toEqual({
+      providerName: "supabase",
+      providerUserId: AUTH_USER_ID,
+      presentedSessionId: SESSION_ID,
+    });
+  });
+});
 
 describe("request-auth adapter with the real Supabase library -a late or replayed auth cookie (contract 25 Section 7; items 6 and 11)", () => {
   // A well-formed auth cookie whose access token expired ten minutes ago, as a

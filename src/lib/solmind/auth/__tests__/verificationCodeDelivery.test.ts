@@ -494,6 +494,61 @@ describe("verificationCodeDelivery - one bounded attempt", () => {
     }
   });
 
+  it("VCD-022 a result processed at or past the deadline, before the ceiling's timer has run, follows the ceiling rule (correction D-15)", async () => {
+    // The ceiling is also an absolute monotonic deadline. The transport moves
+    // the clock the boundary reads (performance.now) to the deadline before it
+    // answers, as a busy event loop would, while the faked timer never runs.
+    // A control run first answers with the clock unmoved.
+    const cases: ReadonlyArray<[() => unknown, VerificationCodeDeliveryOutcome, VerificationCodeDeliveryOutcome]> = [
+      // [the transport's answer, inside the deadline, at or past it]
+      [() => "accepted", "accepted", "timeout"],
+      [() => "sent", "ambiguous", "timeout"],
+      [() => "retryable_failure", "retryable_failure", "timeout"],
+      [() => "ambiguous", "ambiguous", "ambiguous"],
+      [
+        () => {
+          throw new Error(`late ${CODE}`);
+        },
+        "ambiguous",
+        "ambiguous",
+      ],
+    ];
+    const realNow = performance.now.bind(performance);
+    let offset = 0;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => realNow() + offset);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      for (const [answer, insideDeadline, pastDeadline] of cases) {
+        const control = await deliverVerificationCode({
+          delivery: prepareVerificationCodeDelivery(input()),
+          transport: { send: async () => answer() as VerificationCodeDeliveryOutcome },
+          timeoutMilliseconds: 1_000,
+        });
+        expect(control).toEqual({ outcome: insideDeadline });
+
+        const transport = {
+          send: vi.fn<VerificationCodeDeliveryTransport["send"]>(async () => {
+            offset += 1_000;
+            return answer() as VerificationCodeDeliveryOutcome;
+          }),
+        };
+        const result = await deliverVerificationCode({
+          delivery: prepareVerificationCodeDelivery(input()),
+          transport,
+          timeoutMilliseconds: 1_000,
+        });
+        expect(result).toEqual({ outcome: pastDeadline });
+        expectValueFree(result);
+        // The ceiling's timer never ran: the deadline alone decided.
+        expect(transport.send.mock.calls[0][1].aborted).toBe(false);
+        expect(vi.getTimerCount()).toBe(0);
+      }
+    } finally {
+      vi.useRealTimers();
+      clock.mockRestore();
+    }
+  });
+
   it("VCD-008 stops at the elapsed-time ceiling, aborts the transport and absorbs a late rejection", async () => {
     const captured: {
       signal?: AbortSignal;

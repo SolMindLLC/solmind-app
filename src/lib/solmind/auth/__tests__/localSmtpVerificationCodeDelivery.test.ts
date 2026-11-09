@@ -859,6 +859,105 @@ describe("localSmtpVerificationCodeDelivery - SMTP dialogue", () => {
   });
 });
 
+// Correction D-15 (2026-11-09; REV341c finding 2): the dialogue's deadline is
+// also an absolute monotonic time. These tests move the clock the module reads
+// (performance.now) forward without running any timer, as a busy event loop
+// would, then let the server's reply arrive. Real timers and real sockets run
+// throughout; the module's own timer, at the 15-second maximum, never fires during a test.
+function jumpableClock() {
+  const realNow = performance.now.bind(performance);
+  let offset = 0;
+  const spy = vi.spyOn(performance, "now").mockImplementation(() => realNow() + offset);
+  return {
+    jump: (milliseconds: number) => {
+      offset += milliseconds;
+    },
+    restore: () => {
+      spy.mockRestore();
+    },
+  };
+}
+
+describe("localSmtpVerificationCodeDelivery - the deadline as a monotonic time (D-15)", () => {
+  it("LSMTP-020 a reply processed after the deadline, before the timer has run, sends no further command: timeout", async () => {
+    const server = await startFakeSmtpServer({ replies: { MAIL: SILENT } });
+    const transport = createLocalSmtpVerificationCodeTransport(
+      configuration(server.port, { timeoutMilliseconds: 15_000 }),
+    );
+    const clock = jumpableClock();
+    try {
+      const outcome = transport.send(email(), new AbortController().signal);
+      await waitFor(() => server.commands.some((command) => command.startsWith("MAIL FROM:")));
+      clock.jump(15_000);
+      server.sockets[0].write(`250 2.1.0 Ok ${SERVER_MARKER}\r\n`);
+      await expect(outcome).resolves.toBe("timeout");
+    } finally {
+      clock.restore();
+    }
+    await settleNetwork();
+    expect(server.commands.some((command) => command.startsWith("RCPT TO:"))).toBe(false);
+    expect(server.messages).toHaveLength(0);
+  });
+
+  it("LSMTP-021 a 354 processed after the deadline writes no message: timeout", async () => {
+    const server = await startFakeSmtpServer({ replies: { DATA: SILENT } });
+    const transport = createLocalSmtpVerificationCodeTransport(
+      configuration(server.port, { timeoutMilliseconds: 15_000 }),
+    );
+    const clock = jumpableClock();
+    try {
+      const outcome = transport.send(email(), new AbortController().signal);
+      await waitFor(() => server.commands.includes("DATA"));
+      clock.jump(15_000);
+      server.sockets[0].write(`354 End data with <CR><LF>.<CR><LF> ${SERVER_MARKER}\r\n`);
+      await expect(outcome).resolves.toBe("timeout");
+    } finally {
+      clock.restore();
+    }
+    await settleNetwork();
+    expect(server.messages).toHaveLength(0);
+    expect(server.received().endsWith("DATA\r\n")).toBe(true);
+    expect(server.received()).not.toContain(CODE);
+  });
+
+  it("LSMTP-022 a final 250 processed after the deadline is not accepted: ambiguous, with no QUIT", async () => {
+    const server = await startFakeSmtpServer({ afterMessage: SILENT });
+    const transport = createLocalSmtpVerificationCodeTransport(
+      configuration(server.port, { timeoutMilliseconds: 15_000 }),
+    );
+    const clock = jumpableClock();
+    try {
+      const outcome = transport.send(email(), new AbortController().signal);
+      await waitFor(() => server.messages.length === 1);
+      clock.jump(15_000);
+      server.sockets[0].write(`250 2.0.0 Ok: queued ${SERVER_MARKER}\r\n`);
+      await expect(outcome).resolves.toBe("ambiguous");
+    } finally {
+      clock.restore();
+    }
+    await settleNetwork();
+    expect(server.messages).toHaveLength(1);
+    expect(server.commands).not.toContain("QUIT");
+  });
+
+  it("LSMTP-023 control: the same final 250 inside the deadline is accepted", async () => {
+    const server = await startFakeSmtpServer({ afterMessage: SILENT });
+    const transport = createLocalSmtpVerificationCodeTransport(
+      configuration(server.port, { timeoutMilliseconds: 15_000 }),
+    );
+    const clock = jumpableClock();
+    try {
+      const outcome = transport.send(email(), new AbortController().signal);
+      await waitFor(() => server.messages.length === 1);
+      clock.jump(5_000);
+      server.sockets[0].write(`250 2.0.0 Ok: queued ${SERVER_MARKER}\r\n`);
+      await expect(outcome).resolves.toBe("accepted");
+    } finally {
+      clock.restore();
+    }
+  });
+});
+
 describe("localSmtpVerificationCodeDelivery - configuration", () => {
   it("LSMTP-011 accepts only the literal loopback addresses", () => {
     for (const host of ["127.0.0.1", "::1"]) {

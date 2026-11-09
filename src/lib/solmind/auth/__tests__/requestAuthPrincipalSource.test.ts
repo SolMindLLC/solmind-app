@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   createFailClosedRequestAuthPrincipalSource,
@@ -220,5 +220,268 @@ describe("createFailClosedRequestAuthPrincipalSource - fail-closed posture", () 
     );
 
     await expect(source.resolveAuthenticatedUser()).resolves.toBeNull();
+  });
+});
+
+// Correction D-14 (2026-11-09; REV341c finding 1): the optional deadline and
+// cancellation over the whole resolver call.
+describe("createFailClosedRequestAuthPrincipalSource - deadline and cancellation (D-14)", () => {
+  // A resolver answer the test settles by hand, as a stalled provider would
+  // not settle at all.
+  function deferred() {
+    let resolve: (principal: SupabaseAuthenticatedUser | null) => void = () => undefined;
+    let reject: (error: Error) => void = () => undefined;
+    const promise = new Promise<SupabaseAuthenticatedUser | null>((settleWith, failWith) => {
+      resolve = settleWith;
+      reject = failWith;
+    });
+    return { promise, resolve, reject };
+  }
+
+  // Whether a promise has settled, without waiting for it.
+  async function isSettled(promise: Promise<unknown>): Promise<boolean> {
+    let settled = false;
+    void promise.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    return settled;
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("RAD-001 a resolver that never settles is denied at the deadline, not before", async () => {
+    vi.useFakeTimers();
+    const answer = deferred();
+    const source = createFailClosedRequestAuthPrincipalSource(() => answer.promise, { deadlineMs: 3_000 });
+
+    const result = source.resolveAuthenticatedUser();
+    await vi.advanceTimersByTimeAsync(2_999);
+    expect(await isSettled(result)).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(result).resolves.toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("RAD-002 a valid principal that arrives after the deadline is ignored", async () => {
+    vi.useFakeTimers();
+    const answer = deferred();
+    const source = createFailClosedRequestAuthPrincipalSource(() => answer.promise, { deadlineMs: 3_000 });
+
+    const result = source.resolveAuthenticatedUser();
+    await vi.advanceTimersByTimeAsync(3_000);
+    answer.resolve(guidePrincipal());
+    await expect(result).resolves.toBeNull();
+  });
+
+  it("RAD-003 a rejection that arrives after the deadline is consumed: nothing is left unhandled", async () => {
+    vi.useFakeTimers();
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const answer = deferred();
+      const source = createFailClosedRequestAuthPrincipalSource(() => answer.promise, { deadlineMs: 3_000 });
+      const result = source.resolveAuthenticatedUser();
+      await vi.advanceTimersByTimeAsync(3_000);
+      await expect(result).resolves.toBeNull();
+      answer.reject(new Error("a late, token-bearing failure"));
+      vi.useRealTimers();
+      await new Promise((settle) => setTimeout(settle, 20));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.removeListener("unhandledRejection", onUnhandled);
+    }
+  });
+
+  it("RAD-004 an answer before the deadline passes through, and the timer is removed", async () => {
+    vi.useFakeTimers();
+    const answer = deferred();
+    const source = createFailClosedRequestAuthPrincipalSource(() => answer.promise, { deadlineMs: 3_000 });
+
+    const result = source.resolveAuthenticatedUser();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(vi.getTimerCount()).toBe(1);
+    answer.resolve(guidePrincipal());
+    await expect(result).resolves.toEqual(guidePrincipal());
+    expect(vi.getTimerCount()).toBe(0);
+    // A rejection or a null answer before the deadline still denies.
+    const failing = createFailClosedRequestAuthPrincipalSource(() => Promise.reject(new Error("refused")), {
+      deadlineMs: 3_000,
+    });
+    await expect(failing.resolveAuthenticatedUser()).resolves.toBeNull();
+    const empty = createFailClosedRequestAuthPrincipalSource(() => null, { deadlineMs: 3_000 });
+    await expect(empty.resolveAuthenticatedUser()).resolves.toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("RAD-005 a signal that has already aborted denies without calling the resolver", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const resolve = vi.fn(() => guidePrincipal());
+    const source = createFailClosedRequestAuthPrincipalSource(resolve, {
+      deadlineMs: 3_000,
+      signal: controller.signal,
+    });
+
+    await expect(source.resolveAuthenticatedUser()).resolves.toBeNull();
+    expect(resolve).not.toHaveBeenCalled();
+  });
+
+  it("RAD-006 a signal that aborts while the resolver waits denies at once; its listener and the timer are removed", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const added = vi.spyOn(controller.signal, "addEventListener");
+    const removed = vi.spyOn(controller.signal, "removeEventListener");
+    const answer = deferred();
+    const source = createFailClosedRequestAuthPrincipalSource(() => answer.promise, {
+      deadlineMs: 3_000,
+      signal: controller.signal,
+    });
+
+    const result = source.resolveAuthenticatedUser();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(await isSettled(result)).toBe(false);
+    controller.abort();
+    await expect(result).resolves.toBeNull();
+    answer.resolve(guidePrincipal());
+    expect(vi.getTimerCount()).toBe(0);
+    expect(added).toHaveBeenCalledTimes(1);
+    expect(removed).toHaveBeenCalledTimes(1);
+    expect(removed.mock.calls[0][1]).toBe(added.mock.calls[0][1]);
+  });
+
+  it("RAD-007 a signal alone, with no deadline, still lets an answer through and still cancels", async () => {
+    const controller = new AbortController();
+    const passing = createFailClosedRequestAuthPrincipalSource(async () => guidePrincipal(), {
+      signal: controller.signal,
+    });
+    await expect(passing.resolveAuthenticatedUser()).resolves.toEqual(guidePrincipal());
+
+    const answer = deferred();
+    const waiting = createFailClosedRequestAuthPrincipalSource(() => answer.promise, { signal: controller.signal });
+    const result = waiting.resolveAuthenticatedUser();
+    controller.abort();
+    await expect(result).resolves.toBeNull();
+  });
+
+  it("RAD-016 a cancellation in the same moment as an answer that has already won the race still denies", async () => {
+    // The answer settles first and wins the race; the abort runs in the next
+    // queued step, before the wrapper reads the race's result.
+    const controller = new AbortController();
+    const source = createFailClosedRequestAuthPrincipalSource(() => Promise.resolve(guidePrincipal()), {
+      signal: controller.signal,
+    });
+    const result = source.resolveAuthenticatedUser();
+    queueMicrotask(() => controller.abort());
+    await expect(result).resolves.toBeNull();
+
+    // Control: with no abort in that moment the same answer is used.
+    const calm = new AbortController();
+    const control = createFailClosedRequestAuthPrincipalSource(() => Promise.resolve(guidePrincipal()), {
+      signal: calm.signal,
+    });
+    await expect(control.resolveAuthenticatedUser()).resolves.toEqual(guidePrincipal());
+  });
+
+  it("RAD-008 a deadline that is not a positive whole number a timer can hold is refused when the source is built", () => {
+    for (const deadlineMs of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 2 ** 31, 2 ** 53]) {
+      expect(() =>
+        createFailClosedRequestAuthPrincipalSource(() => null, { deadlineMs }),
+      ).toThrow("SolMind server configuration error: the request-auth deadline is invalid.");
+    }
+    // The largest delay a timer holds is accepted.
+    expect(() =>
+      createFailClosedRequestAuthPrincipalSource(() => null, { deadlineMs: 2 ** 31 - 1 }),
+    ).not.toThrow();
+  });
+
+  it("RAD-017 an answer processed at the deadline before the overdue timer has run is denied (a monotonic deadline)", async () => {
+    // Only the timer functions are faked, so the deadline's timer never runs
+    // here; the clock the wrapper reads (performance.now) is moved forward by
+    // hand, as a busy event loop would move it. A control answers just inside.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const realNow = performance.now.bind(performance);
+    let offset = 0;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => realNow() + offset);
+    try {
+      const late = deferred();
+      const lateSource = createFailClosedRequestAuthPrincipalSource(() => late.promise, { deadlineMs: 3_000 });
+      const lateResult = lateSource.resolveAuthenticatedUser();
+      offset += 3_000;
+      late.resolve(guidePrincipal());
+      await expect(lateResult).resolves.toBeNull();
+      expect(vi.getTimerCount()).toBe(0);
+
+      offset = 0;
+      const inside = deferred();
+      const insideSource = createFailClosedRequestAuthPrincipalSource(() => inside.promise, { deadlineMs: 3_000 });
+      const insideResult = insideSource.resolveAuthenticatedUser();
+      offset += 2_000;
+      inside.resolve(guidePrincipal());
+      await expect(insideResult).resolves.toEqual(guidePrincipal());
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("RAD-020 the deadline counts from before the resolver runs: a slow synchronous part leaves less time to wait", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const realNow = performance.now.bind(performance);
+    let offset = 0;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => realNow() + offset);
+    try {
+      const answer = deferred();
+      const source = createFailClosedRequestAuthPrincipalSource(
+        () => {
+          offset += 2_000;
+          return answer.promise;
+        },
+        { deadlineMs: 3_000 },
+      );
+      const result = source.resolveAuthenticatedUser();
+      await vi.advanceTimersByTimeAsync(1_000);
+      await expect(result).resolves.toBeNull();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("RAD-018 a cancellation during the resolver's own synchronous part denies", async () => {
+    const controller = new AbortController();
+    const source = createFailClosedRequestAuthPrincipalSource(
+      () => {
+        controller.abort();
+        return new Promise<SupabaseAuthenticatedUser | null>((settle) => {
+          setTimeout(() => settle(guidePrincipal()), 20);
+        });
+      },
+      { deadlineMs: 3_000, signal: controller.signal },
+    );
+    await expect(source.resolveAuthenticatedUser()).resolves.toBeNull();
+  });
+
+  it("RAD-009 without options a waiting resolver keeps the earlier behavior: no timer is set", async () => {
+    vi.useFakeTimers();
+    const answer = deferred();
+    const source = createFailClosedRequestAuthPrincipalSource(() => answer.promise);
+
+    const result = source.resolveAuthenticatedUser();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(await isSettled(result)).toBe(false);
+    answer.resolve(guidePrincipal());
+    await expect(result).resolves.toEqual(guidePrincipal());
   });
 });
