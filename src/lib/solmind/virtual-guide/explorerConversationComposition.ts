@@ -218,6 +218,8 @@ export async function commandExplorerConversation(input: {
     try {
       const response = await invokeVirtualGuideConversation({ request: context.request,
         transport: dependencies.provider, timeoutMilliseconds: 60_000, signal: input.signal });
+      // A cancellation between the reply and the save writes no reply (correction D-1).
+      if (input.signal?.aborted) throw new Error("explorer_conversation_cancelled_before_save");
       const completed = await dependencies.repository.complete({ ...base(actor), p_conversation_id: conversationId,
         p_operation_id: command.operationId, p_status: "completed", p_reply_message_id: ids.replyId,
         p_reply_body: response.assistantMessage.content });

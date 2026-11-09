@@ -390,6 +390,14 @@ export async function invokeVirtualGuideConversation(input: {
       generated,
       abort,
     ]);
+    // A reply that settles in the same turn as a cancellation or timeout must not
+    // win the race: the abort decides (REV335c finding 1, correction D-1).
+    if (abortReason === "cancelled") {
+      fail("virtual_guide_conversation_cancelled");
+    }
+    if (abortReason === "timed_out") {
+      fail("virtual_guide_conversation_timed_out");
+    }
     return parseVirtualGuideConversationResponse(
       rawResponse,
       request.invocationId,

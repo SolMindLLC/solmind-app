@@ -940,7 +940,8 @@ describe("sessionCookiePolicy and loginCookieWriter - module boundary (dormant, 
     }
   });
 
-  it("LCB-004 the policy and writer are referenced only by the named per-request, Explorer sign-in and logout modules", () => {
+  // A whole-source scan: a longer limit, because full parallel runs can exceed the default 5 seconds (correction D-16).
+  it("LCB-004 the policy and writer are referenced only by the named per-request, Explorer sign-in and logout modules", { timeout: 30_000 }, () => {
     // Computed references and `import.meta` in any non-test file are already
     // refused by the login step 5 boundary test (VCB-004), so the literal
     // references found here are all the references there are. Amended by the

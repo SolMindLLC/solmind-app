@@ -643,7 +643,8 @@ describe("login step 6 sub-slice S6-1 - module boundary (dormant, off every barr
     }
   });
 
-  it("LRB-004 only the Explorer sign-in routes' composition, their dependency factory and the server start hook reference or name the three modules, by exactly the listed references, and the login step 5 boundary test guards them too", () => {
+  // A whole-source scan: a longer limit, because full parallel runs can exceed the default 5 seconds (correction D-16).
+  it("LRB-004 only the Explorer sign-in routes' composition, their dependency factory and the server start hook reference or name the three modules, by exactly the listed references, and the login step 5 boundary test guards them too", { timeout: 30_000 }, () => {
     // Computed references and `import.meta` in any non-test file are refused
     // by the login step 5 boundary test (VCB-004), so the literal references
     // found here are all the references there are. The route configuration

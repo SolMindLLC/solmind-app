@@ -1032,7 +1032,8 @@ describe("verificationChallenge - server-only, dormant and off every barrel", ()
     }
   });
 
-  it("VCB-004 every non-test file, the guarded modules included, has no computed reference or import.meta, and only the Explorer sign-in routes' composition, their dependency factory and the server start hook reach these modules, login step 4's or login step 6 sub-slice S6-1's, by exactly the listed references", () => {
+  // A whole-source scan: a longer limit, because full parallel runs can exceed the default 5 seconds (correction D-16).
+  it("VCB-004 every non-test file, the guarded modules included, has no computed reference or import.meta, and only the Explorer sign-in routes' composition, their dependency factory and the server start hook reach these modules, login step 4's or login step 6 sub-slice S6-1's, by exactly the listed references", { timeout: 30_000 }, () => {
     const root = sourceRoot();
     const offenders: string[] = [];
     for (const file of sourceFiles(root)) {

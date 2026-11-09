@@ -1171,7 +1171,8 @@ describe("loginSessionDuration and userSessionCreationCaller - module boundary (
     }
   });
 
-  it("USB-004 only the exact Explorer and Guide dependency/core owners reference or name the session caller, by exactly the listed references, and nothing else reaches either module", () => {
+  // A whole-source scan: a longer limit, because full parallel runs can exceed the default 5 seconds (correction D-16).
+  it("USB-004 only the exact Explorer and Guide dependency/core owners reference or name the session caller, by exactly the listed references, and nothing else reaches either module", { timeout: 30_000 }, () => {
     // Computed references and `import.meta` in any non-test file are already
     // refused by the login step 5 boundary test (VCB-004), so the literal
     // references found here are all the references there are. Amended by the

@@ -13,9 +13,16 @@ import {
 } from "./explorerConversationComposition";
 import {
   VIRTUAL_GUIDE_CONVERSATION_CONTRACT_VERSION,
+  invokeVirtualGuideConversation,
   type VirtualGuideConversationRequest,
   type VirtualGuideConversationTransport,
 } from "./virtualGuideConversationContract";
+
+// The real contract runs in every test; E24B alone replaces one call to place a cancellation after the contract returns.
+vi.mock("./virtualGuideConversationContract", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./virtualGuideConversationContract")>();
+  return { ...original, invokeVirtualGuideConversation: vi.fn(original.invokeVirtualGuideConversation) };
+});
 import {
   EXPLORER_CONVERSATION_VERSION,
   type ExplorerConversationCommand,
@@ -369,6 +376,33 @@ describe("Explorer conversation composition with synthetic ports", () => {
     expect(await commandExplorerConversation({ command: send, dependencies: f.dependencies, signal: controller.signal })).toEqual(unavailable);
     expect(f.generate).toHaveBeenCalledOnce();
     expect(f.complete.mock.calls.at(-1)?.[0]).toMatchObject({ p_status: "canceled", p_reply_message_id: null, p_reply_body: null });
+  });
+
+  it("E24A a reply that resolves in the same turn as the caller's cancellation is saved as canceled, never as a reply", async () => {
+    // End-to-end coverage; VGC-014A is the contract's own proof, and the assertion below checks the contract rejected.
+    const f = fixture(); const controller = new AbortController();
+    f.generate.mockImplementation(async request => { controller.abort(); return providerResponse(request); });
+    expect(await commandExplorerConversation({ command: send, dependencies: f.dependencies, signal: controller.signal })).toEqual(unavailable);
+    await expect(vi.mocked(invokeVirtualGuideConversation).mock.results.at(-1)?.value)
+      .rejects.toMatchObject({ code: "virtual_guide_conversation_cancelled" });
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.complete.mock.calls).toHaveLength(1);
+    expect(f.complete.mock.calls[0][0]).toMatchObject({ p_status: "canceled", p_reply_message_id: null, p_reply_body: null });
+  });
+
+  it("E24B a cancellation after the reply arrives and before it is saved writes no reply", async () => {
+    const f = fixture(); const controller = new AbortController();
+    const { invokeVirtualGuideConversation: real } =
+      await vi.importActual<typeof import("./virtualGuideConversationContract")>("./virtualGuideConversationContract");
+    vi.mocked(invokeVirtualGuideConversation).mockImplementationOnce(async input => {
+      const reply = await real({ ...input, signal: undefined });
+      controller.abort();
+      return reply;
+    });
+    expect(await commandExplorerConversation({ command: send, dependencies: f.dependencies, signal: controller.signal })).toEqual(unavailable);
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.complete.mock.calls).toHaveLength(1);
+    expect(f.complete.mock.calls[0][0]).toMatchObject({ p_status: "canceled", p_reply_message_id: null, p_reply_body: null });
   });
   it("E25 recovers an already saved turn before context composition, even with provider held", async () => {
     const f = fixture(); f.read.mockResolvedValue(row({ ...state(), revision: 8, pendingTurn: true }, "exact_replay"));

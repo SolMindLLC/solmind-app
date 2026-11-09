@@ -350,6 +350,45 @@ describe("virtualGuideConversationContract", () => {
     expect(observedSignal?.aborted).toBe(true);
   });
 
+  it("VGC-014A settles as cancelled when the caller cancels in the same turn the reply resolves", async () => {
+    const controller = new AbortController();
+    const generate = vi.fn(() => {
+      const reply = Promise.resolve(response());
+      controller.abort();
+      return reply;
+    });
+    await expect(
+      invokeVirtualGuideConversation({
+        request: request(),
+        transport: { generate },
+        timeoutMilliseconds: 1_000,
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ code: "virtual_guide_conversation_cancelled" });
+    expect(generate).toHaveBeenCalledOnce();
+  });
+
+  it("VGC-014B settles as timed out when the deadline passes in the same turn the reply resolves", async () => {
+    vi.useFakeTimers();
+    try {
+      const generate = vi.fn(() => {
+        const reply = Promise.resolve(response());
+        vi.advanceTimersByTime(10);
+        return reply;
+      });
+      await expect(
+        invokeVirtualGuideConversation({
+          request: request(),
+          transport: { generate },
+          timeoutMilliseconds: 10,
+        }),
+      ).rejects.toMatchObject({ code: "virtual_guide_conversation_timed_out" });
+      expect(generate).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("VGC-015 keeps the error algebra closed and value-free", () => {
     expect(VIRTUAL_GUIDE_CONVERSATION_ERROR_CODES).toEqual([
       "virtual_guide_conversation_invalid_request",
