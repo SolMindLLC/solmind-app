@@ -29,7 +29,7 @@ export async function guardPage(page: Page, baseURL: string | undefined, route =
     const url = new URL(request.request().url());
     const allowed = url.origin === origin && (
       url.pathname === route || url.pathname.startsWith("/_next/static/") ||
-      url.pathname === "/solmind-dark-logo.png" || url.pathname === "/favicon.ico");
+      url.pathname === "/solmind-dark-logo.png" || url.pathname === "/favicon.ico" || url.pathname === "/icon.svg");
     if (allowed) return request.continue();
     blocked.push(`${request.request().method()} ${url.href}`);
     return request.abort();
