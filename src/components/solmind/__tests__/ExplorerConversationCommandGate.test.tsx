@@ -147,6 +147,22 @@ describe("Tapped reply choice Send ownership", () => {
     expect(f.fetch.mock.calls[0][0]).toBe("/explorer/conversation/commands");
   });
 
+  // Correction D-12 (2026-11-09): a Send waits past the server's overall Send deadline (ceiling 120 s plus a 10 s
+  // margin); the other commands keep the 70-second wait.
+  it.each([["a Send", 130_000], ["another command", 70_000]] as const)("waits for %s's answer for %i ms", async (kind, wait) => {
+    const f = await loaded(false, offered());
+    let signal: AbortSignal | null = null;
+    f.fetch.mockImplementation((_url, init) => { signal = init!.signal!; return new Promise<Response>(() => undefined); });
+    if (kind === "a Send") f.actions.onReplyChoice(label);
+    else f.actions.onCommand({ kind: "respond_compass_suggestion", itemId: POINT, response: "right" });
+    expect(f.fetch).toHaveBeenCalledOnce();
+    expect(JSON.parse(f.fetch.mock.calls[0][1]!.body as string).kind).toBe(kind === "a Send" ? "send" : "respond_compass_suggestion");
+    await vi.advanceTimersByTimeAsync(wait - 1);
+    expect(signal!.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(signal!.aborted).toBe(true);
+  });
+
   it("retries the identical flagged Send bytes and operation after an uncertain result", async () => {
     const f = await loaded(false, offered());
     f.fetch.mockResolvedValueOnce(new Response("malformed", { headers: { "Content-Type": "application/json" } }));

@@ -26,7 +26,11 @@ async function bounded<T>(operation: (signal: AbortSignal) => Promise<T>, millis
  * Finite local awaits for each request port. Underlying abort/rollback/drain is
  * not proven; unknown acknowledgments retain the controller's no-repost rule.
  * Real provider observation, rendering and failure signal retain their separate
- * existing60s/2s/1s owners. This does not sandbox synchronous injected code.
+ * owners: the model's reply limit (shortened by the Send's overall deadline since
+ * correction D-12, 2026-11-09), 2s and 1s. Prepare's limit here must stay within
+ * EXPLORER_SEND_TIME_LIMITS.prepareAllowanceMilliseconds and settlement's within the
+ * saving reserve (explorerSendTimeLimits.test.ts). This does not sandbox synchronous
+ * injected code.
  */
 export function withExplorerPrivateRequestBudgets(dependencies: ExplorerPrivateConversationDependencies): ExplorerPrivateConversationDependencies {
   const source = dependencies.repository;

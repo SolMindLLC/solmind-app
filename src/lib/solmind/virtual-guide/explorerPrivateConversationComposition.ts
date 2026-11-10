@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { types } from "node:util";
-import { parseOpenAiModelName } from "./openAiModelConfiguration";
+import { openAiReplyLimitMilliseconds, parseOpenAiModelName } from "./openAiModelConfiguration";
 import { EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION } from "../context/explorerSafeContext";
 import {
   EXPLORER_CONVERSATION_VERSION, EXPLORER_CONVERSATION_LIMITS,
@@ -13,7 +13,8 @@ import { parseExplorerConversationReviewResult } from "../explorerConversationRe
 import { explorerConversationCommandFingerprint, type ExplorerConversationActor, type ExplorerConversationTurnIds, type PrivateExplorerConversationContextBuilder } from "./explorerConversationComposition";
 import { parseExplorerPrivateConfigurationCandidate, type ExplorerPrivateConfigurationCandidate } from "./explorerPrivateConfiguration";
 import {
-  EXPLORER_SAFETY_REQUEST_VERSION, EXPLORER_SAFETY_REPLY_PROTOCOL, explorerSafetyUnicodeValid, parseExplorerSafetyReplyRequest,
+  EXPLORER_SAFETY_REQUEST_VERSION, EXPLORER_SAFETY_REPLY_PROTOCOL, EXPLORER_SAFETY_REPLY_LIMITS, EXPLORER_SEND_TIME_LIMITS,
+  explorerSendDeadlineMilliseconds, explorerSafetyUnicodeValid, parseExplorerSafetyReplyRequest,
   type ExplorerSafetyReplyRequest, type ExplorerSafetyClassification, type ExplorerSafetyCompassSuggestion, type ExplorerSafetyCompassResponse,
   type ExplorerSafetyWaypointSuggestion, type ExplorerSafetyWaypointResponse,
 } from "./explorerSafetyReplyContract";
@@ -292,6 +293,46 @@ async function ownedCapability<T>(operation: (signal: AbortSignal) => Promise<T>
   } catch { controller.abort(); throw sentinel; }
   finally { clearTimeout(timer); }
 }
+// Correction D-12 (2026-11-09): one overall time limit for each Send (Paul's decisions, PRJ01-SPR002 decision queue,
+// entry "Meeting part 2 decisions", items 4, 6 and 7: an alarm per step and a clock reading between steps, under one
+// deadline that follows each provider's reply limit). Every step keeps its own alarm; this adds a second alarm at the
+// time left before `until`, and a step is not started once that moment has passed. As with the step alarms, the race
+// only stops waiting: it does not prove that remote work stopped.
+const SEND_DEADLINE_FAILURE = "explorer_send_deadline";
+async function beforeDeadline<T>(until: number, operation: () => Promise<T>): Promise<T> {
+  const left = until - performance.now();
+  if (!(left > 0)) throw new Error(SEND_DEADLINE_FAILURE);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(SEND_DEADLINE_FAILURE)), Math.ceil(left));
+  });
+  void deadline.catch(() => undefined);
+  try { return await Promise.race([operation(), deadline]); }
+  finally { clearTimeout(timer); }
+}
+// A Send's view of its dependencies: sign-in, every database read and write, readiness and the context build end by
+// the overall deadline, including the reads on failure paths. Safety markers and trusted rendering keep only their
+// own one- and two-second alarms, so a marker is still attempted after the deadline; the screen's margin beyond the
+// ceiling (EXPLORER_SEND_TIME_LIMITS.screenMarginMilliseconds) covers them.
+function withSendDeadline(dependencies: ExplorerPrivateConversationDependencies, deadline: () => number): ExplorerPrivateConversationDependencies {
+  const source = dependencies.repository;
+  const resolve = dependencies.resolveOperationalReadiness; const build = dependencies.buildContext;
+  return Object.freeze({ ...dependencies,
+    authenticate: () => beforeDeadline(deadline(), () => dependencies.authenticate()),
+    repository: Object.freeze({ ...source,
+      read: (...args: Parameters<typeof source.read>) => beforeDeadline(deadline(), () => source.read(...args)),
+      ensure: (...args: Parameters<typeof source.ensure>) => beforeDeadline(deadline(), () => source.ensure(...args)),
+      observe: (...args: Parameters<typeof source.observe>) => beforeDeadline(deadline(), () => source.observe(...args)),
+      prepare: (...args: Parameters<typeof source.prepare>) => beforeDeadline(deadline(), () => source.prepare(...args)),
+      settle: (...args: Parameters<typeof source.settle>) => beforeDeadline(deadline(), () => source.settle(...args)),
+      pause: (...args: Parameters<typeof source.pause>) => beforeDeadline(deadline(), () => source.pause(...args)),
+    }),
+    ...(resolve === undefined ? {} : { resolveOperationalReadiness: (...args: Parameters<NonNullable<typeof resolve>>) =>
+      beforeDeadline(deadline(), () => dependencies.resolveOperationalReadiness!(...args)) }),
+    ...(build === undefined ? {} : { buildContext: (input: Parameters<NonNullable<typeof build>>[0]) =>
+      beforeDeadline(deadline(), () => dependencies.buildContext!(input)) }),
+  });
+}
 function verifiedReadiness(value: ExplorerPrivateOperationalReadiness | null, dependencies: ExplorerPrivateConversationDependencies): ExplorerPrivateOperationalReadiness | null {
   if (!value || !dependencies.provider || !dependencies.buildContext || !dependencies.renderer || !dependencies.operationalSignal) return null;
   const configuration = parseExplorerPrivateConfigurationCandidate(value.configuration);
@@ -487,11 +528,21 @@ export async function readEndedExplorerConversations(
   } catch { return reviewFailure(); }
 }
 
-export async function commandExplorerPrivateConversation(input: Readonly<{ command: unknown; dependencies: ExplorerPrivateConversationDependencies; signal?: AbortSignal }>): Promise<ExplorerPrivateConversationResult> {
+export async function commandExplorerPrivateConversation(input: Readonly<{ command: unknown; dependencies: ExplorerPrivateConversationDependencies; signal?: AbortSignal;
+  receivedAt?: number }>): Promise<ExplorerPrivateConversationResult> {
+  // D-12: a Send's clock starts when the server receives the request (the route's performance.now() reading, taken
+  // before it reads the message), or here when no reading is passed; a reading from the future is not trusted.
+  const now = performance.now();
+  const sendStartedAt = typeof input.receivedAt === "number" && Number.isFinite(input.receivedAt) ? Math.min(input.receivedAt, now) : now;
   let command: ReturnType<typeof parseExplorerConversationCommand>;
   try { command = parseExplorerConversationCommand(input.command); } catch { return failed("denied"); }
   if (!command) return failed("denied");
-  const { dependencies } = input;
+  // Until readiness names the provider model, the deadline is the ceiling; then it follows that model's reply limit.
+  // Setup steps, prepare and the reply end before the saving reserve begins, so a reply that arrives in time can still
+  // be recorded. Other commands are unchanged.
+  let sendDeadlineAt = sendStartedAt + EXPLORER_SEND_TIME_LIMITS.ceilingMilliseconds;
+  const reserveFrom = (): number => sendDeadlineAt - EXPLORER_SEND_TIME_LIMITS.savingReserveMilliseconds;
+  const dependencies = command.kind === "send" ? withSendDeadline(input.dependencies, () => sendDeadlineAt) : input.dependencies;
   try {
     const authenticated = await dependencies.authenticate(); if (!actorValid(authenticated)) return failed("denied");
     const actor: ExplorerConversationActor = authenticated;
@@ -590,8 +641,12 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
     }
     if (read.state.messages.length > EXPLORER_CONVERSATION_LIMITS.messages - 2) return failed("refresh_required");
     if (!dependencies.resolveOperationalReadiness) return failed("provider_unavailable");
-    const readiness = verifiedReadiness(await dependencies.resolveOperationalReadiness(actor, readRow), dependencies);
+    const readiness = verifiedReadiness(await beforeDeadline(reserveFrom(), () => dependencies.resolveOperationalReadiness!(actor, readRow)), dependencies);
     if (!readiness || input.signal?.aborted) return failed("provider_unavailable");
+    // The model is known now (verifiedReadiness checked its name), so the deadline follows its reply limit. A setting
+    // above the reply invoker's maximum (refused by explorerSendTimeLimits.test.ts) is held to that maximum here.
+    const replyLimit = Math.min(openAiReplyLimitMilliseconds(readiness.modelName), EXPLORER_SAFETY_REPLY_LIMITS.maximumTimeoutMilliseconds);
+    sendDeadlineAt = sendStartedAt + explorerSendDeadlineMilliseconds(replyLimit);
     // Checked wherever this Send would otherwise report available (a saved reply, a later exact
     // replay, or a paused refusal), so the reply to the last allowed Send already reports the Virtual Guide unavailable.
     const capacity = (): boolean => sendCapacityAvailable(dependencies);
@@ -658,7 +713,8 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
     // leave an empty conversation when observe or prepare refuses it).
     const phrase = detectExplorerFallback(command.body, readiness.configuration.fallback);
     let pauseRow: ExplorerPrivatePauseRow | null = null;
-    try { pauseRow = await dependencies.repository.pause(actor); } catch { /* observe and prepare still enforce the stops */ }
+    try { pauseRow = await beforeDeadline(reserveFrom(), () => dependencies.repository.pause(actor)); }
+    catch { /* observe and prepare still enforce the stops */ }
     if (pauseRow?.outcome === "denied") return failed("denied");
     if (pauseRow?.outcome === "ok" && pauseRow.notice_kind !== null && pauseRow.notice_kind !== undefined &&
         !(pauseRow.notice_kind === "individual" && phrase.status === "available" && phrase.classification.level >= 3)) {
@@ -687,9 +743,9 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
     let ensuredRow: ExplorerPrivateRpcRow;
     let ensured: ExplorerConversationResult;
     try {
-      ensuredRow = await dependencies.repository.ensure({ ...base(actor), ...methodology,
+      ensuredRow = await beforeDeadline(reserveFrom(), () => dependencies.repository.ensure({ ...base(actor), ...methodology,
         p_candidate_conversation_id: scoped(actor, "new", command.operationId, "conversation"),
-        p_expected_revision: command.expectedRevision, p_configuration_fingerprint: readiness.configurationFingerprint });
+        p_expected_revision: command.expectedRevision, p_configuration_fingerprint: readiness.configurationFingerprint }));
       ensured = stateResult(["created", "reused"].includes(ensuredRow.outcome) ? { ...ensuredRow, outcome: "ok" } : ensuredRow, true);
     } catch { return await ensureRefused(failed().result, policy); }
     if (!ensured.ok || !ensured.state.conversationId) return await ensureRefused(ensured.ok ? failed().result : ensured, policy);
@@ -767,7 +823,7 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
         p_fallback_policy_version: fallback.policyVersion, p_model_policy_version: readiness.modelPolicyVersion,
         p_configuration_fingerprint: readiness.configurationFingerprint,
         p_fallback_level: fallback.classification.level, p_fallback_minor_indicated: fallback.classification.minorIndicated };
-      const observed = await dependencies.repository.observe(observationParameters);
+      const observed = await beforeDeadline(reserveFrom(), () => dependencies.repository.observe(observationParameters));
       if (observed.outcome === "exact_replay") {
         const replay = await dependencies.repository.read(actor, { operationId: command.operationId, fingerprint });
         return replay.outcome === "exact_replay" ? replayedSend(replay, capacity(), actor, command, dependencies, input.signal) : transient("preparation_unavailable");
@@ -778,7 +834,7 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
       rememberedPolicy = retainKnownPolicy(rememberedPolicy, policy);
       // AV3 includes policy/anchor facts. Observe may advance them, so neither
       // a preanchor read nor ensure's authority is reused as current authority.
-      const builderRow = await dependencies.repository.read(actor, { operationId: command.operationId, fingerprint });
+      const builderRow = await beforeDeadline(reserveFrom(), () => dependencies.repository.read(actor, { operationId: command.operationId, fingerprint }));
       const builderState = stateResult(builderRow, true);
       if (!builderState.ok || builderState.state.conversationId !== ids.conversationId) return transient("preparation_unavailable");
       if (builderRow.outcome === "exact_replay") return replayedSend(builderRow, capacity(), actor, command, dependencies, input.signal);
@@ -787,7 +843,7 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
       rememberedPolicy = retainKnownPolicy(rememberedPolicy, policy);
       const mode = selectExplorerSafetyRequestMode(policy, fallback);
       if (mode === null || policy.status !== "known" || input.signal?.aborted) return transient("preparation_unavailable");
-      const context = await dependencies.buildContext!({ actor, row: builderRow, state: builderState.state, command, ids, readiness, mode, signal: input.signal });
+      const context = await beforeDeadline(reserveFrom(), () => dependencies.buildContext!({ actor, row: builderRow, state: builderState.state, command, ids, readiness, mode, signal: input.signal }));
       const request = parseExplorerSafetyReplyRequest(context.request);
       const authority = builderRow.authority_context;
       if (!pinnedPolicyText(request.authorizedContext, readiness.configuration, mode) || request.invocationId !== ids.invocationId || request.sessionId !== ids.conversationId || request.contextSnapshotId !== ids.snapshotId ||
@@ -798,11 +854,18 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
         context.evidence.p_policy_version !== readiness.configuration.globalPolicy.version || context.evidence.p_behavior_version !== readiness.configuration.roleBehavior.version ||
         context.evidence.p_crisis_version !== readiness.configuration.crisisBehavior.version || context.evidence.p_role_version !== readiness.configuration.roleVersion ||
         input.signal?.aborted) return transient("preparation_unavailable");
-      const prepared = await dependencies.repository.prepare({ ...context.evidence, ...observationParameters, ...methodology,
+      // Prepare saves and counts the message, so it starts only while the time before the reserve covers its own
+      // alarm plus a minimum reply window; otherwise the message is not saved, the Send is not counted and the typed
+      // message is kept (what earlier steps stored stays, as for any refusal before prepare). Its
+      // second alarm is the start of the reserve, so settlement always keeps the whole reserve.
+      if (!(reserveFrom() - performance.now() >= EXPLORER_SEND_TIME_LIMITS.prepareAllowanceMilliseconds +
+        EXPLORER_SEND_TIME_LIMITS.minimumReplyMilliseconds)) return transient("preparation_unavailable");
+      const prepareParameters: ExplorerPrivatePrepareParameters = { ...context.evidence, ...observationParameters, ...methodology,
         p_message_id: ids.messageId, p_snapshot_id: ids.snapshotId, p_invocation_id: ids.invocationId, p_body: command.body,
         p_context_serialization: request.authorizedContext, p_context_fingerprint_sha256: request.contextFingerprint, p_request_mode: mode,
         p_trusted_response_version: readiness.configuration.trustedResponses.version, p_resource_policy_version: readiness.resourcePolicyVersion,
-        p_expected_safety_version: policy.safetyVersion, p_model_name: readiness.modelName, p_reply_choice: command.replyChoice === true });
+        p_expected_safety_version: policy.safetyVersion, p_model_name: readiness.modelName, p_reply_choice: command.replyChoice === true };
+      const prepared = await beforeDeadline(reserveFrom(), () => dependencies.repository.prepare(prepareParameters));
       if (prepared.outcome === "exact_replay") {
         const replay = await dependencies.repository.read(actor, { operationId: command.operationId, fingerprint });
         return replay.outcome === "exact_replay" ? replayedSend(replay, capacity(), actor, command, dependencies, input.signal)
@@ -819,7 +882,11 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
       // Dispatch observation and terminal persistence have separate try blocks:
       // an uncertain settlement can never trigger a contradictory second post.
       let observedModel = null as Awaited<ReturnType<typeof invokeExplorerSafetyReply>> | null;
-      try { if (dispatchAdmitted) observedModel = await invokeExplorerSafetyReply({ request, transport: dependencies.provider!, timeoutMilliseconds: 60_000, signal: input.signal }); }
+      // The reply's alarm is the model's reply limit, shortened to the time left before the saving reserve. With too
+      // little time left the provider is not called, and the turn is settled as failed for the deadline.
+      const replyTimeout = Math.floor(Math.min(replyLimit, reserveFrom() - performance.now()));
+      const replyInTime = replyTimeout >= EXPLORER_SAFETY_REPLY_LIMITS.minimumTimeoutMilliseconds;
+      try { if (dispatchAdmitted && replyInTime) observedModel = await invokeExplorerSafetyReply({ request, transport: dependencies.provider!, timeoutMilliseconds: replyTimeout, signal: input.signal }); }
       catch { /* Exact prepared operation will receive one failed terminal intent. */ }
       const model = observedModel?.observation?.classification ?? null;
       knownModel = model;
@@ -895,7 +962,8 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
         p_compass_suggestions: proposedPoints?.length ? Object.freeze(proposedPoints) : null,
         p_compass_responses: proposedResponses?.length ? Object.freeze(proposedResponses) : null,
         p_waypoint_suggestion: waypointSuggestion, p_waypoint_response: waypointResponse,
-        p_failure_reason: replyKind !== "none" ? null : observedModel?.reason ?? (model === null ? dispatchAdmitted ? "transport_failed" : "dispatch_not_admitted"
+        p_failure_reason: replyKind !== "none" ? null : observedModel?.reason ?? (model === null
+          ? dispatchAdmitted ? replyInTime ? "transport_failed" : "deadline" : "dispatch_not_admitted"
           : renderFailed ? "trusted_render_unavailable" : candidate.kind === "unusable" ? "invalid_response" : null) };
       let settled: ExplorerPrivateRpcRow;
       try { settled = await dependencies.repository.settle(settlement); }

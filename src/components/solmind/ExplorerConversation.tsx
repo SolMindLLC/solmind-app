@@ -17,9 +17,12 @@ import { latestReplyChoices } from "@/lib/solmind/explorerReplyChoices";
 import { completeWaypointDraft, waypointLimitReached } from "@/lib/solmind/explorerWaypointDraft";
 import { EXPLORER_TOUR_CHOICE } from "@/lib/solmind/explorerConversationTour";
 import { useExplorerEarlyTestNoticeRecheck } from "@/lib/solmind/explorerEarlyTestNoticeRecheck";
+import { EXPLORER_SEND_SCREEN_LIMIT_MILLISECONDS } from "@/lib/solmind/explorerSendScreenLimit";
 
 const STATE_PATH = "/explorer/conversation/state";
 const COMMAND_PATH = "/explorer/conversation/commands";
+// The state read and the commands other than Send. A Send waits longer, past the server's overall Send deadline
+// (correction D-12, 2026-11-09).
 const RESPONSE_BUDGET_MS = 70_000;
 const RESULT_CHARACTER_LIMIT = 1_200_000;
 const REQUEST_BYTE_LIMIT = 16_384;
@@ -184,7 +187,8 @@ export function ExplorerConversation() {
     const generation = ++generationRef.current;
     const controller = new AbortController();
     activeRef.current = controller;
-    const timer = setTimeout(() => controller.abort(), RESPONSE_BUDGET_MS);
+    const timer = setTimeout(() => controller.abort(),
+      pending.command.kind === "send" ? EXPLORER_SEND_SCREEN_LIMIT_MILLISECONDS : RESPONSE_BUDGET_MS);
     let followUp: PendingCommand | null = null;
     try {
       const response = await fetch(COMMAND_PATH, {

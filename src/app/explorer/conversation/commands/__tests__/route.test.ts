@@ -48,8 +48,19 @@ describe("POST Explorer conversation commands boundary", () => {
     expect(await invoke(next)).toEqual({ ok: false, state: null, error: "provider_unavailable" });
     expect(dynamic).toBe("force-dynamic"); expect(runtime).toBe("nodejs");
     expect(mocks.factory).toHaveBeenCalledExactlyOnceWith(raw);
-    expect(mocks.command).toHaveBeenCalledExactlyOnceWith({ command, dependencies, signal: next.signal });
+    expect(mocks.command).toHaveBeenCalledExactlyOnceWith({ command, dependencies, signal: next.signal, receivedAt: expect.any(Number) });
     expect(Object.isFrozen(mocks.command.mock.calls[0][0].command)).toBe(true);
+  });
+  // Correction D-12: the Send's deadline counts from the request's arrival, so the time spent reading the message is
+  // inside it (review of D-12, finding 1).
+  it("P01b takes the arrival time before it reads the message", async () => {
+    const next = request(); let readAt = Number.NaN;
+    const original = next.body;
+    vi.spyOn(next, "body", "get").mockImplementation(() => { if (Number.isNaN(readAt)) readAt = performance.now(); return original; });
+    await invoke(next);
+    const receivedAt = mocks.command.mock.calls[0][0].receivedAt as number;
+    expect(Number.isFinite(receivedAt)).toBe(true);
+    expect(receivedAt).toBeLessThanOrEqual(readAt);
   });
   it("P02 query authority is rejected before config, body or factory", async () => {
     const next = request({ query: "?actorAccountId=synthetic" });
@@ -101,7 +112,7 @@ describe("POST Explorer conversation commands boundary", () => {
       itemId: command.operationId, response };
     const next = request({ body });
     await invoke(next);
-    expect(mocks.command).toHaveBeenCalledExactlyOnceWith({ command: body, dependencies, signal: next.signal });
+    expect(mocks.command).toHaveBeenCalledExactlyOnceWith({ command: body, dependencies, signal: next.signal, receivedAt: expect.any(Number) });
     expect(Object.isFrozen(mocks.command.mock.calls[0][0].command)).toBe(true);
   });
   it.each(["factory", "engine"] as const)("P06 %s failure emits no private details", async source => {
@@ -116,7 +127,7 @@ describe("POST Explorer conversation commands boundary", () => {
       draftId: command.operationId, response };
     const next = request({ body });
     await invoke(next);
-    expect(mocks.command).toHaveBeenCalledExactlyOnceWith({ command: body, dependencies, signal: next.signal });
+    expect(mocks.command).toHaveBeenCalledExactlyOnceWith({ command: body, dependencies, signal: next.signal, receivedAt: expect.any(Number) });
     expect(Object.isFrozen(mocks.command.mock.calls[0][0].command)).toBe(true);
   });
   it.each(["title", "destination", "whyItMatters", "arrivalSignal", "actorAccountId"])(

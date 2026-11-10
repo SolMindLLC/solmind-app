@@ -9,6 +9,28 @@ export const EXPLORER_SAFETY_REPLY_LIMITS = Object.freeze({
   choices: 3, choiceLabelCharacters: 40, compassSuggestions: 3, compassResponses: 3, compassLabelCharacters: 160,
   minimumTimeoutMilliseconds: 10, maximumTimeoutMilliseconds: 60_000,
 });
+// Correction D-12 (2026-11-09; REV341b finding 3): one overall deadline for a Send, set when the Send starts: the setup
+// allowance (every step before the reply) plus the provider model's reply limit plus a reserve for the steps after
+// the reply (trusted rendering and settlement), capped at the ceiling. Every step keeps its own limit but never waits
+// past the time left, and the reply gets the smaller of its limit and the time left before the reserve. The screen
+// waits the ceiling plus a margin (EXPLORER_SEND_SCREEN_LIMIT_MILLISECONDS), which leaves the server time to answer first.
+// Paul's decisions, PRJ01-SPR002 decision queue, meeting part 2 entry, items 4, 6 and 7; the values are the Executor's
+// proposal, shown to Paul with the change. The clock starts when the server receives the request, before it reads the
+// message. Prepare saves and counts the message, so it starts only while the time before the reserve still covers its
+// own alarm (prepareAllowanceMilliseconds, at least the prepare port's limit) plus a minimum reply window; otherwise the
+// Send is refused before the message is saved or the Send counted (review of D-12, finding 2).
+export const EXPLORER_SEND_TIME_LIMITS = Object.freeze({
+  setupAllowanceMilliseconds: 25_000,
+  savingReserveMilliseconds: 15_000,
+  prepareAllowanceMilliseconds: 10_000,
+  minimumReplyMilliseconds: 15_000,
+  ceilingMilliseconds: 120_000,
+  screenMarginMilliseconds: 10_000,
+});
+export function explorerSendDeadlineMilliseconds(replyLimitMilliseconds: number): number {
+  return Math.min(EXPLORER_SEND_TIME_LIMITS.ceilingMilliseconds,
+    EXPLORER_SEND_TIME_LIMITS.setupAllowanceMilliseconds + replyLimitMilliseconds + EXPLORER_SEND_TIME_LIMITS.savingReserveMilliseconds);
+}
 export type ExplorerSafetyLevel = 0 | 1 | 2 | 3 | 4;
 export type ExplorerSafetyClassification = Readonly<{ level: ExplorerSafetyLevel; minorIndicated: boolean }>;
 export type ExplorerSafetyRequestMode = "classification_and_reply" | "classification_only";

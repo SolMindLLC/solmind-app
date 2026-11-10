@@ -8,6 +8,64 @@ This version has breaking changes - APIs, conventions, and file structure may al
 
 # SolMind App Agent Instructions
 
+## One overall time limit for each Send (correction D-12) - 2026-11-09
+
+Paul's decisions (PRJ01-SPR002 decision queue, entry "Meeting part 2 decisions",
+items 4, 6 and 7): an alarm per step and a clock reading between steps, under one
+overall deadline, and one reply-time setting per provider model. Before this, the
+steps' own limits added up to about 3.5 minutes while the screen gave up after 70
+seconds, so a Send within every step limit could be shown as unconfirmed
+(REV341b finding 3).
+
+`OPENAI_REPLY_LIMIT_MILLISECONDS` in
+`src/lib/solmind/virtual-guide/openAiModelConfiguration.ts` holds the reply limit
+per model (a default, 60 seconds, and no per-model entries yet);
+`openAiReplyLimitMilliseconds` picks it. `EXPLORER_SEND_TIME_LIMITS` in
+`explorerSafetyReplyContract.ts` holds the setup allowance (25 seconds), the
+saving reserve (15 seconds), the prepare allowance (10 seconds, at least the
+prepare port's own limit), the minimum reply window (15 seconds), the ceiling (120
+seconds) and the screen's margin (10 seconds); `explorerSendDeadlineMilliseconds`
+gives setup plus reply plus reserve, never more than the ceiling (100 seconds for
+Luna). The commands route takes `performance.now()` before it reads the message
+and passes it as `receivedAt`, so a Send's clock starts when the server receives
+the request (a missing, non-finite or future reading falls back to the
+composition's own clock). In `explorerPrivateConversationComposition.ts` the
+deadline is the ceiling until readiness names the model, then that model's
+deadline; a setting above the invoker's 60-second maximum is held to it. Through
+`withSendDeadline`, sign-in, every database port the Send uses (read, ensure,
+observe, prepare, settle, pause), readiness and the context build end by that
+deadline, failure-path reads included. The first pause read, ensure, observe,
+the context-source read, the context build and prepare also end before the saving
+reserve begins; readiness ends before the reserve of the ceiling, since the model
+is not known yet. A step is not started once its time has passed. Prepare, which
+saves and counts the message, starts only while the time before the reserve
+covers the prepare allowance plus the minimum reply window; otherwise the message
+is not saved, the Send is not counted and the typed message is kept (what the
+steps before prepare already stored, such as a new empty conversation or the
+message's safety observation, stays, as for any refusal before prepare). The reply's alarm is the model's
+limit shortened to the time left before the reserve; with less than the invoker's
+10-millisecond minimum the provider is not called and the saved turn is settled
+as failed with the existing reason `deadline`. Safety markers and trusted
+rendering keep only their own one- and two-second alarms, so a marker is still
+attempted after the deadline (at most about one second past it). The other
+commands are unchanged. Every step keeps its own alarm
+(`explorerPrivateRequestBudgets.ts`; a test checks prepare's and settlement's fit
+the prepare allowance and the reserve); racing a step only stops waiting and
+proves no remote stop. Known limits: a hosting platform or proxy whose response
+limit is under 130 seconds would cut a slow Send before the screen's wait ends;
+the local demo has none, and hosting must allow at least that long. Time before
+the route's first line is outside the server's clock: the demo runs under
+`next dev`, where the first request after a start compiles the route; at Luna's
+limits with the step alarms the server answers by about 101 seconds, leaving
+about 29 seconds of the screen's wait for that.
+
+`src/lib/solmind/explorerSendScreenLimit.ts` holds the screen's wait for a Send,
+130 seconds (the ceiling plus the margin; repeated there because the contract is
+server-only, and `explorerSendTimeLimits.test.ts` checks that the two agree and
+fails when any model's setting would pass the ceiling). `ExplorerConversation.tsx`
+uses it for a Send; the state read and the other commands keep 70 seconds. The
+uncertain-retry and exact-replay rules are unchanged. No database change.
+
 ## Five Waypoints per conversation (lane 12) - 2026-11-06
 
 Paul's rule (decision queue 2026-11-05 19:38:45 CST, Waypoint limits rule 2;
@@ -1472,6 +1530,8 @@ and renders assistance separately from saved history. A confirmed state carrying
 assistance retains the send draft and suppresses the saved-reply confirmation;
 authority loss still clears private state. The retained 70-second browser abort
 is a local response wait, not a whole-command deadline or remote-work drain proof.
+Amendment 2026-11-09 (D-12): a Send now waits 130 seconds, beyond the server's
+overall Send deadline (top of this file); other commands keep 70 seconds.
 
 The bounded scope permits preparing this held wiring, not provider activation,
 operational acceptance or real-user effects. Initial candidate checks are UNRUN;
@@ -1507,7 +1567,9 @@ and each supplied one of the six v3 repository ports have 10-second waits;
 operational readiness has 15 seconds and context construction 30 seconds. Context
 combines caller cancellation with its owned deadline signal. Provider observation,
 reviewed rendering and operational signal retain their existing 60/2/1-second
-owners. The retained predecessor factory does not acquire these wrappers.
+owners (amendment 2026-11-09, D-12: the reply's alarm is now the model's limit,
+shortened by the overall Send deadline; top of this file). The retained
+predecessor factory does not acquire these wrappers.
 
 Default private dependencies still contain only wrapped auth/repository, with
 no optional operational ports activated. The wrapper checks immediate native
@@ -1515,7 +1577,9 @@ Promise returns and supplies generic failures, without automatic retry/repost.
 Local Promise.race/deadline completion does not prove underlying remote stop,
 transaction rollback or work drain; synchronous trusted code is not sandboxed.
 The browser's 70-second abort controls delivery interest/uncertainty, not these
-server-phase owners or remote settlement. Await ownership is implemented;
+server-phase owners or remote settlement (amendment 2026-11-09, D-12: 130 seconds
+for a Send, and the composition adds one overall Send deadline above these waits;
+top of this file). Await ownership is implemented;
 finite joined-path timing and actual governance/integrity/activation proof remain
 unproven. New fake-timer cases are initially UNRUN. Factory tests must verify
 exact authority/argument behavior and held optional absence through the wrappers,

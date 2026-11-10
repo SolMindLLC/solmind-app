@@ -9,6 +9,8 @@ import { EXPLORER_PRIVATE_RESPONSE_VERSION, parseExplorerPrivateConversationResp
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export async function POST(request: NextRequest): Promise<Response> {
+  // A Send's overall deadline counts from here, before the message is read (correction D-12).
+  const receivedAt = performance.now();
   const headers = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" };
   const failure = (error: "denied" | "unavailable") => NextResponse.json({ version: EXPLORER_PRIVATE_RESPONSE_VERSION,
     result: { ok: false, state: null, error }, assistance: null }, { headers });
@@ -19,7 +21,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     if (!guarded.ok || !parseExplorerConversationCommand(guarded.value)) return denied();
     const dependencies = createExplorerPrivateLocalRequestDependencies(request.headers.get("cookie"));
     const output = await commandExplorerPrivateConversation({
-      command: guarded.value, dependencies, signal: request.signal,
+      command: guarded.value, dependencies, signal: request.signal, receivedAt,
     });
     const response = parseExplorerPrivateConversationResponse({ version: EXPLORER_PRIVATE_RESPONSE_VERSION, ...output });
     return response === null ? failure("unavailable") : NextResponse.json(response, { headers });

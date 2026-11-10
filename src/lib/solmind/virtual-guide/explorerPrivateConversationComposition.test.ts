@@ -9,6 +9,13 @@ import { EXPLORER_FAILED_REPLY_RETRY_DRAFT, adaptPrivateGovernedExplorerContextB
 import type { ExplorerConversationState, ExplorerConversationCommand } from "../explorerConversationContract";
 import type { ExplorerSafetyReplyPlan } from "./explorerConversationSafety";
 import { explorerConversationCommandFingerprint, type PrivateExplorerConversationContextBuilder } from "./explorerConversationComposition";
+import { openAiReplyLimitMilliseconds } from "./openAiModelConfiguration";
+
+// Correction D-12: the real reply-limit setting, wrapped so a test can give one Send a different model limit.
+vi.mock("./openAiModelConfiguration", async importOriginal => {
+  const actual = await importOriginal<typeof import("./openAiModelConfiguration")>();
+  return { ...actual, openAiReplyLimitMilliseconds: vi.fn(actual.openAiReplyLimitMilliseconds) };
+});
 
 const ID = { actor: "00000000-0000-4000-8000-000000000001", app: "00000000-0000-4000-8000-000000000002",
   conversation: "00000000-0000-4000-8000-000000000003", explorer: "00000000-0000-4000-8000-000000000004",
@@ -2073,5 +2080,222 @@ describe("Crisis checks omit saved Compass context before preparation", () => {
         await commandExplorerPrivateConversation({ command: send(), dependencies: { ...f.dependencies, buildContext } });
         expect(f.prepare).not.toHaveBeenCalled(); expect(f.generate).not.toHaveBeenCalled(); expect(f.settle).not.toHaveBeenCalled();
       }
+    });
+});
+
+// Correction D-12 (2026-11-09): one overall deadline per Send, from the model's reply limit (Luna 60 s): setup
+// allowance 25 s + reply 60 s + saving reserve 15 s = 100 s; setup steps and the reply end by 85 s (REV341b finding 3).
+describe("D-12 overall Send deadline", () => {
+  const sleep = (milliseconds: number) => new Promise<void>(resolve => { setTimeout(resolve, milliseconds); });
+  type BuildInput = Parameters<NonNullable<ExplorerPrivateConversationDependencies["buildContext"]>>[0];
+  function slowContext(f: ReturnType<typeof fixture>, milliseconds: number | null): ExplorerPrivateConversationDependencies {
+    const build = f.dependencies.buildContext!;
+    return { ...f.dependencies, buildContext: async (input: BuildInput) => {
+      if (milliseconds === null) return new Promise<never>(() => undefined);
+      await sleep(milliseconds); return build(input);
+    } };
+  }
+  function watch<T>(pending: Promise<T>) { const seen = { done: false }; void pending.then(() => { seen.done = true; }); return seen; }
+  it("completes a slow setup plus a long reply inside the deadline, with one provider call", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    const f = fixture(); f.generate.mockImplementation(async () => { await sleep(59_000); return RAW; });
+    const pending = commandExplorerPrivateConversation({ command: send(), dependencies: slowContext(f, 20_000) });
+    await vi.advanceTimersByTimeAsync(79_000);
+    const output = await pending;
+    // 79 seconds: past the screen's old 70-second wait, inside the server's limits.
+    expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_status: "completed", p_reply_kind: "ordinary", p_failure_reason: null });
+    expect(output).toMatchObject({ result: { ok: true }, assistance: null });
+  });
+  it("shortens the reply's alarm by the time setup used", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    const f = fixture(); f.generate.mockImplementation(() => new Promise(() => undefined));
+    const pending = commandExplorerPrivateConversation({ command: send(), dependencies: slowContext(f, 40_000) });
+    await vi.advanceTimersByTimeAsync(40_000 + 44_999);
+    expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await pending;
+    expect(f.settle).toHaveBeenCalledOnce();
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_status: "failed", p_failure_reason: "deadline" });
+  });
+  it("stops a setup step at the saving reserve, before anything is saved, counted or sent", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    const f = fixture();
+    const pending = commandExplorerPrivateConversation({ command: send(), dependencies: slowContext(f, null) });
+    const seen = watch(pending);
+    await vi.advanceTimersByTimeAsync(84_999);
+    expect(seen.done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const output = await pending;
+    for (const port of [f.prepare, f.generate, f.settle]) expect(port).not.toHaveBeenCalled();
+    expect(output.assistance?.kind).toBe("temporarily_unavailable");
+  });
+  it("reads the clock before prepare and does not save or count the message without setup time left", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const realNow = performance.now.bind(performance); let offset = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => realNow() + offset);
+    const f = fixture(); const build = f.dependencies.buildContext!;
+    const output = await commandExplorerPrivateConversation({ command: send(), dependencies: { ...f.dependencies,
+      buildContext: async (input: BuildInput) => { const built = await build(input); offset += 86_000; return built; } } });
+    for (const port of [f.prepare, f.generate, f.settle]) expect(port).not.toHaveBeenCalled();
+    expect(output.assistance?.kind).toBe("temporarily_unavailable");
+  });
+  // Prepare starts only with its own 10 s alarm plus a 15 s minimum reply window left before the reserve (85 s).
+  it.each([[60_000, true], [60_001, false]] as const)("starts prepare after a %i ms setup: %s", async (setup, started) => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    const f = fixture();
+    const pending = commandExplorerPrivateConversation({ command: send(), dependencies: slowContext(f, setup) });
+    await vi.advanceTimersByTimeAsync(setup);
+    const output = await pending;
+    expect(f.prepare).toHaveBeenCalledTimes(started ? 1 : 0);
+    if (!started) { expect(f.generate).not.toHaveBeenCalled(); expect(output.assistance?.kind).toBe("temporarily_unavailable"); }
+  });
+  // A prepare that is slow but inside its alarms can leave less than the invoker's 10 ms minimum: the provider is then
+  // not called and the saved turn is settled as failed for the deadline.
+  it.each([[84_990, true], [84_991, false]] as const)("after a prepare ending at %i ms calls the provider: %s", async (prepareEnds, called) => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    const f = fixture(); const prepare = f.prepare.getMockImplementation()!;
+    f.prepare.mockImplementation(async parameters => { await sleep(prepareEnds); return prepare(parameters); });
+    f.generate.mockImplementation(() => new Promise(() => undefined));
+    const pending = commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    await vi.advanceTimersByTimeAsync(prepareEnds + 10);
+    await pending;
+    expect(f.prepare).toHaveBeenCalledOnce(); expect(f.generate).toHaveBeenCalledTimes(called ? 1 : 0);
+    expect(f.settle).toHaveBeenCalledOnce();
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_status: "failed", p_reply_kind: "none", p_failure_reason: "deadline" });
+  });
+  it("answers by the overall deadline when settlement hangs, with one terminal intent and no second call", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    const f = fixture(); f.settle.mockImplementation(() => new Promise(() => undefined));
+    const pending = commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    const seen = watch(pending);
+    await vi.advanceTimersByTimeAsync(99_999);
+    expect(seen.done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const output = await pending;
+    expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
+    expect(output.result.ok).toBe(false);
+  });
+  it("leaves the commands other than Send without the overall deadline", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    const f = fixture(); f.setCurrent(state(ID.conversation));
+    // The first read is a port the Send's deadline would bound; another command keeps only its own alarms.
+    const read = f.read.getMockImplementation()!;
+    f.read.mockImplementation(async () => { await sleep(130_000); return read(); });
+    const pending = commandExplorerPrivateConversation({ command: { kind: "set_attention", operationId: ID.operation, expectedRevision: 0, itemId: ID.intake },
+      dependencies: f.dependencies });
+    await vi.advanceTimersByTimeAsync(130_000);
+    const output = await pending;
+    expect(f.mutate).toHaveBeenCalledOnce(); expect(output.result.ok).toBe(true);
+  });
+
+  // Every step the Send awaits ends by its deadline even when the port never answers (review of D-12, finding 4):
+  // before readiness the ceiling (120 s, readiness itself 105 s), setup steps and prepare the reserve (85 s), and the
+  // rest the overall deadline (100 s).
+  const hang = () => new Promise<never>(() => undefined);
+  function nth<A extends unknown[], R>(call: number, original: (...args: A) => Promise<R>) {
+    let calls = 0;
+    return (...args: A): Promise<R> => (++calls === call ? hang() : original(...args));
+  }
+  const PAUSED_ROW = { outcome: "paused", policy_state: POLICY } as ExplorerPrivateRpcRow;
+  const hangs: ReadonlyArray<readonly [string, number, (f: ReturnType<typeof fixture>) => ExplorerPrivateConversationDependencies]> = [
+    ["sign-in", 120_000, f => ({ ...f.dependencies, authenticate: nth(1, f.dependencies.authenticate) })],
+    ["the first read", 120_000, f => { f.read.mockImplementation(nth(1, f.read.getMockImplementation()!)); return f.dependencies; }],
+    ["readiness", 105_000, f => { f.resolve.mockImplementation(nth(1, f.resolve.getMockImplementation()!)); return f.dependencies; }],
+    ["the pause read", 85_000, f => { f.pause.mockImplementation(nth(1, f.pause.getMockImplementation()!)); return f.dependencies; }],
+    ["ensure", 85_000, f => { f.ensure.mockImplementation(nth(1, f.ensure.getMockImplementation()!)); return f.dependencies; }],
+    ["observe", 85_000, f => { f.observe.mockImplementation(nth(1, f.observe.getMockImplementation()!)); return f.dependencies; }],
+    ["the context-source read", 85_000, f => { f.read.mockImplementation(nth(2, f.read.getMockImplementation()!)); return f.dependencies; }],
+    ["prepare", 85_000, f => { f.prepare.mockImplementation(nth(1, f.prepare.getMockImplementation()!)); return f.dependencies; }],
+    ["settle", 100_000, f => { f.settle.mockImplementation(nth(1, f.settle.getMockImplementation()!)); return f.dependencies; }],
+    ["the exact-replay read after observe", 100_000, f => {
+      f.observe.mockResolvedValue({ outcome: "exact_replay" }); f.read.mockImplementation(nth(2, f.read.getMockImplementation()!)); return f.dependencies; }],
+    ["the pause read after a paused observe", 100_000, f => {
+      f.observe.mockResolvedValue(PAUSED_ROW); f.pause.mockImplementation(nth(2, f.pause.getMockImplementation()!)); return f.dependencies; }],
+    ["the fresh read on a failure path", 100_000, f => {
+      f.observe.mockResolvedValue({ outcome: "conflict", policy_state: POLICY });
+      return { ...f.dependencies, authenticate: nth(2, f.dependencies.authenticate) }; }],
+    ["readiness after a failed reply", 100_000, f => {
+      f.generate.mockRejectedValue(new Error("Synthetic transport failure"));
+      f.resolve.mockImplementation(nth(2, f.resolve.getMockImplementation()!)); return f.dependencies; }],
+    // An exact replay of a failed reply found by the first read is checked again before the model is known, so the
+    // ceiling bounds it.
+    ["readiness on a failed-reply replay found by the first read", 120_000, f => {
+      const ids = deriveExplorerPrivateTurnIds(ACTOR, ID.conversation, ID.operation);
+      f.setCurrent({ ...state(ID.conversation), revision: 2,
+        messages: [{ id: ids.messageId, role: "explorer", body: send().body, createdAt: "2026-11-06T10:00:00Z" }] });
+      const read = f.read.getMockImplementation()!;
+      f.read.mockImplementation(async (...args) => ({ ...await read(...args), outcome: "exact_replay",
+        authority_context: { explorerId: ID.explorer, authorizationVersion: "AV3:" + SHA, replayFailedReply: true } }));
+      f.resolve.mockImplementation(() => hang()); return f.dependencies; }],
+  ];
+  it.each(hangs)("answers when %s never does, by %i ms", async (_name, by, arrange) => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    const f = fixture(); const dependencies = arrange(f);
+    const pending = commandExplorerPrivateConversation({ command: send(), dependencies });
+    const seen = watch(pending);
+    await vi.advanceTimersByTimeAsync(by - 1);
+    expect(seen.done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await pending;
+    expect(f.generate.mock.calls.length).toBeLessThanOrEqual(1); expect(f.settle.mock.calls.length).toBeLessThanOrEqual(1);
+  });
+  it("keeps crisis support when settlement is cut at the deadline, after one marker of at most a second", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    const f = fixture(); f.setPolicy({ ...POLICY, restrictedLevel: 3 });
+    f.settle.mockImplementation(() => hang()); f.signal.mockImplementation(() => hang());
+    const pending = commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    const seen = watch(pending);
+    await vi.advanceTimersByTimeAsync(100_999);
+    expect(seen.done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const output = await pending;
+    expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
+    expect(f.signal).toHaveBeenCalledOnce();
+    expect(f.signal).toHaveBeenCalledWith("settlement_unconfirmed", expect.anything());
+    expect(output.assistance?.kind).toBe("support");
+  });
+  it("follows the model's own reply limit: a 30 s model ends its reply at 30 s and setup at 55 s", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    const f = fixture(); f.generate.mockImplementation(() => new Promise(() => undefined));
+    vi.mocked(openAiReplyLimitMilliseconds).mockReturnValueOnce(30_000);
+    const pending = commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(f.settle).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await pending;
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_status: "failed", p_failure_reason: "deadline" });
+    const g = fixture(); vi.mocked(openAiReplyLimitMilliseconds).mockReturnValueOnce(30_000);
+    const setup = commandExplorerPrivateConversation({ command: send(), dependencies: slowContext(g, null) });
+    const seen = watch(setup);
+    await vi.advanceTimersByTimeAsync(54_999);
+    expect(seen.done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await setup;
+    expect(g.prepare).not.toHaveBeenCalled();
+  });
+  it("holds a model setting above the invoker's maximum to 60 s instead of failing the reply at once", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    const f = fixture(); f.generate.mockImplementation(() => new Promise(() => undefined));
+    vi.mocked(openAiReplyLimitMilliseconds).mockReturnValueOnce(90_000);
+    const pending = commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies });
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await pending;
+    expect(f.settle.mock.calls[0][0]).toMatchObject({ p_status: "failed", p_failure_reason: "deadline" });
+  });
+  it.each([[-20_000, 65_000], [50_000, 85_000], [Number.NaN, 85_000]] as const)(
+    "counts from the route's arrival time (offset %i ms): setup ends by %i ms", async (offset, by) => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+      const f = fixture();
+      const pending = commandExplorerPrivateConversation({ command: send(), dependencies: slowContext(f, null),
+        receivedAt: performance.now() + offset });
+      const seen = watch(pending);
+      await vi.advanceTimersByTimeAsync(by - 1);
+      expect(seen.done).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await pending;
+      expect(f.prepare).not.toHaveBeenCalled();
     });
 });
