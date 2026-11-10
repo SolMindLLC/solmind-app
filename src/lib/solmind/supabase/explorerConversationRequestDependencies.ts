@@ -24,6 +24,7 @@ import { join } from "node:path";
 import { readOpenAiModelName } from "../virtual-guide/openAiModelConfiguration";
 import { checkExplorerEarlyTestNoticeAccess, isExplorerEarlyTestNoticeEnabled } from "../auth/explorerEarlyTestNoticeAccess";
 import { createExplorerEarlyTestNoticeRepository } from "./explorerEarlyTestNoticeRepository";
+import { withExplorerConversationDebugLog } from "../debug/explorerConversationDebugLog"; // SOLMIND-DEBUG: remove before release
 
 // Compatibility name for the shared raw framing boundary. Owned occurrences
 // and exact values still reach the unchanged request-auth validation.
@@ -126,7 +127,9 @@ export function createExplorerPrivateLocalRequestDependencies(
       resourcePolicyVersion: profile.resourcePolicyVersion, modelName: run.modelName, renderer, operationalSignal, provider: { generate } });
     const bound = withExplorerPrivateLocalDispatch({ run, authenticate: base.authenticate, repository: base.repository,
       methodologySource, buildContext: governed.buildContext, credentialReady, generate });
-    return withExplorerPrivateRequestBudgets({ authenticate, repository,
+    // SOLMIND-DEBUG: withExplorerConversationDebugLog returns the same object unless the demo is started with debug
+    // logging on (src/lib/solmind/debug/explorerConversationDebugLog.ts); remove the wrapper before release.
+    return withExplorerConversationDebugLog(withExplorerPrivateRequestBudgets({ authenticate, repository, // SOLMIND-DEBUG: wrapper call (before release: "return withExplorerPrivateRequestBudgets({ authenticate, repository,")
       ...governed, ...bound,
       // After a Send, the same profile-expiry and daily-count check as readiness, so the reply
       // to the last allowed Send already reports the Virtual Guide unavailable.
@@ -136,6 +139,6 @@ export function createExplorerPrivateLocalRequestDependencies(
         const ready = await governed.resolveOperationalReadiness(actor, row);
         return run.available() && ready?.methodology.versionId === profile.methodologyVersionId &&
           ready.methodology.authorizationVersion === profile.methodologyAuthorizationVersion ? ready : null;
-      } });
+      } })); // SOLMIND-DEBUG: the wrapper call's closing parenthesis (before release: "} });")
   } catch { return base; }
 }

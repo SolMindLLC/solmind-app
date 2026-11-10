@@ -14,7 +14,9 @@
 // source and in the built pages alike. Pure functions only: nothing here reads
 // a file, so the unit test runs it on fixture text.
 
-export const RELEASE_MARKERS = Object.freeze(["data-build-note", "data-removal-marker"]);
+// Debug code (Paul's decision, PRJ01-SPR002 decision queue, morning meeting entry of 2026-11-10, item 12) carries the
+// fixed tag SOLMIND-DEBUG on every line and call site, so a release candidate fails while any of it remains.
+export const RELEASE_MARKERS = Object.freeze(["data-build-note", "data-removal-marker", "SOLMIND-DEBUG"]);
 
 // Nothing in the app is exempt (amended 2026-11-03, review REV224): the
 // mockup routes and files ship with every build, and Paul's rule is never to

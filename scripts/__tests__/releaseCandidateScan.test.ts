@@ -51,7 +51,19 @@ describe("release-candidate scan", () => {
       { place: ".next/static/chunks/a.js:1", marker: "data-build-note", count: 2 },
       { place: ".next/static/chunks/a.js:1", marker: "data-removal-marker", count: 1 },
     ]);
-    expect(RELEASE_MARKERS).toEqual(["data-build-note", "data-removal-marker"]);
+    expect(RELEASE_MARKERS).toEqual(["data-build-note", "data-removal-marker", "SOLMIND-DEBUG"]);
+  });
+
+  it("RC03b reports the debug tag in the app source, so debug code blocks a release candidate", () => {
+    const result = scanFiles([
+      { path: "src/lib/solmind/debug/explorerConversationDebugLog.ts", text: "// SOLMIND-DEBUG: DEBUG CODE - remove before release.\nexport const x = 1;\n" },
+      { path: "src/lib/solmind/supabase/explorerConversationRequestDependencies.ts", text: 'import { w } from "../debug/x"; // SOLMIND-DEBUG: remove before release\n' },
+      { path: "src/lib/solmind/debug/__tests__/explorerConversationDebugLog.test.ts", text: "// SOLMIND-DEBUG in a test is not the app\n" },
+    ], isScannedSource);
+    expect(result).toEqual({ passed: false, markers: 2, findings: [
+      { place: "src/lib/solmind/debug/explorerConversationDebugLog.ts:1", marker: "SOLMIND-DEBUG", count: 1 },
+      { place: "src/lib/solmind/supabase/explorerConversationRequestDependencies.ts:1", marker: "SOLMIND-DEBUG", count: 1 },
+    ] });
   });
 
   it("RC04 the source scan covers the whole app under src/, the mockups included, and leaves out only tests", () => {

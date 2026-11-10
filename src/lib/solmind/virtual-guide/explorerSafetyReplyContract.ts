@@ -218,17 +218,54 @@ export function parseExplorerSafetyWaypointSuggestion(input: unknown): ExplorerS
       whyItMatters: input.whyItMatters as string, arrivalSignal: input.arrivalSignal as string });
   } catch { return undefined; }
 }
+// The inner text of one whole reply wrapped in a Markdown code fence (```json or ```), else the text unchanged.
+function unwrappedCodeFence(rawText: string): string {
+  const fenced = /^\s*```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]*```\s*$/u.exec(rawText);
+  return fenced ? fenced[1] : rawText;
+}
+// A plain data object holding only the listed keys that the parsed value owns as data properties; null when the
+// value is not a plain object or one of those keys is an accessor.
+function knownOuterKeys(value: unknown, keys: readonly string[]): Record<string, unknown> | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return null;
+  const kept: Record<string, unknown> = {};
+  for (const key of keys) {
+    if (!Object.hasOwn(value, key)) continue;
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) return null;
+    kept[key] = descriptor.value;
+  }
+  return kept;
+}
+// True when a dropped outer key could be a competing safety signal or a misspelled known key (the same name ignoring
+// case, underscores, dashes and spaces, or a level, minorIndicated or classification field at the top): such a reply
+// is rejected whole, as before the reply fix, so the classification is never chosen between two signals.
+const EXPLORER_SAFETY_REPLY_OUTER_KEYS = Object.freeze(["protocol", "classification", "candidateReply", "compass", "choices",
+  "waypointSuggestion", "waypointResponse"]);
+export function explorerSafetyReplyHasConflictingOuterKey(value: unknown): boolean {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const normal = (key: string) => key.replace(/[\s_-]/gu, "").toLowerCase();
+  const normalKnown = EXPLORER_SAFETY_REPLY_OUTER_KEYS.map(normal);
+  return Object.keys(value).some(key => !EXPLORER_SAFETY_REPLY_OUTER_KEYS.includes(key) &&
+    (normalKnown.includes(normal(key)) || ["level", "minorindicated", "classification"].includes(normal(key))));
+}
 export function parseExplorerSafetyReplyBody(rawText: unknown, mode: ExplorerSafetyRequestMode): ExplorerSafetyReplyObservation {
   if (mode !== "classification_only" && mode !== "classification_and_reply") fail("explorer_safety_invalid_request");
   if (typeof rawText !== "string") fail("explorer_safety_invalid_response");
   if (Buffer.byteLength(rawText, "utf8") > EXPLORER_SAFETY_REPLY_LIMITS.modelBodyUtf8Bytes) fail("explorer_safety_limit_exceeded");
-  let body: unknown;
-  try { body = JSON.parse(rawText) as unknown; } catch { fail("explorer_safety_invalid_response"); }
+  let parsed: unknown;
+  // Reply fix (2026-11-10; PRJ01-SPR002 decision queue, morning meeting entry, items 14 and 15): one whole reply
+  // wrapped in a Markdown code fence is read as its inner text; anything else must still be exactly one JSON value.
+  try { parsed = JSON.parse(unwrappedCodeFence(rawText)) as unknown; } catch { fail("explorer_safety_invalid_response"); }
+  // The three required keys and any of the four optional keys are kept; any other outer key is dropped instead of
+  // rejecting the whole reply (three replies were lost on 2026-11-10 to a failed outer check). Every kept value is
+  // checked exactly as before, so the protocol, the classification and the reply text stay strict.
   const required = ["protocol", "classification", "candidateReply"];
-  const optional = body !== null && typeof body === "object"
-    ? ["compass", "choices", "waypointSuggestion", "waypointResponse"].filter(key => Object.hasOwn(body, key)) : [];
-  if (!dataObject(body, [...required, ...optional]) ||
-    body.protocol !== EXPLORER_SAFETY_REPLY_PROTOCOL) fail("explorer_safety_invalid_response");
+  const optional = ["compass", "choices", "waypointSuggestion", "waypointResponse"];
+  const body = knownOuterKeys(parsed, [...required, ...optional]);
+  if (body === null || !required.every(key => Object.hasOwn(body, key)) ||
+    body.protocol !== EXPLORER_SAFETY_REPLY_PROTOCOL || explorerSafetyReplyHasConflictingOuterKey(parsed)) fail("explorer_safety_invalid_response");
   const classification = parseExplorerSafetyClassification(body.classification);
   if (classification === null) fail("explorer_safety_invalid_response");
   // Optional proposal defects cannot erase the accepted signal or usable prose.

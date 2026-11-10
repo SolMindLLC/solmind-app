@@ -74,7 +74,7 @@ const report = (title, result) => {
   for (const finding of result.findings) console.log(`  ${finding.place}  ${finding.marker}${finding.count > 1 ? ` x${finding.count}` : ""}`);
 };
 
-console.log("Release-candidate check: no blue build notes or violet removal markers may remain.");
+console.log("Release-candidate check: no blue build notes, violet removal markers or SOLMIND-DEBUG code may remain.");
 report("Source (src/)", source);
 if (built !== null) report("Built pages (.next/server, .next/static)", built);
 for (const problem of problems) console.log(`Problem: ${problem}`);

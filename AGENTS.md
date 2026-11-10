@@ -8,6 +8,66 @@ This version has breaking changes - APIs, conventions, and file structure may al
 
 # SolMind App Agent Instructions
 
+## Debug conversation log and the reply-check fix - 2026-11-10
+
+Paul's decisions (PRJ01-SPR002 decision queue, morning meeting entry of 2026-11-10,
+items 11, 12, 14 and 15) after three Virtual Guide replies in his Waypoint
+formation test were each answered by OpenAI and then rejected whole by the reply
+checker (`invalid_response`, no classification kept), with nothing in the demo
+to show why.
+
+Debug logging (temporary; "DEBUG CODE - remove before release"). All of it is in
+`src/lib/solmind/debug/explorerConversationDebugLog.ts` (with its test), plus
+one tagged import and one tagged wrapper call in
+`createExplorerPrivateLocalRequestDependencies`
+(`src/lib/solmind/supabase/explorerConversationRequestDependencies.ts`). Every
+line and call site carries the tag `SOLMIND-DEBUG`, and the release-candidate
+scan (`scripts/releaseCandidateScan.mjs`) now counts that tag as a marker, so a
+release candidate fails while any debug code remains in `src/`. Two switches,
+both needed, like a C `#ifdef DEBUG`: a release build (`NODE_ENV` production,
+which `next build` sets and inlines) never logs and drops the guarded code (a
+production build on 2026-11-10 held none of the debug strings), and the server
+setting `SOLMIND_DEBUG_CONVERSATION_LOG` must name an existing absolute local
+folder that is not a link and does not start with two slashes or backslashes
+(mapped drives and links in parent folders are not detected); the app never
+creates it, and the day's file must be a plain file. Off, the wrapper returns the same dependencies
+object. On, it logs per request: each repository port, sign-in, readiness and
+context step (name, time, result, a row's closed `outcome` only, an error's
+message only when it is a closed code), a settlement summary (status, reply
+kind, failure reason, level, counts of kept proposals; never the reply body),
+and each raw Virtual Guide reply with the parser's own verdict
+(`parseExplorerSafetyReplyBody`: accepted with the candidate's kind and level,
+or its error code) and the first shape rule it breaks
+(`describeExplorerSafetyReplyShape`, debug only; key names cut to 64
+characters). Records are built and written after the wrapped call has
+returned (setImmediate), outside its error handling, so logging adds no time
+to the wrapped call itself and cannot change a result or an error (the deferred
+writes and a folder check at each step still take a few milliseconds). The raw reply holds
+conversation words: logging is for the local demo with invented test words
+only, never real Explorers. Every logging failure is swallowed. The
+source-isolation profiles are unchanged: the profiled AI files import nothing
+new. Before release, remove the debug folder, the tagged import and the tagged
+wrapper call: its opening line becomes
+`return withExplorerPrivateRequestBudgets({ authenticate, repository,` and its
+closing line `} });`.
+
+Reply-check fix in `parseExplorerSafetyReplyBody`
+(`explorerSafetyReplyContract.ts`): one whole reply wrapped in a Markdown code
+fence (```json or ```) is read as its inner JSON; anything else must still be
+exactly one JSON value. The three required outer keys and any of the four
+optional ones are kept and checked exactly as before; any other outer key is
+dropped instead of rejecting the reply, unless it could be a competing safety
+signal or a misspelled known key (the same name as a known key ignoring case,
+underscores, dashes and spaces, or a top-level `level`, `minorIndicated` or
+`classification` compared the same way), which still
+rejects the whole reply. The protocol, the classification and the reply text
+stay strict, and a kept key that is an accessor still rejects. A kept model
+level can only raise the safety result: `combineExplorerSafety` takes the
+higher of the phrase check and the model, above the conversation's floor.
+Until the debug log shows the actual cause of the 2026-11-10 failures, this fix
+covers the two most likely outer-shape causes; it does not change the request
+sent to OpenAI.
+
 ## One overall time limit for each Send (correction D-12) - 2026-11-09
 
 Paul's decisions (PRJ01-SPR002 decision queue, entry "Meeting part 2 decisions",

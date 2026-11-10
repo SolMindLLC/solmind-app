@@ -174,9 +174,65 @@ describe("Explorer same-call raw body contract (synthetic mechanics)", () => {
     expect(() => parseExplorerSafetyReplyBody(body(null, invalid), "classification_and_reply")).toThrow();
   });
   it("does not recover partial JSON, prose levels or invalid root shape", () => {
-    for (const raw of ['Level4: help', '{"protocol":', body().slice(0, -1),
-      JSON.stringify({ protocol: EXPLORER_SAFETY_REPLY_PROTOCOL, classification: { level: 4, minorIndicated: false }, candidateReply: null, extra: true })]) {
+    for (const raw of ['Level4: help', '{"protocol":', body().slice(0, -1), "[]", "null",
+      JSON.stringify({ protocol: EXPLORER_SAFETY_REPLY_PROTOCOL, classification: { level: 4, minorIndicated: false } }),
+      "Here it is:\n```json\n" + body() + "\n```", "```json\n" + body() + "\n``` and more", "```json\n" + body().slice(0, -1) + "\n```"]) {
       expect(() => parseExplorerSafetyReplyBody(raw, "classification_and_reply")).toThrow();
+    }
+  });
+  it("RF01 drops an unknown outer key and keeps the classification, reply and proposals, checked as before (2026-11-10 reply fix)", () => {
+    const raw = JSON.stringify({ protocol: EXPLORER_SAFETY_REPLY_PROTOCOL, classification: { level: 4, minorIndicated: false },
+      candidateReply: null, extra: true, compassResponse: [{ pointId: POINT, response: "right" }] });
+    const observation = parseExplorerSafetyReplyBody(raw, "classification_and_reply");
+    expect(observation.classification).toEqual({ level: 4, minorIndicated: false });
+    expect(observation.candidate).toEqual({ kind: "unusable" });
+    expect(Object.keys(observation).sort()).toEqual(["candidate", "classification"]);
+    const ordinary = JSON.parse(body()) as Record<string, unknown>;
+    const kept = parseExplorerSafetyReplyBody(JSON.stringify({ ...ordinary, note: "x" }), "classification_and_reply");
+    expect(kept).toEqual(parseExplorerSafetyReplyBody(body(), "classification_and_reply"));
+  });
+  it("RF02 keeps the strict checks on the kept keys: a wrong protocol or classification stays fatal beside an extra key", () => {
+    const ordinary = JSON.parse(body()) as Record<string, unknown>;
+    for (const raw of [JSON.stringify({ ...ordinary, protocol: "explorer-safety-reply.v1", extra: 1 }),
+      JSON.stringify({ ...ordinary, classification: { level: 3, minorIndicated: false, explanation: "No" }, extra: 1 })]) {
+      expect(() => parseExplorerSafetyReplyBody(raw, "classification_and_reply")).toThrowError("explorer_safety_invalid_response");
+    }
+  });
+  it("RF04 rejects a dropped key that could be a competing safety signal or a misspelled known key", () => {
+    const ordinary = JSON.parse(body()) as Record<string, unknown>;
+    for (const extra of [{ Classification: { level: 4, minorIndicated: false } }, { level: 4 }, { minorIndicated: true },
+      { CandidateReply: { content: "x" } }, { PROTOCOL: "explorer-safety-reply.v2" }, { minor_indicated: true },
+      { "waypoint-suggestion": {} }, { "Level ": 4 }]) {
+      expect(() => parseExplorerSafetyReplyBody(JSON.stringify({ ...ordinary, ...extra }), "classification_and_reply"))
+        .toThrowError("explorer_safety_invalid_response");
+    }
+  });
+  it("RF05 keeps minorIndicated, drops a __proto__ key without effect, and reads fenced, multi-line and classification-only replies", () => {
+    const minor = JSON.stringify({ protocol: EXPLORER_SAFETY_REPLY_PROTOCOL, classification: { level: 2, minorIndicated: true }, candidateReply: null });
+    expect(parseExplorerSafetyReplyBody("```json\n" + minor + "\n```", "classification_and_reply").classification).toEqual({ level: 2, minorIndicated: true });
+    const proto = '{"__proto__":{"polluted":true},"protocol":"' + EXPLORER_SAFETY_REPLY_PROTOCOL +
+      '","classification":{"level":0,"minorIndicated":false},"candidateReply":null}';
+    const observation = parseExplorerSafetyReplyBody(proto, "classification_and_reply");
+    expect(observation.classification).toEqual({ level: 0, minorIndicated: false });
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    const pretty = JSON.stringify(JSON.parse(body()), null, 2);
+    expect(parseExplorerSafetyReplyBody("```json\n" + pretty + "\n```", "classification_and_reply"))
+      .toEqual(parseExplorerSafetyReplyBody(body(), "classification_and_reply"));
+    expect(parseExplorerSafetyReplyBody("```\n" + minor + "\n```", "classification_only"))
+      .toEqual({ classification: { level: 2, minorIndicated: true }, candidate: { kind: "not_requested" } });
+  });
+  it("RF06 still rejects a kept key that is an accessor", () => {
+    const accessor = { protocol: EXPLORER_SAFETY_REPLY_PROTOCOL, candidateReply: null } as Record<string, unknown>;
+    Object.defineProperty(accessor, "classification", { enumerable: true, get: () => ({ level: 0, minorIndicated: false }) });
+    const spy = vi.spyOn(JSON, "parse").mockReturnValueOnce(accessor);
+    try {
+      expect(() => parseExplorerSafetyReplyBody("{}", "classification_and_reply")).toThrowError("explorer_safety_invalid_response");
+    } finally { spy.mockRestore(); }
+  });
+  it("RF03 reads one whole reply wrapped in a Markdown code fence as its inner JSON", () => {
+    const plain = parseExplorerSafetyReplyBody(body(), "classification_and_reply");
+    for (const raw of ["```json\n" + body() + "\n```", "```\n" + body() + "\n```", "  ```json \r\n" + body() + "\r\n```  \n"]) {
+      expect(parseExplorerSafetyReplyBody(raw, "classification_and_reply")).toEqual(plain);
     }
   });
   it("uses one decoder and its single last-member duplicate interpretation", () => {
