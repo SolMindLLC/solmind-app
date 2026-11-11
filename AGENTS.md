@@ -8,6 +8,23 @@ This version has breaking changes - APIs, conventions, and file structure may al
 
 # SolMind App Agent Instructions
 
+## Two demo A fixes: one group of buttons per reply, and the tour button under the welcome - 2026-11-10
+
+Paul's decisions (PRJ01-SPR002 decision queue, morning meeting entry of 2026-11-10,
+items 6 and 14). `latestReplyChoices` (`src/lib/solmind/explorerReplyChoices.ts`)
+now treats a reply's choices as not offered when the same latest reply carries a
+forming Compass suggestion (`formingSuggestionsForMessage`) or a forming Waypoint
+draft (`formingWaypointForMessage`): the screen shows only the suggestion's
+buttons, and the Send check in `ExplorerConversation.tsx` and the composer's
+Something else prompt follow the same answer. A forming point or draft on an
+earlier reply does not hold back the latest reply's choices. In a conversation
+with no saved message, `ExplorerConversationConnectedScreen.tsx` shows a "Show me
+around" button (`data-opening-tour`) under the fixed welcome; it opens the local
+tour through the same `openTour` path as the tour choice, with no message,
+request or AI call, whatever the Send gates. Telling the Virtual Guide about the
+welcome and the clearer failed-reply wording wait for Paul's wording read
+(`solmind-sprints/PRJ01-SPR002/Validation_Workspaces/Demo_A_Wording_For_Paul_2026-11-10_R02.md`).
+
 ## Debug conversation log and the reply-check fix - 2026-11-10
 
 Paul's decisions (PRJ01-SPR002 decision queue, morning meeting entry of 2026-11-10,

@@ -130,6 +130,13 @@ test("C01 empty Discovery loads without a write or scripted message", async ({ p
   await expect(page.getByRole("article", { name: "Welcome from the SolMind Virtual Guide", exact: true })).toBeVisible();
   await expect(page.getByText("There are no saved messages yet.", { exact: true })).toBeVisible();
   await expect(page.getByRole("list", { name: "Saved conversation", exact: true })).toHaveCount(0);
+  // The welcome's "Show me around" button (2026-11-10, items 6 and 14) opens the local tour with no write.
+  await page.getByRole("button", { name: "Show me around", exact: true }).click();
+  const tour = page.getByRole("dialog", { name: "A look around your conversation", exact: true });
+  await expect(tour).toBeVisible();
+  await tour.getByRole("button", { name: "Back to the conversation", exact: true }).click();
+  await expect(tour).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Show me around", exact: true })).toBeFocused();
   expect(writes).toBe(0);
 });
 

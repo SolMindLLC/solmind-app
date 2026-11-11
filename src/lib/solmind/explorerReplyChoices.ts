@@ -1,4 +1,6 @@
+import { formingSuggestionsForMessage } from "./explorerCompassSuggestionReplies";
 import type { ExplorerConversationState } from "./explorerConversationContract";
+import { formingWaypointForMessage } from "./explorerWaypointDraft";
 
 // Paul's reply-choice decision, 2026-11-05: choices on the latest saved reply
 // send their exact label as an ordinary Explorer message through the Send gate.
@@ -39,9 +41,15 @@ export type LatestReplyChoices = Readonly<{ messageId: string; labels: readonly 
 
 // Follow the coarse S6a display value: restricted, adults-only and unconfirmed
 // conversations, ended conversations and pending turns show no choices.
+// One group of buttons per reply (Paul's decision, PRJ01-SPR002 decision queue,
+// morning meeting entry of 2026-11-10, item 14): when the latest reply also
+// carries a forming Compass suggestion or a forming Waypoint draft, those
+// buttons are shown and the reply choices are held back, so the screen, the
+// Send check and the composer all treat the choices as not offered.
 export function latestReplyChoices(state: ExplorerConversationState): LatestReplyChoices | null {
   if (state.sessionStatus === "ended" || state.pendingTurn || state.compassSuggestionReplies !== "available") return null;
   const last = state.messages[state.messages.length - 1];
   if (last === undefined || last.role !== "virtualGuide" || last.choices === undefined || last.choices.length === 0) return null;
+  if (formingSuggestionsForMessage(state, last.id).length > 0 || formingWaypointForMessage(state, last.id) !== null) return null;
   return Object.freeze({ messageId: last.id, labels: Object.freeze(last.choices.map(choice => choice.label)) });
 }

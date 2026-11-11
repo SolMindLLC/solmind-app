@@ -383,11 +383,12 @@ function OpeningGreeting() {
 
 // The saved messages, oldest first, in the designed transcript box. The box
 // scrolls to the newest message whenever the saved count changes.
-function SavedTranscript({ state, view, actions, choicesDismissed, onSomethingElse }: Readonly<{
+function SavedTranscript({ state, view, actions, choicesDismissed, onShowTour, onSomethingElse }: Readonly<{
   state: ExplorerConversationState;
   view: ConnectedConversationView;
   actions: ConnectedConversationActions;
   choicesDismissed: boolean;
+  onShowTour: () => void;
   onSomethingElse: () => void;
 }>) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -413,6 +414,17 @@ function SavedTranscript({ state, view, actions, choicesDismissed, onSomethingEl
         {count === 0 ? (
           <>
             {view.ended ? null : <OpeningGreeting />}
+            {/* A "Show me around" button under the welcome in every new
+                conversation (Paul's decision, PRJ01-SPR002 decision queue,
+                morning meeting entry of 2026-11-10, items 6 and 14). It opens
+                the local tour: no message, no request and no AI call. */}
+            {view.ended ? null : (
+              <div className="mr-auto" data-opening-tour="">
+                <button className={joinClasses(SECONDARY_BUTTON, FOCUS_RING)} onClick={onShowTour} type="button">
+                  {EXPLORER_TOUR_CHOICE}
+                </button>
+              </div>
+            )}
             <p className="text-sm text-stone-300">There are no saved messages yet.</p>
             {view.ended ? null : (
               <PlaceholderSlot title="Ways to begin">
@@ -777,11 +789,13 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
     if (replyPrompt.prompt !== null) composerRef.current?.focus();
   }, [replyPrompt.prompt, composerRef]);
   const repliesDisabled = view.held || view.sendUnavailable || view.atMessageCapacity;
+  // Opens the local tour: no message, no request and no AI call.
+  const openTour = () => setTour({ opener: document.activeElement instanceof HTMLElement ? document.activeElement : null,
+    conversationId: state?.conversationId ?? null });
   const chooseReply = (label: string) => {
     if (offeredChoices === null || replyPrompt.dismissed || !offeredChoices.labels.includes(label)) return;
     if (label === EXPLORER_TOUR_CHOICE) {
-      setTour({ opener: document.activeElement instanceof HTMLElement ? document.activeElement : null,
-        conversationId: state?.conversationId ?? null });
+      openTour();
       return;
     }
     if (repliesDisabled) return;
@@ -856,6 +870,7 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
                         <SavedTranscript
                           actions={{ ...actions, onReplyChoice: chooseReply }}
                           choicesDismissed={replyPrompt.dismissed}
+                          onShowTour={openTour}
                           onSomethingElse={showSomethingElse}
                           state={state}
                           view={view}

@@ -67,6 +67,40 @@ describe("reply choices as buttons (round r2)", () => {
   });
 });
 
+describe("one group of buttons per reply (2026-11-10, item 14)", () => {
+  const POINT = "40000000-0000-4000-8000-000000000001";
+  const forming = (wordingMessageId: string) => [{ id: POINT, sourceMessageId: wordingMessageId, wordingMessageId,
+    label: "Making time to rest", formation: "forming" as const }];
+  const draft = { id: "50000000-0000-4000-8000-000000000001", title: "Calm mornings", destination: "An unhurried morning",
+    whyItMatters: "Time with my family", arrivalSignal: "A calm breakfast", suggestionMessageId: GUIDE_MESSAGE };
+
+  it("holds the choices back when the same reply suggests a forming Compass point", () => {
+    expect(latestReplyChoices(state({ compassItems: forming(GUIDE_MESSAGE) }))).toBeNull();
+  });
+
+  it("holds the choices back when the same reply carries a forming Waypoint draft", () => {
+    expect(latestReplyChoices(state({ waypointDraft: draft }))).toBeNull();
+  });
+
+  it("still offers the choices when the forming point or draft belongs to an earlier reply", () => {
+    const earlier = "30000000-0000-4000-8000-000000000000";
+    const messages = [
+      { id: earlier, role: "virtualGuide" as const, body: "An earlier reply", createdAt: "2026-11-05T07:59:00.000Z" },
+      ...state().messages,
+    ];
+    expect(latestReplyChoices(state({ messages, compassItems: forming(earlier) }))?.messageId).toBe(GUIDE_MESSAGE);
+    expect(latestReplyChoices(state({ messages, waypointDraft: { ...draft, suggestionMessageId: earlier } }))?.messageId)
+      .toBe(GUIDE_MESSAGE);
+  });
+
+  it("still offers the choices when the point is saved, combined away or not forming", () => {
+    const saved = [{ ...forming(GUIDE_MESSAGE)[0], formation: "saved" as const }];
+    const merged = [{ ...forming(GUIDE_MESSAGE)[0], mergedIntoItemId: "40000000-0000-4000-8000-000000000002" }];
+    expect(latestReplyChoices(state({ compassItems: saved }))?.messageId).toBe(GUIDE_MESSAGE);
+    expect(latestReplyChoices(state({ compassItems: merged }))?.messageId).toBe(GUIDE_MESSAGE);
+  });
+});
+
 describe("Something else calm wording", () => {
   it("keeps Paul's exact 20 draft lines in one frozen list", () => {
     expect(SOMETHING_ELSE_LABEL).toBe("Something else");

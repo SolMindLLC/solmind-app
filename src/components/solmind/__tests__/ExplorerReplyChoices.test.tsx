@@ -154,14 +154,12 @@ describe("reply choices as buttons on the connected screen (round r2)", () => {
     expect(choiceGroup(renderScreen(state({ pendingTurn: true }), { held: true }))).toBeNull();
   });
 
-  it("sits after the Compass suggestion replies when the same reply also suggested a point", () => {
+  it("shows only the Compass suggestion replies when the same reply also suggested a point (one group per reply)", () => {
     const next = state({ compassItems: [{ id: POINT, sourceMessageId: GUIDE_MESSAGE, wordingMessageId: GUIDE_MESSAGE,
       label: "Making time to rest", formation: "forming" }] });
     const item = transcriptItems(renderScreen(next))[1];
-    const replies = item.indexOf('aria-label="Reply to Compass suggestion: Making time to rest"');
-    const choices = item.indexOf('aria-label="Suggested replies"');
-    expect(replies).toBeGreaterThan(-1);
-    expect(choices).toBeGreaterThan(replies);
+    expect(item).toContain('aria-label="Reply to Compass suggestion: Making time to rest"');
+    expect(choiceGroup(item)).toBeNull();
   });
 });
 
@@ -213,14 +211,14 @@ describe("Something else beside saved reply choices", () => {
     expect(choiceGroup(html)).toBeNull();
   });
 
-  it("keeps Something else outside the Compass row when both kinds of replies appear", () => {
+  it("holds back the choices and Something else when the reply also carries a Compass suggestion", () => {
     const next = state({ compassItems: [{ id: POINT, sourceMessageId: GUIDE_MESSAGE, wordingMessageId: GUIDE_MESSAGE,
       label: "Making time to rest", formation: "forming" }] });
     const item = transcriptItems(renderScreen(next))[1];
     const compass = /<div[^>]*aria-label="Reply to Compass suggestion: Making time to rest"[^>]*>[\s\S]*?<\/div>/.exec(item)?.[0] ?? "";
     expect(compass).toContain("That&#x27;s right");
-    expect(compass).not.toContain("Something else");
-    expect(choiceGroup(item)).toContain("Something else");
+    expect(item).not.toContain("Something else");
+    expect(choiceGroup(item)).toBeNull();
   });
 
   it("dispatches only the local Something else callback, without a send or request", () => {

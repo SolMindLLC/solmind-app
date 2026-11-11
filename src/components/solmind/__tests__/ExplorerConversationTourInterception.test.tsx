@@ -19,7 +19,7 @@ vi.mock("react", async original => ({
   useEffect: () => {},
 }));
 type Props = { children?: ReactNode; choicesDismissed?: boolean; actions?: ConnectedConversationActions;
-  onClose?: () => void; opener?: HTMLElement | null };
+  onClose?: () => void; opener?: HTMLElement | null; onShowTour?: () => void };
 function elements(node: ReactNode): ReactElement<Props>[] {
   return Children.toArray(node).flatMap(child => isValidElement<Props>(child)
     ? [child, ...elements(child.props.children)] : []);
@@ -88,6 +88,22 @@ describe("Fixed tour choice interception", () => {
     const f = setup({}, { compassSuggestionReplies: availability });
     f.choose("Show me around");
     expect(elements(f.render()).some(element => element.type === ExplorerConversationTour)).toBe(false);
+    for (const action of Object.values(f.actions)) expect(action).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("opens from the welcome's Show me around button in a new conversation, with no message, request or AI call", () => {
+    class Element { isConnected = true; focus = vi.fn(); }
+    const opener = new Element();
+    vi.stubGlobal("HTMLElement", Element);
+    vi.stubGlobal("document", { activeElement: opener });
+    const f = setup({ sendUnavailable: true }, { conversationId: null, revision: 0, messages: [], sessionStatus: null });
+    elements(f.render()).find(element => element.props.onShowTour !== undefined)!.props.onShowTour!();
+    const tour = elements(f.render()).find(element => element.type === ExplorerConversationTour);
+    expect(tour).toBeDefined();
+    expect(tour!.props.opener).toBe(opener);
+    expect(f.view.draft).toBe("My draft");
+    expect(f.view.sendSequence).toBe(0);
     for (const action of Object.values(f.actions)) expect(action).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
   });

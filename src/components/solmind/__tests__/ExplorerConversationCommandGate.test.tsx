@@ -124,9 +124,18 @@ const success = (next: ExplorerConversationState) => new Response(JSON.stringify
 
 describe("Tapped reply choice Send ownership", () => {
   const label = "Something that happened today";
-  const offered = (): ExplorerConversationState => ({ ...state(false), messages: [
+  // One group of buttons per reply (2026-11-10, item 14): choices are offered only on a reply that shows no
+  // forming suggestion, so this state drops the base state's forming Compass point.
+  const offered = (): ExplorerConversationState => ({ ...state(false), compassItems: [], messages: [
     { ...state(false).messages[0], choices: [{ label }] },
   ] });
+
+  it("refuses a tapped choice while the same reply shows a forming Compass suggestion (one group per reply)", async () => {
+    const f = await loaded(false, { messages: [{ ...state(false).messages[0], choices: [{ label }] }] });
+    f.actions.onReplyChoice(label);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.fetch).not.toHaveBeenCalled();
+  });
 
   it("never dispatches the fixed tour label through the Send owner", async () => {
     const f = await loaded(false, { messages: [{ ...state(false).messages[0], choices: [{ label: "Show me around" }] }] });
@@ -150,7 +159,8 @@ describe("Tapped reply choice Send ownership", () => {
   // Correction D-12 (2026-11-09): a Send waits past the server's overall Send deadline (ceiling 120 s plus a 10 s
   // margin); the other commands keep the 70-second wait.
   it.each([["a Send", 130_000], ["another command", 70_000]] as const)("waits for %s's answer for %i ms", async (kind, wait) => {
-    const f = await loaded(false, offered());
+    // The Compass answer needs the base state's forming point; the tapped choice needs a reply without one.
+    const f = await loaded(false, kind === "a Send" ? offered() : {});
     let signal: AbortSignal | null = null;
     f.fetch.mockImplementation((_url, init) => { signal = init!.signal!; return new Promise<Response>(() => undefined); });
     if (kind === "a Send") f.actions.onReplyChoice(label);

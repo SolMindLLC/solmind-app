@@ -329,12 +329,19 @@ describe("connected Explorer conversation screen", () => {
     const greeting = transcript.slice(transcript.indexOf("data-opening-greeting"), transcript.indexOf("</article>"));
     expect(greeting).not.toContain("<time");
     expect(transcript).not.toContain('aria-label="Saved conversation"');
+    // A "Show me around" button sits under the welcome (2026-11-10, items 6 and 14), before the saved-message sentence.
+    const tour = /<div class="mr-auto" data-opening-tour="">([\s\S]*?)<\/div>/.exec(transcript)?.[1] ?? "";
+    expect(tour).toMatch(/<button[^>]*type="button"[^>]*>Show me around<\/button>/);
+    expect(transcript.indexOf("data-opening-greeting")).toBeLessThan(transcript.indexOf("data-opening-tour"));
+    expect(transcript.indexOf("data-opening-tour")).toBeLessThan(transcript.indexOf("There are no saved messages yet."));
   });
 
   it("CC25 the welcome is absent once a message is saved, and in an ended conversation", () => {
     expect(render(view())).not.toContain("data-opening-greeting");
+    expect(render(view())).not.toContain("data-opening-tour");
     const endedEmpty = render(view({ state: savedState({ messages: [], sessionStatus: "ended" }), ended: true, held: true }));
     expect(endedEmpty).not.toContain("data-opening-greeting");
+    expect(endedEmpty).not.toContain("data-opening-tour");
     expect(endedEmpty).toContain("There are no saved messages yet.");
   });
 

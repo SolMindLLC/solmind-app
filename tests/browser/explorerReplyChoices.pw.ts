@@ -360,7 +360,8 @@ test("R08 Something else stays off Compass replies, pending turns and withheld r
   const compassRow = page.getByRole("group", { name: "Reply to Compass suggestion: Making time to rest", exact: true });
   await expect(compassRow).toBeVisible();
   await expect(compassRow.getByRole("button", { name: "Something else", exact: true })).toHaveCount(0);
-  await expect(choices(page).getByRole("button", { name: "Something else", exact: true })).toBeVisible();
+  // One group of buttons per reply (2026-11-10, item 14): the reply choices are held back beside a suggestion.
+  await expect(choices(page)).toHaveCount(0);
   for (const availability of ["support", "adult_policy", "unavailable", undefined] as const) {
     current = { ...current, compassSuggestionReplies: availability };
     await page.getByRole("button", { name: "Reload saved conversation", exact: true }).click();
@@ -374,7 +375,7 @@ test("R08 Something else stays off Compass replies, pending turns and withheld r
   await expect(page.getByRole("button", { name: "Something else", exact: true })).toHaveCount(0);
 });
 
-test("R09 a Compass Close follow-up clears the prompt and choices while its ordinary Send is still pending", async ({ page }) => {
+test("R09 a Compass Close follow-up sends while the same reply's choices stay held back (one group per reply)", async ({ page }) => {
   let current = savedState({ compassItems: [{
     id: "40000000-0000-4000-8000-000000000001", sourceMessageId: GUIDE_MESSAGE, wordingMessageId: GUIDE_MESSAGE,
     label: "Making time to rest", formation: "forming",
@@ -397,8 +398,7 @@ test("R09 a Compass Close follow-up clears the prompt and choices while its ordi
   });
   await openPage(page, () => current);
   await composer(page).fill(DRAFT);
-  await choices(page).getByRole("button", { name: "Something else", exact: true }).click();
-  await expect(page.locator("#conversation-calm-prompt")).toBeVisible();
+  await expect(choices(page)).toHaveCount(0);
   await page.getByRole("group", { name: "Reply to Compass suggestion: Making time to rest", exact: true })
     .getByRole("button", { name: "Close, not quite", exact: true }).click();
   await expect.poll(() => requests.length).toBe(2);
