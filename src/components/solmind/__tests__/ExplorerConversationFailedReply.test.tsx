@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ExplorerConversation } from "../ExplorerConversation";
 import type { ConnectedConversationActions, ConnectedConversationView } from "../ExplorerConversationConnectedScreen";
 import type { ExplorerConversationState } from "../../../lib/solmind/explorerConversationContract";
-import { EXPLORER_PRIVATE_RESPONSE_VERSION } from "../../../lib/solmind/explorerPrivateConversationResponse";
+import { EXPLORER_FAILED_REPLY_BUTTON_NOTE, EXPLORER_PRIVATE_RESPONSE_VERSION } from "../../../lib/solmind/explorerPrivateConversationResponse";
 import { EXPLORER_FAILED_REPLY_RETRY_DRAFT } from "../../../lib/solmind/virtual-guide/explorerPrivateConversationComposition";
 
 const hooks = vi.hoisted(() => ({ slots: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[],
@@ -56,8 +56,8 @@ afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup();
   vi.useRealTimers(); vi.unstubAllGlobals();
 });
-async function loaded() {
-  const fetch = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () => response({ ok: true, state, error: null }));
+async function loaded(initial: ExplorerConversationState = state) {
+  const fetch = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async () => response({ ok: true, state: initial, error: null }));
   vi.stubGlobal("fetch", fetch); render();
   for (const effect of hooks.effects) { const cleanup = effect(); if (cleanup) cleanups.push(cleanup); }
   await vi.advanceTimersByTimeAsync(0); render();
@@ -86,6 +86,30 @@ describe("REV306 failed-reply controller", () => {
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(JSON.parse(fetch.mock.calls[1][1]!.body as string)).toMatchObject({ kind: "send", body: draft, expectedRevision: 2 });
     expect(JSON.parse(fetch.mock.calls[1][1]!.body as string).operationId).not.toBe(command.operationId);
+  });
+  it("pins Paul's approved failed-reply sentence (2026-11-10) and the earlier sentence kept for button Sends", () => {
+    expect(EXPLORER_FAILED_REPLY_RETRY_DRAFT).toBe("Your Virtual Guide's reply didn't come through, so your message has no answer yet. Your words are still in the message box. To try again, choose Send.");
+    expect(EXPLORER_FAILED_REPLY_BUTTON_NOTE).toBe("The reply did not come through. You can try again.");
+  });
+  it("shows the earlier sentence, not the message-box one, when a reply choice's reply fails: nothing was typed for it", async () => {
+    const offered: ExplorerConversationState = { ...state, revision: 1, messages: [{
+      id: id(3), role: "virtualGuide", body: "A synthetic reply", createdAt: "2026-11-10T10:00:00Z",
+      choices: [{ label: "I have a question" }],
+    }] };
+    const fetch = await loaded(offered);
+    const saved: ExplorerConversationState = { ...offered, revision: 3, messages: [...offered.messages, {
+      id: id(4), role: "explorer", body: "I have a question", createdAt: "2026-11-10T10:00:05Z",
+    }] };
+    fetch.mockImplementation(async () => response({ ok: true, state: saved, error: null }, {
+      kind: "reply_failed", body: EXPLORER_FAILED_REPLY_RETRY_DRAFT, persisted: false,
+    }));
+    hooks.actions!.onReplyChoice("I have a question"); await vi.advanceTimersByTimeAsync(0); render();
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(JSON.parse(fetch.mock.calls[0][1]!.body as string)).toMatchObject({ kind: "send", body: "I have a question", replyChoice: true });
+    // The typed draft is kept as it was; the notice makes no claim about the message box.
+    expect(hooks.view).toMatchObject({ draft, sendUnavailable: false, uncertain: false,
+      state: { providerState: "available", messages: saved.messages },
+      assistance: { kind: "reply_failed", body: EXPLORER_FAILED_REPLY_BUTTON_NOTE, persisted: false } });
   });
   it("keeps the existing unavailable sentence and typed draft when readiness actually refuses Send", async () => {
     const fetch = await loaded();

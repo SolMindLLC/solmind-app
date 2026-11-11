@@ -48,8 +48,10 @@ export type ExplorerPrivatePrepareParameters = ExplorerPrivateObserveParameters 
 export type ExplorerPrivateReplyKind = "ordinary" | "urgent" | "crisis" | "restricted" | "adult_only" | "none";
 export type ExplorerPrivateReplyFailureReason = "deadline" | "transport_failed" | "invalid_response" |
   "delivery_canceled_before_dispatch" | "dispatch_not_admitted" | "trusted_render_unavailable";
-// Draft for Paul's wording read, 2026-11-06. Only shown after a fresh readiness check.
-export const EXPLORER_FAILED_REPLY_RETRY_DRAFT = "The reply did not come through. You can try again.";
+// Paul's approved wording (2026-11-10 22:51:08 CST; it replaced the 2026-11-06 draft, and the name is kept). Only shown
+// after a fresh readiness check. It is true for a typed Send, whose words stay in the message box; for a Send started
+// by a button the screen shows EXPLORER_FAILED_REPLY_BUTTON_NOTE instead (explorerPrivateConversationResponse.ts).
+export const EXPLORER_FAILED_REPLY_RETRY_DRAFT = "Your Virtual Guide's reply didn't come through, so your message has no answer yet. Your words are still in the message box. To try again, choose Send.";
 export type ExplorerPrivateSettleParameters = ActorParameters & Readonly<{
   p_conversation_id: string; p_operation_id: string; p_status: "completed" | "failed" | "canceled";
   p_reply_message_id: string | null; p_reply_kind: ExplorerPrivateReplyKind; p_reply_body: string | null;

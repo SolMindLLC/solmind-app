@@ -8,6 +8,40 @@ This version has breaking changes - APIs, conventions, and file structure may al
 
 # SolMind App Agent Instructions
 
+## Demo A's two wordings: the screen-welcome sentence and the failed-reply message - 2026-11-10
+
+Paul approved both as written on 2026-11-10 at 22:51:08 CST (PRJ01-SPR002
+`Validation_Workspaces/Decision_Record_2026-11-10.md`, the short meeting entry;
+sheet `Validation_Workspaces/Demo_A_Wording_For_Paul_2026-11-10_R02.md`). They
+change only with his approval.
+
+The Virtual Guide sentence, "When the screen has already shown its welcome, avoid
+repeating it, while still giving any welcome or safety guidance the Explorer
+needs; if they ask how SolMind works or request a tour, answer briefly and offer
+"Show me around" only when the existing choice rules allow it.", follows the
+first-reply sentence in two places that must stay the same: the role text
+(`explorerPrivateConfigurationCandidate.ts`) and the ordinary-reply HTTP
+instructions (`EXPLORER_SCREEN_WELCOME_INSTRUCTION` in
+`openAiLunaExplorerSafetyTransport.ts`). The classification-only HTTP instruction
+bytes are unchanged (7708); the role text, sent as context in both modes, carries
+the sentence. All five labels end in -20261110-da-r1; the role pin is 11991 bytes
+and the ordinary HTTP pin 10104, each the earlier pinned text plus the sentence
+and one space (tests check this). The Virtual Guide is given no fact saying the
+welcome was shown: the connected screen shows its fixed welcome in every
+conversation with no saved message, so the sentence relies on that.
+
+The failed-reply message (`EXPLORER_FAILED_REPLY_RETRY_DRAFT`, the name kept) is
+now "Your Virtual Guide's reply didn't come through, so your message has no answer
+yet. Your words are still in the message box. To try again, choose Send." That is
+true for a typed Send, whose words stay in the message box. A Send started by a
+button (a reply choice or a suggestion answer) typed nothing, so for those
+`ExplorerConversation.tsx` shows the earlier sentence instead
+(`EXPLORER_FAILED_REPLY_BUTTON_NOTE` in `explorerPrivateConversationResponse.ts`,
+"The reply did not come through. You can try again."); what that case should say
+or do is an open question for Paul (the morning meeting of 2026-11-11). The
+counting, saving and retry rules are unchanged: a retry is a new counted Send
+and saves the Explorer's line again.
+
 ## Two demo A fixes: one group of buttons per reply, and the tour button under the welcome - 2026-11-10
 
 Paul's decisions (PRJ01-SPR002 decision queue, morning meeting entry of 2026-11-10,

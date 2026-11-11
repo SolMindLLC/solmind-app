@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConnectedConversationActions } from "../ExplorerConversationConnectedScreen";
 import type { ExplorerConversationState } from "../../../lib/solmind/explorerConversationContract";
-import { EXPLORER_PRIVATE_RESPONSE_VERSION } from "../../../lib/solmind/explorerPrivateConversationResponse";
+import { EXPLORER_FAILED_REPLY_BUTTON_NOTE, EXPLORER_PRIVATE_RESPONSE_VERSION } from "../../../lib/solmind/explorerPrivateConversationResponse";
+import { EXPLORER_FAILED_REPLY_RETRY_DRAFT } from "../../../lib/solmind/virtual-guide/explorerPrivateConversationComposition";
 import { ExplorerConversation } from "../ExplorerConversation";
 import { cardStateAtWaypointLimit } from "../../../../tests/browser/connectedCardFixture";
 
@@ -367,6 +368,26 @@ describe("Confirmed That's right follow-up for both suggestion kinds", () => {
       body: `That's right: "${intent.kind === "respond_compass_suggestion" ? "A tentative point" : WAYPOINT_DRAFT.title}"` });
     expect(commands[1].operationId).not.toBe(commands[0].operationId);
     expect(commands.filter(command => command.kind === "send")).toHaveLength(1);
+  });
+
+  it("shows the earlier failed-reply sentence when the automatic follow-up's reply fails: nothing was typed for it", async () => {
+    const f = await loaded(false, { waypointDraft: WAYPOINT_DRAFT });
+    captured.updates = [];
+    const answered = confirmed();
+    const afterSend = { ...answered, revision: 5, messages: [...answered.messages,
+      { id: id(60), role: "explorer" as const, body: "That's right: \"A tentative point\"", createdAt: "2026-11-10T12:00:00Z" }] };
+    f.fetch.mockImplementation(async (_url, init) => JSON.parse(init!.body as string).kind === "send"
+      ? new Response(JSON.stringify({ version: EXPLORER_PRIVATE_RESPONSE_VERSION,
+        result: { ok: true, state: afterSend, error: null },
+        assistance: { kind: "reply_failed", body: EXPLORER_FAILED_REPLY_RETRY_DRAFT, persisted: false } }),
+      { headers: { "Content-Type": "application/json" } })
+      : success(answered));
+    f.actions.onCommand(cases[0]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.fetch).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(f.fetch.mock.calls[1][1]!.body as string)).toMatchObject({ kind: "send", body: "That's right: \"A tentative point\"" });
+    const notices = captured.updates.filter(value => typeof value === "object" && value !== null && "persisted" in value);
+    expect(notices.at(-1)).toEqual({ kind: "reply_failed", body: EXPLORER_FAILED_REPLY_BUTTON_NOTE, persisted: false });
   });
 
   for (const gate of ["provider", "capacity", "pending", "support", "adult_policy"] as const) {

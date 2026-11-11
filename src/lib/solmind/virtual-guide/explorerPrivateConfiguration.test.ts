@@ -46,7 +46,7 @@ describe("private Explorer exact inert configuration candidate", () => {
     const expected = [
       [value.globalPolicy, 2439, "1C145A87C65565875148150C4083D298EF5D66A49C19F00FABF55BB4F4F693B9"],
       [value.crisisBehavior, 2222, "7B39A9C98351D25E2FAC5DA236E2086B3F33CCBD8987A80AE6716E5242208D84"],
-      [value.roleBehavior, 11717, "ECCD7BAC6BB305849AC68E0792E0FDAE095E46E349EEC154B1E2BED8BC737E49"],
+      [value.roleBehavior, 11991, "E9CF53EA379816447A443521254EE73B39C1D00F7060497AD0ACEAE9AADB1A48"],
     ] as const;
     for (const [part, bytes, sha] of expected) {
       expect(Buffer.byteLength(part.text, "utf8")).toBe(bytes);
@@ -61,11 +61,11 @@ describe("private Explorer exact inert configuration candidate", () => {
   it("pins actual assembler-compatible labels and all seven finite reviewed-language definitions", () => {
     const value = candidate();
     expect(value.protocolVersion).toBe("explorer-safety-reply.v2");
-    expect(value.promptVersion).toBe("explorer-same-call.synthetic-draft-20261106-w5-r1");
-    expect(value.instructionVersion).toBe("solmind-same-call-output.synthetic-draft-20261106-w5-r1");
-    expect(value.roleVersion).toBe("solmind-virtual-guide.synthetic-draft-20261106-w5-r1");
-    expect(value.globalPolicy.version).toBe("solmind-global-policy.synthetic-draft-20261106-w5-r1");
-    expect(value.roleBehavior.version).toBe("solmind-virtual-guide-role.synthetic-draft-20261106-w5-r1");
+    expect(value.promptVersion).toBe("explorer-same-call.synthetic-draft-20261110-da-r1");
+    expect(value.instructionVersion).toBe("solmind-same-call-output.synthetic-draft-20261110-da-r1");
+    expect(value.roleVersion).toBe("solmind-virtual-guide.synthetic-draft-20261110-da-r1");
+    expect(value.globalPolicy.version).toBe("solmind-global-policy.synthetic-draft-20261110-da-r1");
+    expect(value.roleBehavior.version).toBe("solmind-virtual-guide-role.synthetic-draft-20261110-da-r1");
     const labels = [value.protocolVersion, value.promptVersion, value.instructionVersion, value.roleVersion,
       value.globalPolicy.version, value.roleBehavior.version, value.crisisBehavior.version,
       value.fallback.version, value.fallback.normalizationVersion, value.trustedResponses.version,
@@ -124,6 +124,17 @@ describe("private Explorer exact inert configuration candidate", () => {
       "In classification-only mode omit compass, waypointSuggestion, waypointResponse and choices.",
     ]) expect(value.roleBehavior.text).toContain(sentence);
     expect(value.roleBehavior.text).not.toContain("explorer-safety-reply.v1");
+  });
+
+  it("demo A: the role text carries Paul's exact screen-welcome sentence once, after the first-reply sentence", () => {
+    const sentence = 'When the screen has already shown its welcome, avoid repeating it, while still giving any welcome or safety guidance the Explorer needs; if they ask how SolMind works or request a tour, answer briefly and offer "Show me around" only when the existing choice rules allow it.';
+    const text = candidate().roleBehavior.text;
+    expect(text.split(sentence)).toHaveLength(2);
+    expect(text).toContain('you may offer "Show me around", "I have a question" and "Let\'s begin". ' + sentence + " Always answer when the Explorer asks how things work.");
+    // Nothing else changed: without the sentence the role text is the earlier pinned text (11717 bytes).
+    const earlier = text.replace(" " + sentence, "");
+    expect(Buffer.byteLength(earlier, "utf8")).toBe(11717);
+    expect(createHash("sha256").update(earlier, "utf8").digest("hex").toUpperCase()).toBe("ECCD7BAC6BB305849AC68E0792E0FDAE095E46E349EEC154B1E2BED8BC737E49");
   });
 
   it("keeps resource identities and trusted text explicitly unverified and unapproved", () => {

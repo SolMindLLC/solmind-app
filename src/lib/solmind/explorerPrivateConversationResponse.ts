@@ -5,6 +5,10 @@ export const EXPLORER_PRIVATE_RESPONSE_VERSION = "explorer-private-conversation-
 // "paused" is the hard-stop pause notice: the server writes the whole body, so no pause or safety fact
 // reaches the browser except as the Explorer's own notice text.
 export const EXPLORER_PRIVATE_ASSISTANCE_KINDS = Object.freeze(["support", "adult_policy", "temporarily_unavailable", "paused", "reply_failed"] as const);
+// The screen shows this in place of the server's failed-reply sentence when the Send was started by a button (a reply
+// choice or a suggestion answer): those words were never typed, so "Your words are still in the message box" would be
+// untrue. It is the 2026-11-06 draft wording, unchanged; what this case should say or do waits for Paul (2026-11-10).
+export const EXPLORER_FAILED_REPLY_BUTTON_NOTE = "The reply did not come through. You can try again.";
 export type ExplorerPrivateAssistance = Readonly<{
   kind: typeof EXPLORER_PRIVATE_ASSISTANCE_KINDS[number];
   body: string;

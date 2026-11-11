@@ -8,8 +8,8 @@ import {
   type ExplorerConversationError,
   type ExplorerConversationState,
 } from "@/lib/solmind/explorerConversationContract";
-import { parseExplorerPrivateConversationResponse, type ExplorerPrivateConversationResponse,
-  type ExplorerPrivateAssistance } from "@/lib/solmind/explorerPrivateConversationResponse";
+import { EXPLORER_FAILED_REPLY_BUTTON_NOTE, parseExplorerPrivateConversationResponse,
+  type ExplorerPrivateConversationResponse, type ExplorerPrivateAssistance } from "@/lib/solmind/explorerPrivateConversationResponse";
 import { ExplorerConversationConnectedScreen } from "./ExplorerConversationConnectedScreen";
 import type { ExplorerConversationFormationIntent } from "./ExplorerConversationFormation";
 import { COMPASS_SUGGESTION_REPLY_LABELS } from "@/lib/solmind/explorerCompassSuggestionReplies";
@@ -202,7 +202,11 @@ export function ExplorerConversation() {
       if (result && !result.ok && (result.error === "denied" || result.error === "unavailable")) {
         notifyExplorerEarlyTestNoticeRecheck();
       }
-      setAssistance(output?.assistance ?? null);
+      // The server's failed-reply sentence says the typed words are still in the message box. A Send started by a
+      // button (a reply choice or a suggestion answer) typed nothing, so it keeps the earlier sentence (2026-11-10).
+      const served = output?.assistance ?? null;
+      setAssistance(served !== null && served.kind === "reply_failed" && pending.intent.kind !== "send"
+        ? Object.freeze({ ...served, body: EXPLORER_FAILED_REPLY_BUTTON_NOTE }) : served);
       if (result === null || (!result.ok && result.error === "unavailable")) {
         setUncertain(true);
         return;

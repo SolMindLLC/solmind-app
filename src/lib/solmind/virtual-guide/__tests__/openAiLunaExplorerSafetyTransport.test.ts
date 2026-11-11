@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { EXPLORER_SAFETY_REQUEST_VERSION, parseExplorerSafetyReplyRequest } from "../explorerSafetyReplyContract";
 import { invokeExplorerSafetyReply } from "../explorerSafetyReplyInvocation";
 import {
-  createOpenAiLunaExplorerSafetyTransport, explorerSafetyHttpInstructions,
+  createOpenAiLunaExplorerSafetyTransport, EXPLORER_SCREEN_WELCOME_INSTRUCTION, explorerSafetyHttpInstructions,
   OPENAI_LUNA_EXPLORER_SAFETY_ENDPOINT, OPENAI_LUNA_EXPLORER_SAFETY_MODEL,
 } from "../openAiLunaExplorerSafetyTransport";
 
@@ -34,7 +34,7 @@ function adapter(fetchImpl: typeof fetch) { return createOpenAiLunaExplorerSafet
 describe("Dormant injected Explorer same-call HTTP transport", () => {
   it.each([
     ["classification_only", 7708, "420277CE05E665636B6640ADF18F638E3265F6F4C9090414DF83D07A1BFCB9C5"],
-    ["classification_and_reply", 9830, "3D5A42EACD78D715B87882F315E81A4910D8F065F18A9DF814B03F1CBE977E96"],
+    ["classification_and_reply", 10104, "08E394C45BBDE57368286046713C6DF5D5AE9B56044ED107F3A216A92976CC45"],
   ] as const)("Lane 7 pins bounded-selection output instruction bytes and SHA-256 (%s)", (mode, bytes, sha256) => {
     const text = explorerSafetyHttpInstructions(mode);
     expect(Buffer.byteLength(text, "utf8")).toBe(bytes);
@@ -115,6 +115,20 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
     expect(explorerSafetyHttpInstructions("classification_only")).not.toContain(sentence);
     expect(ordinary.indexOf(sentence)).toBeGreaterThan(ordinary.indexOf("When the Explorer describes a place they want to reach"));
   });
+  it("demo A tells ordinary replies about the screen's welcome: Paul's exact sentence, once, after the first-reply sentence", () => {
+    const sentence = 'When the screen has already shown its welcome, avoid repeating it, while still giving any welcome or safety guidance the Explorer needs; if they ask how SolMind works or request a tour, answer briefly and offer "Show me around" only when the existing choice rules allow it.';
+    expect(EXPLORER_SCREEN_WELCOME_INSTRUCTION).toBe(sentence);
+    const ordinary = explorerSafetyHttpInstructions("classification_and_reply");
+    const classification = explorerSafetyHttpInstructions("classification_only");
+    expect(ordinary.split(sentence)).toHaveLength(2);
+    expect(ordinary).toContain('you may offer "Show me around", "I have a question" and "Let\'s begin". ' + sentence + " Always answer questions about how things work.");
+    expect(classification).not.toContain("already shown its welcome");
+    expect(classification).toContain('you may offer "Show me around", "I have a question" and "Let\'s begin". Always answer questions about how things work.');
+    // Nothing else changed: without the sentence the ordinary text is the earlier pinned text (9830 bytes).
+    const earlier = ordinary.replace(" " + sentence, "");
+    expect(Buffer.byteLength(earlier, "utf8")).toBe(9830);
+    expect(createHash("sha256").update(earlier, "utf8").digest("hex").toUpperCase()).toBe("3D5A42EACD78D715B87882F315E81A4910D8F065F18A9DF814B03F1CBE977E96");
+  });
   it("CV teaches Explorer-voice labels and explains the ordinary-only verified choice marker", () => {
     const voice = "Write every choice label as the Explorer's own reply, in their voice, as a complete answer to your question or invitation, never as a question to you or as your own words.";
     const marker = "When compassContext.immediateMessageIsReplyChoice is true, the immediate Explorer message is their selection from the choices in your immediately preceding saved reply; respond to the selected option rather than treating its words as a question to you.";
@@ -132,7 +146,7 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
       expect({ bytes: Buffer.byteLength(text, "utf8"),
         sha256: createHash("sha256").update(text, "utf8").digest("hex").toUpperCase() })
         .toEqual(mode === "classification_and_reply"
-          ? { bytes: 9830, sha256: "3D5A42EACD78D715B87882F315E81A4910D8F065F18A9DF814B03F1CBE977E96" }
+          ? { bytes: 10104, sha256: "08E394C45BBDE57368286046713C6DF5D5AE9B56044ED107F3A216A92976CC45" }
           : { bytes: 7708, sha256: "420277CE05E665636B6640ADF18F638E3265F6F4C9090414DF83D07A1BFCB9C5" });
     });
   it("S6b instructions bound typed responses to a clear answer to the preceding saved suggestion", () => {
