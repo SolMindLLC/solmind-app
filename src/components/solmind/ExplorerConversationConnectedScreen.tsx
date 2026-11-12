@@ -277,13 +277,14 @@ type NoticesProps = Readonly<{
   view: ConnectedConversationView;
   actions: ConnectedConversationActions;
   errorRef: RefObject<HTMLDivElement | null>;
+  noticesRef?: RefObject<HTMLDivElement | null>;
 }>;
 
 // The live status line, the alerts and Reload, exactly as before. The error
 // alert can take focus, for when the narrow drawer closes after a refusal.
-function ConversationNotices({ view, actions, errorRef }: NoticesProps) {
+function ConversationNotices({ view, actions, errorRef, noticesRef }: NoticesProps) {
   return (
-    <div className="grid gap-3 px-4 pt-3 sm:px-5">
+    <div className="grid gap-3 px-4 pt-3 sm:px-5" ref={noticesRef}>
       <p aria-atomic="true" aria-live="polite" className="min-h-6 text-sm text-stone-200" role="status">
         {view.statusText}
       </p>
@@ -378,6 +379,19 @@ function OpeningGreeting() {
       </p>
       <p className="mt-2 text-sm leading-6">{OPENING_GREETING_TEXT}</p>
     </article>
+  );
+}
+
+// The pending-turn notice: one copy, placed by the screen beside the message box,
+// or above the transcript while another notice stands above the conversation.
+function PendingTurnNotice({ markerRef }: Readonly<{ markerRef?: RefObject<HTMLDivElement | null> }>) {
+  return (
+    <div className="scroll-mb-4 px-4 pt-3 sm:px-5" ref={markerRef}>
+      <p className={NOTICE_CLASS} role="status">
+        A saved message is still awaiting a confirmed result. No reply is being claimed. Reload the saved
+        conversation to check; another send will not be started.
+      </p>
+    </div>
   );
 }
 
@@ -788,6 +802,45 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
   useEffect(() => {
     if (replyPrompt.prompt !== null) composerRef.current?.focus();
   }, [replyPrompt.prompt, composerRef]);
+  // A conversation with saved messages opens at its newest messages (Paul's test
+  // comment, PRJ01-SPR002 decision record 2026-11-11 21:03:09 CST). The transcript
+  // box scrolls itself to its end; the page did not, so the newest message and
+  // the message box sat below the window. Decided once, when the first saved
+  // state arrives: with saved messages, the end of the conversation is brought
+  // into the window. Focus stays where it is and the move is instant; a
+  // conversation with no saved message stays at the top. So does a conversation
+  // that opens with a notice above it (a pause or support notice, an error or
+  // an unconfirmed change): that notice must stay in view, and the pending-turn
+  // notice is then drawn above the transcript with it. Otherwise the pending-turn
+  // notice sits beside the message box and comes into view with the move. An
+  // ended conversation lands after its read-only explanation and review link.
+  const conversationEndRef = useRef<HTMLDivElement>(null);
+  const endedEndRef = useRef<HTMLDivElement>(null);
+  const pendingAboveRef = useRef<HTMLDivElement>(null);
+  const noticesRef = useRef<HTMLDivElement>(null);
+  const openedAtNewest = useRef(false);
+  const noticeAtOpen = view.assistance !== null || view.errorMessage !== null || view.uncertain;
+  useEffect(() => {
+    if (openedAtNewest.current || state === null) return;
+    openedAtNewest.current = true;
+    if (noticeAtOpen) {
+      // The page stays at its top for the notice. On a narrow screen the pending-turn notice drawn
+      // above the transcript can still be below the window: move only as far as it needs, and never
+      // so far that the notices leave the top of the window (they have priority when both cannot fit).
+      const pending = pendingAboveRef.current;
+      const notices = noticesRef.current;
+      if (pending !== null && typeof pending.scrollIntoView === "function") {
+        pending.scrollIntoView({ behavior: "instant", block: "nearest" });
+        if (notices !== null && notices.getBoundingClientRect().top < 0) {
+          notices.scrollIntoView({ behavior: "instant", block: "start" });
+        }
+      }
+      return;
+    }
+    if (state.messages.length === 0) return;
+    const end = (view.ended ? endedEndRef.current : null) ?? conversationEndRef.current;
+    if (end !== null && typeof end.scrollIntoView === "function") end.scrollIntoView({ behavior: "instant", block: "end" });
+  }, [state, noticeAtOpen, view.ended]);
   const repliesDisabled = view.held || view.sendUnavailable || view.atMessageCapacity;
   // Opens the local tour: no message, no request and no AI call.
   const openTour = () => setTour({ opener: document.activeElement instanceof HTMLElement ? document.activeElement : null,
@@ -860,13 +913,14 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
               <div className="flex min-w-0 flex-1 flex-col gap-5">
                 <section aria-labelledby={CONVERSATION_HEADING_ID} className={CARD_CLASS}>
                   <ConnectedConversationHeader headingRef={headingRef} status={status} />
-                  <ConversationNotices actions={actions} errorRef={errorRef} view={view} />
+                  <ConversationNotices actions={actions} errorRef={errorRef} noticesRef={noticesRef} view={view} />
                   {state !== null ? (
                     <>
                       {/* As on the earlier screen, only the saved conversation and
                           the composer are marked busy; the status line, alerts,
                           Reload, Retry and End stay outside it. */}
                       <div aria-busy={view.busy}>
+                        {state.pendingTurn && noticeAtOpen ? <PendingTurnNotice markerRef={pendingAboveRef} /> : null}
                         <SavedTranscript
                           actions={{ ...actions, onReplyChoice: chooseReply }}
                           choicesDismissed={replyPrompt.dismissed}
@@ -876,20 +930,19 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
                           view={view}
                         />
                         {/* Outside the scrolling transcript, beside the composer, so it
-                            stays in view however long the saved history is. */}
-                        {state.pendingTurn ? (
-                          <div className="px-4 pt-3 sm:px-5">
-                            <p className={NOTICE_CLASS} role="status">
-                              A saved message is still awaiting a confirmed result. No reply is being claimed. Reload the saved
-                              conversation to check; another send will not be started.
-                            </p>
-                          </div>
-                        ) : null}
+                            stays in view however long the saved history is. While a notice
+                            stands above the conversation it is drawn above the transcript
+                            instead (see below), so both are in view together. */}
+                        {state.pendingTurn && !noticeAtOpen ? <PendingTurnNotice /> : null}
                         {view.ended ? null : (
                           <ConnectedComposer actions={actions} calmPrompt={replyPrompt.prompt} composerRef={composerRef} view={view} />
                         )}
+                        {/* An empty marker at the end of the conversation area: where the page
+                            lands when a saved conversation opens (see conversationEndRef). */}
+                        <div aria-hidden="true" className="scroll-mb-4" ref={conversationEndRef} />
                       </div>
                       <EndSession actions={actions} state={state} view={view} />
+                      {view.ended ? <div aria-hidden="true" className="scroll-mb-4" ref={endedEndRef} /> : null}
                     </>
                   ) : (
                     <div className="pb-4" />

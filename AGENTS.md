@@ -8,6 +8,52 @@ This version has breaking changes - APIs, conventions, and file structure may al
 
 # SolMind App Agent Instructions
 
+## A saved conversation opens at its newest messages - 2026-11-11
+
+Paul's test comment (PRJ01-SPR002 `Validation_Workspaces/Decision_Record_2026-11-11.md`,
+entry of 21:03:09 CST): when the Explorer returns to a conversation, it starts
+scrolled all the way to the bottom. The transcript box (`SavedTranscript` in
+`ExplorerConversationConnectedScreen.tsx`) already scrolled itself to its end
+whenever the saved count changed, but the page opened at its top, so on most
+window sizes the newest message and the message box were below the window
+(measured on 2026-11-11: at 1280 by 900 the box ended 180 pixels below it).
+
+Now the connected screen decides once per page open, when the first saved
+state arrives. If that state has at least one saved message, it brings the end
+of the conversation area into the window with
+`scrollIntoView({ behavior: "instant", block: "end" })` on an empty, hidden
+marker with a small scroll margin: for an open conversation the marker after
+the message box (inside the `aria-busy` wrapper, whose own markup is
+unchanged), so the pending-turn notice beside the message box comes into view
+too; for an ended conversation a marker after its read-only explanation and
+review link. A conversation that had no saved message when it opened is never
+moved, so a first Send does not make the page jump, and a later reply or the
+in-page Reload saved conversation control does not move the page again
+(reloading the page in the browser is a new open and moves it again). A conversation that opens with a notice
+above it (a pause or support notice, an error or an unconfirmed change) is not
+moved either: the page stays at its top so that notice is in view, and while
+such a notice shows, the pending-turn notice (one copy, `PendingTurnNotice`)
+is drawn above the transcript with it instead of beside the message box. On
+a narrow screen that notice can still be below the window, so in that one
+case the page moves only as far as needed to bring it in (`block: "nearest"`),
+and never so far that the notices leave the top of the window: if they would,
+the page is put back so the notices start at the top, and the notice above
+has priority when both cannot fit. A notice that arrives later does not move
+the page back. Keyboard focus is not moved
+(the page still focuses the conversation heading when it opens, as before).
+Where `scrollIntoView` does not exist (the unit-test DOM) nothing happens. On
+a narrow screen the top of the transcript box can then be above the window;
+the newest message and the message box are in view.
+
+`tests/browser/explorerOpenAtNewest.pw.ts` covers, at both window sizes: a
+long and a short saved conversation; one with no saved message; one that
+opens with a pause notice; one with a pending turn; one with both (also on a
+short window with a long notice, where the notice keeps priority); an ended
+one; that a first Send in a new conversation, a later reply and the in-page
+Reload saved conversation control do not move the page; and that opening the
+page again does. No wording, request, command or
+database change.
+
 ## Demo A's two wordings: the screen-welcome sentence and the failed-reply message - 2026-11-10
 
 Paul approved both as written on 2026-11-10 at 22:51:08 CST (PRJ01-SPR002
