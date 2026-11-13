@@ -620,10 +620,13 @@ reply retains that saved line and the typed composer, before and after this chan
 ExplorerConversationTour and explorerConversationTour own the fixed local tour.
 Tapping "Show me around" opens it without a Send, request or AI call. It explains
 the conversation, Compass formation/confirmation and Waypoint formation/
-confirmation one step at a time, with topic buttons, Next, Finish, Close and
-"Let's begin". Modal keyboard focus enters the step and returns to the opener;
-a live region announces steps. Every tour sentence and the retry sentence is
-named draft copy for Paul's wording read. No tour-taken state exists in this
+confirmation one step at a time. Each step uses a list of bullets. The first
+two steps offer "Next step" and "Back to the conversation"; the last offers only
+"Back to the conversation". Topic buttons select a step, and Escape closes the
+tour. Modal keyboard focus enters the step and returns to the opener;
+a live region announces steps. The tour's sentences are the wording Paul
+approved on 2026-11-12; the retry sentence is named draft copy for Paul's
+wording read. No tour-taken state exists in this
 clone; no database state or daily-offer scheduler is added in this round.
 
 Existing safety, consent, authority, active/history capacity, partial Waypoint

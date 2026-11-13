@@ -56,11 +56,11 @@ test("REV306 Show me around opens a fixed keyboard tour with no request or chat 
     "If a point does not fit, tell your Virtual Guide what needs changing so it can correct the Compass. If your meaning is unclear, it asks.",
     "To turn the conversation to another point, choose it on the dial or in Compact view when the point controls are available.",
   ];
-  await expect(dialog.locator("#conversation-tour-step > p")).toHaveText(compassParagraphs);
+  await expect(dialog.locator("#conversation-tour-step > ul > li")).toHaveText(compassParagraphs);
   await expect(dialog.getByRole("status")).toHaveText(["How the Compass works", ...compassParagraphs].join(" "));
   await expect(dialog.locator("#conversation-tour-step")).not.toContainText('Choose "That\'s right" to confirm');
   await page.keyboard.press("Enter");
-  await expect(dialog.getByRole("button", { name: "Finish tour", exact: true })).toBeFocused();
+  await expect(dialog.getByRole("button", { name: "Back to the conversation", exact: true })).toBeFocused();
   await expect(dialog.getByRole("heading", { name: "How Waypoints work", exact: true })).toBeVisible();
   await expect(dialog.getByRole("status")).toContainText('Choose "That\'s right" to confirm the Waypoint');
   await dialog.getByRole("button", { name: "How Waypoints work", exact: true }).click();
@@ -70,11 +70,11 @@ test("REV306 Show me around opens a fixed keyboard tour with no request or chat 
   await expect(dialog.getByRole("button", { name: "How the conversation works", exact: true })).toBeFocused();
   await expect(dialog.getByRole("status")).toContainText("saved messages");
   // Native modal keyboard focus stays within the tour in both directions.
-  await dialog.getByRole("button", { name: "Close tour", exact: true }).focus();
+  await dialog.getByRole("button", { name: "Back to the conversation", exact: true }).focus();
   await page.keyboard.press("Tab");
   await expect(dialog.getByRole("button", { name: "How the conversation works", exact: true })).toBeFocused();
   await page.keyboard.press("Shift+Tab");
-  await expect(dialog.getByRole("button", { name: "Close tour", exact: true })).toBeFocused();
+  await expect(dialog.getByRole("button", { name: "Back to the conversation", exact: true })).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
   await expect(opener).toBeFocused();
@@ -82,10 +82,10 @@ test("REV306 Show me around opens a fixed keyboard tour with no request or chat 
   await expect(transcript(page).getByRole("listitem")).toHaveCount(current.messages.length);
   expect(requests).toHaveLength(0);
 
-  for (const closeLabel of ["Close tour", "Back to the conversation", "Finish tour"]) {
+  for (const fromTheLastStep of [false, true]) {
     await opener.click();
-    if (closeLabel === "Finish tour") await dialog.getByRole("button", { name: "How Waypoints work", exact: true }).click();
-    await dialog.getByRole("button", { name: closeLabel, exact: true }).click();
+    if (fromTheLastStep) await dialog.getByRole("button", { name: "How Waypoints work", exact: true }).click();
+    await dialog.getByRole("button", { name: "Back to the conversation", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect(opener).toBeFocused();
   }
