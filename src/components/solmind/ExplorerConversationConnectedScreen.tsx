@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type RefObject } from "react";
 
 import { CONVERSATION_FOOTER, VIRTUAL_GUIDE_SHORT } from "@/lib/solmind/explorerConversationScreen";
 import {
+  COMPOSER_KEY_HINT,
   COMPOSER_LABEL,
   COMPOSER_PLACEHOLDER,
   CONNECTED_GUIDE_NAME,
@@ -107,6 +108,7 @@ const NOTICE_CLASS = "rounded-2xl border border-stone-700 bg-black/40 p-4 text-s
 const ALERT_CLASS = "grid gap-3 rounded-2xl border border-amber-400/70 bg-amber-950/60 p-4 text-sm leading-6 text-amber-50";
 const LINK_CLASS = joinClasses("font-semibold text-amber-200 underline underline-offset-4 hover:text-amber-100", FOCUS_RING);
 const COMPOSER_FIELD_ID = "conversation-message";
+const COMPOSER_KEY_HINT_ID = "conversation-message-key-hint";
 const END_HEADING_ID = "conversation-end-heading";
 const AVAILABILITY_ID = "conversation-availability";
 const CAPACITY_ID = "conversation-capacity";
@@ -493,9 +495,24 @@ type ComposerProps = Readonly<{
 // beside Send, each with its sentence directly under it.
 function ConnectedComposer({ view, actions, composerRef, calmPrompt }: ComposerProps) {
   const disabled = view.held || view.sendUnavailable || view.atMessageCapacity;
+  // A tablet with an attached keyboard may report a coarse pointer and behave
+  // like a phone; Paul's screen wording sheet says this still needs checking.
+  const touchFirst = typeof window !== "undefined" && typeof window.matchMedia === "function" &&
+    window.matchMedia("(pointer: coarse)").matches;
+  const showKeyHint = !disabled && !touchFirst;
+  const lineBreakCaret = useRef<Readonly<{ draft: string; position: number }> | null>(null);
+  // Restore the caret after React writes the controlled draft into the box.
+  useLayoutEffect(() => {
+    const caret = lineBreakCaret.current;
+    lineBreakCaret.current = null;
+    if (caret !== null && composerRef.current?.value === caret.draft) {
+      composerRef.current.setSelectionRange(caret.position, caret.position);
+    }
+  }, [view.draft, composerRef]);
   const describedBy = [
     view.atMessageCapacity ? CAPACITY_ID : view.sendUnavailable ? AVAILABILITY_ID : null,
     calmPrompt === null ? null : CALM_PROMPT_ID,
+    showKeyHint ? COMPOSER_KEY_HINT_ID : null,
   ].filter(Boolean).join(" ") || undefined;
 
   return (
@@ -531,11 +548,40 @@ function ConnectedComposer({ view, actions, composerRef, calmPrompt }: ComposerP
           id={COMPOSER_FIELD_ID}
           maxLength={EXPLORER_CONVERSATION_LIMITS.messageCharacters}
           onChange={(event) => actions.onDraftChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229 ||
+                event.shiftKey || event.ctrlKey || event.metaKey) return;
+            const field = event.currentTarget;
+            if (event.altKey) {
+              if (disabled) return;
+              event.preventDefault();
+              const start = field.selectionStart;
+              const nextDraft = field.value.slice(0, start) + "\n" + field.value.slice(field.selectionEnd);
+              if (nextDraft.length > field.maxLength) return;
+              const position = start + 1;
+              if (nextDraft === field.value) {
+                // Replacing an existing line feed may leave the draft unchanged.
+                field.setSelectionRange(position, position);
+              } else {
+                lineBreakCaret.current = { draft: nextDraft, position };
+              }
+              actions.onDraftChange(nextDraft);
+              return;
+            }
+            if (disabled || touchFirst || view.draft.trim().length === 0) return;
+            event.preventDefault();
+            field.form?.requestSubmit();
+          }}
           placeholder={COMPOSER_PLACEHOLDER}
           ref={composerRef}
           rows={3}
           value={view.draft}
         />
+        {showKeyHint ? (
+          <p className="text-xs leading-5 text-stone-400" id={COMPOSER_KEY_HINT_ID}>
+            {COMPOSER_KEY_HINT}
+          </p>
+        ) : null}
         {view.draftError ? (
           <p className="text-sm text-amber-200" role="alert">
             {view.draftError}

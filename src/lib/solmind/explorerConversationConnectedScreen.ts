@@ -123,4 +123,5 @@ export const CURRENT_TOOLS_REMOVAL_REASON =
   "These tools will be removed once the Compass & Waypoint card does everything they do.";
 
 export const COMPOSER_LABEL = "Continue the conversation";
+export const COMPOSER_KEY_HINT = "To send your message, press Enter. To start a new line, press Shift+Enter or Alt+Enter.";
 export const COMPOSER_PLACEHOLDER = "Share what comes to mind...";

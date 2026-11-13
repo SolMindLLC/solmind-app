@@ -117,6 +117,12 @@ implementation changes. explorerAutomaticCompass.pw.ts and revised browser
 suites use synthetic HTTP responses and are authored only. Browser, database,
 migration, integration and publication execution remain Executor work.
 
+Part 2 of Paul's screen wording, approved 2026-11-12: Enter alone sends when
+sending is available and the message box holds text, through the form's own
+submit. Shift+Enter and Alt+Enter start a new line. Enter never sends during
+character composition or on a touch-first device. The approved hint is shown
+only when it is true: sending is available and the device is not touch-first.
+
 ## A saved conversation opens at its newest messages - 2026-11-11
 
 Paul's test comment (PRJ01-SPR002 `Validation_Workspaces/Decision_Record_2026-11-11.md`,

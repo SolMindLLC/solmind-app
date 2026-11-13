@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { createElement, createRef } from "react";
+import type { ComponentType, FormHTMLAttributes, KeyboardEvent, ReactElement, RefObject, SubmitEvent, TextareaHTMLAttributes } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -16,6 +17,7 @@ import {
   type NeedleHold,
 } from "../../../lib/solmind/explorerConnectedCard";
 import {
+  COMPOSER_KEY_HINT,
   CONNECTED_INTRO,
   CONNECTED_SHELL,
   CURRENT_TOOLS_HEADING,
@@ -52,6 +54,67 @@ import {
   type ConnectedConversationView,
 } from "../ExplorerConversationConnectedScreen";
 import { NotConnectedProvider, UnwiredControl } from "../ExplorerConversationScreenNotYetImplemented";
+
+type ComposerTestProps = {
+  view: ConnectedConversationView;
+  actions: ConnectedConversationActions;
+  composerRef: RefObject<HTMLTextAreaElement | null>;
+  calmPrompt: string | null;
+};
+const composerCapture = vi.hoisted(() => ({
+  mode: "off" as "off" | "component" | "handlers",
+  component: null as ReactElement<ComposerTestProps, ComponentType<ComposerTestProps>> | null,
+  field: null as TextareaHTMLAttributes<HTMLTextAreaElement> | null,
+  form: null as FormHTMLAttributes<HTMLFormElement> | null,
+  effects: [] as (() => void | (() => void))[],
+}));
+// Capture real rendered handlers without replacing the component or changing the existing static tests.
+// The browser suite supplies the real DOM, native form submission and controlled-input commit coverage.
+vi.mock("react/jsx-runtime", async original => {
+  const actual = await original<typeof import("react/jsx-runtime")>();
+  const capture = (element: ReactElement) => {
+    if (composerCapture.mode === "component" && typeof element.type === "function" && element.type.name === "ConnectedComposer") {
+      composerCapture.component = element as ReactElement<ComposerTestProps, ComponentType<ComposerTestProps>>;
+    }
+    if (composerCapture.mode === "handlers") {
+      if (element.type === "textarea") composerCapture.field = element.props as TextareaHTMLAttributes<HTMLTextAreaElement>;
+      if (element.type === "form") composerCapture.form = element.props as FormHTMLAttributes<HTMLFormElement>;
+    }
+    return element;
+  };
+  return {
+    ...actual,
+    jsx: (...args: Parameters<typeof actual.jsx>) => capture(actual.jsx(...args)),
+    jsxs: (...args: Parameters<typeof actual.jsxs>) => capture(actual.jsxs(...args)),
+  };
+});
+vi.mock("react/jsx-dev-runtime", async original => {
+  const actual = await original<typeof import("react/jsx-dev-runtime")>();
+  return {
+    ...actual,
+    jsxDEV: (...args: Parameters<typeof actual.jsxDEV>) => {
+      const element = actual.jsxDEV(...args);
+      if (composerCapture.mode === "component" && typeof element.type === "function" && element.type.name === "ConnectedComposer") {
+        composerCapture.component = element as ReactElement<ComposerTestProps, ComponentType<ComposerTestProps>>;
+      }
+      if (composerCapture.mode === "handlers") {
+        if (element.type === "textarea") composerCapture.field = element.props as TextareaHTMLAttributes<HTMLTextAreaElement>;
+        if (element.type === "form") composerCapture.form = element.props as FormHTMLAttributes<HTMLFormElement>;
+      }
+      return element;
+    },
+  };
+});
+vi.mock("react", async original => {
+  const actual = await original<typeof import("react")>();
+  return {
+    ...actual,
+    useLayoutEffect: (...args: Parameters<typeof actual.useLayoutEffect>) => {
+      if (composerCapture.mode === "handlers") composerCapture.effects.push(args[0]);
+      return actual.useLayoutEffect(...args);
+    },
+  };
+});
 
 const appRoot = path.resolve(__dirname, "..", "..", "..", "..");
 const SCREEN_FILE = "src/components/solmind/ExplorerConversationConnectedScreen.tsx";
@@ -218,6 +281,246 @@ beforeEach(() => {
   vi.spyOn(globalThis, "fetch").mockImplementation(() => { throw new Error("unexpected_effect"); });
 });
 afterEach(() => { expect(vi.mocked(globalThis.fetch).mock.calls.length).toBe(0); vi.restoreAllMocks(); });
+
+describe("REV415 composer Enter key", () => {
+  const hintId = "conversation-message-key-hint";
+  const approvedHint = "To send your message, press Enter. To start a new line, press Shift+Enter or Alt+Enter.";
+  type KeyInput = Partial<Pick<KeyboardEvent<HTMLTextAreaElement>, "key" | "shiftKey" | "altKey" | "ctrlKey" | "metaKey">> & {
+    isComposing?: boolean;
+    keyCode?: number;
+  };
+
+  afterEach(() => {
+    composerCapture.mode = "off";
+    composerCapture.component = null;
+    composerCapture.field = null;
+    composerCapture.form = null;
+    composerCapture.effects = [];
+    vi.unstubAllGlobals();
+  });
+
+  function composer(next = view({ draft: "A synthetic typed message." }), calmPrompt: string | null = null) {
+    const onSend = vi.fn<ConnectedConversationActions["onSend"]>();
+    const onDraftChange = vi.fn<ConnectedConversationActions["onDraftChange"]>();
+    const testActions = { ...actions, onSend, onDraftChange };
+    const composerRef = createRef<HTMLTextAreaElement>();
+    composerCapture.component = null;
+    composerCapture.mode = "component";
+    try {
+      renderToStaticMarkup(createElement(ExplorerConversationConnectedScreen, {
+        actions: testActions, composerRef, headingRef: createRef<HTMLHeadingElement>(), view: next,
+      }));
+    } finally {
+      composerCapture.mode = "off";
+    }
+    const component = composerCapture.component as ReactElement<ComposerTestProps, ComponentType<ComposerTestProps>> | null;
+    expect(component).not.toBeNull();
+    composerCapture.field = null;
+    composerCapture.form = null;
+    composerCapture.effects = [];
+    composerCapture.mode = "handlers";
+    let html: string;
+    try {
+      html = renderToStaticMarkup(createElement(component!.type, { ...component!.props, calmPrompt }));
+    } finally {
+      composerCapture.mode = "off";
+    }
+    const fieldProps = composerCapture.field as TextareaHTMLAttributes<HTMLTextAreaElement> | null;
+    const formProps = composerCapture.form as FormHTMLAttributes<HTMLFormElement> | null;
+    expect(fieldProps?.onKeyDown).toBeTypeOf("function");
+    expect(formProps?.onSubmit).toBe(onSend);
+    const effects = [...composerCapture.effects];
+    const submitEvent = { preventDefault: vi.fn() } as unknown as SubmitEvent<HTMLFormElement>;
+    // Model requestSubmit's handoff to the form handler; never call onSend from the key fixture.
+    const requestSubmit = vi.fn(() => formProps!.onSubmit!(submitEvent));
+    const setSelectionRange = vi.fn();
+    const field = {
+      value: next.draft,
+      maxLength: fieldProps!.maxLength!,
+      selectionStart: next.draft.length,
+      selectionEnd: next.draft.length,
+      form: { requestSubmit },
+      setSelectionRange,
+    };
+    composerRef.current = field as unknown as HTMLTextAreaElement;
+    return {
+      html, field, fieldProps: fieldProps!, onSend, onDraftChange, requestSubmit, setSelectionRange, submitEvent,
+      press({ isComposing = false, keyCode = 13, ...keys }: KeyInput = {}) {
+        const preventDefault = vi.fn();
+        fieldProps!.onKeyDown!({
+          key: "Enter", shiftKey: false, altKey: false, ctrlKey: false, metaKey: false,
+          currentTarget: field, nativeEvent: { isComposing, keyCode }, preventDefault, ...keys,
+        } as unknown as KeyboardEvent<HTMLTextAreaElement>);
+        return preventDefault;
+      },
+      commitDraft() {
+        // Apply the controlled value before running the captured layout effect, as a DOM commit does.
+        field.value = onDraftChange.mock.calls.at(-1)![0];
+        for (const effect of effects) effect();
+      },
+    };
+  }
+
+  it("submits Enter with text once through requestSubmit and the form's existing onSubmit", () => {
+    const f = composer();
+    expect(f.press()).toHaveBeenCalledOnce();
+    expect(f.requestSubmit).toHaveBeenCalledOnce();
+    expect(f.onSend).toHaveBeenCalledExactlyOnceWith(f.submitEvent);
+    expect(f.onDraftChange).not.toHaveBeenCalled();
+    expect(f.fieldProps.disabled).toBe(false);
+    expect(f.html).toMatch(/<button\b[^>]*type="submit"[^>]*>Send/);
+  });
+
+  it.each(["", " \t\n "])("leaves Enter alone without a non-whitespace draft: %j", draft => {
+    const f = composer(view({ draft }));
+    expect(f.press()).not.toHaveBeenCalled();
+    expect(f.requestSubmit).not.toHaveBeenCalled();
+    expect(f.onSend).not.toHaveBeenCalled();
+    expect(f.onDraftChange).not.toHaveBeenCalled();
+  });
+
+  it.each(["held", "sendUnavailable", "atMessageCapacity"] as const)("does not submit or show the hint while %s", gate => {
+    const f = composer(view({ draft: "A synthetic held message.", [gate]: true }));
+    expect(f.fieldProps.disabled).toBe(true);
+    expect(f.press()).not.toHaveBeenCalled();
+    expect(f.requestSubmit).not.toHaveBeenCalled();
+    expect(f.onSend).not.toHaveBeenCalled();
+    expect(f.html).not.toContain(approvedHint);
+    expect(f.fieldProps["aria-describedby"] ?? "").not.toContain(hintId);
+  });
+
+  it.each([{ isComposing: true }, { keyCode: 229 }])("leaves character composition untouched: %j", composition => {
+    const f = composer();
+    expect(f.press(composition)).not.toHaveBeenCalled();
+    expect(f.press({ ...composition, altKey: true })).not.toHaveBeenCalled();
+    expect(f.requestSubmit).not.toHaveBeenCalled();
+    expect(f.onSend).not.toHaveBeenCalled();
+    expect(f.onDraftChange).not.toHaveBeenCalled();
+  });
+
+  it("leaves Shift+Enter to the browser without sending or preventing the default", () => {
+    const f = composer();
+    expect(f.press({ shiftKey: true })).not.toHaveBeenCalled();
+    expect(f.requestSubmit).not.toHaveBeenCalled();
+    expect(f.onSend).not.toHaveBeenCalled();
+    expect(f.onDraftChange).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { start: 3, end: 3, expected: "Syn\nthetic text" },
+    { start: 3, end: 9, expected: "Syn\n text" },
+  ])("inserts Alt+Enter through draft change and restores the caret for selection $start to $end", ({ start, end, expected }) => {
+    const f = composer(view({ draft: "Synthetic text" }));
+    f.field.selectionStart = start;
+    f.field.selectionEnd = end;
+    expect(f.press({ altKey: true })).toHaveBeenCalledOnce();
+    expect(f.onDraftChange).toHaveBeenCalledExactlyOnceWith(expected);
+    expect(f.setSelectionRange).not.toHaveBeenCalled();
+    f.commitDraft();
+    expect(f.field.value).toBe(expected);
+    expect(f.setSelectionRange).toHaveBeenCalledExactlyOnceWith(start + 1, start + 1);
+    expect(f.requestSubmit).not.toHaveBeenCalled();
+    expect(f.onSend).not.toHaveBeenCalled();
+  });
+
+  it("keeps the caret after Alt+Enter replaces an existing line feed with the same value", () => {
+    const f = composer(view({ draft: "A\nB" }));
+    f.field.selectionStart = 1;
+    f.field.selectionEnd = 2;
+    expect(f.press({ altKey: true })).toHaveBeenCalledOnce();
+    expect(f.onDraftChange).toHaveBeenCalledExactlyOnceWith("A\nB");
+    expect(f.setSelectionRange).toHaveBeenCalledExactlyOnceWith(2, 2);
+    expect(f.requestSubmit).not.toHaveBeenCalled();
+    expect(f.onSend).not.toHaveBeenCalled();
+  });
+
+  it("inserts nothing for Alt+Enter beyond maxLength but permits a selected-text replacement at the limit", () => {
+    const f = composer();
+    f.field.value = "x".repeat(f.field.maxLength);
+    f.field.selectionStart = f.field.maxLength;
+    f.field.selectionEnd = f.field.maxLength;
+    expect(f.press({ altKey: true })).toHaveBeenCalledOnce();
+    expect(f.onDraftChange).not.toHaveBeenCalled();
+    expect(f.setSelectionRange).not.toHaveBeenCalled();
+    f.field.selectionStart = 2;
+    f.field.selectionEnd = 3;
+    expect(f.press({ altKey: true })).toHaveBeenCalledOnce();
+    expect(f.onDraftChange).toHaveBeenCalledExactlyOnceWith("xx\n" + "x".repeat(f.field.maxLength - 3));
+    f.commitDraft();
+    expect(f.field.value).toHaveLength(f.field.maxLength);
+    expect(f.setSelectionRange).toHaveBeenCalledExactlyOnceWith(3, 3);
+    expect(f.requestSubmit).not.toHaveBeenCalled();
+    expect(f.onSend).not.toHaveBeenCalled();
+  });
+
+  it("leaves Control, Meta and all combinations containing Shift, Control or Meta untouched", () => {
+    const f = composer();
+    for (let mask = 1; mask < 16; mask += 1) {
+      if (mask === 2) continue;
+      expect(f.press({ shiftKey: Boolean(mask & 1), altKey: Boolean(mask & 2), ctrlKey: Boolean(mask & 4), metaKey: Boolean(mask & 8) }),
+        `modifier mask ${mask}`).not.toHaveBeenCalled();
+    }
+    expect(f.requestSubmit).not.toHaveBeenCalled();
+    expect(f.onSend).not.toHaveBeenCalled();
+    expect(f.onDraftChange).not.toHaveBeenCalled();
+  });
+
+  it("keeps coarse-pointer Enter local and hides the hint without disabling the Send button", () => {
+    const matchMedia = vi.fn((query: string) => ({ matches: query === "(pointer: coarse)" }));
+    vi.stubGlobal("window", { matchMedia, location: { href: "http://localhost/" } });
+    const f = composer();
+    expect(matchMedia.mock.calls.every(call => call[0] === "(pointer: coarse)")).toBe(true);
+    const checksAtRender = matchMedia.mock.calls.length;
+    expect(checksAtRender).toBe(2);
+    expect(f.press()).not.toHaveBeenCalled();
+    expect(matchMedia).toHaveBeenCalledTimes(checksAtRender);
+    expect(f.requestSubmit).not.toHaveBeenCalled();
+    expect(f.onSend).not.toHaveBeenCalled();
+    expect(f.fieldProps.disabled).toBe(false);
+    expect(f.html).not.toContain(approvedHint);
+    expect(f.fieldProps["aria-describedby"]).toBeUndefined();
+    expect(f.html).toMatch(/<button\b[^>]*type="submit"[^>]*>Send/);
+  });
+
+  it("treats missing matchMedia as a keyboard device", () => {
+    vi.stubGlobal("window", { location: { href: "http://localhost/" } });
+    const f = composer();
+    expect(f.press()).toHaveBeenCalledOnce();
+    expect(f.requestSubmit).toHaveBeenCalledOnce();
+    expect(f.onSend).toHaveBeenCalledOnce();
+    expect(f.html).toContain(approvedHint);
+  });
+
+  it("shows the exact approved hint directly below an available box as small muted text without a live region", () => {
+    expect(COMPOSER_KEY_HINT).toBe(approvedHint);
+    const html = render(view({ draft: "" }));
+    const hint = new RegExp(`<p\\b[^>]*id="${hintId}"[^>]*>[^<]*</p>`).exec(html)?.[0] ?? "";
+    expect(textOf(hint).trim()).toBe(approvedHint);
+    expect(attribute(hint, "class")).toContain("text-xs");
+    expect(attribute(hint, "class")).toContain("text-stone-400");
+    expect(attribute(hint, "role")).toBeNull();
+    expect(attribute(hint, "aria-live")).toBeNull();
+    expect(html).toContain(`</textarea>${hint}`);
+    expect(html.split(approvedHint)).toHaveLength(2);
+  });
+
+  it("appends the hint description only while shown and preserves existing description ids in their order", () => {
+    const prompt = "A synthetic calm prompt.";
+    const cases: [Partial<ConnectedConversationView>, string][] = [
+      [{}, `conversation-calm-prompt ${hintId}`],
+      [{ held: true }, "conversation-calm-prompt"],
+      [{ sendUnavailable: true }, "conversation-availability conversation-calm-prompt"],
+      [{ atMessageCapacity: true }, "conversation-capacity conversation-calm-prompt"],
+      [{ sendUnavailable: true, atMessageCapacity: true }, "conversation-capacity conversation-calm-prompt"],
+    ];
+    for (const [overrides, expected] of cases) {
+      const f = composer(view(overrides), prompt);
+      expect(f.fieldProps["aria-describedby"]).toBe(expected);
+    }
+    vi.stubGlobal("window", { matchMedia: vi.fn(() => ({ matches: true })), location: { href: "http://localhost/" } });
+    expect(composer(view(), prompt).fieldProps["aria-describedby"]).toBe("conversation-calm-prompt");
+  });
+});
 
 describe("connected Explorer conversation screen", () => {
   it("S5 current tools contain only Waypoint controls, with no saved or forming Compass editor", () => {
