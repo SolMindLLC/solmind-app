@@ -336,6 +336,13 @@ higher of the phrase check and the model, above the conversation's floor.
 Until the debug log shows the actual cause of the 2026-11-10 failures, this fix
 covers the two most likely outer-shape causes; it does not change the request
 sent to OpenAI.
+Paul's options A and E, approved 2026-11-12, add two rules to this reply check.
+A reply that fails to read as JSON is tried once more after removing only
+trailing JSON whitespace and one single final closing brace, if present,
+and nothing else.
+A reply is refused whole when the same name appears twice in its outer
+object or inside `classification`, with escaped names decoded before the
+exact comparison.
 
 ## One overall time limit for each Send (correction D-12) - 2026-11-09
 

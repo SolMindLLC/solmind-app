@@ -225,6 +225,136 @@ function unwrappedCodeFence(rawText: string): string {
   const fenced = /^\s*```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]*```\s*$/u.exec(rawText);
   return fenced ? fenced[1] : rawText;
 }
+// Paul's option A (2026-11-12): only after JSON parsing fails, remove trailing JSON whitespace and one final brace.
+function withoutOneSurplusClosingBrace(text: string): string | null {
+  let end = text.length;
+  while (end > 0 && " \t\n\r".includes(text[end - 1])) end--;
+  return text[end - 1] === "}" ? text.slice(0, end - 1) : null;
+}
+// Paul's option E (2026-11-12): compare decoded names only in the outer object and its classification object.
+// An explicit stack reads the document once without a nesting limit or another JSON.parse that would lose duplicates.
+export function explorerSafetyReplyRepeatsName(text: string): boolean {
+  type Frame =
+    | { kind: "document"; state: "value" | "end" }
+    | { kind: "array"; state: "first" | "value" | "end" }
+    | { kind: "object"; state: "first" | "key" | "colon" | "value" | "end";
+        root: boolean; key: string; names: Set<string> | null };
+  const stack: Frame[] = [{ kind: "document", state: "value" }];
+  let index = 0;
+  let repeated = false;
+  // Option E safety net: JSON.parse has just accepted this text, so an unreadable document means a scanner defect.
+  // Refusing is the safe direction for a reply carrying the safety classification (2026-11-12).
+  function invalidScan(): never { fail("explorer_safety_invalid_response"); }
+  function readString(decode: boolean): string {
+    if (text[index++] !== "\"") invalidScan();
+    const characters: string[] = [];
+    while (index < text.length) {
+      let character = text[index++];
+      if (character === "\"") return characters.join("");
+      if (character.charCodeAt(0) < 0x20) invalidScan();
+      if (character === "\\") {
+        character = text[index++];
+        if (character === "u") {
+          let code = 0;
+          for (let digit = 0; digit < 4; digit++) {
+            const hex = text.charCodeAt(index++);
+            const value = hex >= 48 && hex <= 57 ? hex - 48
+              : hex >= 65 && hex <= 70 ? hex - 55 : hex >= 97 && hex <= 102 ? hex - 87 : -1;
+            if (value < 0) invalidScan();
+            code = code * 16 + value;
+          }
+          character = String.fromCharCode(code);
+        } else {
+          switch (character) {
+            case "\"": case "\\": case "/": break;
+            case "b": character = "\b"; break;
+            case "f": character = "\f"; break;
+            case "n": character = "\n"; break;
+            case "r": character = "\r"; break;
+            case "t": character = "\t"; break;
+            default: invalidScan();
+          }
+        }
+      }
+      if (decode) characters.push(character);
+    }
+    return invalidScan();
+  }
+  function isDigit(): boolean {
+    const code = text.charCodeAt(index);
+    return code >= 48 && code <= 57;
+  }
+  function readNumber(): void {
+    if (text[index] === "-") index++;
+    if (text[index] === "0") index++;
+    else {
+      if (!isDigit()) invalidScan();
+      while (isDigit()) index++;
+    }
+    if (text[index] === ".") {
+      index++;
+      if (!isDigit()) invalidScan();
+      while (isDigit()) index++;
+    }
+    if (text[index] === "e" || text[index] === "E") {
+      index++;
+      if (text[index] === "+" || text[index] === "-") index++;
+      if (!isDigit()) invalidScan();
+      while (isDigit()) index++;
+    }
+  }
+  while (true) {
+    while (index < text.length && " \t\n\r".includes(text[index])) index++;
+    const frame = stack[stack.length - 1];
+    const character = text[index];
+    if (frame.kind === "document" && frame.state === "end") {
+      if (index !== text.length) invalidScan();
+      return repeated;
+    }
+    if (frame.kind === "object") {
+      if (frame.state === "first" && character === "}") { index++; stack.pop(); continue; }
+      if (frame.state === "first" || frame.state === "key") {
+        frame.key = readString(true);
+        if (frame.names !== null) {
+          if (frame.names.has(frame.key)) repeated = true;
+          frame.names.add(frame.key);
+        }
+        frame.state = "colon";
+        continue;
+      }
+      if (frame.state === "colon") {
+        if (character !== ":") invalidScan();
+        index++; frame.state = "value"; continue;
+      }
+      if (frame.state === "end") {
+        if (character === ",") { index++; frame.state = "key"; continue; }
+        if (character === "}") { index++; stack.pop(); continue; }
+        invalidScan();
+      }
+    } else if (frame.kind === "array") {
+      if (frame.state === "first" && character === "]") { index++; stack.pop(); continue; }
+      if (frame.state === "end") {
+        if (character === ",") { index++; frame.state = "value"; continue; }
+        if (character === "]") { index++; stack.pop(); continue; }
+        invalidScan();
+      }
+    }
+    frame.state = "end";
+    if (character === "{") {
+      const root = frame.kind === "document";
+      const checked = root || (frame.kind === "object" && frame.root && frame.key === "classification");
+      stack.push({ kind: "object", state: "first", root, key: "", names: checked ? new Set<string>() : null });
+      index++;
+    } else if (character === "[") {
+      stack.push({ kind: "array", state: "first" }); index++;
+    } else if (character === "\"") readString(false);
+    else if (character === "-" || isDigit()) readNumber();
+    else if (text.startsWith("true", index)) index += 4;
+    else if (text.startsWith("false", index)) index += 5;
+    else if (text.startsWith("null", index)) index += 4;
+    else invalidScan();
+  }
+}
 // A plain data object holding only the listed keys that the parsed value owns as data properties; null when the
 // value is not a plain object or one of those keys is an accessor.
 function knownOuterKeys(value: unknown, keys: readonly string[]): Record<string, unknown> | null {
@@ -259,7 +389,14 @@ export function parseExplorerSafetyReplyBody(rawText: unknown, mode: ExplorerSaf
   let parsed: unknown;
   // Reply fix (2026-11-10; PRJ01-SPR002 decision queue, morning meeting entry, items 14 and 15): one whole reply
   // wrapped in a Markdown code fence is read as its inner text; anything else must still be exactly one JSON value.
-  try { parsed = JSON.parse(unwrappedCodeFence(rawText)) as unknown; } catch { fail("explorer_safety_invalid_response"); }
+  let parsedText = unwrappedCodeFence(rawText);
+  try { parsed = JSON.parse(parsedText) as unknown; } catch {
+    const repaired = withoutOneSurplusClosingBrace(parsedText);
+    if (repaired === null) fail("explorer_safety_invalid_response");
+    parsedText = repaired;
+    try { parsed = JSON.parse(parsedText) as unknown; } catch { fail("explorer_safety_invalid_response"); }
+  }
+  if (explorerSafetyReplyRepeatsName(parsedText)) fail("explorer_safety_invalid_response");
   // The three required keys and any of the four optional keys are kept; any other outer key is dropped instead of
   // rejecting the whole reply (three replies were lost on 2026-11-10 to a failed outer check). Every kept value is
   // checked exactly as before, so the protocol, the classification and the reply text stay strict.

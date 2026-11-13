@@ -22,7 +22,7 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync, lstatSync } from "node:fs";
 import path from "node:path";
 import type { ExplorerPrivateConversationDependencies } from "../virtual-guide/explorerPrivateConversationComposition";
-import { EXPLORER_SAFETY_REPLY_PROTOCOL, explorerSafetyReplyHasConflictingOuterKey, parseExplorerSafetyReplyBody } from "../virtual-guide/explorerSafetyReplyContract";
+import { EXPLORER_SAFETY_REPLY_PROTOCOL, explorerSafetyReplyHasConflictingOuterKey, explorerSafetyReplyRepeatsName, parseExplorerSafetyReplyBody } from "../virtual-guide/explorerSafetyReplyContract";
 
 export const SOLMIND_DEBUG_TAG = "SOLMIND-DEBUG";
 export const SOLMIND_DEBUG_CONVERSATION_LOG_ENV = "SOLMIND_DEBUG_CONVERSATION_LOG";
@@ -118,10 +118,27 @@ export function describeExplorerSafetyReplyShape(rawText: unknown, protocol: str
   const trimmed = rawText.trim();
   const fenced = /^\s*```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]*```\s*$/u.exec(rawText);
   let body: unknown;
-  try { body = JSON.parse(fenced ? fenced[1] : rawText); } catch {
-    return { rule: "not_json", startsWithCodeFence: trimmed.startsWith("```"), startsWithBrace: trimmed.startsWith("{") };
+  let parsedText = fenced ? fenced[1] : rawText;
+  let surplusClosingBraceRemoved = false;
+  // SOLMIND-DEBUG: brace repair and repeated-name checks mirror Paul's options A and E of 2026-11-12.
+  try { body = JSON.parse(parsedText); } catch {
+    let end = parsedText.length;
+    while (end > 0 && " \t\n\r".includes(parsedText[end - 1])) end--;
+    if (parsedText[end - 1] !== "}") {
+      return { rule: "not_json", startsWithCodeFence: trimmed.startsWith("```"), startsWithBrace: trimmed.startsWith("{") };
+    }
+    parsedText = parsedText.slice(0, end - 1);
+    try { body = JSON.parse(parsedText); } catch {
+      return { rule: "not_json", startsWithCodeFence: trimmed.startsWith("```"), startsWithBrace: trimmed.startsWith("{") };
+    }
+    surplusClosingBraceRemoved = true;
   }
-  if (body === null || typeof body !== "object" || Array.isArray(body)) return { rule: "not_object" };
+  const repair = surplusClosingBraceRemoved ? { surplusClosingBraceRemoved: true } : {};
+  if (body === null || typeof body !== "object" || Array.isArray(body)) return { rule: "not_object", ...repair };
+  let repeatedNameRule: string | null = null;
+  try {
+    if (explorerSafetyReplyRepeatsName(parsedText)) repeatedNameRule = "repeated_name";
+  } catch { repeatedNameRule = "repeated_name_scan_failed"; }
   const keys = Object.keys(body);
   const dropped = keys.filter((key) => !ALLOWED_OUTER_KEYS.includes(key));
   const missing = REQUIRED_OUTER_KEYS.filter((key) => !keys.includes(key));
@@ -135,12 +152,12 @@ export function describeExplorerSafetyReplyShape(rawText: unknown, protocol: str
   const candidateShape = candidate === null ? "null" : candidate !== null && typeof candidate === "object" && !Array.isArray(candidate) &&
     Object.keys(candidate).length === 1 && typeof (candidate as Record<string, unknown>).content === "string"
     ? ((candidate as Record<string, string>).content.trim().length === 0 ? "empty" : "content") : "other_shape";
-  const rule = missing.length > 0 ? "missing_outer_keys"
+  const rule = repeatedNameRule !== null ? repeatedNameRule : missing.length > 0 ? "missing_outer_keys"
     : record.protocol !== protocol ? "wrong_protocol"
       : explorerSafetyReplyHasConflictingOuterKey(body) ? "conflicting_outer_key" : !classificationValid ? "bad_classification"
       : mode !== "classification_only" && candidateShape !== "content" ? "candidate_" + candidateShape : "shape_ok";
   const short = (list: readonly string[]) => list.slice(0, 20).map((key) => key.slice(0, KEY_LIMIT));
-  return { rule, codeFence: fenced !== null, outerKeys: short(keys), droppedKeys: short(dropped), missingKeys: missing, candidateShape };
+  return { rule, codeFence: fenced !== null, outerKeys: short(keys), droppedKeys: short(dropped), missingKeys: missing, candidateShape, ...repair };
 }
 
 // SOLMIND-DEBUG: the parser's own verdict on a raw reply, beside the shape rule: accepted (with the candidate's kind)

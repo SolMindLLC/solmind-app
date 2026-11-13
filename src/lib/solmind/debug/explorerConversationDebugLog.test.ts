@@ -227,4 +227,43 @@ describe("debug conversation log (SOLMIND-DEBUG)", () => {
     const [row] = await rows(folder);
     expect(row).toMatchObject({ event: "guide_reply", parser: "accepted" });
   });
+
+  it("DL14 describes a repaired surplus-brace reply and adds only the repair flag", () => {
+    for (const raw of [GOOD + "} \t\n\r", "```json\n" + GOOD + "}\n```"]) {
+      const described = describeExplorerSafetyReply(raw, "classification_and_reply");
+      expect(described).toEqual({ parser: "accepted", candidateKind: "usable", level: 0, rule: "shape_ok",
+        codeFence: raw.startsWith("```"), outerKeys: ["protocol", "classification", "candidateReply"],
+        droppedKeys: [], missingKeys: [], candidateShape: "content", surplusClosingBraceRemoved: true });
+      expect(JSON.stringify(described)).not.toContain("Hello there.");
+    }
+  });
+
+  it("DL15 names repeated names before missing keys and scans the repaired text", () => {
+    const raw = GOOD.slice(0, -1) + ',"extra":1,"extra":2}';
+    expect(describeExplorerSafetyReply(raw, "classification_and_reply")).toMatchObject({ parser: "rejected", rule: "repeated_name" });
+    expect(describeExplorerSafetyReplyShape(raw, PROTOCOL)).not.toHaveProperty("surplusClosingBraceRemoved");
+    expect(describeExplorerSafetyReply(raw + "}", "classification_and_reply"))
+      .toMatchObject({ parser: "rejected", rule: "repeated_name", surplusClosingBraceRemoved: true });
+    expect(describeExplorerSafetyReplyShape('{"extra":1,"extra":2}', PROTOCOL))
+      .toMatchObject({ rule: "repeated_name", missingKeys: ["protocol", "classification", "candidateReply"] });
+  });
+
+  it("DL16 keeps unreadable replies at not_json without a repair flag", () => {
+    for (const raw of ["not json", "not json}", GOOD + "}}", GOOD + "}\u00a0"]) {
+      expect(describeExplorerSafetyReplyShape(raw, PROTOCOL))
+        .toEqual({ rule: "not_json", startsWithCodeFence: false, startsWithBrace: raw.startsWith("{") });
+    }
+  });
+
+  it("DL17 contains a repeated-name scanner failure without logging reply words", () => {
+    const parsed: unknown = JSON.parse(GOOD);
+    const spy = vi.spyOn(JSON, "parse").mockReturnValueOnce(parsed);
+    try {
+      const described = describeExplorerSafetyReplyShape("Synthetic unreadable document.", PROTOCOL);
+      expect(described).toEqual({ rule: "repeated_name_scan_failed", codeFence: false,
+        outerKeys: ["protocol", "classification", "candidateReply"], droppedKeys: [], missingKeys: [], candidateShape: "content" });
+      expect(JSON.stringify(described)).not.toContain("Synthetic unreadable document.");
+      expect(JSON.stringify(described)).not.toContain("Hello there.");
+    } finally { spy.mockRestore(); }
+  });
 });

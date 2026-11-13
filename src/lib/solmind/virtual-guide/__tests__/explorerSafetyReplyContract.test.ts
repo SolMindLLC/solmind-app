@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
   EXPLORER_SAFETY_REQUEST_VERSION, EXPLORER_SAFETY_REPLY_PROTOCOL,
-  parseExplorerSafetyReplyBody, parseExplorerSafetyReplyRequest,
+  explorerSafetyReplyRepeatsName, parseExplorerSafetyReplyBody, parseExplorerSafetyReplyRequest,
 } from "../explorerSafetyReplyContract";
 
 function request() {
@@ -235,17 +235,188 @@ describe("Explorer same-call raw body contract (synthetic mechanics)", () => {
       expect(parseExplorerSafetyReplyBody(raw, "classification_and_reply")).toEqual(plain);
     }
   });
-  it("uses one decoder and its single last-member duplicate interpretation", () => {
+  it("decodes the reply once and refuses repeated classification names", () => {
+    // Paul's option E, 2026-11-12: repeated safety names must no longer silently select the last value.
     const raw = '{"protocol":"explorer-safety-reply.v2","classification":{"level":4,"level":0,"minorIndicated":false},"candidateReply":null}';
     const spy = vi.spyOn(JSON, "parse");
     try {
-      expect(parseExplorerSafetyReplyBody(raw, "classification_and_reply").classification.level).toBe(0);
+      expect(() => parseExplorerSafetyReplyBody(raw, "classification_and_reply")).toThrowError("explorer_safety_invalid_response");
       expect(spy).toHaveBeenCalledOnce();
     } finally { spy.mockRestore(); }
   });
   it("bounds extracted raw UTF8 bytes before decoding", () => {
     expect(() => parseExplorerSafetyReplyBody(" ".repeat(262145), "classification_and_reply")).toThrowError("explorer_safety_limit_exceeded");
     expect(() => parseExplorerSafetyReplyBody("\u00e9".repeat(131073), "classification_and_reply")).toThrowError("explorer_safety_limit_exceeded");
+  });
+});
+
+// Paul's option A, 2026-11-12: only one final closing brace may be removed after JSON decoding fails.
+describe("one surplus reply closing brace", () => {
+  it.each(["}", "} \t\r\n"])("keeps the same classification and prose with suffix %j", suffix => {
+    const raw = body();
+    expect(parseExplorerSafetyReplyBody(raw + suffix, "classification_and_reply"))
+      .toEqual(parseExplorerSafetyReplyBody(raw, "classification_and_reply"));
+  });
+  it.each(["json", ""])("accepts one surplus brace inside a whole %j Markdown fence", language => {
+    const raw = body();
+    expect(parseExplorerSafetyReplyBody("```" + language + "\n" + raw + "} \t\r\n```", "classification_and_reply"))
+      .toEqual(parseExplorerSafetyReplyBody(raw, "classification_and_reply"));
+  });
+  it.each(["}}", "]", "} ok", "}\u00a0", "}\u000b", "}\u000c"])("refuses unapproved surplus suffix %j", suffix => {
+    expect(() => parseExplorerSafetyReplyBody(body() + suffix, "classification_and_reply"))
+      .toThrowError("explorer_safety_invalid_response");
+  });
+  it("does not repair a missing comma before the surplus brace", () => {
+    const raw = body().replace(",\"candidateReply\":", "\"candidateReply\":") + "}";
+    expect(() => parseExplorerSafetyReplyBody(raw, "classification_and_reply")).toThrowError("explorer_safety_invalid_response");
+  });
+  it("does not add the missing final brace to a truncated reply", () => {
+    const raw = body({ content: "Synthetic truncated reply." }).slice(0, -1);
+    expect(() => parseExplorerSafetyReplyBody(raw, "classification_and_reply")).toThrowError("explorer_safety_invalid_response");
+  });
+  it("refuses ordinary words before the opening JSON brace", () => {
+    const raw = "Here is a synthetic reply: " + body();
+    expect(() => parseExplorerSafetyReplyBody(raw, "classification_and_reply")).toThrowError("explorer_safety_invalid_response");
+  });
+  it("leaves an ordinary valid reply intact and decodes it only once", () => {
+    const raw = body(); const spy = vi.spyOn(JSON, "parse");
+    try {
+      expect(parseExplorerSafetyReplyBody(raw, "classification_and_reply")).toEqual({
+        classification: { level: 3, minorIndicated: false }, candidate: { kind: "usable", content: "One\npermitted question?" } });
+      expect(spy).toHaveBeenCalledOnce();
+      expect(spy).toHaveBeenCalledWith(raw);
+    } finally { spy.mockRestore(); }
+  });
+  it.each(["", " \t\r\n", "}"])("refuses an empty or incomplete document %j", raw => {
+    expect(() => parseExplorerSafetyReplyBody(raw, "classification_and_reply")).toThrowError("explorer_safety_invalid_response");
+  });
+  it("keeps classification-only replies free of candidate prose after removing a surplus brace", () => {
+    expect(parseExplorerSafetyReplyBody(body() + "}", "classification_only")).toEqual({
+      classification: { level: 3, minorIndicated: false }, candidate: { kind: "not_requested" } });
+  });
+  it("checks the original raw byte limit before a surplus brace could be removed", () => {
+    const raw = body(); const padded = raw + " ".repeat(262144 - Buffer.byteLength(raw, "utf8")) + "}";
+    const spy = vi.spyOn(JSON, "parse");
+    try {
+      expect(() => parseExplorerSafetyReplyBody(padded, "classification_and_reply")).toThrowError("explorer_safety_limit_exceeded");
+      expect(spy).not.toHaveBeenCalled();
+    } finally { spy.mockRestore(); }
+  });
+  it("keeps the protocol and classification checks after a surplus brace is removed", () => {
+    for (const raw of [proposedBody({ protocol: "explorer-safety-reply.v1" }), body(null, { level: 5, minorIndicated: false })]) {
+      expect(() => parseExplorerSafetyReplyBody(raw + "}", "classification_and_reply")).toThrowError("explorer_safety_invalid_response");
+    }
+  });
+});
+
+// Paul's option E, 2026-11-12: only the outer object and its classification object reject decoded repeated names.
+describe("repeated reply names", () => {
+  it("keeps structural-looking content inside its string but refuses a real repeated outer name", () => {
+    const content = '},"classification":{"level":4,"minorIndicated":false},"x":{';
+    const raw = body({ content }, { level: 1, minorIndicated: true });
+    expect(parseExplorerSafetyReplyBody(raw, "classification_and_reply")).toEqual({
+      classification: { level: 1, minorIndicated: true }, candidate: { kind: "usable", content } });
+    const repeated = raw.slice(0, -1) + String.raw`,"extra":1,"extra":2}`;
+    expect(() => parseExplorerSafetyReplyBody(repeated, "classification_and_reply")).toThrowError("explorer_safety_invalid_response");
+  });
+  it.each([
+    ["BMP letter", String.raw`,"\u00e9":1,"${String.fromCodePoint(0x00e9)}":2}`],
+    ["surrogate pair", String.raw`,"\ud83d\ude00":1,"${String.fromCodePoint(0x1f600)}":2}`],
+  ])("refuses an escaped outer name repeated as its plain character: %s", (_name, extra) => {
+    const raw = body().slice(0, -1) + extra;
+    expect(() => parseExplorerSafetyReplyBody(raw, "classification_and_reply")).toThrowError("explorer_safety_invalid_response");
+  });
+  it.each([
+    String.raw`,"classification":{"level":0,"minorIndicated":false}`,
+    String.raw`,"candidateReply":{"content":"Synthetic replacement."}`,
+    String.raw`,"extra":1,"extra":2`,
+    String.raw`,"__proto__":1,"__proto__":2`,
+    String.raw`,"classifi\u0063ation":{"level":0,"minorIndicated":false}`,
+  ])("refuses repeated outer names even when they would be dropped: %s", extra => {
+    const raw = body().slice(0, -1) + extra + "}";
+    expect(() => parseExplorerSafetyReplyBody(raw, "classification_and_reply")).toThrowError("explorer_safety_invalid_response");
+  });
+  it.each([
+    String.raw`{"level":4,"le\u0076el":0,"minorIndicated":false}`,
+    String.raw`{"level":4,"minorIndicated":true,"minor\u0049ndicated":false}`,
+  ])("refuses repeated decoded classification names: %s", classification => {
+    const raw = String.raw`{"protocol":"${EXPLORER_SAFETY_REPLY_PROTOCOL}","classifi\u0063ation":${classification},"candidateReply":null}`;
+    expect(() => parseExplorerSafetyReplyBody(raw, "classification_and_reply")).toThrowError("explorer_safety_invalid_response");
+    expect(() => parseExplorerSafetyReplyBody(raw, "classification_only")).toThrowError("explorer_safety_invalid_response");
+  });
+  it("keeps last-member interpretation inside an unexamined Waypoint suggestion and candidate", () => {
+    const raw = String.raw`{"protocol":"${EXPLORER_SAFETY_REPLY_PROTOCOL}","classification":{"level":0,"minorIndicated":false},` +
+      String.raw`"candidateReply":{"content":"Earlier synthetic reply.","content":"Later synthetic reply."},` +
+      String.raw`"waypointSuggestion":{"title":"Earlier title","title":"Later title","destination":"Synthetic destination",` +
+      String.raw`"whyItMatters":"Synthetic reason","arrivalSignal":"Synthetic arrival"}}`;
+    expect(explorerSafetyReplyRepeatsName(raw)).toBe(false);
+    expect(parseExplorerSafetyReplyBody(raw, "classification_and_reply")).toEqual({
+      classification: { level: 0, minorIndicated: false }, candidate: { kind: "usable", content: "Later synthetic reply." },
+      waypointSuggestion: { title: "Later title", destination: "Synthetic destination", whyItMatters: "Synthetic reason", arrivalSignal: "Synthetic arrival" } });
+  });
+  it("keeps a reply with no repeated names unchanged", () => {
+    const raw = body();
+    expect(explorerSafetyReplyRepeatsName(raw)).toBe(false);
+    expect(parseExplorerSafetyReplyBody(raw, "classification_and_reply")).toEqual({
+      classification: { level: 3, minorIndicated: false }, candidate: { kind: "usable", content: "One\npermitted question?" } });
+  });
+  it("refuses repeated outer names after removing one surplus brace, including inside a fence", () => {
+    const raw = body().slice(0, -1) + String.raw`,"classification":{"level":0,"minorIndicated":false}}}`;
+    for (const text of [raw, "```json\n" + raw + "\n```"]) {
+      expect(() => parseExplorerSafetyReplyBody(text, "classification_and_reply")).toThrowError("explorer_safety_invalid_response");
+    }
+  });
+  it("compares names exactly without case folding, spacing removal or Unicode normalization", () => {
+    const raw = String.raw`{"name":1,"Name":2,"na me":3,"na_me":4,"na-me":5,"\u00e9":6,"e\u0301":7}`;
+    expect(explorerSafetyReplyRepeatsName(raw)).toBe(false);
+    expect(parseExplorerSafetyReplyBody(body().slice(0, -1) + String.raw`,"extra":1,"Extra":2}`, "classification_and_reply"))
+      .toEqual(parseExplorerSafetyReplyBody(body(), "classification_and_reply"));
+  });
+  it.each([
+    String.raw`{"a\"b":0,"a\u0022b":1}`,
+    String.raw`{"a\\b":0,"a\u005cb":1}`,
+    String.raw`{"a\/b":0,"a/b":1}`,
+    String.raw`{"\b\f\n\r\t":0,"\u0008\u000c\u000a\u000d\u0009":1}`,
+    String.raw`{"\ud83d\ude00":0,"\uD83D\uDE00":1}`,
+    String.raw`{"\ud800":0,"\uD800":1}`,
+  ])("decodes JSON name escapes before comparison: %s", raw => {
+    expect(explorerSafetyReplyRepeatsName(raw)).toBe(true);
+  });
+  it.each([
+    String.raw`{"extra":{"classification":{"level":4,"level":0}}}`,
+    String.raw`{"extra":[{"classification":{"level":4,"level":0}}]}`,
+    String.raw`{"classification":[{"level":4,"level":0}]}`,
+    String.raw`{"classification":{"extra":{"level":4,"level":0}}}`,
+    String.raw`[{"level":4,"level":0}]`,
+    String.raw`[{"classification":{"level":4,"level":0}}]`,
+  ])("does not widen the examined object scopes: %s", raw => {
+    expect(explorerSafetyReplyRepeatsName(raw)).toBe(false);
+  });
+  it("does not call JSON.parse to compare names", () => {
+    const spy = vi.spyOn(JSON, "parse");
+    try {
+      expect(explorerSafetyReplyRepeatsName(String.raw`{"classification":{"level":4,"le\u0076el":0}}`)).toBe(true);
+      expect(spy).not.toHaveBeenCalled();
+    } finally { spy.mockRestore(); }
+  });
+  it.each(["null", "true", "false", "-0", "10.25e-3", "1E+9", "1e999", "\"Synthetic string\"",
+    "[]", "{}", "[null,true,false,-0,1.5e2,\"string\",{},[]]"])
+    ("reads a complete JSON document with no repeated names: %s", raw => {
+      expect(explorerSafetyReplyRepeatsName(" \t\r\n" + raw + " \t\r\n")).toBe(false);
+    });
+  it.each(["", " ", "}", "{", "[", "{}{}", "null true", "[1,]", "{\"a\":1,}", "{\"a\" 1}", "{\"a\":}",
+    "{\"a\":1 \"b\":2}", "{\"a\":1,\"a\":2} trailing", "01", "-", "1.", "1e", "1e+", "+1", "NaN", "undefined",
+    String.raw`"\x41"`, String.raw`"\u0x00"`, "\"unterminated", "\"line\nbreak\"", "{}\u00a0"])
+    ("refuses scanner text that is not one JSON document: %s", raw => {
+      expect(() => explorerSafetyReplyRepeatsName(raw)).toThrowError("explorer_safety_invalid_response");
+    });
+  it("reads deep arrays and objects without an added nesting limit or recursive calls", () => {
+    const nested = "{\"child\":[".repeat(12000) + "null" + "]}".repeat(12000);
+    const raw = body().slice(0, -1) + ",\"extra\":" + nested + "}";
+    expect(Buffer.byteLength(raw, "utf8")).toBeLessThan(262144);
+    expect(explorerSafetyReplyRepeatsName(raw)).toBe(false);
+    expect(parseExplorerSafetyReplyBody(raw, "classification_and_reply"))
+      .toEqual(parseExplorerSafetyReplyBody(body(), "classification_and_reply"));
   });
 });
 
