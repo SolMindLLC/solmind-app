@@ -40,7 +40,7 @@ import { ExplorerReplyChoices } from "./ExplorerReplyChoices";
 import { ExplorerConversationTour } from "./ExplorerConversationTour";
 import { ExplorerWaitingIndicator } from "./ExplorerWaitingIndicator";
 import { ExplorerWaypointDraft } from "./ExplorerWaypointDraft";
-import { ConnectedWaypointCard } from "./ExplorerConnectedWaypointCard";
+import { ConnectedWaypointCard, useConnectedWaypointActions } from "./ExplorerConnectedWaypointCard";
 import type { ExplorerConversationFormationIntent } from "./ExplorerConversationFormation";
 import {
   BuildNotesProvider,
@@ -78,14 +78,15 @@ import {
 // read-only props; nothing here requests, stores or sends anything itself.
 // The Compass & Waypoint card (ExplorerConnectedCompassCard.tsx and
 // ExplorerConnectedWaypointCard.tsx) draws the saved Compass and Waypoints,
-// and choosing a Compass point hands the existing set_attention command to
-// onCommand, which ExplorerConversation.tsx sends.
+// and hands Compass choices and reviewed Reached/Release intents to onCommand,
+// which ExplorerConversation.tsx sends.
 // The only state kept here is layout: whether the wide panel shows, whether
 // the narrow drawer is open (it closes, and focus moves to the page's alert,
 // when a change made from it leaves no saved state), which Compass view (Full
 // or Compact) shows in the panel and in the drawer, whether the narrow-screen Menu is open, which
 // "Not connected yet" sentence is shown, which build notes show, and the local
-// reply-choice dismissal and calm prompt (including its last line). Parts that are not connected yet show
+// reply-choice dismissal and calm prompt (including its last line), and the
+// Waypoint review/outcome display shared with the narrow drawer. Parts that are not connected yet show
 // a blue "Not connected yet" build-note label and, when activated, one sentence directly
 // under them saying what they will do (NotConnectedProvider). A note that
 // describes an area rather than a control (standalone) is a blue build-note box
@@ -731,17 +732,18 @@ type SupportBodyProps = Readonly<{
   compassView: CardCompassView;
   onToggleCompassView: () => void;
   onCommand: (intent: ExplorerConversationFormationIntent) => void;
+  waypointActions: ReturnType<typeof useConnectedWaypointActions>;
 }>;
 
 // The Compass & Waypoint card (chat step slices S1 and S2): the saved Compass
 // on its 8 positions, where the Explorer can point the needle, and the saved
-// Waypoints, read-only. Choosing a point sends the existing set_attention
-// command through onCommand, so ExplorerConversation.tsx keeps its hold,
+// Waypoints with Reached and Release reviews. Choices use the existing
+// commands through onCommand, so ExplorerConversation.tsx keeps its hold,
 // retry and expected-revision rules. Key Insights are not built yet (Paul's
 // decision 7), so that area keeps its blue build-note box.
 // The Compass card shows its Full or Compact
 // view as this scope's layout state says (2026-11-03).
-function ConnectedSupportBody({ scope, view, compassView, onToggleCompassView, onCommand }: SupportBodyProps) {
+function ConnectedSupportBody({ scope, view, compassView, onToggleCompassView, onCommand, waypointActions }: SupportBodyProps) {
   const { state } = view;
   const keyInsightTitle = `${scope}-connected-key-insight-title`;
   const flags = { ended: view.ended, endReviewOpen: view.endReviewOpen, uncertain: view.uncertain, busy: view.busy, held: view.held };
@@ -761,7 +763,7 @@ function ConnectedSupportBody({ scope, view, compassView, onToggleCompassView, o
         state={state}
         view={compassView}
       />
-      <ConnectedWaypointCard scope={scope} state={state} />
+      <ConnectedWaypointCard actions={waypointActions} scope={scope} state={state} />
       <section aria-labelledby={keyInsightTitle} className="grid gap-2 border-b border-stone-800/80 px-4 py-4">
         <h3 className="font-serif text-lg text-stone-50" id={keyInsightTitle}>
           {CONNECTED_KEY_INSIGHT_HEADING}
@@ -782,6 +784,14 @@ type ReplyPromptState = Readonly<{
 }>;
 
 export function ExplorerConversationConnectedScreen({ view, actions, headingRef, composerRef }: ScreenProps) {
+  const waypointActions = useConnectedWaypointActions({
+    state: view.state,
+    onCommand: actions.onCommand,
+    held: view.held,
+    busy: view.busy,
+    pendingTurn: view.state?.pendingTurn === true,
+    uncertain: view.uncertain,
+  });
   const [panelVisible, setPanelVisible] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -912,6 +922,7 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
       onToggleCompassView={() => toggleCompassView(scope)}
       scope={scope}
       view={view}
+      waypointActions={waypointActions}
     />
   );
 

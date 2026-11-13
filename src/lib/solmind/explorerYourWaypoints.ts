@@ -38,10 +38,11 @@ export const YOUR_WAYPOINTS_WORDING = Object.freeze({
   reachedOn: (date: string) => `Reached ${date}`,
   releasedOn: (date: string) => `Released ${date}`,
   evidenceTerm: "What showed you reached it",
-  // Paul's approved sentence (decision record 2026-11-13 15:36:41 CST, choice A): the conversation's older tools
-  // section is removed, and Reached and Release come to the Compass & Waypoint card in the next demo.
+  // Draft for Paul's wording read: PRJ01-SPR002
+  // Validation_Workspaces/Reached_Wording_For_Paul_2026-11-13_R02.md, Part 3.
+  // Replaces the approved 15:36:41 CST sentence when the card's buttons ship.
   openHint:
-    "Marking this Waypoint Reached or releasing it is coming to its conversation's Compass & Waypoint card, so its changes stay with that conversation.",
+    "To keep this Waypoint's changes with its conversation, mark it Reached or release it on that conversation's Compass & Waypoint card.",
   openLink: "Go to your conversation",
   reachButton: "Mark Reached",
   releaseButton: "Release",

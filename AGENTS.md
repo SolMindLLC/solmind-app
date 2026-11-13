@@ -8,6 +8,19 @@ This version has breaking changes - APIs, conventions, and file structure may al
 
 # SolMind App Agent Instructions
 
+## 2026-11-13 - Mark Reached and Release on the Compass & Waypoint card (REV435)
+
+Paul's decision (PRJ01-SPR002 decision record 2026-11-13 14:51:29 CST): Reached and Release come to the card. A current
+Formed Waypoint of an open conversation shows "Mark Reached" and "Release" in its open row, each with a review; Reached,
+Released, earlier versions, the forming draft and ended conversations stay read-only. `useConnectedWaypointActions`
+(in ExplorerConnectedWaypointCard.tsx, called by the screen so its state survives closing the narrow drawer) builds
+the intents with `buildReachedFormationIntent` and `buildWaypointReleaseFormationIntent` and sends them through the
+screen's `onCommand`; ExplorerConversation.tsx keeps every hold, revision, retry and notice rule unchanged. The card
+shows only "Saving..." and, after the saved state shows the new stage, the Saved line; every other outcome is the
+page's existing notice and its exact-request Retry. All new sentences are drafts for Paul's wording read
+(Validation_Workspaces/Reached_Wording_For_Paul_2026-11-13_R03.md, Part 1), as is the new Your Waypoints `openHint`
+(Part 3). The Virtual Guide's offer to mark a Waypoint Reached (Part 2) is not built.
+
 ## 2026-11-13 - Older tools removed; "Straight ahead"; the sent message shown at once
 
 Paul's decisions during his test of 2026-11-13 (PRJ01-SPR002 decision record, 14:50:23, 15:00:53, 15:01:39 and

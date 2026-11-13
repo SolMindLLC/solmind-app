@@ -41,6 +41,7 @@ import {
   currentCompassHeads,
   type ExplorerConversationFormationIntent,
 } from "./explorerConversationFormation";
+import { YOUR_WAYPOINTS_WORDING } from "./explorerYourWaypoints";
 function freeze<T>(value: T): Readonly<T> {
   return Object.freeze(value);
 }
@@ -436,6 +437,25 @@ export const CONNECTED_WAYPOINT_WORDING = freeze({
   destinationTerm: "Where you're heading",
   arrivalTerm: "Reached looks like",
   earlierHeading: "Earlier versions, kept in your private history",
+  // Draft for Paul's wording read: PRJ01-SPR002
+  // Validation_Workspaces/Reached_Wording_For_Paul_2026-11-13_R02.md, Part 1.
+  reachButton: YOUR_WAYPOINTS_WORDING.reachButton,
+  releaseButton: YOUR_WAYPOINTS_WORDING.releaseButton,
+  reachedLegend: YOUR_WAYPOINTS_WORDING.reachedLegend,
+  reachedReason: YOUR_WAYPOINTS_WORDING.reachedReason,
+  reachedEvidenceLabel: YOUR_WAYPOINTS_WORDING.reachedEvidenceLabel,
+  reachedConfirm: YOUR_WAYPOINTS_WORDING.reachedConfirm,
+  reachedSubmit: YOUR_WAYPOINTS_WORDING.reachedSubmit,
+  releaseLegend: YOUR_WAYPOINTS_WORDING.releaseLegend,
+  releaseExplanation:
+    "Releasing stops treating this Waypoint as in progress. Its definition and history stay saved and private. This does not mark it Reached or share anything.",
+  releaseReason: YOUR_WAYPOINTS_WORDING.releaseReason,
+  releaseConfirm: YOUR_WAYPOINTS_WORDING.releaseConfirm,
+  releaseSubmit: YOUR_WAYPOINTS_WORDING.releaseSubmit,
+  keep: YOUR_WAYPOINTS_WORDING.keep,
+  saving: YOUR_WAYPOINTS_WORDING.saving,
+  savedReached: YOUR_WAYPOINTS_WORDING.savedReached,
+  savedReleased: YOUR_WAYPOINTS_WORDING.savedReleased,
 });
 
 // The compact Waypoint list (lane 8; Paul's decision, decision queue 2026-11-05

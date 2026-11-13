@@ -7,27 +7,35 @@ import {
   waypointListGroups,
   waypointListNextSize,
   waypointRowsShown,
+  waypointStage,
   type CardWaypointLine,
   type CardWaypointStage,
   type WaypointListSize,
 } from "@/lib/solmind/explorerConnectedCard";
 import type { ExplorerConversationState, ExplorerConversationWaypointDraft } from "@/lib/solmind/explorerConversationContract";
+import {
+  buildReachedFormationIntent,
+  buildWaypointReleaseFormationIntent,
+  type ExplorerConversationFormationIntent,
+} from "@/lib/solmind/explorerConversationFormation";
 import { WAYPOINT_DRAFT_WORDING } from "@/lib/solmind/explorerWaypointDraft";
 import { waypointConversationLimitNotice } from "@/lib/solmind/explorerWaypointCapacity";
 
 import { IconArchive, IconCheck, IconFlag, IconHistory, IconMapPin } from "./ExplorerConversationScreenIcons";
 
-// The connected Waypoint card (chat step slice S1), read-only: each saved
+// The connected Waypoint card (chat step slice S1): each saved
 // Waypoint in the look of Paul's reviewed short card
 // (ExplorerConversationScreenWaypointCard.tsx), with the approved stage names
 // Formed, Reached and Released, and its older wording under "Earlier version -
-// <stage>" (Paul's question 9 decision). Nothing here can be edited; choosing,
-// clarifying, Reached and Release stay in the current tools for now.
+// <stage>" (Paul's question 9 decision). A current Formed Waypoint in an open
+// conversation offers Reached and Release reviews through the existing command
+// pipeline. Definitions, earlier versions and ended conversations stay read-only.
 // The compact list (lane 8, decision queue 2026-11-05 19:38:45 CST, point 4):
 // each Waypoint is one compact row (its title and stage) that opens to that
 // card, one at a time; three rows at first, then five, then all; a forming
 // draft takes the first row; Reached and Released Waypoints are in a collapsed
-// group. Layout state only (which row is open, how many show, the group).
+// group. Review and outcome state lives in the screen so it survives closing
+// the narrow drawer to use the page's exact-request Retry.
 // A closed title takes at most two lines; an open row shows it in full.
 // Keyboard focus is kept: "Show more" and "Show all" move it to the first row
 // they reveal, and "Show fewer" to the "Show more" button.
@@ -36,6 +44,7 @@ const W = CONNECTED_WAYPOINT_WORDING;
 const L = WAYPOINT_LIST_WORDING;
 const D = WAYPOINT_DRAFT_WORDING;
 const FOCUS_RING = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300";
+const ACTION_BUTTON = `rounded-full border border-amber-300/50 px-3 py-1.5 text-sm font-semibold text-amber-100 hover:bg-amber-300/10 disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS_RING}`;
 const STAGE_ICONS: Readonly<Record<CardWaypointStage, (props: Readonly<{ className?: string }>) => ReactNode>> = {
   formed: IconCheck,
   reached: IconFlag,
@@ -125,6 +134,159 @@ function DraftDetails({ draft }: Readonly<{ draft: ExplorerConversationWaypointD
   );
 }
 
+type ReviewKind = "reached" | "released";
+type WaypointReview = Readonly<{
+  conversationId: string;
+  revision: number;
+  waypointId: string;
+  kind: ReviewKind;
+  evidence: string;
+  confirmed: boolean;
+}>;
+type WaypointSubmission = WaypointReview & Readonly<{ phase: "submitted" | "saving" | "uncertain" }>;
+type WaypointSaved = Readonly<{ conversationId: string; waypointId: string; stage: ReviewKind }>;
+
+// One screen-owned review, with no request or retry of its own. The parent
+// owns the wire bytes; busy/uncertain and its decoded saved state settle this
+// local display. Keeping this above both card views also survives drawer close.
+export function useConnectedWaypointActions({ state, onCommand, held, busy, pendingTurn, uncertain }: Readonly<{
+  state: ExplorerConversationState | null;
+  onCommand: (intent: ExplorerConversationFormationIntent) => void;
+  held: boolean;
+  busy: boolean;
+  pendingTurn: boolean;
+  uncertain: boolean;
+}>) {
+  const [review, setReview] = useState<WaypointReview | null>(null);
+  const [submission, setSubmission] = useState<WaypointSubmission | null>(null);
+  const [saved, setSaved] = useState<WaypointSaved | null>(null);
+  const blocked = held || busy || pendingTurn || uncertain || state === null ||
+    state.conversationId === null || state.sessionStatus !== "active" || state.pendingTurn;
+
+  // Adjust local display before children render, as for the screen's other
+  // prop-following state. A stale review silently closes; the page owns notices.
+  if (review !== null && (state === null || review.conversationId !== state.conversationId ||
+      (submission === null && (review.revision !== state.revision || state.sessionStatus !== "active")))) {
+    setReview(null);
+  }
+  if (saved !== null && (state === null || saved.conversationId !== state.conversationId ||
+      !state.waypoints.some(item => item.id === saved.waypointId && item.isCurrent && waypointStage(item) === saved.stage))) {
+    setSaved(null);
+  }
+  if (submission !== null) {
+    if (state === null || submission.conversationId !== state.conversationId) {
+      setSubmission(null);
+      setReview(null);
+    } else if (busy) {
+      if (submission.phase !== "saving") setSubmission({ ...submission, phase: "saving" });
+    } else if (uncertain) {
+      if (submission.phase !== "uncertain") {
+        setSubmission({ ...submission, phase: "uncertain" });
+        setReview(null);
+      }
+    } else {
+      const target = state.waypoints.find(item => item.id === submission.waypointId && item.isCurrent);
+      if (submission.phase === "saving" && state.revision > submission.revision &&
+          target !== undefined && waypointStage(target) === submission.kind) {
+        setSaved({ conversationId: submission.conversationId, waypointId: target.id, stage: submission.kind });
+      }
+      setSubmission(null);
+      setReview(null);
+    }
+  }
+
+  const result = review === null || state === null || review.revision !== state.revision ||
+      review.conversationId !== state.conversationId ? null
+    : review.kind === "reached"
+      ? buildReachedFormationIntent(state, review.waypointId, review.evidence, review.confirmed)
+      : buildWaypointReleaseFormationIntent(state, review.waypointId, review.revision, review.confirmed);
+  return {
+    review,
+    saved,
+    blocked,
+    savingId: busy && submission !== null ? submission.waypointId : null,
+    canSubmit: !blocked && submission === null && result?.ok === true,
+    openReview(waypointId: string, kind: ReviewKind) {
+      if (blocked || submission !== null || state?.conversationId == null ||
+          !state.waypoints.some(item => item.id === waypointId && item.isCurrent && waypointStage(item) === "formed")) return;
+      setSaved(null);
+      setReview({ conversationId: state.conversationId, revision: state.revision, waypointId, kind, evidence: "", confirmed: false });
+    },
+    closeReview() { if (submission === null) setReview(null); },
+    changeEvidence(evidence: string) {
+      if (!blocked && submission === null && review !== null) setReview({ ...review, evidence, confirmed: false });
+    },
+    confirmReview(confirmed: boolean) {
+      if (!blocked && submission === null && review !== null) setReview({ ...review, confirmed });
+    },
+    submit() {
+      if (blocked || submission !== null || review === null || !result?.ok) return;
+      setSaved(null);
+      setSubmission({ ...review, phase: "submitted" });
+      onCommand(result.command);
+    },
+  };
+}
+
+type WaypointActions = ReturnType<typeof useConnectedWaypointActions>;
+
+function WaypointReviewControls({ scope, line, actions }: Readonly<{
+  scope: string;
+  line: CardWaypointLine;
+  actions: WaypointActions;
+}>) {
+  const review = actions.review;
+  if (review === null || review.waypointId !== line.current.id) return null;
+  const reached = review.kind === "reached";
+  const heading = reached ? W.reachedLegend : W.releaseLegend;
+  const evidenceId = `${scope}-waypoint-reached-evidence`;
+  return (
+    <div aria-label={heading} className="mt-3 grid gap-3 rounded-xl border border-amber-300/40 p-3 text-sm leading-6 text-stone-200" role="group">
+      <h5 className="font-semibold text-amber-100">{heading}</h5>
+      {reached ? (
+        <>
+          <p>{W.reachedReason}</p>
+          <dl><Term term={W.arrivalTerm}>{line.current.arrivalSignal}</Term></dl>
+          <div className="grid gap-1">
+            <label htmlFor={evidenceId}>{W.reachedEvidenceLabel}</label>
+            <textarea
+              className={`w-full rounded-lg border border-stone-600 bg-black/40 p-2 text-stone-100 ${FOCUS_RING}`}
+              disabled={actions.blocked}
+              id={evidenceId}
+              onChange={(event) => actions.changeEvidence(event.target.value)}
+              rows={3}
+              value={review.evidence}
+            />
+          </div>
+        </>
+      ) : (
+        <>
+          <p>{W.releaseExplanation}</p>
+          <p>{W.releaseReason}</p>
+        </>
+      )}
+      <label className="flex items-start gap-2">
+        <input
+          checked={review.confirmed}
+          className={`mt-1 ${FOCUS_RING}`}
+          disabled={actions.blocked}
+          onChange={(event) => actions.confirmReview(event.target.checked)}
+          type="checkbox"
+        />
+        <span>{reached ? W.reachedConfirm : W.releaseConfirm}</span>
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <button className={ACTION_BUTTON} disabled={!actions.canSubmit} onClick={actions.submit} type="button">
+          {reached ? W.reachedSubmit : W.releaseSubmit}
+        </button>
+        <button className={ACTION_BUTTON} disabled={actions.savingId !== null} onClick={actions.closeReview} type="button">
+          {W.keep}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // One compact row: a heading whose button shows the title and stage and opens
 // the details below it (the disclosure pattern).
 function Row({ buttonId, panelId, title, marker, forming, open, onToggle, children }: Readonly<{
@@ -172,12 +334,24 @@ function Row({ buttonId, panelId, title, marker, forming, open, onToggle, childr
 
 type ListRow = Readonly<{ key: string; kind: "draft"; draft: ExplorerConversationWaypointDraft }> | Readonly<{ key: string; kind: "line"; line: CardWaypointLine }>;
 
-export function ConnectedWaypointCard({ scope, state }: Readonly<{ scope: string; state: ExplorerConversationState | null }>) {
+export function ConnectedWaypointCard({ scope, state, actions }: Readonly<{
+  scope: string;
+  state: ExplorerConversationState | null;
+  actions: WaypointActions;
+}>) {
   const titleId = `${scope}-connected-waypoint-title`;
   const historyId = `${scope}-connected-waypoint-history`;
-  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [openKey, setOpenKey] = useState<string | null>(actions.review?.waypointId ?? actions.savingId);
   const [size, setSize] = useState<WaypointListSize>("initial");
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [shownSaved, setShownSaved] = useState<WaypointSaved | null>(null);
+  if (actions.saved !== shownSaved) {
+    setShownSaved(actions.saved);
+    if (actions.saved !== null) {
+      setOpenKey(actions.saved.waypointId);
+      setHistoryOpen(true);
+    }
+  }
   // The id of the control to focus after the next render (a layout concern only).
   const pendingFocus = useRef<string | null>(null);
   useEffect(() => {
@@ -200,7 +374,10 @@ export function ConnectedWaypointCard({ scope, state }: Readonly<{ scope: string
   const shown = rows.slice(0, shownCount);
   const next = waypointListNextSize(rows.length, size);
   const sizing = rows.length > WAYPOINT_LIST_ROWS.initial;
-  const toggle = (key: string) => setOpenKey((current) => (current === key ? null : key));
+  const toggle = (key: string) => {
+    actions.closeReview();
+    setOpenKey((current) => (current === key ? null : key));
+  };
   const grow = (to: WaypointListSize) => {
     const firstNew = rows[shownCount];
     pendingFocus.current = firstNew === undefined ? null : rowButtonId(firstNew.key);
@@ -234,6 +411,23 @@ export function ConnectedWaypointCard({ scope, state }: Readonly<{ scope: string
         title={current.title ?? current.destination}
       >
         <WaypointDetails line={row.line} />
+        {current.stage === "formed" && state?.sessionStatus === "active" ? (
+          <>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button className={ACTION_BUTTON} disabled={actions.blocked} onClick={() => actions.openReview(current.id, "reached")} type="button">
+                {W.reachButton}
+              </button>
+              <button className={ACTION_BUTTON} disabled={actions.blocked} onClick={() => actions.openReview(current.id, "released")} type="button">
+                {W.releaseButton}
+              </button>
+            </div>
+            <WaypointReviewControls actions={actions} line={row.line} scope={scope} />
+          </>
+        ) : null}
+        <p aria-atomic="true" className="mt-2 text-sm text-stone-200" role="status">
+          {actions.savingId === current.id ? W.saving
+            : actions.saved?.waypointId === current.id ? (actions.saved.stage === "reached" ? W.savedReached : W.savedReleased) : ""}
+        </p>
       </Row>
     );
   };
