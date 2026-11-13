@@ -258,13 +258,11 @@ for (const limit of ["active", "history", "both", "conversation"] as const) for 
       await expect(row.getByText(other, { exact: true })).toHaveCount(0);
     }
     // Lane 12: the quiet card notice appears only for this conversation's five, as static text.
-    // The same sentence also explains the current tools' held new-Waypoint form, where it is an alert as before.
     const notice = page.getByText(CONVERSATION_LIMIT_NOTICE, { exact: true });
     if (limit === "conversation") {
       const quiet = page.locator("p:not([role])").filter({ hasText: CONVERSATION_LIMIT_NOTICE });
       await expect(quiet).not.toHaveCount(0);
       if (test.info().project.name === "desktop-chromium") await expect(quiet.filter({ visible: true })).not.toHaveCount(0);
-      await expect(page.locator('p[role="alert"]').filter({ hasText: CONVERSATION_LIMIT_NOTICE })).toHaveCount(1);
     } else await expect(notice).toHaveCount(0);
     for (const label of ["Close, not quite", "That's not it"]) {
       await expect(row.getByRole("button", { name: label, exact: true })).toBeEnabled();

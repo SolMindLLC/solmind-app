@@ -277,53 +277,48 @@ localDescribe("REAL isolated Auth/cookies/SQL; SYNTHETIC Virtual Guide transport
       await page.goto(`${APP}/explorer/conversation`, { waitUntil: "domcontentloaded" });
       const history = page.getByRole("list", { name: "Saved conversation", exact: true });
       await browserExpect(history).toContainText("SYNTHETIC LOCAL TRANSPORT: consider one small step you choose.");
-      await browserExpect(page.getByRole("button", { name: "Send message", exact: true })).toBeDisabled();
-      await browserExpect(page.getByLabel("Your message", { exact: true })).toBeDisabled();
+      await browserExpect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
+      await browserExpect(page.getByLabel("Continue the conversation", { exact: true })).toBeDisabled();
       await browserExpect(page.getByText(/unavailable\. You can review saved messages/)).toBeVisible();
       const initialAttentionId = saved.attentionId;
       const replySourceId = saved.messages.find((message) => message.role === "virtualGuide")?.id;
       required(replySourceId, "explorer_local_proof_browser_reply_source_missing");
-      const browserCommand = async (click: () => Promise<unknown>) => {
-        const [answer] = await Promise.all([
-          page.waitForResponse((answer) => answer.url() === `${APP}/explorer/conversation/commands` &&
-            answer.request().method() === "POST", { timeout: 15_000 }), click(),
-        ]);
+      // The manual tools are gone from the live screen. Keep their HTTP/SQL
+      // proof through the same authenticated endpoint, then read the saved card.
+      const browserCommand = async (command: ExplorerConversationCommand) => {
+        const answer = await page.request.post(`${APP}/explorer/conversation/commands`, {
+          data: command, headers: { Origin: APP }, timeout: 15_000,
+        });
         required(answer.ok() && answer.headers()["cache-control"] === "private, no-store",
           "explorer_local_proof_browser_command_http_failed");
         const parsed = browserContract.parseExplorerConversationResult(await answer.json());
         required(parsed, "explorer_local_proof_browser_command_malformed");
         saved = state(parsed);
-        await browserExpect(page.getByRole("status").first()).toHaveText("Your saved conversation is up to date.");
+        await page.getByRole("button", { name: "Reload saved conversation", exact: true }).click();
+        await browserExpect(page.getByRole("status").first()).toHaveText("The saved conversation is up to date.");
       };
-      const compass = page.getByRole("region", { name: "Session Compass", exact: true });
-      await compass.getByRole("combobox", { name: "Saved conversation source", exact: true }).selectOption(replySourceId);
-      await compass.getByLabel("Your short label", { exact: true }).fill("Browser chosen second focus");
-      await browserCommand(() => compass.getByRole("button", { name: "Save Compass point", exact: true }).click());
+      const panel = page.locator("#conversation-preview-panel");
+      const compass = panel.getByRole("region", { name: "Compass", exact: true });
+      await browserCommand({ kind: "add_compass", operationId: cid(340), expectedRevision: saved.revision,
+        sourceMessageId: replySourceId, label: "Browser chosen second focus" });
       expect(saved.compassItems).toHaveLength(2);
       const secondCompass = saved.compassItems.find((item) => item.label === "Browser chosen second focus");
       required(secondCompass?.sourceMessageId === replySourceId, "explorer_local_proof_browser_compass_source_failed");
-      await compass.getByRole("button", { name: "Review Priority: Browser chosen second focus", exact: true }).click();
-      await browserCommand(() => compass.getByRole("group", { name: "Confirm Priority choice", exact: true })
-        .getByRole("button", { name: "Confirm Priority", exact: true }).click());
+      await browserCommand({ kind: "confirm_priority", operationId: cid(341), expectedRevision: saved.revision,
+        itemId: secondCompass.id });
       expect(saved.priorityId).toBe(secondCompass.id);
       expect(saved.attentionId).toBe(initialAttentionId);
-      await browserExpect(compass.getByText("Current attention: Synthetic chosen focus", { exact: true })).toBeVisible();
+      await browserExpect(compass.getByText("Pointing to: Synthetic chosen focus", { exact: true })).toBeVisible();
 
-      const waypoints = page.getByRole("region", { name: "Private Waypoints", exact: true });
-      await waypoints.getByRole("combobox", { name: "Saved conversation source", exact: true }).selectOption(replySourceId);
-      await waypoints.getByLabel("Where do you want to arrive?", { exact: true }).fill("Browser-confirmed small step");
-      await waypoints.getByLabel("Why does reaching it matter to you?", { exact: true }).fill("Browser confirms a private choice.");
-      await waypoints.getByLabel("What observable signal will help you recognize arrival?", { exact: true }).fill("Browser-visible supporting signal.");
-      await waypoints.getByLabel("I choose this private Waypoint with the destination, meaning and arrival signal shown above.", { exact: true }).check();
-      await browserCommand(() => waypoints.getByRole("button", { name: "Confirm and save private Waypoint", exact: true }).click());
+      const waypoints = panel.getByRole("region", { name: "Waypoints", exact: true });
+      await browserCommand({ kind: "confirm_waypoint", operationId: cid(342), expectedRevision: saved.revision,
+        sourceMessageId: replySourceId, destination: "Browser-confirmed small step",
+        meaning: "Browser confirms a private choice.", arrivalSignal: "Browser-visible supporting signal." });
       const secondWaypoint = saved.waypoints.find((waypoint) => waypoint.destination === "Browser-confirmed small step");
       required(secondWaypoint?.status === "chosen" && secondWaypoint.sourceMessageId === replySourceId,
         "explorer_local_proof_browser_waypoint_choice_failed");
-      await waypoints.getByRole("button", { name: "Review Reached: Browser-confirmed small step", exact: true }).click();
-      const reachedReview = waypoints.getByRole("group", { name: "Review before confirming Reached", exact: true });
-      await reachedReview.getByLabel("What supporting evidence shows arrival?", { exact: true }).fill("Synthetic browser evidence explicitly confirms the chosen arrival signal.");
-      await reachedReview.getByLabel("I have reviewed my arrival signal and supporting evidence, and I confirm meaningful progress to this Waypoint.", { exact: true }).check();
-      await browserCommand(() => reachedReview.getByRole("button", { name: "Confirm Reached", exact: true }).click());
+      await browserCommand({ kind: "confirm_reached", operationId: cid(343), expectedRevision: saved.revision,
+        waypointId: secondWaypoint.id, evidence: "Synthetic browser evidence explicitly confirms the chosen arrival signal." });
       expect(saved.waypoints).toHaveLength(2);
       expect(saved.waypoints.every((waypoint) => waypoint.status === "reached")).toBe(true);
       expect(saved.revision).toBe(11);
@@ -331,15 +326,19 @@ localDescribe("REAL isolated Auth/cookies/SQL; SYNTHETIC Virtual Guide transport
       expect(captured).toHaveLength(1);
       await page.reload({ waitUntil: "domcontentloaded" });
       await browserExpect(history).toContainText("SYNTHETIC LOCAL TRANSPORT: consider one small step you choose.");
-      await browserExpect(compass.getByRole("button", { name: "Review Priority: Browser chosen second focus", exact: true })).toBeDisabled();
-      await browserExpect(compass.getByText("Current attention: Synthetic chosen focus", { exact: true })).toBeVisible();
-      await browserExpect(waypoints.getByText("Reached — confirmed by you", { exact: true })).toHaveCount(2);
+      await browserExpect(compass.getByText("Pointing to: Synthetic chosen focus", { exact: true })).toBeVisible();
+      await waypoints.getByRole("button", { name: "Reached and released (2)", exact: true }).click();
+      await browserExpect(waypoints.getByText("Reached", { exact: true })).toHaveCount(2);
       expect(state(await engine.readExplorerConversation(fresh()))).toEqual(saved);
       await page.screenshot({ path: desktopScreenshot, fullPage: true, animations: "disabled" });
       await page.setViewportSize({ width: 390, height: 844 });
       await page.reload({ waitUntil: "domcontentloaded" });
       await browserExpect(history).toContainText("SYNTHETIC LOCAL TRANSPORT: consider one small step you choose.");
-      await browserExpect(waypoints.getByText("Reached — confirmed by you", { exact: true })).toHaveCount(2);
+      await page.getByRole("button", { name: "Show Compass & Waypoint", exact: true }).click();
+      const narrowWaypoints = page.getByRole("dialog", { name: "Compass & Waypoint" })
+        .getByRole("region", { name: "Waypoints", exact: true });
+      await narrowWaypoints.getByRole("button", { name: "Reached and released (2)", exact: true }).click();
+      await browserExpect(narrowWaypoints.getByText("Reached", { exact: true })).toHaveCount(2);
       await page.screenshot({ path: narrowScreenshot, fullPage: true, animations: "disabled" });
 
       // A fresh anonymous context has no borrowed cookie/profile/storage state.

@@ -8,6 +8,28 @@ This version has breaking changes - APIs, conventions, and file structure may al
 
 # SolMind App Agent Instructions
 
+## 2026-11-13 - Older tools removed; "Straight ahead"; the sent message shown at once
+
+Paul's decisions during his test of 2026-11-13 (PRJ01-SPR002 decision record, 14:50:23, 15:00:53, 15:01:39 and
+15:36:41 CST). This section supersedes the older lines below that describe the current tools, their violet removal
+marker and `CURRENT_TOOLS_*` as mounted on the live conversation screen, and the "Top position" name.
+
+- The section "Your current Compass and Waypoint tools" (`CurrentTools`) is removed from the live conversation screen
+  (REV428). `ExplorerConversationFormation.tsx` stays: the ended-conversation review page uses it. Until Reached and
+  Release come to the Compass & Waypoint card (next demo), an active conversation's Waypoint cannot be marked Reached
+  or released from the conversation screen; tests of those controls there were removed, and ended-record checks now
+  go through the review page.
+- The top place on the Compass is named "Straight ahead" (`COMPASS_POSITION_NAMES.apex` and the Formation names). No
+  "Priority" label anywhere on the Compass, as before.
+- While an ordinary Send is awaited, `ExplorerConversation` passes `sendingMessage` (the exact words sent) and
+  `sendingFromComposer` (true only for the typed Send). The screen shows the words as an Explorer message without a
+  time, outside the saved list, directly above the waiting indicator; the message box shows empty only for the typed
+  Send. Outcome rules are unchanged; replies still appear only from the server. The transcript box scrolls itself;
+  the page does not move on a Send (tests/browser/explorerOpenAtNewest.pw.ts).
+- The Your Waypoints sentence for a Waypoint whose conversation has not ended is Paul's approved wording:
+  "Marking this Waypoint Reached or releasing it is coming to its conversation's Compass & Waypoint card, so its
+  changes stay with that conversation."
+
 ## 2026-11-13 - Waiting indicator (REV424)
 
 The approved revision-3 eclipse and exact waiting sentence show after the saved

@@ -67,12 +67,15 @@ function errorCopy(error: ExplorerConversationError): string {
   }
 }
 
-/** Authenticated feature routes own all authority and persistence. No optimistic replies. */
+/** Authenticated feature routes own all authority and persistence. Replies appear only after the server returns them.
+ * While a Send is awaited, its words appear as being sent, never as saved. */
 export function ExplorerConversation() {
   const notifyExplorerEarlyTestNoticeRecheck = useExplorerEarlyTestNoticeRecheck();
   const [state, setState] = useState<ExplorerConversationState | null>(null);
   const [busy, setBusy] = useState(true);
-  const [awaitingReply, setAwaitingReply] = useState(false);
+  const [sendingMessage, setSendingMessage] = useState<string | null>(null);
+  const [sendingFromComposer, setSendingFromComposer] = useState(false);
+  const awaitingReply = sendingMessage !== null;
   const [error, setError] = useState<ExplorerConversationError | null>(null);
   const [uncertain, setUncertain] = useState(false);
   const [draft, setDraft] = useState("");
@@ -102,7 +105,8 @@ export function ExplorerConversation() {
     activeRef.current?.abort();
     activeRef.current = controller;
     busyRef.current = true;
-    setAwaitingReply(false);
+    setSendingMessage(null);
+    setSendingFromComposer(false);
     setAssistance(null);
     if (!initial) { setBusy(true); setNotice(""); }
     const timer = setTimeout(() => controller.abort(), RESPONSE_BUDGET_MS);
@@ -160,7 +164,8 @@ export function ExplorerConversation() {
       generationRef.current += 1;
       activeRef.current?.abort();
       busyRef.current = true;
-      setAwaitingReply(false);
+      setSendingMessage(null);
+      setSendingFromComposer(false);
       replaceState(null);
       setDraft("");
       setAssistance(null);
@@ -184,7 +189,8 @@ export function ExplorerConversation() {
     if (pending.command.kind === "send") setSendSequence(sequence => sequence + 1);
     busyRef.current = true;
     setBusy(true);
-    setAwaitingReply(pending.command.kind === "send");
+    setSendingMessage(pending.command.kind === "send" ? pending.command.body : null);
+    setSendingFromComposer(pending.intent.kind === "send");
     setUncertain(false);
     setNotice("");
     setAssistance(null);
@@ -286,7 +292,8 @@ export function ExplorerConversation() {
         activeRef.current = null;
         busyRef.current = false;
         setBusy(false);
-        setAwaitingReply(false);
+        setSendingMessage(null);
+        setSendingFromComposer(false);
         // This is the next, separately counted ordinary Send only after a
         // confirmed response command. Uncertain outcomes keep their exact bytes.
         if (followUp !== null) void dispatchPending(followUp);
@@ -390,6 +397,8 @@ export function ExplorerConversation() {
         state,
         busy,
         awaitingReply,
+        sendingMessage,
+        sendingFromComposer,
         sendSequence,
         statusText: awaitingReply ? "" : busy ? (state === null ? "Loading your saved conversation..." : "Checking your change...") : notice,
         assistance,

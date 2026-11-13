@@ -19,14 +19,15 @@ import {
   needleHoldText,
   needleMovedText,
 } from "../../src/lib/solmind/explorerConnectedCard";
-import { CURRENT_TOOLS_POINTER } from "../../src/lib/solmind/explorerConversationConnectedScreen";
-import type { ExplorerConversationState } from "../../src/lib/solmind/explorerConversationContract";
+import type { ExplorerConversationCommand, ExplorerConversationState } from "../../src/lib/solmind/explorerConversationContract";
 import { CARD_LABELS, CARD_POINTS, cardState } from "./connectedCardFixture";
 import { expectNoSeriousAxeViolations, expectNoSidewaysScroll } from "./conversationPreviewHelpers";
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const RETIRED_TOOLS_POINTER =
+  "To add, arrange or reword Compass points, or to choose, clarify, reach or release a Waypoint, use your current tools below the conversation.";
 const success = (state: ExplorerConversationState) => ({
   version: "explorer-private-conversation-response.v1", result: { ok: true, state, error: null }, assistance: null,
 });
@@ -191,7 +192,7 @@ test("the card draws the saved Compass and Waypoints, and tapping a point on the
   const dial = dialOf(card);
   await expect(dial).toBeVisible();
   await expect(viewToggle(card)).toHaveAccessibleName("Compact view of the Compass");
-  await expect(dial).toHaveAccessibleDescription(/^Top position: Talk with my sister\. .* Not yet arranged: Asking for help\. Other paths: Avoiding hard talks\. The needle points to What I need from it\.$/);
+  await expect(dial).toHaveAccessibleDescription(/^Straight ahead: Talk with my sister\. .* Not yet arranged: Asking for help\. Other paths: Avoiding hard talks\. The needle points to What I need from it\.$/);
   await expect(dial.locator("circle[r='28']")).toHaveCount(8);
   const group = needleGroup(card);
   // Since the redesign: "Point the needle to change topic", with no instruction under it.
@@ -267,10 +268,10 @@ test("the card draws the saved Compass and Waypoints, and tapping a point on the
   const currentLine = card.locator(`#${scopeOf(page)}-connected-needle-current`);
   await expect(currentLine).toBeFocused();
   await expect(currentLine).toHaveText(`Pointing to: ${CARD_LABELS.detour}`);
-  await expect(dial).toHaveAccessibleDescription(/^Top position: Talk with my sister\. .* The needle points to Money worries\.$/);
+  await expect(dial).toHaveAccessibleDescription(/^Straight ahead: Talk with my sister\. .* The needle points to Money worries\.$/);
   await expect(current).toHaveAttribute("aria-pressed", "false");
   await expect(current).toBeEnabled();
-  await expect(point(group, CARD_LABELS.priority)).toHaveAccessibleName(`${CARD_LABELS.priority} Top position`);
+  await expect(point(group, CARD_LABELS.priority)).toHaveAccessibleName(`${CARD_LABELS.priority} Straight ahead`);
   await expect(point(group, CARD_LABELS.detour)).toHaveAccessibleName(`${CARD_LABELS.detour} Detour, left The needle points here`);
   await expect(group.getByText(NEEDLE_HOLD_TEXT.busy, { exact: true })).toHaveCount(0);
   // The needle is drawn toward the new point (Detour, left: its end stops 32 short of the bubble's centre at 88, 150).
@@ -410,37 +411,46 @@ test("after the needle moves, Send stays usable: the screen keeps the Virtual Gu
   expect(JSON.parse(bodies[0])).toMatchObject({ kind: "set_attention", itemId: CARD_POINTS.detour });
 });
 
-test("after a current-tools Waypoint command, Send stays usable too", async ({ page }) => {
-  let state = cardState({ providerState: "available" });
-  const source = state.messages[0].id;
+test("after a Waypoint draft response, the follow-up Send and composer stay usable", async ({ page }) => {
+  const base = cardState({ providerState: "available", compassSuggestionReplies: "available" });
+  const source = base.messages.at(-1)!.id;
+  const draft = { id: "80000000-0000-4000-8000-0000000000c9", title: "Take a quiet walk",
+    destination: "Take a quiet walk", whyItMatters: "A little room to think", arrivalSignal: "One walk completed",
+    suggestionMessageId: source };
+  let state: ExplorerConversationState = { ...base, waypointDraft: draft };
   const bodies: string[] = [];
   await page.route("**/explorer/conversation/commands", async route => {
     bodies.push(route.request().postData()!);
-    const command = JSON.parse(bodies[0]);
-    expect(command).toMatchObject({ kind: "confirm_waypoint", sourceMessageId: source,
-      destination: "Take a quiet walk", meaning: "A little room to think", arrivalSignal: "One walk completed", expectedRevision: 12 });
-    const waypoint = { id: "60000000-0000-4000-8000-0000000000c9", sourceMessageId: source,
-      title: command.destination, destination: command.destination, meaning: command.meaning, arrivalSignal: command.arrivalSignal,
-      status: "chosen" as const, isCurrent: true, createdAt: "2026-11-11T12:00:00Z" };
-    state = { ...state, revision: 13, waypoints: [...state.waypoints, waypoint],
-      waypointCapacity: { ...state.waypointCapacity, activeCount: state.waypointCapacity.activeCount + 1 },
-      waypointProjection: { ...state.waypointProjection, totalHeads: state.waypointProjection.totalHeads + 1 } };
-    await route.fulfill({ json: success(commandResult(state)) });
+    const command = route.request().postDataJSON() as ExplorerConversationCommand;
+    if (bodies.length === 1) {
+      expect(command).toMatchObject({ kind: "respond_waypoint_draft", draftId: draft.id, response: "right", expectedRevision: 12 });
+      const waypoint = { id: "60000000-0000-4000-8000-0000000000c9", sourceMessageId: source,
+        title: draft.title, destination: draft.destination, meaning: draft.whyItMatters, arrivalSignal: draft.arrivalSignal,
+        status: "chosen" as const, isCurrent: true, createdAt: "2026-11-11T12:00:00Z" };
+      state = { ...state, revision: 13, waypointDraft: null, waypoints: [...state.waypoints, waypoint],
+        waypointCapacity: { ...state.waypointCapacity, activeCount: state.waypointCapacity.activeCount + 1 },
+        waypointProjection: { ...state.waypointProjection, totalHeads: state.waypointProjection.totalHeads + 1 } };
+      await route.fulfill({ json: success(commandResult(state)) });
+      return;
+    }
+    expect(command).toMatchObject({ kind: "send", body: "That's right: \"Take a quiet walk\"", expectedRevision: 13 });
+    if (command.kind !== "send") throw new Error("unexpected_command");
+    state = { ...state, revision: 14, messages: [...state.messages,
+      { id: "20000000-0000-4000-8000-0000000000c9", role: "explorer", body: command.body, createdAt: "2026-11-11T12:00:01Z" },
+      { id: "30000000-0000-4000-8000-0000000000c9", role: "virtualGuide", body: "Synthetic saved Waypoint acknowledgment.", createdAt: "2026-11-11T12:00:02Z" }] };
+    await route.fulfill({ json: success(state) });
   });
   await openPage(page, () => state);
-  const tools = page.getByRole("region", { name: "Private Waypoints", exact: true });
-  await tools.getByRole("combobox", { name: "Saved conversation source", exact: true }).selectOption(source);
-  await tools.getByLabel("Where do you want to arrive?", { exact: true }).fill("Take a quiet walk");
-  await tools.getByLabel("Why does reaching it matter to you?", { exact: true }).fill("A little room to think");
-  await tools.getByLabel("What observable signal will help you recognize arrival?", { exact: true }).fill("One walk completed");
-  await tools.getByRole("checkbox", { name: /I choose this private Waypoint/ }).check();
-  await tools.getByRole("button", { name: "Confirm and save private Waypoint", exact: true }).click();
+  await page.getByRole("group", { name: "Reply to Waypoint suggestion: Take a quiet walk", exact: true })
+    .getByRole("button", { name: "That's right", exact: true }).click();
+  await expect(page.getByRole("list", { name: "Saved conversation", exact: true })).toContainText("Synthetic saved Waypoint acknowledgment.");
   await expect(page.getByRole("status").first()).toHaveText("Your saved conversation is up to date.");
   await expect(composer(page)).toBeEnabled();
   await expect(sendButton(page)).toBeEnabled();
   await expect(unavailableNotice(page)).toHaveCount(0);
-  await expect(tools.getByRole("heading", { name: "Take a quiet walk", exact: true })).toBeVisible();
-  expect(bodies).toHaveLength(1);
+  const card = await openCard(page);
+  await expect(card.getByRole("heading", { name: "Take a quiet walk Formed", exact: true })).toBeVisible();
+  expect(bodies).toHaveLength(2);
 });
 
 test("after a Send refused as unavailable, a needle move keeps Send disabled with its notice", async ({ page }) => {
@@ -504,9 +514,9 @@ test("an ended conversation shows its Compass read-only and says why the needle 
       await expect(buttons.nth(index)).toBeDisabled();
       await expect(buttons.nth(index)).toHaveAccessibleDescription(NEEDLE_HOLD_TEXT.ended);
     }
-    // One read-only line: no instruction, and no pointer to the current tools, which are read-only after End.
+    // One read-only line: no instruction and no pointer to the removed tools.
     await expectNoRemovedTexts(card);
-    await expect(page.getByText(CURRENT_TOOLS_POINTER, { exact: true })).toHaveCount(0);
+    await expect(page.getByText(RETIRED_TOOLS_POINTER, { exact: true })).toHaveCount(0);
     if (shown === "full") await showCompact(card);
   }
   // The compact list (lane 8): one Formed row; the Reached and Released Waypoints are in their closed group.
@@ -740,8 +750,8 @@ test("redesign: tapping a point in the bottom row sends exactly set_attention, a
   expect(bodies[1]).toBe(JSON.stringify({ kind: "set_attention", itemId: CARD_POINTS.unarranged, operationId: second.operationId, expectedRevision: 13 }));
   await expect(dashed).toHaveAttribute("x2", "124.08");
   await expect(dashed).toHaveAttribute("y2", "297.25");
-  // By keyboard: Tab reaches the dashed needle right after the dial's points; Enter shows its sentence (on a
-  // phone, where the current tools are behind the panel, it says so), Enter again hides it.
+  // By keyboard: Tab reaches the dashed needle right after the dial's points; Enter shows its sentence,
+  // Enter again hides it.
   await point(group, CARD_LABELS.excursion).focus();
   await page.keyboard.press("Tab");
   await expect(why).toBeFocused();
@@ -846,7 +856,7 @@ test("redesign: after End the dashed needle still explains itself, without point
   await expect(why).toHaveAttribute("aria-expanded", "true");
   await expect(compassOf(card).getByText(DASHED_NEEDLE_WORDING.unarrangedEnded, { exact: true })).toBeVisible();
   await expect(page.getByText(/Review Compass arrangement/)).toHaveCount(0);
-  await expect(page.getByText(CURRENT_TOOLS_POINTER, { exact: true })).toHaveCount(0);
+  await expect(page.getByText(RETIRED_TOOLS_POINTER, { exact: true })).toHaveCount(0);
   await why.click();
   await expect(compassOf(card).getByText(DASHED_NEEDLE_WORDING.unarrangedEnded, { exact: true })).toHaveCount(0);
   await expectNoSeriousAxeViolations(page);

@@ -1,13 +1,12 @@
 // Build notes on the signed-in screens (Paul's rule, decision queue 2026-11-03 17:59:20, 18:00:59 and
 // 18:03:39 CST; build spec .validation/build-notes-20261103): the blue "Not connected yet" labels, the
-// blue boxes with their X, the violet "Planned for removal" marker on the old form tools, and the one
+// blue boxes with their X and the one
 // "Build notes" toggle in the top bar, on the connected conversation screen and on a workspace-frame page,
 // at both widths (desktop-chromium 1280 and narrow-chromium 390). Mocked private-response endpoints prove
 // mounted layout and behaviour only; nothing is sent.
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
 
 import { BUILD_NOTE_WORDING, NOT_YET_IMPLEMENTED } from "../../src/lib/solmind/explorerConversationScreen";
-import { CURRENT_TOOLS_REMOVAL_REASON } from "../../src/lib/solmind/explorerConversationConnectedScreen";
 import {
   EXPLORER_CONVERSATION_VERSION,
   type ExplorerConversationState,
@@ -18,7 +17,6 @@ import { expectNoSeriousAxeViolations, expectNoSidewaysScroll } from "./conversa
 test.use({ trace: "off", screenshot: "off", video: "off" });
 
 const BLUE = "rgb(74, 134, 255)";
-const VIOLET = "rgb(210, 123, 255)";
 const isWide = (page: Page) => (page.viewportSize()?.width ?? 0) >= 1024;
 const message = (index: number, role: "explorer" | "virtualGuide", body: string) => ({
   id: `${role === "explorer" ? "2" : "3"}0000000-0000-4000-8000-00000000000${index}`,
@@ -72,7 +70,7 @@ async function expectVisibleLabelsBlue(page: Page) {
   expect(drawn).toBeGreaterThan(0);
 }
 
-test("conversation screen: the toggle hides every note and marker; an X hides only its box until the toggle turns them on", async ({ page }) => {
+test("conversation screen: the toggle hides every note; an X hides only its box until the toggle turns them on", async ({ page }) => {
   const commands = await openConversation(page, newState());
   const toggle = toggleOf(page);
   await expect(toggle).toBeVisible();
@@ -101,11 +99,6 @@ test("conversation screen: the toggle hides every note and marker; an X hides on
   if (isWide(page)) await expect(keyInsight).toBeVisible();
   await expect(earlierCompass).toBeVisible();
   await expect(page.locator('[id="nyi-composer-latestChange"]')).toHaveCount(0);
-  // The old tools carry the violet removal marker.
-  const tools = page.locator('section[aria-labelledby="conversation-current-tools-heading"]');
-  await expect(tools).toHaveAttribute("data-removal-marker", "outline");
-  await expect(tools).toHaveCSS("outline-style", "dashed");
-  await expect(tools).toHaveCSS("outline-color", VIOLET);
   await expectNoSidewaysScroll(page);
   await expectNoSeriousAxeViolations(page);
 
@@ -119,7 +112,7 @@ test("conversation screen: the toggle hides every note and marker; an X hides on
   await expect(labels(page)).toHaveCount(12);
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
 
-  // Toggle off: every blue label and box and the violet marker go; every control and tool stays.
+  // Toggle off: every blue label and box goes; every remaining control stays.
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
   await expect(toggle).toBeFocused();
@@ -127,10 +120,6 @@ test("conversation screen: the toggle hides every note and marker; an X hides on
   await expect(boxes(page)).toHaveCount(0);
   await expect(page.locator("[data-removal-marker]")).toHaveCount(0);
   await expect(page.getByText("Not connected yet", { exact: true })).toHaveCount(0);
-  await expect(tools).toBeVisible();
-  await expect(tools).toHaveCSS("outline-style", "none");
-  await expect(tools.getByRole("button", { name: BUILD_NOTE_WORDING.removalTag })).toHaveCount(0);
-  await expect(page.locator('aside[aria-label="Private Compass and Waypoints"]')).toBeVisible();
   // The controls stay and still explain themselves.
   const pause = page.getByRole("button", { name: "Pause", exact: true });
   await expect(pause).toBeVisible();
@@ -150,7 +139,6 @@ test("conversation screen: the toggle hides every note and marker; an X hides on
   await expect(labels(page)).toHaveCount(12);
   await expect(waysToBegin).toBeVisible();
   if (isWide(page)) await expect(keyInsight).toBeVisible();
-  await expect(tools).toHaveAttribute("data-removal-marker", "outline");
   await expect(bell).toBeVisible();
   await expectNoSidewaysScroll(page);
   expect(commands()).toBe(0);
@@ -178,75 +166,6 @@ test("conversation screen: a box closed with its X stays hidden while the toggle
   await expect(labels(page)).toHaveCount(12);
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
   await expect(page).toHaveURL(/\/explorer\/conversation$/);
-});
-
-test("conversation screen: the violet tag says why the old tools are planned for removal, and they keep working", async ({ page }) => {
-  const commands = await openConversation(page);
-  const tools = page.locator('section[aria-labelledby="conversation-current-tools-heading"]');
-  const tag = tools.getByRole("button", { name: BUILD_NOTE_WORDING.removalTag, exact: true });
-  await tag.scrollIntoViewIfNeeded();
-  await expect(tag).toBeVisible();
-  await expect(tag).toHaveCSS("color", VIOLET);
-  await expect(tag).toHaveCSS("border-top-style", "dashed");
-  await expect(tag).toHaveAttribute("aria-expanded", "false");
-  const reason = tools.locator(`[id="${await tag.getAttribute("aria-controls")}"]`);
-  await expect(reason).toBeHidden();
-  await tag.click();
-  await expect(tag).toHaveAttribute("aria-expanded", "true");
-  await expect(reason).toBeVisible();
-  await expect(reason).toHaveText(CURRENT_TOOLS_REMOVAL_REASON);
-  await expectNoSidewaysScroll(page);
-  await tag.click();
-  await expect(reason).toBeHidden();
-  // Left open, the sentence does not come back open after the toggle hides and shows the notes.
-  await tag.click();
-  await expect(reason).toBeVisible();
-  const toggle = toggleOf(page);
-  await toggle.click();
-  await expect(toggle).toHaveAttribute("aria-pressed", "false");
-  await expect(tag).toHaveCount(0);
-  await toggle.click();
-  await expect(toggle).toHaveAttribute("aria-pressed", "true");
-  await expect(tag).toHaveAttribute("aria-expanded", "false");
-  await expect(reason).toBeHidden();
-  // The tools stay usable: their own controls are there and enabled, and a draft typed in them clears locally
-  // with no command sent.
-  const region = page.locator('aside[aria-label="Private Compass and Waypoints"]');
-  await expect(region).toBeVisible();
-  const source = region.getByRole("combobox", { name: "Saved conversation source", exact: true });
-  const destination = region.getByLabel("Where do you want to arrive?", { exact: true });
-  const meaning = region.getByLabel("Why does reaching it matter to you?", { exact: true });
-  const arrival = region.getByLabel("What observable signal will help you recognize arrival?", { exact: true });
-  const confirmation = region.getByRole("checkbox");
-  const save = region.getByRole("button", { name: "Confirm and save private Waypoint", exact: true });
-  const clear = region.getByRole("button", { name: "Clear Waypoint draft", exact: true });
-  await expect(source).toBeEnabled();
-  await expect(destination).toBeEnabled();
-  await expect(meaning).toBeEnabled();
-  await expect(arrival).toBeEnabled();
-  await expect(clear).toBeEnabled();
-  await expect(save).toBeDisabled();
-  await source.selectOption(savedState().messages[0].id);
-  await destination.fill("A synthetic destination");
-  await meaning.fill("A synthetic reason");
-  await arrival.fill("A synthetic arrival signal");
-  // A label's accessible name includes the text typed into its field, so the filled fields are read by their ids.
-  await expect(region.locator('textarea[id$="-destination"]')).toHaveValue("A synthetic destination");
-  await expect(region.locator('textarea[id$="-meaning"]')).toHaveValue("A synthetic reason");
-  await expect(region.locator('textarea[id$="-arrival"]')).toHaveValue("A synthetic arrival signal");
-  await expect(save).toBeDisabled();
-  await confirmation.check();
-  await expect(save).toBeEnabled();
-  await clear.click();
-  await expect(source).toHaveValue("");
-  await expect(destination).toHaveValue("");
-  await expect(meaning).toHaveValue("");
-  await expect(arrival).toHaveValue("");
-  await expect(confirmation).not.toBeChecked();
-  await expect(save).toBeDisabled();
-  await expect(clear).toBeEnabled();
-  await expect(region.getByRole("button", { name: /Save Compass point|Clear point draft/ })).toHaveCount(0);
-  expect(commands()).toBe(0);
 });
 
 test("narrow: an X in the Compass & Waypoint drawer keeps focus in the drawer; the toggle brings the box back", async ({ page }) => {

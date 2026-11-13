@@ -15,6 +15,7 @@ const REPLY = "An invented reply after the browser test releases the request.";
 const FAILURE = "The invented reply did not come through. The browser test can try again.";
 const composer = (page: Page) => page.getByLabel("Continue the conversation", { exact: true });
 const indicator = (page: Page) => page.locator("[data-waiting-indicator]");
+const sendingMessage = (page: Page) => page.locator("[data-sending-message]");
 const transcript = (page: Page) => page.getByRole("list", { name: "Saved conversation", exact: true });
 
 const fulfill = (route: Route, state: ExplorerConversationState, assistance: ExplorerPrivateAssistance | null = null) =>
@@ -60,6 +61,34 @@ async function expectWaiting(page: Page) {
   expect(await announcement.evaluate(element => element.closest('[aria-busy="true"]') === null)).toBe(true);
 }
 
+async function expectSendingMessage(page: Page, body: string, expectedDraft: string) {
+  const sending = sendingMessage(page);
+  await expect(sending).toHaveCount(1);
+  await expect(sending).toBeVisible();
+  // Both are inside the transcript's visible box; the page itself does not move on a Send.
+  expect(await sending.evaluate(element => {
+    const log = element.closest('[role="log"]');
+    const waiting = document.querySelector("[data-waiting-indicator]");
+    if (log === null || waiting === null) return false;
+    const box = log.getBoundingClientRect();
+    return element.getBoundingClientRect().top >= box.top - 1 && waiting.getBoundingClientRect().bottom <= box.bottom + 1;
+  })).toBe(true);
+  await expect(sending.getByRole("article", { name: "You", exact: true })).toHaveCount(1);
+  await expect(sending.getByText(body, { exact: true })).toHaveCount(1);
+  await expect(sending.locator("time")).toHaveCount(0);
+  await expect(transcript(page).locator("article").getByText(body, { exact: true })).toHaveCount(0);
+  await expect(composer(page)).toBeDisabled();
+  await expect(composer(page)).toHaveValue(expectedDraft);
+  expect(await sending.evaluate(element => {
+    const waiting = document.querySelector("[data-waiting-indicator]");
+    const saved = document.querySelector('ol[aria-label="Saved conversation"]');
+    return !!waiting && element.closest("ol") === null &&
+      (!saved || !!(saved.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING)) &&
+      !!(element.compareDocumentPosition(waiting) & Node.DOCUMENT_POSITION_FOLLOWING) &&
+      element.getBoundingClientRect().bottom <= waiting.getBoundingClientRect().top;
+  })).toBe(true);
+}
+
 test("a typed Send shows the exact waiting row after the messages until the reply arrives", async ({ page }) => {
   type ObservedWindow = Window & { waitingAnnouncementObservation?: {
     node: Element; observer: MutationObserver; nonempty: string[];
@@ -86,6 +115,7 @@ test("a typed Send shows the exact waiting row after the messages until the repl
   const route = await pending.command;
   expect(route.request().postDataJSON()).toMatchObject({ kind: "send", body: TYPED_MESSAGE });
   await expectWaiting(page);
+  await expectSendingMessage(page, TYPED_MESSAGE, "");
   await expect(transcript(page).getByRole("listitem")).toHaveCount(2);
   expect(await indicator(page).evaluate(element => {
     const log = element.closest('[role="log"][aria-label="Conversation transcript"]');
@@ -107,6 +137,9 @@ test("a typed Send shows the exact waiting row after the messages until the repl
   expect(await observedAnnouncement()).toEqual({ sameNode: true, text: WAITING_TEXT, nonempty: [WAITING_TEXT] });
   await fulfill(route, afterSend(state, TYPED_MESSAGE));
   await expect(transcript(page)).toContainText(REPLY);
+  await expect(sendingMessage(page)).toHaveCount(0);
+  await expect(transcript(page).getByText(TYPED_MESSAGE, { exact: true })).toHaveCount(1);
+  await expect(page.getByText(TYPED_MESSAGE, { exact: true })).toHaveCount(1);
   await expect(indicator(page)).toHaveCount(0);
   await expect(page.locator("[data-waiting-announcement]")).toBeEmpty();
   await expect(page.getByRole("status").filter({ hasText: WAITING_TEXT })).toHaveCount(0);
@@ -126,9 +159,12 @@ test("a reported failed reply removes the waiting row and keeps the typed messag
   await page.getByRole("button", { name: "Send", exact: true }).click();
   const route = await pending.command;
   await expectWaiting(page);
+  await expectSendingMessage(page, TYPED_MESSAGE, "");
   await fulfill(route, afterSend(state, TYPED_MESSAGE, false), { kind: "reply_failed", body: FAILURE, persisted: false });
   await expect(page.getByRole("main").getByRole("alert")).toHaveText(FAILURE);
   await expect(indicator(page)).toHaveCount(0);
+  await expect(sendingMessage(page)).toHaveCount(0);
+  await expect(transcript(page).getByText(TYPED_MESSAGE, { exact: true })).toHaveCount(1);
   await expect(page.locator("[data-waiting-announcement]")).toBeEmpty();
   await expect(page.getByRole("status").filter({ hasText: WAITING_TEXT })).toHaveCount(0);
   await expect(composer(page)).toHaveValue(TYPED_MESSAGE);
@@ -145,9 +181,12 @@ test("a reply-choice tap shows the waiting row for its Send", async ({ page }) =
   const route = await pending.command;
   expect(route.request().postDataJSON()).toMatchObject({ kind: "send", body: label, replyChoice: true });
   await expectWaiting(page);
+  await expectSendingMessage(page, label, TYPED_MESSAGE);
   await fulfill(route, afterSend(state, label));
   await expect(transcript(page)).toContainText(REPLY);
   await expect(indicator(page)).toHaveCount(0);
+  await expect(sendingMessage(page)).toHaveCount(0);
+  await expect(transcript(page).getByText(label, { exact: true })).toHaveCount(1);
   await expect(composer(page)).toHaveValue(TYPED_MESSAGE);
 });
 

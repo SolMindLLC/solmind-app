@@ -96,14 +96,14 @@ describe("connected Compass & Waypoint card mapping", () => {
     expect(compass.priority).toBeNull();
     expect(compass.attention?.id).toBe(CARD_POINTS.attention);
     expect(compass.points.map(compassPlaceText)).toEqual([
-      "Top position", "Upper left", "Upper right", "Detour, left", "Excursion, lower center", "Not yet arranged", "Other paths",
+      "Straight ahead", "Upper left", "Upper right", "Detour, left", "Excursion, lower center", "Not yet arranged", "Other paths",
     ]);
     // Compact and Full views (2026-11-03): the dial draws the 5 placed points; since the redesign the other 2 are in
     // its bottom row, which the description names.
     expect(dialPoints(compass).map((point) => point.id)).toEqual(compass.points.slice(0, 5).map((point) => point.id));
     expect(pointsOffDial(compass).map((point) => point.label)).toEqual([CARD_LABELS.unarranged, CARD_LABELS.otherPath]);
     expect(describeConnectedCompass(compass)).toBe(
-      "Top position: Talk with my sister. Upper left: What I need from it. Upper right: Making room to rest after a long work week. " +
+      "Straight ahead: Talk with my sister. Upper left: What I need from it. Upper right: Making room to rest after a long work week. " +
       "Detour, left: Money worries. Excursion, lower center: Planning what to say. Not yet arranged: Asking for help. " +
       "Other paths: Avoiding hard talks. The needle points to What I need from it.");
     // A needle on either kind of point without a position is said so.
@@ -234,11 +234,11 @@ describe("connected Compass & Waypoint card mapping", () => {
     expect(compass.priority).toBeNull();
     expect(compass.attention).toBeNull();
     expect(compass.points.map((point) => [compassPlaceText(point), point.isPriority, point.needle])).toEqual([
-      ["Top position", false, "available"],
+      ["Straight ahead", false, "available"],
       ["Excursion, lower right", false, "available"],
     ]);
     expect(describeConnectedCompass(compass)).toBe(
-      "Top position: At the top. Excursion, lower right: Lower right. The needle has no direction yet.");
+      "Straight ahead: At the top. Excursion, lower right: Lower right. The needle has no direction yet.");
     const empty = connectedCompass(bare([]));
     expect(empty.points).toEqual([]);
     expect(empty.priority).toBeNull();

@@ -11,8 +11,6 @@ import {
   CONNECTED_SPEAKER_LABELS,
   CONNECTED_TITLE,
   CONNECTED_WAITING_REPLY_TEXT,
-  CURRENT_TOOLS_HEADING,
-  CURRENT_TOOLS_REMOVAL_REASON,
   OPENING_GREETING_LABEL,
   OPENING_GREETING_TEXT,
   connectedHeaderLabel,
@@ -43,15 +41,9 @@ import { ExplorerConversationTour } from "./ExplorerConversationTour";
 import { ExplorerWaitingIndicator } from "./ExplorerWaitingIndicator";
 import { ExplorerWaypointDraft } from "./ExplorerWaypointDraft";
 import { ConnectedWaypointCard } from "./ExplorerConnectedWaypointCard";
-import {
-  ExplorerConversationFormation,
-  type ExplorerConversationFormationIntent,
-} from "./ExplorerConversationFormation";
+import type { ExplorerConversationFormationIntent } from "./ExplorerConversationFormation";
 import {
   BuildNotesProvider,
-  REMOVAL_OUTLINE,
-  RemovalTag,
-  useBuildNotesShown,
   useBuildNotesState,
 } from "./ExplorerConversationScreenBuildNotes";
 import { CONVERSATION_HEADING_ID, DRAWER_OPENER_ID, PANEL_TOGGLE_ID } from "./ExplorerConversationScreenHeader";
@@ -97,9 +89,8 @@ import {
 // a blue "Not connected yet" build-note label and, when activated, one sentence directly
 // under them saying what they will do (NotConnectedProvider). A note that
 // describes an area rather than a control (standalone) is a blue build-note box
-// with an X in its upper corner, in the area. The old form tools below the
-// conversation, planned for removal (chat-step decision 8), carry the violet
-// removal marker. The top bar's "Build notes" toggle hides or shows all of them
+// with an X in its upper corner, in the area.
+// The top bar's "Build notes" toggle hides or shows all of them
 // (BuildNotesProvider; Paul's build-note rule, decision queue 2026-11-03
 // 17:59:20, 18:00:59 and 18:03:39 CST).
 
@@ -120,6 +111,8 @@ export type ConnectedConversationView = Readonly<{
   state: ExplorerConversationState | null;
   busy: boolean;
   awaitingReply: boolean;
+  sendingMessage: string | null;
+  sendingFromComposer: boolean;
   // Local display signal for every actual ordinary Send, including a follow-up.
   sendSequence: number;
   statusText: string;
@@ -343,10 +336,13 @@ function ConversationNotices({ view, actions, errorRef, noticesRef }: NoticesPro
   );
 }
 
-function MessageBubble({ message }: Readonly<{ message: ExplorerConversationMessage }>) {
-  const speaker = message.role;
+function MessageBubble({ body, speaker, speakerId, createdAt }: Readonly<{
+  body: string;
+  speaker: ExplorerConversationMessage["role"];
+  speakerId: string;
+  createdAt?: string;
+}>) {
   const isGuide = speaker === "virtualGuide";
-  const speakerId = `conversation-message-${message.id}-speaker`;
 
   return (
     <article
@@ -362,10 +358,12 @@ function MessageBubble({ message }: Readonly<{ message: ExplorerConversationMess
         <SpeakerBadge speaker={speaker} speakerStyle={SPEAKER_STYLE} />
         {CONNECTED_SPEAKER_LABELS[speaker]}
       </p>
-      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 [overflow-wrap:anywhere]">{message.body}</p>
-      <time className="mt-2 block text-[11px] text-stone-400" dateTime={message.createdAt}>
-        {new Date(message.createdAt).toLocaleString("en-US")}
-      </time>
+      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 [overflow-wrap:anywhere]">{body}</p>
+      {createdAt === undefined ? null : (
+        <time className="mt-2 block text-[11px] text-stone-400" dateTime={createdAt}>
+          {new Date(createdAt).toLocaleString("en-US")}
+        </time>
+      )}
     </article>
   );
 }
@@ -414,10 +412,14 @@ function SavedTranscript({ state, view, actions, choicesDismissed, onShowTour, o
 }>) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const count = state.messages.length;
+  const sendingMessage = view.awaitingReply ? view.sendingMessage : null;
   const visit = useCompassChangeVisit(state, view.signInRequired);
 
   useEffect(() => {
     const box = scrollRef.current;
+    // The transcript's own scroll to its end brings the sent words and the
+    // waiting row into view inside it; the page itself does not move on a
+    // Send (tests/browser/explorerOpenAtNewest.pw.ts, "the page moves once").
     if (box) box.scrollTop = box.scrollHeight;
   }, [count, view.awaitingReply]);
 
@@ -451,7 +453,7 @@ function SavedTranscript({ state, view, actions, choicesDismissed, onShowTour, o
                 </button>
               </div>
             )}
-            <p className="text-sm text-stone-300">There are no saved messages yet.</p>
+            {sendingMessage === null ? <p className="text-sm text-stone-300">There are no saved messages yet.</p> : null}
             {view.ended ? null : (
               <PlaceholderSlot title="Ways to begin">
                 <NotYetImplementedNote id={noteId("chat", "choiceGroup")} noteKey="choiceGroup" standalone />
@@ -463,7 +465,12 @@ function SavedTranscript({ state, view, actions, choicesDismissed, onShowTour, o
           <ol aria-label="Saved conversation" className="grid gap-3">
             {state.messages.map((message) => (
               <li className={joinClasses("grid", FOCUS_RING)} key={message.id} tabIndex={-1}>
-                <MessageBubble message={message} />
+                <MessageBubble
+                  body={message.body}
+                  createdAt={message.createdAt}
+                  speaker={message.role}
+                  speakerId={`conversation-message-${message.id}-speaker`}
+                />
                 <CompassChangeLines bundles={visit.visible} messageId={message.id} />
                 <ExplorerWaypointDraft
                   followUpHeld={view.sendUnavailable || view.atMessageCapacity}
@@ -485,7 +492,16 @@ function SavedTranscript({ state, view, actions, choicesDismissed, onShowTour, o
             ))}
           </ol>
         )}
-        {view.awaitingReply ? <ExplorerWaitingIndicator /> : null}
+        {view.awaitingReply ? (
+          <div className="grid gap-3">
+            {sendingMessage === null ? null : (
+              <div aria-live="off" className="grid" data-sending-message="">
+                <MessageBubble body={sendingMessage} speaker="explorer" speakerId="conversation-sending-message-speaker" />
+              </div>
+            )}
+            <ExplorerWaitingIndicator />
+          </div>
+        ) : null}
       </div>
     </div>
     </>
@@ -583,7 +599,7 @@ function ConnectedComposer({ view, actions, composerRef, calmPrompt }: ComposerP
           placeholder={COMPOSER_PLACEHOLDER}
           ref={composerRef}
           rows={3}
-          value={view.draft}
+          value={view.awaitingReply && view.sendingMessage !== null && view.sendingFromComposer ? "" : view.draft}
         />
         {showKeyHint ? (
           <p className="text-xs leading-5 text-stone-400" id={COMPOSER_KEY_HINT_ID}>
@@ -722,10 +738,8 @@ type SupportBodyProps = Readonly<{
 // Waypoints, read-only. Choosing a point sends the existing set_attention
 // command through onCommand, so ExplorerConversation.tsx keeps its hold,
 // retry and expected-revision rules. Key Insights are not built yet (Paul's
-// decision 7), so that area keeps its blue build-note box. When the
-// current tools are shown for an open conversation, the panel says what they
-// are still for; after End they show the saved record read-only, so it does
-// not (fix round 2, 2026-11-03). The Compass card shows its Full or Compact
+// decision 7), so that area keeps its blue build-note box.
+// The Compass card shows its Full or Compact
 // view as this scope's layout state says (2026-11-03).
 function ConnectedSupportBody({ scope, view, compassView, onToggleCompassView, onCommand }: SupportBodyProps) {
   const { state } = view;
@@ -755,38 +769,6 @@ function ConnectedSupportBody({ scope, view, compassView, onToggleCompassView, o
         <NotYetImplementedNote id={noteId(scope, "keyInsight")} noteKey="keyInsight" standalone />
       </section>
     </>
-  );
-}
-
-type ToolsProps = Readonly<{
-  state: ExplorerConversationState;
-  view: ConnectedConversationView;
-  onCommand: (intent: ExplorerConversationFormationIntent) => void;
-}>;
-
-// The remaining Waypoint tools keep their behavior and violet removal marker
-// (Paul's chat-step decision 8). Compass editing is retired; an ended review
-// still shows the recorded Compass facts.
-function CurrentTools({ state, view, onCommand }: ToolsProps) {
-  const headingId = "conversation-current-tools-heading";
-  const marked = useBuildNotesShown();
-
-  return (
-    <section
-      aria-labelledby={headingId}
-      className={joinClasses("rounded-3xl border border-stone-800 bg-[#090807]/85 p-4 sm:p-5", marked && REMOVAL_OUTLINE)}
-      data-removal-marker={marked ? "outline" : undefined}
-    >
-      <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
-        <h2 className="font-serif text-xl text-stone-50" id={headingId}>
-          {CURRENT_TOOLS_HEADING}
-        </h2>
-        <RemovalTag id="removal-current-tools" reason={CURRENT_TOOLS_REMOVAL_REASON} />
-      </div>
-      <div className="mt-4">
-        <ExplorerConversationFormation busy={view.held} onCommand={onCommand} readOnly={view.ended} state={state} />
-      </div>
-    </section>
   );
 }
 
@@ -992,7 +974,6 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
                     <div className="pb-4" />
                   )}
                 </section>
-                {state !== null ? <CurrentTools onCommand={actions.onCommand} state={state} view={view} /> : null}
               </div>
               <ConnectedSupportPanel renderBody={renderSupportBody} visible={panelVisible} />
             </div>

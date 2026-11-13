@@ -36,7 +36,7 @@ const inputClass = "mt-2 w-full rounded-xl border border-slate-600 bg-slate-950 
 const buttonClass = "rounded-xl border border-cyan-300/60 px-3 py-2 text-sm font-semibold text-cyan-100 disabled:cursor-not-allowed disabled:opacity-50";
 const panelClass = "rounded-3xl border border-slate-700 bg-slate-950/70 p-5";
 const compassPositions: readonly Readonly<{ anchor: ExplorerCompassAnchor; label: string; className: string }>[] = [
-  { anchor: "apex", label: "Top position", className: "col-start-2 row-start-1" },
+  { anchor: "apex", label: "Straight ahead", className: "col-start-2 row-start-1" },
   { anchor: "upper_left", label: "Upper left", className: "col-start-1 row-start-2" },
   { anchor: "upper_right", label: "Upper right", className: "col-start-3 row-start-2" },
   { anchor: "side_left", label: "Detour \u2014 left", className: "col-start-1 row-start-3" },

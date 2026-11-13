@@ -109,22 +109,6 @@ export function connectedStatusText(status: Exclude<ConnectedConversationStatus,
   }
 }
 
-// The current Compass and Waypoint tools stay usable until the conversation
-// forms the Compass and Waypoints itself (rebuild steps 4 and 5).
-export const CURRENT_TOOLS_HEADING = "Your current Compass and Waypoint tools";
-export const CURRENT_TOOLS_INTRO =
-  "These are the tools you have used so far for your Compass and Waypoints. They stay here so your saved Compass and Waypoints remain usable while the new Compass & Waypoint card is built. Later, your Compass and Waypoints will form from the conversation instead.";
-// The Compass & Waypoint card shows the saved Compass and Waypoints and points
-// the needle (chat step slices S1 and S2); every other change still uses the
-// current tools.
-export const CURRENT_TOOLS_POINTER =
-  "To add, arrange or reword Compass points, or to choose, clarify, reach or release a Waypoint, use your current tools below the conversation.";
-// The sentence the current tools' violet "Planned for removal" tag shows on
-// tap (Paul's build-note rule, decision queue 2026-11-03 18:03:39 CST; the
-// tools go under his chat-step decision 8). A build note for reviewers.
-export const CURRENT_TOOLS_REMOVAL_REASON =
-  "These tools will be removed once the Compass & Waypoint card does everything they do.";
-
 export const COMPOSER_LABEL = "Continue the conversation";
 export const COMPOSER_KEY_HINT = "To send your message, press Enter. To start a new line, press Shift+Enter or Alt+Enter.";
 export const COMPOSER_PLACEHOLDER = "Share what comes to mind...";

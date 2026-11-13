@@ -138,7 +138,7 @@ describe("Formation presentation (static proof only)", () => {
     const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: arranged, busy: false, readOnly: true, onCommand }));
     const saved = html.slice(html.indexOf('aria-label="Saved Compass arrangement"'), html.indexOf("Other paths ("));
     const other = html.slice(html.indexOf("Other paths ("));
-    expect(saved).toContain("Top position");
+    expect(saved).toContain("Straight ahead");
     expect(saved).toContain("Detour — left");
     expect(saved).toContain("Excursion — lower center");
     for (let index = 0; index < points.length - 1; index += 1) {
@@ -212,7 +212,7 @@ describe("Formation presentation (static proof only)", () => {
     expect(html.indexOf("Compass arrangement confirmed")).toBeLessThan(html.indexOf("Captured attention afterward"));
     expect(route).toContain("Priority changed from “Captured first &lt;choice&gt;” to “Captured second choice”.");
     expect(route).toContain("Captured first &lt;choice&gt; — Detour — left; Light.");
-    expect(route).toContain("Captured second choice — Top position; Strong.");
+    expect(route).toContain("Captured second choice \u2014 Straight ahead; Strong.");
     expect(route).toContain("2026-10-29T07:02:00.123456+00:00");
     expect(route).not.toContain("Today&#x27;s");
     expect(route).not.toContain("<choice>");
@@ -306,7 +306,7 @@ describe("Category presentation (static proof only)", () => {
     }), busy: false, readOnly: true, onCommand }));
     const route = html.slice(html.indexOf("Categories combined"), html.indexOf("Private Waypoints"));
     expect(route).toContain("Confirmed wording: Earlier combined &lt;wording&gt;");
-    expect(route).toContain("Original first wording — selected point before this change; Top position; Strong.");
+    expect(route).toContain("Original first wording \u2014 selected point before this change; Straight ahead; Strong.");
     expect(route).toContain("Original second wording — selected point before this change; Excursion — lower right; Regular.");
     expect(route).toContain("Earlier retained wording — retained contributing point; Other paths; relative emphasis not recorded.");
     expect(route).toContain("An exact earlier contributing source.");

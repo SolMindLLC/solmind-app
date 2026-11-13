@@ -43,6 +43,16 @@ async function mockState(page: Page, read: () => unknown) {
   });
 }
 
+async function mockEndedReview(page: Page, state: ExplorerConversationState) {
+  await page.route("**/explorer/conversations/state*", route => {
+    expect(route.request().method()).toBe("GET");
+    const selected = new URL(route.request().url()).searchParams.get("conversationId");
+    return route.fulfill({ json: { version: "explorer-conversation-review.v1", ok: true,
+      items: [{ conversationId: state.conversationId, endedAt: state.ending?.endedAt ?? null }],
+      state: selected === state.conversationId ? state : null, error: null } });
+  });
+}
+
 test("F02 saved arrangement facts remain read-only after reload without a new Compass command", async ({ page }) => {
   const first = "40000000-0000-4000-8000-000000000001";
   const second = "40000000-0000-4000-8000-000000000002";
@@ -57,11 +67,14 @@ test("F02 saved arrangement facts remain read-only after reload without a new Co
   expect(parseExplorerConversationState(state)).not.toBeNull();
   const commands: string[] = [];
   await mockState(page, () => success(state));
+  await mockEndedReview(page, state);
   await page.route("**/explorer/conversation/commands", route => { commands.push(route.request().postData()!); return route.abort(); });
   await page.goto("/explorer/conversation");
+  await expect(page.getByText("This saved conversation has ended. It is available for read-only review.", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Review ended conversations", exact: true }).click();
   for (const reload of [false, true]) {
     if (reload) await page.reload();
-    await expect(page.getByText("This saved conversation has ended. It is available for read-only review.", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Review ended conversation 1", exact: true }).click();
     await expect(page.getByText("Compass arrangement confirmed", { exact: true })).toBeVisible();
     await page.getByText("Review recorded placement and emphasis", { exact: true }).click();
     await expect(page.getByText(/Alpha .*Regular/)).toBeVisible();
@@ -87,9 +100,12 @@ test("F01 saved Route and Reached evidence remain reviewable after reload withou
   expect(parseExplorerConversationState(state)).not.toBeNull();
   let writes = 0;
   await mockState(page, () => success(state));
+  await mockEndedReview(page, state);
   await page.route("**/explorer/conversation/commands", route => { writes += 1; return route.abort(); });
   await page.goto("/explorer/conversation");
   await expect(page.getByText("This saved conversation has ended. It is available for read-only review.", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Review ended conversations", exact: true }).click();
+  await page.getByRole("button", { name: "Review ended conversation 1", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Route", exact: true })).toBeVisible();
   await expect(page.getByText("Captured earlier direction", { exact: false })).toBeVisible();
   await page.getByText("Review saved Reached confirmation", { exact: true }).click();
@@ -97,6 +113,7 @@ test("F01 saved Route and Reached evidence remain reviewable after reload withou
   await expect(page.locator('time[datetime="2026-10-29T07:01:00.123456+00:00"]')).toBeVisible();
   await expect(page.getByRole("button", { name: "Review Reached: One calm choice", exact: true })).toHaveCount(0);
   await page.reload();
+  await page.getByRole("button", { name: "Review ended conversation 1", exact: true }).click();
   await expect(page.getByText("Captured earlier direction", { exact: false })).toBeVisible();
   await page.getByText("Review saved Reached confirmation", { exact: true }).click();
   await expect(page.getByText(state.waypoints[0].reachedEvidence!, { exact: true })).toBeVisible();
@@ -273,7 +290,7 @@ test("C10 malformed initial state is refused rather than rendered", async ({ pag
   await expect(page.getByLabel("Continue the conversation", { exact: true })).toHaveCount(0);
 });
 
-test("C11 a pending saved turn blocks new send and formation but permits a read", async ({ page }) => {
+test("C11 a pending saved turn blocks new send but permits a read", async ({ page }) => {
   let reads = 0;
   let writes = 0;
   const pending: ExplorerConversationState = { ...savedState(), pendingTurn: true,
@@ -283,7 +300,6 @@ test("C11 a pending saved turn blocks new send and formation but permits a read"
   await page.goto("/explorer/conversation");
   await expect(page.getByText(/A saved message is still awaiting a confirmed result/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
-  await expect(page.getByRole("combobox").first()).toBeDisabled();
   await expect(page.getByText("A synthetic transport reply", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Reload saved conversation", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "Reload saved conversation", exact: true }).click();
@@ -291,7 +307,7 @@ test("C11 a pending saved turn blocks new send and formation but permits a read"
   expect(writes).toBe(0);
 });
 
-test("C12 saved-message capacity disables sending and keeps formation available", async ({ page }) => {
+test("C12 saved-message capacity disables sending", async ({ page }) => {
   let writes = 0;
   const full = { ...savedState(), messages: Array.from({ length: 100 }, (_, index) => ({
     ...savedState().messages[index % 2], id: `20000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
@@ -302,7 +318,6 @@ test("C12 saved-message capacity disables sending and keeps formation available"
   await expect(page.getByText(/This conversation has reached its saved-message limit/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
   await expect(page.getByLabel("Continue the conversation", { exact: true })).toBeDisabled();
-  await expect(page.getByRole("region", { name: "Private Waypoints", exact: true }).getByRole("combobox", { name: "Saved conversation source", exact: true })).toBeEnabled();
   expect(writes).toBe(0);
 });
 

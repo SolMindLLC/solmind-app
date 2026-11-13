@@ -251,7 +251,7 @@ test("full, compact and narrow views retain keyboard needle selection, full labe
   });
   await open(page, () => current);
   const compass = await card(page);
-  await expect(compass.getByRole("img")).toHaveAccessibleDescription(new RegExp(`^Top position: ${AUTOMATIC_LABEL}`));
+  await expect(compass.getByRole("img")).toHaveAccessibleDescription(new RegExp(`^Straight ahead: ${AUTOMATIC_LABEL}`));
   const second = compass.getByRole("button", { name: "Ordinary topic 2 Upper left", exact: true });
   await second.focus();
   await page.keyboard.press("Enter");
@@ -260,7 +260,7 @@ test("full, compact and narrow views retain keyboard needle selection, full labe
   await expect(line).toHaveText("Pointing to: Ordinary topic 2");
   await compass.getByRole("button", { name: "Compact view of the Compass", exact: true }).click();
   await expect(compass.getByRole("img")).toHaveCount(0);
-  await compass.getByRole("button", { name: `${AUTOMATIC_LABEL} Top position`, exact: true }).focus();
+  await compass.getByRole("button", { name: `${AUTOMATIC_LABEL} Straight ahead`, exact: true }).focus();
   await page.keyboard.press("Enter");
   await expect(line).toBeFocused();
   await expect(line).toHaveText(`Pointing to: ${AUTOMATIC_LABEL}`);

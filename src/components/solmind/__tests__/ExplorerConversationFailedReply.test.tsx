@@ -1,4 +1,4 @@
-import { createElement, type FormEvent } from "react";
+import { createElement, createRef, type FormEvent } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ExplorerConversation } from "../ExplorerConversation";
@@ -8,7 +8,8 @@ import { EXPLORER_FAILED_REPLY_BUTTON_NOTE, EXPLORER_PRIVATE_RESPONSE_VERSION } 
 import { EXPLORER_FAILED_REPLY_RETRY_DRAFT } from "../../../lib/solmind/virtual-guide/explorerPrivateConversationComposition";
 
 const hooks = vi.hoisted(() => ({ slots: [] as unknown[], cursor: 0, effects: [] as (() => void | (() => void))[],
-  actions: null as ConnectedConversationActions | null, view: null as ConnectedConversationView | null }));
+  actions: null as ConnectedConversationActions | null, view: null as ConnectedConversationView | null,
+  screen: null as typeof import("../ExplorerConversationConnectedScreen").ExplorerConversationConnectedScreen | null }));
 vi.mock("react", async original => ({
   ...await original<typeof import("react")>(),
   useState: (initial: unknown) => {
@@ -29,11 +30,14 @@ vi.mock("react", async original => ({
     if (!(index in hooks.slots)) { hooks.slots[index] = true; hooks.effects.push(effect); }
   },
 }));
-vi.mock("../ExplorerConversationConnectedScreen", () => ({
-  ExplorerConversationConnectedScreen: ({ actions, view }: { actions: ConnectedConversationActions; view: ConnectedConversationView }) => {
-    hooks.actions = actions; hooks.view = view; return null;
-  },
-}));
+vi.mock("../ExplorerConversationConnectedScreen", async original => {
+  hooks.screen = (await original<typeof import("../ExplorerConversationConnectedScreen")>()).ExplorerConversationConnectedScreen;
+  return {
+    ExplorerConversationConnectedScreen: ({ actions, view }: { actions: ConnectedConversationActions; view: ConnectedConversationView }) => {
+      hooks.actions = actions; hooks.view = view; return null;
+    },
+  };
+});
 
 const id = (n: number) => `80000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const state: ExplorerConversationState = { version: "explorer-conversation.v1", conversationId: id(1), revision: 0,
@@ -44,13 +48,46 @@ const state: ExplorerConversationState = { version: "explorer-conversation.v1", 
 const draft = "My thought stays in the conversation.";
 const cleanups: (() => void)[] = [];
 function render() { hooks.cursor = 0; renderToStaticMarkup(createElement(ExplorerConversation)); }
+function screenMarkup() {
+  // Render the real presentation from the controller's current view, with separate local layout slots.
+  const saved = { slots: hooks.slots, cursor: hooks.cursor, effects: hooks.effects };
+  hooks.slots = []; hooks.cursor = 0; hooks.effects = [];
+  try {
+    return renderToStaticMarkup(createElement(hooks.screen!, { view: hooks.view!, actions: hooks.actions!,
+      headingRef: createRef<HTMLHeadingElement>(), composerRef: createRef<HTMLTextAreaElement>() }));
+  } finally {
+    hooks.slots = saved.slots; hooks.cursor = saved.cursor; hooks.effects = saved.effects;
+  }
+}
+const renderedText = (text: string) => renderToStaticMarkup(createElement("span", null, text)).slice(6, -7);
+function expectMessageBox(html: string, text: string, disabled = false) {
+  const field = html.match(/<textarea\b([^>]*)>([\s\S]*?)<\/textarea>/);
+  expect(field).not.toBeNull();
+  expect(field![2]).toBe(renderedText(text));
+  if (disabled) expect(field![1]).toContain('disabled=""');
+}
+function expectSending(text: string, sendingFromComposer: boolean, storedDraft = draft) {
+  render();
+  expect(hooks.view).toMatchObject({ awaitingReply: true, sendingMessage: text, sendingFromComposer, draft: storedDraft });
+  const html = screenMarkup();
+  const sending = html.indexOf('data-sending-message=""');
+  const waiting = html.indexOf('data-waiting-indicator=""');
+  expect(sending).toBeGreaterThan(-1);
+  expect(waiting).toBeGreaterThan(sending);
+  expect(html.slice(sending, waiting)).toContain(renderedText(text));
+  expect(html.split(`>${renderedText(text)}</p>`)).toHaveLength(2);
+  const saved = html.match(/<ol aria-label="Saved conversation"[\s\S]*?<\/ol>/)?.[0] ?? "";
+  expect(saved).not.toContain(`>${renderedText(text)}</p>`);
+  expectMessageBox(html, sendingFromComposer ? "" : storedDraft, true);
+}
 function response(result: unknown, assistance: unknown = null) {
   return new Response(JSON.stringify({ version: EXPLORER_PRIVATE_RESPONSE_VERSION, result, assistance }),
     { headers: { "Content-Type": "application/json" } });
 }
 beforeEach(() => {
   vi.useFakeTimers(); hooks.slots = []; hooks.cursor = 0; hooks.effects = []; hooks.actions = null; hooks.view = null;
-  vi.stubGlobal("window", { addEventListener: vi.fn(), removeEventListener: vi.fn() });
+  vi.stubGlobal("window", { addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    location: { href: "http://localhost/explorer/conversation" } });
 });
 afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup();
@@ -147,6 +184,11 @@ describe("REV424 waiting indicator command lifetime", () => {
     render();
     expect(hooks.view!.awaitingReply).toBe(waiting);
     if (waiting) expect(hooks.view).toMatchObject({ busy: true, statusText: "" });
+    else {
+      expect(hooks.view!.sendingMessage).toBeNull();
+      expect(hooks.view!.sendingFromComposer).toBe(false);
+      expect(screenMarkup()).not.toContain('data-sending-message=""');
+    }
   }
 
   it.each(["typed", "reply choice"] as const)("waits only while the dispatched %s Send is in flight", async kind => {
@@ -156,15 +198,28 @@ describe("REV424 waiting indicator command lifetime", () => {
     if (kind === "typed") send();
     else hooks.actions!.onReplyChoice(label);
     expectWaiting(true);
+    const body = kind === "typed" ? draft : label;
+    expectSending(body, kind === "typed");
     expect(fetch).toHaveBeenCalledOnce();
     expect(JSON.parse(fetch.mock.calls[0][1]!.body as string)).toMatchObject({ kind: "send",
-      body: kind === "typed" ? draft : label });
+      body });
     await vi.advanceTimersByTimeAsync(8_000);
     expectWaiting(true);
-    held.resolve(response({ ok: true, state: { ...offered, revision: 2 }, error: null }));
+    expectSending(body, kind === "typed");
+    const saved: ExplorerConversationState = { ...offered, revision: 3, messages: [...offered.messages,
+      { id: id(6), role: "explorer", body, createdAt: "2026-11-13T10:00:08Z" },
+      { id: id(7), role: "virtualGuide", body: "A saved synthetic answer.", createdAt: "2026-11-13T10:00:09Z" }] };
+    held.resolve(response({ ok: true, state: saved, error: null }));
     await vi.advanceTimersByTimeAsync(0);
     expectWaiting(false);
     expect(hooks.view!.busy).toBe(false);
+    expect(hooks.view!.state!.messages).toEqual(saved.messages);
+    const html = screenMarkup();
+    const savedList = html.match(/<ol aria-label="Saved conversation"[\s\S]*?<\/ol>/)![0];
+    expect(savedList).toContain(renderedText(body));
+    expect(html.split(`>${renderedText(body)}</p>`)).toHaveLength(2);
+    expectMessageBox(html, kind === "typed" ? "" : draft);
+    expect(hooks.view!.draft).toBe(kind === "typed" ? "" : draft);
   });
 
   it.each(["right", "close", "not_it"] as const)("waits for the %s suggestion follow-up, after its formation command finishes", async answer => {
@@ -178,22 +233,60 @@ describe("REV424 waiting indicator command lifetime", () => {
     held.resolve(response({ ok: true, state: answered, error: null }));
     await vi.advanceTimersByTimeAsync(0);
     expectWaiting(true);
+    const body = `${answer === "right" ? "That's right" : answer === "close" ? "Close, not quite" : "That's not it"}: "${waypointDraft.title}"`;
+    expectSending(body, false);
     expect(fetch).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(fetch.mock.calls[1][1]!.body as string)).toMatchObject({ kind: "send", expectedRevision: 2 });
+    expect(JSON.parse(fetch.mock.calls[1][1]!.body as string)).toMatchObject({ kind: "send", expectedRevision: 2, body });
     held.resolve(response({ ok: true, state: { ...answered, revision: 3 }, error: null }));
     await vi.advanceTimersByTimeAsync(0);
     expectWaiting(false);
+    expectMessageBox(screenMarkup(), draft);
   });
 
-  it.each(["refused", "reported failed reply", "fetch failure", "abort", "timeout"] as const)(
+  it("shows the exact first-message wire text again on an uncertain retry while retaining the original draft", async () => {
+    const fetch = await loaded();
+    const storedDraft = `  ${draft}\n`;
+    hooks.actions!.onDraftChange(storedDraft); render();
+    const held = hold(fetch);
+    send();
+    expectSending(draft, true, storedDraft);
+    expect(screenMarkup()).not.toContain("There are no saved messages yet.");
+    const bytes = fetch.mock.calls[0][1]!.body;
+    expect(JSON.parse(bytes as string).body).toBe(draft);
+    held.resolve(new Response("malformed", { headers: { "Content-Type": "application/json" } }));
+    await vi.advanceTimersByTimeAsync(0);
+    expectWaiting(false);
+    expect(hooks.view!.uncertain).toBe(true);
+    expectMessageBox(screenMarkup(), storedDraft);
+    hooks.actions!.onRetry();
+    expectSending(draft, true, storedDraft);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch.mock.calls[1][1]!.body).toBe(bytes);
+    held.resolve(response({ ok: true, state: { ...state, revision: 2, messages: [
+      { id: id(6), role: "explorer", body: draft, createdAt: "2026-11-13T10:00:08Z" },
+      { id: id(7), role: "virtualGuide", body: "A saved synthetic answer.", createdAt: "2026-11-13T10:00:09Z" },
+    ] }, error: null }));
+    await vi.advanceTimersByTimeAsync(0);
+    expectWaiting(false);
+    const html = screenMarkup();
+    const savedList = html.match(/<ol aria-label="Saved conversation"[\s\S]*?<\/ol>/)![0];
+    expect(savedList.split(`>${renderedText(draft)}</p>`)).toHaveLength(2);
+    expectMessageBox(html, "");
+  });
+
+  it.each(["refused", "reported failed reply", "uncertain result", "fetch failure", "abort", "timeout"] as const)(
     "clears the wait when a Send ends with %s", async outcome => {
       const fetch = await loaded(offered);
       const held = hold(fetch);
       send();
       expectWaiting(true);
+      expectSending(draft, true);
       if (outcome === "refused") held.resolve(response({ ok: false, state: null, error: "provider_unavailable" }));
-      else if (outcome === "reported failed reply") held.resolve(response({ ok: true, state: { ...offered, revision: 2 }, error: null },
+      else if (outcome === "reported failed reply") held.resolve(response({ ok: true,
+        state: { ...offered, revision: 2, messages: [...offered.messages,
+          { id: id(6), role: "explorer", body: draft, createdAt: "2026-11-13T10:00:08Z" }] }, error: null },
         { kind: "reply_failed", body: EXPLORER_FAILED_REPLY_RETRY_DRAFT, persisted: false }));
+      else if (outcome === "uncertain result") held.resolve(new Response("malformed", { headers: { "Content-Type": "application/json" } }));
       else if (outcome === "fetch failure") held.reject(new Error("Synthetic transport failure"));
       else if (outcome === "abort") held.reject(new DOMException("Aborted", "AbortError"));
       else {
@@ -206,6 +299,15 @@ describe("REV424 waiting indicator command lifetime", () => {
       await vi.advanceTimersByTimeAsync(0);
       expectWaiting(false);
       expect(hooks.view!.busy).toBe(false);
+      expect(hooks.view!.draft).toBe(draft);
+      const html = screenMarkup();
+      expectMessageBox(html, draft);
+      if (outcome === "reported failed reply") {
+        const savedList = html.match(/<ol aria-label="Saved conversation"[\s\S]*?<\/ol>/)![0];
+        expect(savedList.split(`>${renderedText(draft)}</p>`)).toHaveLength(2);
+      } else {
+        expect(hooks.view!.state!.messages).toEqual(offered.messages);
+      }
       expect(fetch).toHaveBeenCalledOnce();
     });
 
@@ -216,6 +318,7 @@ describe("REV424 waiting indicator command lifetime", () => {
     fetch.mockImplementation((_url, init) => new Promise(resolve => { finish = resolve; signal = init!.signal!; }));
     send();
     expectWaiting(true);
+    expectSending(draft, true);
     const leave = vi.mocked(window.addEventListener).mock.calls.find(call => call[0] === "pagehide")![1] as () => void;
     leave();
     expectWaiting(false);
@@ -229,7 +332,7 @@ describe("REV424 waiting indicator command lifetime", () => {
 
   it("keeps loading, reload and End review outside the reply wait", async () => {
     render();
-    expect(hooks.view).toMatchObject({ busy: true, awaitingReply: false, statusText: "Loading your saved conversation..." });
+    expect(hooks.view).toMatchObject({ busy: true, awaitingReply: false, sendingMessage: null, sendingFromComposer: false, statusText: "Loading your saved conversation..." });
     const fetch = await loaded(offered);
     expectWaiting(false);
     hooks.actions!.onReviewEnd();

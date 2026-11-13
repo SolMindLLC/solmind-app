@@ -119,7 +119,7 @@ export function connectedCompass(state: ExplorerConversationState): CardCompass 
 // The names of the 8 positions, as the saved review names them, with an
 // ASCII comma instead of their dash.
 export const COMPASS_POSITION_NAMES: Readonly<Record<ExplorerCompassAnchor, string>> = freeze({
-  apex: "Top position",
+  apex: "Straight ahead",
   upper_left: "Upper left",
   upper_right: "Upper right",
   side_left: "Detour, left",

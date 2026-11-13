@@ -40,6 +40,8 @@ describe("Fixed tour choice interception", () => {
     }], ...stateOverrides };
     const view: ConnectedConversationView = { state, sendSequence: 0, busy: false, statusText: "", assistance: null,
       awaitingReply: false,
+      sendingMessage: null,
+      sendingFromComposer: false,
       errorMessage: null, signInRequired: false, uncertain: false, reloadAvailable: true, draft: "My draft", draftError: "",
       endReviewOpen: false, staleEndReview: false, ended: false, endBlocked: false, held: false, sendUnavailable: false,
       atMessageCapacity: false, ...overrides };

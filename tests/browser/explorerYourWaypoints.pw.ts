@@ -61,6 +61,8 @@ test.describe("Your Waypoints on the Waypoints page", () => {
     await expect(row(page, 2)).toHaveAttribute("aria-expanded", "true");
     await expect(section(page).getByText("From a conversation that has not ended")).toBeVisible();
     await expect(section(page).getByRole("link", { name: "Go to your conversation" })).toHaveAttribute("href", "/explorer/conversation");
+    await expect(section(page).getByText("Marking this Waypoint Reached or releasing it is coming to its conversation's Compass & Waypoint card, so its changes stay with that conversation.", { exact: false })).toBeVisible();
+    await expect(section(page).getByText("mark it Reached or release it in your conversation", { exact: false })).toHaveCount(0);
     await expect(section(page).getByRole("button", { name: "Mark Reached" })).toHaveCount(0);
     await row(page, 1).click();
     await expect(row(page, 2)).toHaveAttribute("aria-expanded", "false");

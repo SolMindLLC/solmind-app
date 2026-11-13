@@ -145,7 +145,8 @@ test("wide: the designed layout shows the saved conversation without preview ext
   await expect(page.getByText(/Not yet implemented:/)).toHaveCount(0);
   // Overview in the menu is the way home (September 23); the top bar has no separate home link.
   await expect(page.getByRole("link", { name: "Explorer home", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Your current Compass and Waypoint tools", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your current Compass and Waypoint tools", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Compass & Waypoint", exact: true })).toBeVisible();
   await expectNoSidewaysScroll(page);
   await expectNoSeriousAxeViolations(page);
   await page.screenshot({ path: capture("connected-wide-viewport") });

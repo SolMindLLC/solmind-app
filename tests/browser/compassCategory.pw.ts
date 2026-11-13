@@ -17,10 +17,20 @@ test("ended category review retains combined sources after reload without editin
   const commands: Record<string, unknown>[] = [];
   const response = () => ({ version: "explorer-private-conversation-response.v1", result: { ok: true, state, error: null }, assistance: null });
   await page.route("**/explorer/conversation/state", route => route.fulfill({ json: response() }));
+  await page.route("**/explorer/conversations/state*", route => {
+    expect(route.request().method()).toBe("GET");
+    const selected = new URL(route.request().url()).searchParams.get("conversationId");
+    return route.fulfill({ json: { version: "explorer-conversation-review.v1", ok: true,
+      items: [{ conversationId: state.conversationId, endedAt: null }],
+      state: selected === state.conversationId ? state : null, error: null } });
+  });
   await page.route("**/explorer/conversation/commands", route => { commands.push(route.request().postDataJSON()); return route.abort(); });
   await page.goto("/explorer/conversation");
+  await expect(page.getByText("This saved conversation has ended. It is available for read-only review.", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Review ended conversations", exact: true }).click();
   for (const reload of [false, true]) {
     if (reload) await page.reload();
+    await page.getByRole("button", { name: "Review ended conversation 1", exact: true }).click();
     await page.getByText("Other paths (1)", { exact: true }).click();
     await page.getByText("Combined source points (2)", { exact: true }).click();
     await expect(page.getByText("Exact original second source.", { exact: true }).first()).toBeVisible();
