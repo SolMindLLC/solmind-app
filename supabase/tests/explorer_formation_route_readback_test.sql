@@ -139,32 +139,31 @@ end $$;
 -- fixture conversation's rows for each new Send (the inspector compares them exactly): current points in display
 -- order, the saved Priority and attention, the last five needle moves on a current point (oldest first, each
 -- with the point's current label), the current Waypoint heads, no drafts.
+-- REV391 (2026-11-11): conversation 6005 is a legacy-mode conversation (its rejected and forming rows are
+-- historical), so the section is the v8 legacy envelope: mode legacy_read_only, zero capacity, no topics, a null
+-- priorityId, no forming points, attention only when it names a supplied point (explorer_source_exclusion_test.sql).
+-- This fixture records no needle moves, so the Route is empty.
 create function pg_temp.compass_context() returns jsonb language sql stable as $$
-  select jsonb_build_object('version','explorer-compass-context.v7','immediateMessageIsReplyChoice',false,
+  select jsonb_build_object('version','explorer-compass-context.v8','immediateMessageIsReplyChoice',false,
+    'mode','legacy_read_only','topics','[]'::jsonb,
+    'capacity',jsonb_build_object('originalsRemaining',0,'topicSlotsRemaining',0,'visibleSlotsRemaining',0),
+    'messageRefs',jsonb_build_object('history',(select coalesce(jsonb_agg(jsonb_build_object('ref','h'||h.ord::text,
+      'order',h.ord) order by h.ord),'[]'::jsonb) from (
+      select recent.*,row_number() over(order by recent.sequence_number)-1 as ord from (
+        select * from ai.ai_interaction_message where ai_interaction_session_id=pg_temp.gid(6005)
+        order by sequence_number desc limit 24) recent) h where h.sender_type='user'),'immediate','now'),
     'points',coalesce((select jsonb_agg(jsonb_build_object('id',c.item_id,'label',ai.solmind_exclusion_normalize_v3(c.label),
-      'order',c.ord-1,'formation',case when c.formation_status='proposed' then 'forming' else 'saved' end,'anchor',c.compass_anchor,'emphasis',c.relative_emphasis)
-      ||case when c.formation_status='proposed' then jsonb_build_object('suggestedInPreviousReply',coalesce(
-        c.wording_message_id=(select previous.ai_interaction_message_id from ai.ai_interaction_message previous
-          where previous.ai_interaction_session_id=c.conversation_id and previous.sender_type='ai'
-            and previous.ai_role='solmind_virtual_guide' order by previous.sequence_number desc limit 1),false))
-        else '{}'::jsonb end order by c.ord)
+      'order',c.ord-1,'formation',case when c.formation_status='automatic' then 'automatic' else 'saved' end,'anchor',c.compass_anchor,'emphasis',c.relative_emphasis)
+        order by c.ord)
       from (select x.*,row_number() over(order by x.display_order) as ord from ai.explorer_conversation_compass_item x
-        where x.conversation_id=pg_temp.gid(6005) and x.merged_into_item_id is null and x.formation_status is distinct from 'rejected') c),'[]'::jsonb),
-    'priorityId',(select s.priority_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.gid(6005)),
-    'attentionId',(select s.attention_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.gid(6005)),
-    'recentRoute',coalesce((select jsonb_agg(jsonb_build_object('kind',r.compass_route_kind,'pointId',r.compass_route_item_id,
-      'label',ai.solmind_exclusion_normalize_v3(r.current_label),
-      'actor',case when r.kind='follow_attention' then 'virtual_guide' else 'explorer' end,
-      'awaitingReply',r.kind='set_attention'
-        and r.operation_id=(select last_move.operation_id from ai.explorer_conversation_operation last_move
-          where last_move.conversation_id=pg_temp.gid(6005) and last_move.compass_route_kind='attention_changed'
-          order by last_move.initial_revision desc,last_move.operation_id desc limit 1)
-        and not exists(select 1 from ai.ai_interaction_message reply where reply.ai_interaction_session_id=pg_temp.gid(6005)
-          and reply.sender_type='ai' and reply.created_at>=r.completed_at)) order by r.initial_revision,r.operation_id)
-      from (select o.*,c.label as current_label from ai.explorer_conversation_operation o join ai.explorer_conversation_compass_item c
-          on c.conversation_id=o.conversation_id and c.item_id=o.compass_route_item_id and c.merged_into_item_id is null and c.formation_status is distinct from 'rejected'
-        where o.conversation_id=pg_temp.gid(6005) and o.compass_route_kind='attention_changed'
-        order by o.initial_revision desc,o.operation_id desc limit 5) r),'[]'::jsonb),
+        where x.conversation_id=pg_temp.gid(6005) and x.merged_into_item_id is null and x.formation_status is distinct from 'rejected'
+          and x.formation_status is distinct from 'proposed') c),'[]'::jsonb),
+    'priorityId',null,
+    'attentionId',(select s.attention_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.gid(6005)
+      and exists(select 1 from ai.explorer_conversation_compass_item c where c.item_id=s.attention_id
+        and c.merged_into_item_id is null and c.formation_status is distinct from 'rejected' and c.formation_status is distinct from 'proposed')),
+    'recentRoute',case when exists(select 1 from ai.explorer_conversation_operation o where o.conversation_id=pg_temp.gid(6005)
+      and (o.compass_route_kind is not null or o.followed_attention_item_id is not null)) then null else '[]'::jsonb end,
     'waypoints',coalesce((select jsonb_agg(jsonb_build_object('id',w.waypoint_id,'title',ai.solmind_exclusion_normalize_v3(w.title),
       'destination',ai.solmind_exclusion_normalize_v3(w.destination),'meaning',ai.solmind_exclusion_normalize_v3(w.why_it_matters),
       'arrivalSignal',ai.solmind_exclusion_normalize_v3(w.arrival_signal),
@@ -180,12 +179,13 @@ create function pg_temp.compass_source_ids() returns uuid[] language sql stable 
   select coalesce(array_agg(x.id),array[]::uuid[]) from (
     select c.item_id as id from ai.explorer_conversation_compass_item c
       where c.conversation_id=pg_temp.gid(6005) and c.merged_into_item_id is null and c.formation_status is distinct from 'rejected'
+        and c.formation_status is distinct from 'proposed'
     union all select w.waypoint_id from (select h.* from content.waypoint h where h.source_ai_interaction_session_id=pg_temp.gid(6005)
       and not exists(select 1 from content.waypoint s where s.predecessor_waypoint_id=h.waypoint_id)
       order by case when h.lifecycle_status='chosen' and h.released_at is null then 0 else 1 end,h.created_at desc,h.waypoint_id limit 20) w) x
 $$;
 create function pg_temp.context_value(msg uuid,body text) returns jsonb language sql stable as $$
-  select jsonb_build_object('contractVersion','wi007-v0.1+onboarding-fields-v2+compass-v7','aiRole','solmind_virtual_guide','actorRoleContext','explorer',
+  select jsonb_build_object('contractVersion','wi007-v0.1+onboarding-fields-v2+compass-v8','aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy',jsonb_build_object('version','synthetic-policy.v1','text','Synthetic policy.'),
     'roleBehavior',jsonb_build_object('version','synthetic-behavior.v1','text','Synthetic behavior.'),
     'crisisBehavior',jsonb_build_object('version','synthetic-crisis.v1','text','Synthetic crisis.'),
@@ -281,7 +281,18 @@ do $$ begin
   if pg_temp.screen_terminal(1001) is distinct from 'ok' then raise exception 'synthetic_formation_screen_terminal_failed'; end if;
   if pg_temp.admin_review(1001) is distinct from 'ok' then raise exception 'synthetic_formation_admin_failed'; end if;
   if pg_temp.guide_decision(1001) is distinct from 'ok' then raise exception 'synthetic_formation_guide_failed'; end if;
-  if not exists(select 1 from pg_temp.ensure_anchor() where outcome='created') then raise exception 'synthetic_formation_anchor_failed'; end if;
+  if not exists(select 1 from pg_temp.ensure_anchor(6004) where outcome='created') then raise exception 'synthetic_formation_anchor_failed'; end if;
+end $$;
+-- REV391 (2026-11-11): manual Compass points and Priority moves exist only from before automatic Compass, so
+-- conversation 6005 is a legacy-mode conversation: a privileged rollback-only copy of the freshly created owned
+-- conversation 6004 (session and state rows), as in explorer_automatic_compass_test.sql.
+insert into ai.ai_interaction_session select (jsonb_populate_record(null::ai.ai_interaction_session,
+  to_jsonb(s)||jsonb_build_object('ai_interaction_session_id',pg_temp.gid(6005)))).*
+  from ai.ai_interaction_session s where s.ai_interaction_session_id=pg_temp.gid(6004);
+insert into ai.explorer_conversation_state select (jsonb_populate_record(null::ai.explorer_conversation_state,
+  to_jsonb(s)||jsonb_build_object('conversation_id',pg_temp.gid(6005),'compass_mode','legacy'))).*
+  from ai.explorer_conversation_state s where s.conversation_id=pg_temp.gid(6004);
+do $$ begin
   if not exists(select 1 from pg_temp.prepare_private(1) where outcome='ok' and dispatch_permitted) then raise exception 'synthetic_formation_prepare_failed'; end if;
   if not exists(select 1 from pg_temp.settle_private(1) where outcome='ok' and saved_reply) then raise exception 'synthetic_formation_settle_failed'; end if;
 end $$;
@@ -304,22 +315,83 @@ create function pg_temp.read_state() returns jsonb language sql as $$
   select conversation_state from public.solmind_read_explorer_conversation_v3(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005))
 $$;
 create temp table invocation_before as select count(*)::integer n from ai.ai_model_invocation;
+-- REV391: a historical manual operation exactly as public.solmind_mutate_explorer_conversation_v3 stored it
+-- (request fingerprint formula of 20261025020000_explorer_private_safety_lifecycle.sql, unchanged since), with its
+-- stored effect: add_compass made an unplaced null-status point named by the operation id; confirm_priority set
+-- the Priority and captured priority_confirmed or priority_reoriented. Only the formation guard is suspended,
+-- for the point INSERT alone, and it is restored before any assertion.
+create function pg_temp.historical_mutation(op_n integer,kind_name text,source_n integer default null,
+  item_n integer default null,label_text text default null) returns void language plpgsql as $$
+declare st ai.explorer_conversation_state%rowtype; route_kind text; route_label text;
+begin
+  select * into st from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005);
+  if kind_name='add_compass' then
+    alter table ai.explorer_conversation_compass_item disable trigger explorer_compass_formation_guard;
+    insert into ai.explorer_conversation_compass_item(item_id,conversation_id,source_message_id,label,display_order)
+      values(pg_temp.gid(op_n),pg_temp.gid(6005),pg_temp.gid(source_n),label_text,
+        (select coalesce(max(c.display_order),0)+1 from ai.explorer_conversation_compass_item c where c.conversation_id=pg_temp.gid(6005)));
+    alter table ai.explorer_conversation_compass_item enable trigger explorer_compass_formation_guard;
+  elsif kind_name='confirm_priority' then
+    if st.priority_id is distinct from pg_temp.gid(item_n) then
+      route_kind:=case when st.priority_id is null then 'priority_confirmed' else 'priority_reoriented' end;
+      select c.label into route_label from ai.explorer_conversation_compass_item c where c.item_id=pg_temp.gid(item_n);
+    end if;
+    update ai.explorer_conversation_state set priority_id=pg_temp.gid(item_n) where conversation_id=pg_temp.gid(6005);
+  else raise exception 'fixture_kind'; end if;
+  insert into ai.explorer_conversation_operation(actor_user_account_id,operation_id,application_session_id,
+    conversation_id,kind,request_fingerprint,command_fingerprint,initial_revision,status,completed_at,
+    compass_route_kind,compass_route_item_id,compass_route_label)
+  values(pg_temp.gid(1),pg_temp.gid(op_n),pg_temp.gid(50),pg_temp.gid(6005),kind_name,
+    upper(encode(extensions.digest(convert_to(jsonb_build_array(pg_temp.gid(50),pg_temp.gid(6005),st.revision,
+      kind_name,case when source_n is null then null else pg_temp.gid(source_n) end,
+      case when item_n is null then null else pg_temp.gid(item_n) end,null::uuid,label_text,null::text,null::text,null::text,null::text,
+      pg_temp.request_sha(op_n))::text,'UTF8'),'sha256'),'hex')),
+    pg_temp.request_sha(op_n),st.revision,'completed',clock_timestamp(),
+    route_kind,case when route_kind is null then null else pg_temp.gid(item_n) end,route_label);
+  update ai.explorer_conversation_state set revision=revision+1 where conversation_id=pg_temp.gid(6005);
+end $$;
+create function pg_temp.compass_rows() returns jsonb language sql stable as $$
+  select coalesce(jsonb_agg(to_jsonb(c) order by c.item_id),'[]'::jsonb) from ai.explorer_conversation_compass_item c
+    where c.conversation_id=pg_temp.gid(6005)
+$$;
+create function pg_temp.operation_count() returns bigint language sql stable as $$
+  select count(*) from ai.explorer_conversation_operation where conversation_id=pg_temp.gid(6005)
+$$;
+-- A retired fresh command is refused and leaves the saved state, the stored points and the operations unchanged.
+create function pg_temp.refused_unchanged(op_n integer,kind_name text,source_n integer default null,
+  item_n integer default null,label_text text default null) returns boolean language plpgsql as $$
+declare s jsonb:=pg_temp.read_state(); r jsonb:=pg_temp.compass_rows(); n bigint:=pg_temp.operation_count(); result text;
+begin
+  select outcome into result from pg_temp.mutate(op_n,kind_name,source_n,item_n,null,label_text);
+  return result='operation_conflict' and pg_temp.read_state()=s and pg_temp.compass_rows()=r and pg_temp.operation_count()=n
+    and not exists(select 1 from ai.explorer_conversation_operation where operation_id=pg_temp.gid(op_n));
+end $$;
 
 select is(pg_temp.read_state()->'route','[]'::jsonb,'saved message turn alone creates no Compass Route');
-select is((select outcome from pg_temp.mutate(23001,'add_compass',10011,null,null,'Original first label')),'ok','first saved-source Compass point is added');
-select is((select outcome from pg_temp.mutate(23002,'add_compass',10015,null,null,'Original second label')),'ok','second saved-source Compass point is added');
+do $$ begin
+  perform pg_temp.historical_mutation(23001,'add_compass',10011,null,'Original first label');
+  perform pg_temp.historical_mutation(23002,'add_compass',10015,null,'Original second label');
+end $$;
+select ok(pg_temp.refused_unchanged(23011,'add_compass',10011,null,'Fresh first label'),
+  'a fresh saved-source Compass point is refused (retired) and changes no state, point or operation');
+select ok(pg_temp.refused_unchanged(23012,'add_compass',10015,null,'Fresh second label'),
+  'a second fresh saved-source Compass point is refused the same way beside the historical points');
 -- This is an owner-created historical-row fixture, not a new application write.
 insert into ai.explorer_conversation_operation(actor_user_account_id,operation_id,application_session_id,
   conversation_id,kind,request_fingerprint,command_fingerprint,initial_revision,status,completed_at)
 values(pg_temp.gid(1),pg_temp.gid(23999),pg_temp.gid(50),pg_temp.gid(6005),'confirm_priority',
   repeat('C',64),repeat('D',64),0,'completed',clock_timestamp());
 select is(pg_temp.read_state()->'route','[]'::jsonb,'legacy completed Priority row and added points are not reconstructed into Route');
-select is((select outcome from pg_temp.mutate(23101,'confirm_priority',null,23001)),'ok','first explicit Priority confirmation saves');
+select ok(pg_temp.refused_unchanged(23100,'confirm_priority',null,23001),
+  'a fresh first Priority confirmation is refused (retired) and changes no state, point or operation');
+do $$ begin perform pg_temp.historical_mutation(23101,'confirm_priority',null,23001); end $$;
 select is((select outcome from pg_temp.mutate(23102,'set_attention',null,23002)),'ok','explicit attention movement saves independently');
-select is((pg_temp.read_state()->>'priorityId')::uuid,pg_temp.gid(23001),'attention change leaves confirmed Priority unchanged');
-select is((select outcome from pg_temp.mutate(23103,'confirm_priority',null,23002)),'ok','explicit reorientation to another Priority saves');
+select is((pg_temp.read_state()->>'priorityId')::uuid,pg_temp.gid(23001),'attention change leaves confirmed Priority unchanged (historical readback)');
+select ok(pg_temp.refused_unchanged(23110,'confirm_priority',null,23002),
+  'a fresh reorientation to another Priority is refused (retired) and changes no state, point or operation');
+do $$ begin perform pg_temp.historical_mutation(23103,'confirm_priority',null,23002); end $$;
 select is((select outcome from pg_temp.mutate(23104,'set_attention',null,23001)),'ok','attention may return to a distinct saved point');
-select is((pg_temp.read_state()->>'priorityId')::uuid,pg_temp.gid(23002),'reorientation is distinct from current attention');
+select is((pg_temp.read_state()->>'priorityId')::uuid,pg_temp.gid(23002),'reorientation is distinct from current attention (historical readback)');
 select is(jsonb_array_length(pg_temp.read_state()->'route'),4,'only four actual meaningful movements create Route entries');
 select is(pg_temp.read_state()->'route',
   (select jsonb_agg(jsonb_build_object('operationId',o.operation_id,'revision',o.initial_revision+1,
@@ -330,7 +402,7 @@ select is(pg_temp.read_state()->'route',
   'Route readback keeps its six keys plus the attention actor and each final resulting revision/time');
 select is((select array_agg(e->>'kind' order by ord) from jsonb_array_elements(pg_temp.read_state()->'route') with ordinality r(e,ord)),
   array['priority_confirmed','attention_changed','priority_reoriented','attention_changed']::text[],
-  'Route preserves meaningful chronological order and distinguishes initial confirmation from reorientation');
+  'Route preserves meaningful chronological order and distinguishes initial confirmation from reorientation (historical readback)');
 select is((select array_agg((e->>'operationId')::uuid order by ord) from jsonb_array_elements(pg_temp.read_state()->'route') with ordinality r(e,ord)),
   array[pg_temp.gid(23101),pg_temp.gid(23102),pg_temp.gid(23103),pg_temp.gid(23104)],
   'Route links each actual saved operation in order');
@@ -338,15 +410,15 @@ create temp table route_saved as select pg_temp.read_state()->'route' value;
 select is(pg_temp.read_state()->'route',(select value from route_saved),'owned reload preserves all saved Route facts');
 select is((select outcome from pg_temp.mutate(23103,'confirm_priority',null,23002)),'exact_replay','same exact Priority operation replays');
 select is(pg_temp.read_state()->'route',(select value from route_saved),'exact replay appends no Route event');
-select is((select outcome from pg_temp.mutate(23105,'confirm_priority',null,23002)),'ok','new same-Priority request keeps ordinary mutation compatibility');
+select ok(pg_temp.refused_unchanged(23105,'confirm_priority',null,23002),
+  'a fresh same-Priority request is refused (retired) and changes no state, point or operation');
 select is((select outcome from pg_temp.mutate(23106,'set_attention',null,23001)),'ok','new same-attention request keeps ordinary mutation compatibility');
-select ok((select compass_route_kind is null and compass_route_item_id is null and compass_route_label is null
-  from ai.explorer_conversation_operation where operation_id=pg_temp.gid(23105))
+select ok(not exists(select 1 from ai.explorer_conversation_operation where operation_id=pg_temp.gid(23105))
   and (select compass_route_kind is null and compass_route_item_id is null and compass_route_label is null
   from ai.explorer_conversation_operation where operation_id=pg_temp.gid(23106)),
-  'no-op operations retain all three NULL Route facts');
+  'the refused Priority request records no operation and the no-op attention operation retains all three NULL Route facts');
 select is(pg_temp.read_state()->'route',(select value from route_saved),'no-op requests create no new meaningful history');
-select is((select outcome from pg_temp.mutate(23107,'confirm_priority',null,23001,null,null,null,null,null,null,0)),'stale_revision','stale new movement is refused');
+select is((select outcome from pg_temp.mutate(23107,'set_attention',null,23002,null,null,null,null,null,null,0)),'stale_revision','stale new needle movement is refused');
 select ok(not exists(select 1 from ai.explorer_conversation_operation where operation_id=pg_temp.gid(23107))
   and pg_temp.read_state()->'route'=(select value from route_saved),'stale request creates no operation or Route event');
 select throws_ok($$select * from public.solmind_mutate_explorer_conversation_v3(pg_temp.gid(4),pg_temp.gid(54),pg_temp.gid(6005),
@@ -356,7 +428,11 @@ select throws_ok($$select * from public.solmind_read_explorer_conversation_v3(pg
   'P0001','solmind_explorer_private_unavailable','another owner cannot read this Route or Reached evidence');
 
 -- Owner-only edits here test immutable captured wording without adding a product rename operation.
+-- REV391: point wording is now immutable to every write, so this later historical wording is a privileged edit
+-- with only the formation guard suspended, restored before the next assertion.
+alter table ai.explorer_conversation_compass_item disable trigger explorer_compass_formation_guard;
 update ai.explorer_conversation_compass_item set label='Later synthetic point wording' where item_id=pg_temp.gid(23001);
+alter table ai.explorer_conversation_compass_item enable trigger explorer_compass_formation_guard;
 select is(pg_temp.read_state()->'route',(select value from route_saved),'Route keeps original captured labels after later source-point wording changes');
 select throws_ok($$update ai.explorer_conversation_operation set compass_route_label='Changed history' where operation_id=pg_temp.gid(23101)$$,
   'P0001','solmind_explorer_private_immutable','captured Route label cannot be rewritten even by ordinary owner SQL');

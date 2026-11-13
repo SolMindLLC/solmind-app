@@ -28,7 +28,7 @@ export const EXPLORER_SAFE_CONTEXT_LIMITS = Object.freeze({
   versionLabelCharacters: 64,
   explorerDisplayNameCharacters: 120,
   explorerSafeGuardrailCharacters: 2_000,
-  policyTextCharacters: 12_000,
+  policyTextCharacters: 20_000,
   methodologyTextCharacters: 24_000,
   onboardingAnswerCharacters: 2_000,
   focusItemCount: 8,
@@ -54,9 +54,9 @@ export const EXPLORER_SAFE_CONTEXT_LIMITS = Object.freeze({
 // other version forbids it, so the older twelve-layer envelope keeps its exact bytes.
 // Migration 20261106010000_explorer_reply_choice_voice.sql rebuilds the same
 // section from the saved rows and compares it exactly before a Send is prepared.
-export const EXPLORER_COMPASS_CONTEXT_VERSION = "explorer-compass-context.v7" as const;
+export const EXPLORER_COMPASS_CONTEXT_VERSION = "explorer-compass-context.v8" as const;
 export const EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION =
-  "wi007-v0.1+onboarding-fields-v2+compass-v7" as const;
+  "wi007-v0.1+onboarding-fields-v2+compass-v8" as const;
 // The eight saved anchors (kept here so this module adds no import edge).
 const COMPASS_ANCHORS = Object.freeze([
   "apex", "upper_left", "upper_right", "side_left", "side_right",
@@ -245,8 +245,7 @@ type CompassPoint = {
   id: string;
   label: string;
   order: number;
-  formation: "saved" | "forming";
-  suggestedInPreviousReply?: boolean;
+  formation: "saved" | "automatic";
   anchor: (typeof COMPASS_ANCHORS)[number] | null;
   emphasis: 1 | 2 | 3 | null;
 };
@@ -255,9 +254,8 @@ type CompassRouteEvent = {
   kind: (typeof EXPLORER_COMPASS_CONTEXT_ROUTE_KINDS)[number];
   pointId: string;
   label: string;
-  // S4 pairs these keys. Historical S3 contexts keep their original bytes.
-  actor?: "explorer" | "virtual_guide";
-  awaitingReply?: boolean;
+  actor: "explorer" | "virtual_guide";
+  awaitingReply: boolean;
 };
 
 type CompassWaypoint = {
@@ -280,8 +278,14 @@ type CompassWaypointDraft = {
 
 export type ExplorerCompassContext = {
   version: typeof EXPLORER_COMPASS_CONTEXT_VERSION;
+  mode: "automatic" | "legacy_read_only";
   points: ReadonlyArray<CompassPoint>;
-  priorityId: string | null;
+  priorityId: null;
+  topics: ReadonlyArray<{
+    id: string; label: string; pointId: string | null; supportCount: 1 | 2 | 3; countedRefs: readonly string[];
+  }>;
+  messageRefs: { history: ReadonlyArray<{ ref: string; order: number }>; immediate: "now" };
+  capacity: { originalsRemaining: number; topicSlotsRemaining: number; visibleSlotsRemaining: number };
   attentionId: string | null;
   recentRoute: ReadonlyArray<CompassRouteEvent>;
   waypoints: ReadonlyArray<CompassWaypoint>;
@@ -901,7 +905,7 @@ function parseNullablePointId(value: unknown, pointIds: ReadonlySet<string>): st
   return id;
 }
 
-function parseCompassContext(value: unknown): ExplorerCompassContext {
+function parseCompassContext(value: unknown, history: ReadonlyArray<CurrentSessionMessage>): ExplorerCompassContext {
   const object = parsePlainObject(value);
   assertExactKeys(object, [
     "version",
@@ -911,9 +915,10 @@ function parseCompassContext(value: unknown): ExplorerCompassContext {
     "recentRoute",
     "waypoints",
     "drafts",
-    "immediateMessageIsReplyChoice",
+    "immediateMessageIsReplyChoice", "mode", "topics", "messageRefs", "capacity",
   ]);
-  if (object.version !== EXPLORER_COMPASS_CONTEXT_VERSION || typeof object.immediateMessageIsReplyChoice !== "boolean") {
+  if (object.version !== EXPLORER_COMPASS_CONTEXT_VERSION || typeof object.immediateMessageIsReplyChoice !== "boolean" ||
+      (object.mode !== "automatic" && object.mode !== "legacy_read_only") || object.priorityId !== null) {
     fail("explorer_context_invalid_envelope");
   }
   if (
@@ -925,7 +930,7 @@ function parseCompassContext(value: unknown): ExplorerCompassContext {
     fail("explorer_context_invalid_envelope");
   }
   if (
-    object.points.length > EXPLORER_SAFE_CONTEXT_LIMITS.compassPointCount ||
+    object.points.length > (object.mode === "automatic" ? 8 : EXPLORER_SAFE_CONTEXT_LIMITS.compassPointCount) ||
     object.recentRoute.length > EXPLORER_SAFE_CONTEXT_LIMITS.compassRouteEventCount ||
     object.waypoints.length > EXPLORER_SAFE_CONTEXT_LIMITS.compassWaypointCount
   ) {
@@ -938,12 +943,10 @@ function parseCompassContext(value: unknown): ExplorerCompassContext {
   const points = orderUnique(
     object.points.map((candidate): CompassPoint => {
       const point = parsePlainObject(candidate);
-      assertExactKeys(point, ["id", "label", "order", "formation", "anchor", "emphasis"], ["suggestedInPreviousReply"]);
+      assertExactKeys(point, ["id", "label", "order", "formation", "anchor", "emphasis"]);
       if (
-        (point.formation !== "saved" && point.formation !== "forming") ||
-        (point.formation === "forming" ? typeof point.suggestedInPreviousReply !== "boolean"
-          : Object.hasOwn(point, "suggestedInPreviousReply")) ||
-        (point.formation === "forming" && (point.anchor !== null || point.emphasis !== null)) ||
+        point.formation !== (object.mode === "automatic" ? "automatic" : "saved") ||
+        (point.formation === "automatic" && (point.anchor === null || point.emphasis !== 1)) ||
         !(point.anchor === null || COMPASS_ANCHORS.includes(point.anchor as never)) ||
         !(point.emphasis === null || point.emphasis === 1 || point.emphasis === 2 || point.emphasis === 3) ||
         (point.anchor !== null && point.emphasis === null)
@@ -960,47 +963,39 @@ function parseCompassContext(value: unknown): ExplorerCompassContext {
         id: parseUuid(point.id),
         label: parseText(point.label, EXPLORER_SAFE_CONTEXT_LIMITS.compassLabelCharacters),
         order: parseOrder(point.order),
-        formation: point.formation,
+        formation: point.formation as CompassPoint["formation"],
         anchor: point.anchor as CompassPoint["anchor"],
         emphasis: point.emphasis as CompassPoint["emphasis"],
-        ...(point.formation === "forming" ? { suggestedInPreviousReply: point.suggestedInPreviousReply as boolean } : {}),
       };
     }),
     "id",
   );
   const pointIds = new Set(points.map((point) => point.id));
-  const priorityId = parseNullablePointId(object.priorityId, pointIds);
-  if (points.find(point => point.id === priorityId)?.formation === "forming") fail("explorer_context_invalid_envelope");
+  const priorityId = null;
+  if (points.some((point, index) => point.order !== index || /[\r\n\u2028\u2029]/u.test(point.label))) fail("explorer_context_invalid_envelope");
   const attentionId = parseNullablePointId(object.attentionId, pointIds);
   const routeCount = object.recentRoute.length;
   const recentRoute = object.recentRoute.map((candidate, index): CompassRouteEvent => {
     const event = parsePlainObject(candidate);
-    const hasActor = Object.prototype.hasOwnProperty.call(event, "actor");
-    const hasAwaitingReply = Object.prototype.hasOwnProperty.call(event, "awaitingReply");
-    assertExactKeys(event, ["kind", "pointId", "label"], ["actor", "awaitingReply"]);
+    assertExactKeys(event, ["kind", "pointId", "label", "actor", "awaitingReply"]);
     if (!EXPLORER_COMPASS_CONTEXT_ROUTE_KINDS.includes(event.kind as never)) {
       fail("explorer_context_invalid_envelope");
     }
-    if (hasActor !== hasAwaitingReply || (hasActor &&
-        (!["explorer", "virtual_guide"].includes(event.actor as string) || typeof event.awaitingReply !== "boolean" ||
-          (event.awaitingReply && (event.actor !== "explorer" || index !== routeCount - 1))))) {
+    if (!["explorer", "virtual_guide"].includes(event.actor as string) || typeof event.awaitingReply !== "boolean" ||
+          (event.awaitingReply && (event.actor !== "explorer" || index !== routeCount - 1 || event.pointId !== attentionId))) {
       fail("explorer_context_invalid_envelope");
     }
     const pointId = parseNullablePointId(event.pointId, pointIds);
     const point = points.find(point => point.id === pointId);
     const label = parseText(event.label, EXPLORER_SAFE_CONTEXT_LIMITS.compassLabelCharacters);
-    // A forming point enters recentRoute only as the next-reply acknowledgment,
-    // rebuilt from the latest Explorer move and current wording, never saved history.
-    if (pointId === null || (point?.formation === "forming" &&
-        (event.actor !== "explorer" || event.awaitingReply !== true || index !== routeCount - 1 ||
-          pointId !== attentionId || label !== point.label))) {
+    if (pointId === null || label !== point?.label) {
       fail("explorer_context_invalid_envelope");
     }
     return {
       kind: event.kind as CompassRouteEvent["kind"],
       pointId,
       label,
-      ...(hasActor ? { actor: event.actor as "explorer" | "virtual_guide", awaitingReply: event.awaitingReply as boolean } : {}),
+      actor: event.actor as "explorer" | "virtual_guide", awaitingReply: event.awaitingReply as boolean,
     };
   });
   const waypointIds = new Set<string>();
@@ -1049,8 +1044,58 @@ function parseCompassContext(value: unknown): ExplorerCompassContext {
       whyItMatters: field(draft.whyItMatters), arrivalSignal: field(draft.arrivalSignal),
       suggestedInPreviousReply: draft.suggestedInPreviousReply };
   });
+  const refs = parsePlainObject(object.messageRefs);
+  assertExactKeys(refs, ["history", "immediate"]);
+  const expectedRefs = history.filter(message => message.role === "explorer")
+    .map(message => ({ ref: "h" + message.order, order: message.order }));
+  if (refs.immediate !== "now" || !Array.isArray(refs.history) || refs.history.length !== expectedRefs.length) {
+    fail("explorer_context_invalid_envelope");
+  }
+  const messageRefs = { history: refs.history.map((value, index) => {
+    const ref = parsePlainObject(value);
+    assertExactKeys(ref, ["ref", "order"]);
+    if (ref.ref !== expectedRefs[index].ref || ref.order !== expectedRefs[index].order) fail("explorer_context_invalid_envelope");
+    return expectedRefs[index];
+  }), immediate: "now" as const };
+  const capacity = parsePlainObject(object.capacity);
+  assertExactKeys(capacity, ["originalsRemaining", "topicSlotsRemaining", "visibleSlotsRemaining"]);
+  for (const [key, limit] of [["originalsRemaining", 24], ["topicSlotsRemaining", 24], ["visibleSlotsRemaining", 8]] as const) {
+    if (!Number.isInteger(capacity[key]) || (capacity[key] as number) < 0 || (capacity[key] as number) > limit ||
+        (object.mode === "legacy_read_only" && capacity[key] !== 0)) fail("explorer_context_invalid_envelope");
+  }
+  if (!Array.isArray(object.topics) || object.topics.length > 24 ||
+      (object.mode === "legacy_read_only" && object.topics.length !== 0)) fail("explorer_context_invalid_envelope");
+  const topicIds = new Set<string>(), topicLabels = new Set<string>(), linkedPoints = new Set<string>();
+  const otherIds = new Set([...pointIds, ...waypointIds, ...drafts.map(draft => draft.id), ...history.map(message => message.messageId)]);
+  const topics = object.topics.map(value => {
+    const topic = parsePlainObject(value);
+    assertExactKeys(topic, ["id", "label", "pointId", "supportCount", "countedRefs"]);
+    const id = parseUuid(topic.id), label = parseText(topic.label, EXPLORER_SAFE_CONTEXT_LIMITS.compassLabelCharacters);
+    const pointId = parseNullablePointId(topic.pointId, pointIds);
+    if (topicIds.has(id) || otherIds.has(id) || topicLabels.has(label) || /[\r\n\u2028\u2029]/u.test(label) ||
+        ![1, 2, 3].includes(topic.supportCount as number) || !Array.isArray(topic.countedRefs) ||
+        topic.countedRefs.length > (topic.supportCount as number) ||
+        (pointId !== null && (linkedPoints.has(pointId) || topic.supportCount !== 3 || points.find(point => point.id === pointId)?.label !== label))) {
+      fail("explorer_context_invalid_envelope");
+    }
+    let previous = -1;
+    const countedRefs = topic.countedRefs.map(value => {
+      const index = expectedRefs.findIndex(ref => ref.ref === value);
+      if (index <= previous) fail("explorer_context_invalid_envelope");
+      previous = index;
+      return value as string;
+    });
+    topicIds.add(id); topicLabels.add(label);
+    if (pointId !== null) linkedPoints.add(pointId);
+    return { id, label, pointId, supportCount: topic.supportCount as 1 | 2 | 3, countedRefs };
+  });
+  if (object.mode === "automatic" && points.some(point => !linkedPoints.has(point.id))) fail("explorer_context_invalid_envelope");
   return {
     version: EXPLORER_COMPASS_CONTEXT_VERSION,
+    mode: object.mode,
+    topics, messageRefs,
+    capacity: { originalsRemaining: capacity.originalsRemaining as number, topicSlotsRemaining: capacity.topicSlotsRemaining as number,
+      visibleSlotsRemaining: capacity.visibleSlotsRemaining as number },
     points,
     priorityId,
     attentionId,
@@ -1120,18 +1165,17 @@ export function assembleExplorerSafeContext(
     envelope.continuityCandidates,
     binding,
   );
-  const compassContext = hasCompassContext
-    ? parseCompassContext(envelope.compassContext)
-    : undefined;
   const currentSessionMessages = parseCurrentSessionMessages(
     envelope.currentSessionMessages,
     binding,
   );
+  const compassContext = hasCompassContext ? parseCompassContext(envelope.compassContext, currentSessionMessages) : undefined;
   const immediateExplorerMessage = parseImmediateMessage(
     envelope.immediateExplorerMessage,
     binding,
     currentSessionMessages,
   );
+  if (compassContext?.topics.some(topic => topic.id === immediateExplorerMessage.messageId)) fail("explorer_context_duplicate_source");
   const outputRequirements = parseOutputRequirements(envelope.outputRequirements);
 
   const context: ExplorerSafeContext = {

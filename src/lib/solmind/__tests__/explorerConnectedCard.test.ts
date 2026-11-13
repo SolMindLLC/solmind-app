@@ -53,36 +53,27 @@ function bare(compassItems: ExplorerConversationCompassItem[], overrides: Partia
 }
 
 describe("connected Compass & Waypoint card mapping", () => {
-  it("ECC13 forming markers follow the saved point through both views without changing placement or needle rules", () => {
+  it("ECC13 legacy forming points stay out of the dial, descriptions and needle controls", () => {
     const original = cardState();
-    const state = cardState({ compassItems: original.compassItems.map((item) => ({ ...item,
+    const state = cardState({ compassItems: original.compassItems.map(item => ({ ...item,
       formation: item.id === CARD_POINTS.detour || item.id === CARD_POINTS.unarranged ? "forming" : "saved" })) });
-    const before = connectedCompass(original);
     const compass = connectedCompass(state);
-    expect(compass.points.filter(point => point.isForming).map(point => point.id))
-      .toEqual([CARD_POINTS.detour, CARD_POINTS.unarranged]);
-    expect(compass.points.map(point => ({ ...point, isForming: false }))).toEqual(before.points);
-    expect(before.points.every(point => !point.isForming)).toBe(true);
-    expect(dialPoints(compass).find(point => point.id === CARD_POINTS.detour)?.isForming).toBe(true);
-    expect(bottomRow(compass).some(entry => entry.kind === "point" && entry.point.id === CARD_POINTS.unarranged && entry.point.isForming)).toBe(true);
-    expect(describeConnectedCompass(compass)).toContain("Detour, left: Money worries (Forming).");
-    expect(describeConnectedCompass(compass)).toContain("Not yet arranged: Asking for help (Forming).");
-    expect(pointNeedleIntent(state, OPEN, CARD_POINTS.unarranged)).toEqual({ kind: "set_attention", itemId: CARD_POINTS.unarranged });
-    const revised = connectedCompass(cardState({ compassItems: state.compassItems.map(item => item.id === CARD_POINTS.unarranged
-      ? { ...item, label: "Accepting help", formation: "saved" } : item) }));
-    expect(revised.points.find(point => point.id === CARD_POINTS.unarranged))
-      .toMatchObject({ label: "Accepting help", isForming: false, place: "unarranged", needle: "available" });
+    expect(compass.points).toEqual(connectedCompass(original).points.filter(point =>
+      point.id !== CARD_POINTS.detour && point.id !== CARD_POINTS.unarranged));
+    expect(describeConnectedCompass(compass)).not.toMatch(/Forming|Priority|Money worries|Asking for help/);
+    expect(pointNeedleIntent(state, OPEN, CARD_POINTS.unarranged)).toBeNull();
+    expect(dialPoints(compass).some(point => point.id === CARD_POINTS.detour)).toBe(false);
   });
 
-  it("ECC01 the browser-test and screenshot fixture passes the closed browser parser unchanged", () => {
+  it("ECC01 the browser-test and screenshot fixture normalizes legacy fields while preserving every saved fact", () => {
     const state = cardState();
-    expect(parseExplorerConversationState(JSON.parse(JSON.stringify(state)))).toEqual(state);
+    expect(parseExplorerConversationState(JSON.parse(JSON.stringify(state)))).toEqual({ ...state, compassMode: "legacy", compassChanges: [] });
     expect(parseExplorerConversationState(JSON.parse(JSON.stringify({ ...state, attentionId: CARD_POINTS.priority })))).not.toBeNull();
     // Since the chat card redesign the server may save the needle on a point without a position, and the
     // browser reads that state (the dashed needle's screenshots and browser tests use it).
     for (const attentionId of [CARD_POINTS.otherPath, CARD_POINTS.unarranged]) {
       const moved = cardState({ attentionId });
-      expect(parseExplorerConversationState(JSON.parse(JSON.stringify(moved))), attentionId).toEqual(moved);
+      expect(parseExplorerConversationState(JSON.parse(JSON.stringify(moved))), attentionId).toEqual({ ...moved, compassMode: "legacy", compassChanges: [] });
     }
     expect(parseExplorerConversationState(JSON.parse(JSON.stringify({ ...state, attentionId: CARD_POINTS.merged })))).toBeNull();
   });
@@ -102,17 +93,17 @@ describe("connected Compass & Waypoint card mapping", () => {
       [CARD_LABELS.otherPath, "otherPaths", null, "available"],
     ]);
     expect(compass.points.some((point) => point.id === CARD_POINTS.merged)).toBe(false);
-    expect(compass.priority?.id).toBe(CARD_POINTS.priority);
+    expect(compass.priority).toBeNull();
     expect(compass.attention?.id).toBe(CARD_POINTS.attention);
     expect(compass.points.map(compassPlaceText)).toEqual([
-      "Priority", "Upper left", "Upper right", "Detour, left", "Excursion, lower center", "Not yet arranged", "Other paths",
+      "Top position", "Upper left", "Upper right", "Detour, left", "Excursion, lower center", "Not yet arranged", "Other paths",
     ]);
     // Compact and Full views (2026-11-03): the dial draws the 5 placed points; since the redesign the other 2 are in
     // its bottom row, which the description names.
     expect(dialPoints(compass).map((point) => point.id)).toEqual(compass.points.slice(0, 5).map((point) => point.id));
     expect(pointsOffDial(compass).map((point) => point.label)).toEqual([CARD_LABELS.unarranged, CARD_LABELS.otherPath]);
     expect(describeConnectedCompass(compass)).toBe(
-      "Priority: Talk with my sister. Upper left: What I need from it. Upper right: Making room to rest after a long work week. " +
+      "Top position: Talk with my sister. Upper left: What I need from it. Upper right: Making room to rest after a long work week. " +
       "Detour, left: Money worries. Excursion, lower center: Planning what to say. Not yet arranged: Asking for help. " +
       "Other paths: Avoiding hard talks. The needle points to What I need from it.");
     // A needle on either kind of point without a position is said so.
@@ -144,10 +135,10 @@ describe("connected Compass & Waypoint card mapping", () => {
     expect(dialPoints(none)).toEqual([]);
     expect(pointsOffDial(none).map((point) => point.label)).toEqual(["First", "Second"]);
     expect(describeConnectedCompass(none)).toBe(
-      "No Priority is confirmed yet. Not yet arranged: First. Not yet arranged: Second. " +
+      "Not yet arranged: First. Not yet arranged: Second. " +
       "The needle points to Second, which is not placed on your Compass yet.");
     expect(describeConnectedCompass(connectedCompass(bare([{ id: POINT(1), sourceMessageId: SOURCE, label: "Only" }])))).toBe(
-      "No Priority is confirmed yet. Not yet arranged: Only. The needle has no direction yet.");
+      "Not yet arranged: Only. The needle has no direction yet.");
   });
 
   it("ECC11 the bottom row: up to three points, then two and +N more, keeping the needle's point and its place", () => {
@@ -179,7 +170,7 @@ describe("connected Compass & Waypoint card mapping", () => {
       { id: POINT(1), sourceMessageId: SOURCE, label: "First" },
       { id: POINT(2), sourceMessageId: SOURCE, label: "Second" },
     ], { priorityId: POINT(2) }));
-    expect(bottomRow(before).map((entry) => (entry.kind === "point" ? entry.point.label : "more"))).toEqual(["First"]);
+    expect(bottomRow(before).map((entry) => (entry.kind === "point" ? entry.point.label : "more"))).toEqual(["First", "Second"]);
     // "+N more" and what screen readers hear after it.
     expect(bottomRowMoreText(2)).toBe("+2 more");
     expect(`${bottomRowMoreText(2)}${bottomRowMoreSuffix(2)}`).toBe("+2 more points, shown in the Compact view");
@@ -187,7 +178,7 @@ describe("connected Compass & Waypoint card mapping", () => {
     // The description says how many more the Compact view lists.
     const five = connectedCompass(bare(Array.from({ length: 5 }, (_, index) => ({ id: POINT(index + 1), sourceMessageId: SOURCE, label: `Point ${index + 1}` }))));
     expect(describeConnectedCompass(five)).toBe(
-      "No Priority is confirmed yet. Not yet arranged: Point 1. Not yet arranged: Point 2. 3 more points are listed in the Compact view. " +
+      "Not yet arranged: Point 1. Not yet arranged: Point 2. 3 more points are listed in the Compact view. " +
       "The needle has no direction yet.");
     // Row labels fit one line of 20 characters, cut at a space where they can, with ASCII dots.
     expect(bottomRowLabel(CARD_LABELS.unarranged)).toBe("Asking for help");
@@ -199,29 +190,18 @@ describe("connected Compass & Waypoint card mapping", () => {
     }
   });
 
-  it("ECC12 the dashed needle's sentence: one per kind, where the tools are in the drawer, and no instruction after End", () => {
+  it("ECC12 the legacy dashed needle explains its saved place without retired tool instructions", () => {
     const compass = connectedCompass(cardState());
-    const unarranged = compass.points.find((point) => point.id === CARD_POINTS.unarranged);
-    const otherPath = compass.points.find((point) => point.id === CARD_POINTS.otherPath);
-    if (!unarranged || !otherPath) throw new Error("fixture_points_missing");
+    const unarranged = compass.points.find(point => point.id === CARD_POINTS.unarranged)!;
+    const otherPath = compass.points.find(point => point.id === CARD_POINTS.otherPath)!;
     expect(DASHED_NEEDLE_WORDING.button).toBe("Why the needle is dashed");
-    expect(dashedNeedleText(unarranged, false, false)).toBe(
-      "This point isn't placed on your Compass yet. To place it, use Review Compass arrangement in your current tools.");
-    expect(dashedNeedleText(unarranged, true, false)).toBe(
-      "This point isn't placed on your Compass yet. To place it, close this panel, then use Review Compass arrangement in your current tools.");
-    expect(dashedNeedleText(unarranged, false, true)).toBe("This point isn't placed on your Compass.");
-    expect(dashedNeedleText(unarranged, true, true)).toBe("This point isn't placed on your Compass.");
-    for (const [inDrawer, ended] of [[false, false], [true, false], [false, true], [true, true]] as const) {
-      expect(dashedNeedleText(otherPath, inDrawer, ended)).toBe("This point is in Other paths, off your Compass.");
-    }
-    // Every instruction says why ("To ..."), and the wording is ASCII.
-    for (const text of [DASHED_NEEDLE_WORDING.unarranged, DASHED_NEEDLE_WORDING.unarrangedDrawer]) {
-      expect(text).toMatch(/\. To place it, /);
-    }
+    expect(dashedNeedleText(unarranged)).toBe("This point isn't placed on your Compass.");
+    expect(dashedNeedleText(otherPath)).toBe("This point is in Other paths, off your Compass.");
+    expect(Object.values(DASHED_NEEDLE_WORDING).join(" ")).not.toContain("Review Compass arrangement");
     for (const text of Object.values(DASHED_NEEDLE_WORDING)) expect(/^[\x20-\x7e]*$/.test(text), text).toBe(true);
   });
 
-  it("ECC03 before any arrangement the Priority is drawn at the top, every point can take the needle, and a needle off the dial is said", () => {
+  it("ECC03 legacy unarranged points keep their saved order without deriving placement from historical Priority", () => {
     const state = bare([
       { id: POINT(1), sourceMessageId: SOURCE, label: "First" },
       { id: POINT(2), sourceMessageId: SOURCE, label: "Second", anchor: null, emphasis: null },
@@ -231,15 +211,15 @@ describe("connected Compass & Waypoint card mapping", () => {
     const compass = connectedCompass(state);
     expect(compass.arranged).toBe(false);
     expect(compass.points.map((point) => [point.label, point.place, point.dialAnchor, point.isPriority, point.needle])).toEqual([
-      ["Third", "unarranged", "apex", true, "available"],
       ["First", "unarranged", null, false, "current"],
       ["Second", "unarranged", null, false, "available"],
+      ["Third", "unarranged", null, false, "available"],
     ]);
     // The points the dial does not place are in its bottom row, and the needle on one of them is said so.
     expect(describeConnectedCompass(compass)).toBe(
-      "Priority: Third. Not yet arranged: First. Not yet arranged: Second. The needle points to First, which is not placed on your Compass yet.");
-    expect(dialPoints(compass).map((point) => point.label)).toEqual(["Third"]);
-    expect(pointsOffDial(compass).map((point) => point.label)).toEqual(["First", "Second"]);
+      "Not yet arranged: First. Not yet arranged: Second. Not yet arranged: Third. The needle points to First, which is not placed on your Compass yet.");
+    expect(dialPoints(compass)).toEqual([]);
+    expect(pointsOffDial(compass).map((point) => point.label)).toEqual(["First", "Second", "Third"]);
     expect(pointNeedleIntent(state, OPEN, POINT(2))).toEqual({ kind: "set_attention", itemId: POINT(2) });
     expect(pointNeedleIntent(state, OPEN, POINT(3))).toEqual({ kind: "set_attention", itemId: POINT(3) });
   });
@@ -258,7 +238,7 @@ describe("connected Compass & Waypoint card mapping", () => {
       ["Excursion, lower right", false, "available"],
     ]);
     expect(describeConnectedCompass(compass)).toBe(
-      "Top position: At the top. Excursion, lower right: Lower right. No Priority is confirmed yet. The needle has no direction yet.");
+      "Top position: At the top. Excursion, lower right: Lower right. The needle has no direction yet.");
     const empty = connectedCompass(bare([]));
     expect(empty.points).toEqual([]);
     expect(empty.priority).toBeNull();

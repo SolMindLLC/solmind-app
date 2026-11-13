@@ -177,7 +177,7 @@ export function ExplorerConversation() {
   const dispatch = useCallback(async function dispatchPending(pending: PendingCommand) {
     if (busyRef.current || pendingRef.current !== pending) return;
     // Display signal only: clear local reply prompts for every ordinary Send,
-    // including a Compass follow-up or an exact uncertain retry.
+    // including a Waypoint follow-up or an exact uncertain retry.
     if (pending.command.kind === "send") setSendSequence(sequence => sequence + 1);
     busyRef.current = true;
     setBusy(true);
@@ -245,7 +245,7 @@ export function ExplorerConversation() {
         // A button's ordinary Send has its own intent. It never consumes the
         // Explorer's composer draft, including after an exact uncertain retry.
         if (pending.intent.kind === "send" && output?.assistance === null) setDraft("");
-        if ((pending.command.kind === "respond_compass_suggestion" || pending.command.kind === "respond_waypoint_draft") &&
+        if (pending.command.kind === "respond_waypoint_draft" &&
             pending.suggestionWording !== null) {
           const current = stateRef.current;
           if (current !== null && !current.pendingTurn && current.sessionStatus !== "ended" &&
@@ -305,15 +305,10 @@ export function ExplorerConversation() {
         current.compassSuggestionReplies !== "available" ||
         current.messages.length > EXPLORER_CONVERSATION_LIMITS.messages - 2 ||
         !(latestReplyChoices(current)?.labels.includes(intent.label) ?? false))) return;
-    const suggestion = intent.kind === "respond_compass_suggestion"
-      ? current.compassItems.find(item => item.id === intent.itemId && item.formation === "forming" && item.mergedIntoItemId == null)
-      : undefined;
-    if (intent.kind === "respond_compass_suggestion" &&
-        (current.compassSuggestionReplies !== "available" ||
-         (intent.response === "not_it" && current.turnedDownLimitReached) ||
-         suggestion === undefined ||
-         (intent.response !== "right" && (current.providerState !== "available" ||
-          current.messages.length > EXPLORER_CONVERSATION_LIMITS.messages - 2)))) return;
+    // Historical command shapes remain parseable, but the screen starts no fresh Compass formation.
+    if (intent.kind === "respond_compass_suggestion" || intent.kind === "add_compass" ||
+        intent.kind === "confirm_priority" || intent.kind === "confirm_compass_arrangement" ||
+        intent.kind === "confirm_compass_category") return;
     const waypointDraft = intent.kind === "respond_waypoint_draft" && current.waypointDraft?.id === intent.draftId
       ? current.waypointDraft : null;
     if (intent.kind === "respond_waypoint_draft" &&
@@ -324,7 +319,7 @@ export function ExplorerConversation() {
     try {
       // Keep the displayed wording pinned to this reply's revision, even when
       // rejection removes the point or the exact response needs a later retry.
-      const pending = prepareCommand(intent, current.revision, suggestion?.label ?? waypointDraft?.title ?? null);
+      const pending = prepareCommand(intent, current.revision, waypointDraft?.title ?? null);
       if (pending === null) {
         setDraftError("This change is too long to send. Please shorten the text.");
         return;

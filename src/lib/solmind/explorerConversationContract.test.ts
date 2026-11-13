@@ -35,14 +35,14 @@ function without(value: Record<string, unknown>, key: string): Record<string, un
   return Object.fromEntries(Object.entries(value).filter(([name]) => name !== key));
 }
 function emptyState() {
-  return { version: EXPLORER_CONVERSATION_VERSION, conversationId: null, revision: 0,
+  return { compassMode: "legacy", compassChanges: [], version: EXPLORER_CONVERSATION_VERSION, conversationId: null, revision: 0,
     waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true },
     waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: 0 },
     providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, messages: [], compassItems: [], priorityId: null,
     attentionId: null, waypoints: [] };
 }
 function populatedState() {
-  return { version: EXPLORER_CONVERSATION_VERSION, conversationId: uuid(1), revision: 3,
+  return { compassMode: "legacy", compassChanges: [], version: EXPLORER_CONVERSATION_VERSION, conversationId: uuid(1), revision: 3,
     waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true, conversationRoom: true },
     waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: 1 },
     providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, messages: [
@@ -918,4 +918,49 @@ describe("retained Compass category provenance", () => {
       { ...change, beforeItems: change.beforeItems.map((item, i) => i === 2 ? { ...item, mergedIntoItemId: null } : item) },
     ]) expect(parseExplorerConversationState(withChange(replacement))).toBeNull();
   });
+});
+
+describe("automatic Compass committed browser state", () => {
+  function automatic() {
+    return { ...emptyState(), conversationId: uuid(1), revision: 2, compassMode: "automatic", compassChanges: [{
+      operationId, replyMessageId: uuid(3), revision: 2,
+      changes: [{ kind: "added", pointId, label: "Time for myself", anchor: "apex", noticeKind: "early_topic" }],
+    }], messages: populatedState().messages, priorityId: null, attentionId: pointId,
+      compassItems: [{ id: pointId, sourceMessageId: uuid(3), label: "Time for myself", formation: "automatic",
+        topicId: uuid(20), anchor: "apex", emphasis: 1, mergedIntoItemId: null }] };
+  }
+  it("new contract state round-trips without exposing private evidence", () => {
+    const input = automatic(); const result = parseExplorerConversationState(input);
+    expect(result).toEqual(input);
+    expect(Object.isFrozen(result!.compassChanges![0].changes[0])).toBe(true);
+    for (const key of ["supports", "supportingMessageIds", "snapshotId", "compassEvidence"]) {
+      expect(JSON.stringify(result)).not.toContain(key);
+    }
+  });
+  it("historical states normalize only the absent mode and receipts", () => {
+    const input = without(without(emptyState(), "compassMode"), "compassChanges");
+    expect(parseExplorerConversationState(input)).toEqual({ ...input, compassMode: "legacy", compassChanges: [] });
+  });
+  it.each(["supportingMessageIds", "topicId", "sourceMessageId", "emphasis", "snapshotId"])(
+    "rejects private or widened receipt key %s", key => {
+      const input = automatic();
+      Object.assign(input.compassChanges[0].changes[0], { [key]: uuid(22) });
+      expect(parseExplorerConversationState(input)).toBeNull();
+    });
+  it.each(["source", "anchor", "emphasis", "topic", "receipt", "label", "notice", "revision", "priority", "mode"])(
+    "rejects mismatched automatic %s provenance", defect => {
+      const input = automatic();
+      if (defect === "source") input.compassItems[0].sourceMessageId = sourceId;
+      if (defect === "anchor") input.compassItems[0].anchor = "upper_left";
+      if (defect === "emphasis") input.compassItems[0].emphasis = 2;
+      if (defect === "topic") input.compassItems[0].topicId = pointId;
+      if (defect === "receipt") input.compassChanges = [];
+      if (defect === "label") input.compassChanges[0].changes[0].label = "Other wording";
+      // Which notice a position gets is the server's choice; only an unknown kind is a defect.
+      if (defect === "notice") Object.assign(input.compassChanges[0].changes[0], { noticeKind: "other" });
+      if (defect === "revision") input.compassChanges[0].revision = 3;
+      if (defect === "priority") Object.assign(input, { priorityId: pointId });
+      if (defect === "mode") input.compassMode = "legacy";
+      expect(parseExplorerConversationState(input)).toBeNull();
+    });
 });

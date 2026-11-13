@@ -10,6 +10,7 @@ const at = "2026-10-29T10:00:00.123456+00:00";
 const metadata = (n = 1, endedAt: string | null = at) => ({ conversationId: id(n), endedAt });
 const ended = () => ({
   version: EXPLORER_CONVERSATION_VERSION, conversationId: id(1), revision: 4,
+  compassMode: "legacy", compassChanges: [],
   waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true },
   waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: 0 },
   pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable", messages: [], compassItems: [],

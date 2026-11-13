@@ -7,13 +7,8 @@ import {
   waypointHasCapacity,
   type ExplorerConversationState,
   type ExplorerCompassAnchor,
-  type ExplorerCompassArrangementItem,
 } from "@/lib/solmind/explorerConversationContract";
 import {
-  buildAttentionFormationIntent,
-  buildCompassFormationIntent,
-  buildCompassArrangementFormationIntent,
-  buildCompassCategoryFormationIntent,
   buildReachedFormationIntent,
   buildWaypointReleaseFormationIntent,
   buildWaypointFormationIntent,
@@ -54,19 +49,6 @@ const emphasisLabels = { 1: "Light", 2: "Regular", 3: "Strong" } as const;
 function placementLabel(anchor: ExplorerCompassAnchor | null) {
   return compassPositions.find(position => position.anchor === anchor)?.label ?? "Other paths";
 }
-type ArrangementDraft = Readonly<{
-  conversationId: string | null;
-  revision: number;
-  priorityId: string | null;
-  items: readonly Readonly<{ compassItemId: string; anchor: ExplorerCompassAnchor | null; emphasis: 1 | 2 | 3 | null }>[];
-}>;
-type CategoryDraft = Readonly<{
-  conversationId: string | null;
-  revision: number;
-  targetItemId: string;
-  memberItemIds: readonly string[];
-  label: string;
-}>;
 type WaypointReleaseReview = Readonly<{
   conversationId: string | null;
   revision: number;
@@ -112,17 +94,11 @@ function SourceSelect({ id, state, value, onChange }: Readonly<{
 
 export function ExplorerConversationFormation({ state, busy, readOnly = false, onCommand }: ExplorerConversationFormationProps) {
   const id = useId();
-  const [compassSource, setCompassSource] = useState("");
-  const [label, setLabel] = useState("");
   const [waypointSource, setWaypointSource] = useState("");
   const [destination, setDestination] = useState("");
   const [meaning, setMeaning] = useState("");
   const [arrivalSignal, setArrivalSignal] = useState("");
   const [waypointConfirmed, setWaypointConfirmed] = useState(false);
-  const [arrangementDraft, setArrangementDraft] = useState<ArrangementDraft | null>(null);
-  const [arrangementConfirmed, setArrangementConfirmed] = useState(false);
-  const [categoryDraft, setCategoryDraft] = useState<CategoryDraft | null>(null);
-  const [categoryConfirmed, setCategoryConfirmed] = useState(false);
   const [reachedReviewId, setReachedReviewId] = useState<string | null>(null);
   const [reachedEvidence, setReachedEvidence] = useState("");
   const [reachedConfirmed, setReachedConfirmed] = useState(false);
@@ -134,30 +110,6 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
   const priority = currentPoints.find(item => item.id === state.priorityId);
   const attention = currentCompassHeads(state).find(item => item.id === state.attentionId);
   const otherPaths = currentPoints.filter(item => item.anchor == null);
-  const staleArrangement = arrangementDraft !== null &&
-    (arrangementDraft.conversationId !== state.conversationId || arrangementDraft.revision !== state.revision);
-  const draftPriority = currentPoints.find(item => item.id === arrangementDraft?.priorityId);
-  const changingPriority = arrangementDraft !== null && arrangementDraft.priorityId !== state.priorityId;
-  const arrangementIssues: string[] = [];
-  if (arrangementDraft !== null) {
-    const usedAnchors = new Set<ExplorerCompassAnchor>();
-    let duplicateAnchor = false;
-    for (const item of arrangementDraft.items) {
-      if (item.anchor !== null) {
-        if (usedAnchors.has(item.anchor)) duplicateAnchor = true;
-        usedAnchors.add(item.anchor);
-      }
-    }
-    if (duplicateAnchor) arrangementIssues.push("Choose a different location for each visible point; no point will be moved automatically.");
-    if (arrangementDraft.items.some(item => item.emphasis === null)) arrangementIssues.push("Choose relative emphasis for every point, including Other paths.");
-    if (arrangementDraft.priorityId !== null && arrangementDraft.items.find(item => item.compassItemId === arrangementDraft.priorityId)?.anchor !== "apex") {
-      arrangementIssues.push("Place the proposed Priority at the top position before confirming.");
-    }
-    if (state.attentionId !== null && attention?.formation !== "forming" &&
-        arrangementDraft.items.find(item => item.compassItemId === state.attentionId)?.anchor == null) {
-      arrangementIssues.push("Keep the current attention point in a visible position.");
-    }
-  }
   const waypointSuccessors = new Set(state.waypoints.filter(item => item.isCurrent !== true).map(item => item.id));
   const reachedReview = state.waypoints.find(item => item.id === reachedReviewId && item.status === "chosen" && item.release === undefined && !waypointSuccessors.has(item.id));
   const releaseWaypoint = state.waypoints.find(item => item.id === releaseReview?.waypointId);
@@ -171,17 +123,6 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
   const revisionCapacityMessage = waypointCapacityMessage(state, "revision");
   const newWaypointCapacityDescription = newWaypointCapacityMessage !== null ? `${id}-waypoint-capacity` : undefined;
   const route = state.route ?? [];
-  const categoryTarget = currentPoints.find(item => item.id === categoryDraft?.targetItemId);
-  const staleCategory = categoryDraft !== null &&
-    (categoryDraft.conversationId !== state.conversationId || categoryDraft.revision !== state.revision);
-  const categoryMembers = categoryDraft === null ? [] : currentPoints.filter(item => categoryDraft.memberItemIds.includes(item.id));
-  const categorySources = categoryDraft === null ? [] : state.compassItems.filter(item =>
-    categoryMembers.some(member => compassCategorySources(state, member.id).some(source => source.id === item.id)));
-  const categorySelectionConflict = categoryDraft !== null &&
-    [state.priorityId, state.attentionId].some(selectedId => selectedId !== null &&
-      selectedId !== categoryDraft.targetItemId && categoryDraft.memberItemIds.includes(selectedId));
-  const categoryUnchanged = categoryDraft !== null && categoryDraft.memberItemIds.length === 1 && categoryDraft.label.trim() === categoryTarget?.label;
-
   function submit(result: FormationIntentResult) {
     if (busy || readOnly) return;
     setError(result.error);
@@ -212,65 +153,6 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
     }
     submit(buildWaypointReleaseFormationIntent(state, releaseReview.waypointId, releaseReview.revision, releaseConfirmed));
   }
-  function addCompass(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    submit(buildCompassFormationIntent(state, { sourceMessageId: compassSource, label }));
-  }
-  function reviewArrangement(priorityId = state.priorityId) {
-    if (busy || readOnly) return;
-    setArrangementDraft({ conversationId: state.conversationId, revision: state.revision, priorityId,
-      items: currentPoints.map(item => ({ compassItemId: item.id,
-        anchor: item.anchor ?? null, emphasis: item.emphasis ?? null })) });
-    setArrangementConfirmed(false);
-    setError(null);
-  }
-  function editArrangementItem(compassItemId: string, patch: Partial<Pick<ArrangementDraft["items"][number], "anchor" | "emphasis">>) {
-    setArrangementDraft(draft => draft === null ? null : { ...draft,
-      items: draft.items.map(item => item.compassItemId === compassItemId ? { ...item, ...patch } : item) });
-    setArrangementConfirmed(false);
-    setError(null);
-  }
-  function confirmArrangement() {
-    if (busy || readOnly || arrangementDraft === null) return;
-    if (staleArrangement) {
-      setError("Your saved Compass changed. Open a new arrangement review before confirming.");
-      return;
-    }
-    const items: ExplorerCompassArrangementItem[] = [];
-    for (const item of arrangementDraft.items) {
-      if (item.emphasis === null) {
-        setError("Choose relative emphasis for every point, including Other paths, before confirming.");
-        return;
-      }
-      items.push({ compassItemId: item.compassItemId, anchor: item.anchor, emphasis: item.emphasis });
-    }
-    submit(buildCompassArrangementFormationIntent(state, arrangementDraft.priorityId, items, arrangementConfirmed));
-  }
-  function reviewCategory(targetItemId: string) {
-    if (busy || readOnly) return;
-    const target = currentPoints.find(item => item.id === targetItemId);
-    if (!target) return;
-    setCategoryDraft({ conversationId: state.conversationId, revision: state.revision,
-      targetItemId, memberItemIds: [targetItemId], label: target.label });
-    setCategoryConfirmed(false);
-    setError(null);
-  }
-  function editCategory(patch: Partial<Pick<CategoryDraft, "memberItemIds" | "label">>) {
-    setCategoryDraft(draft => draft === null ? null : { ...draft, ...patch });
-    setCategoryConfirmed(false);
-    setError(null);
-  }
-  function confirmCategory() {
-    if (busy || readOnly || categoryDraft === null) return;
-    if (staleCategory) {
-      setError("Your saved Compass changed. Open a new category review before confirming.");
-      return;
-    }
-    submit(buildCompassCategoryFormationIntent(state, {
-      targetItemId: categoryDraft.targetItemId, memberItemIds: categoryDraft.memberItemIds,
-      label: categoryDraft.label, confirmed: categoryConfirmed,
-    }));
-  }
   function pointCard(item: ExplorerConversationState["compassItems"][number]) {
     const emphasisClass = item.emphasis === 3 ? "text-lg font-bold" : item.emphasis === 1 ? "text-sm font-medium" : "font-semibold";
     // Any current point can take current attention, placed or not (2026-11-03,
@@ -291,11 +173,6 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
           <SavedSource state={state} sourceMessageId={source.sourceMessageId} />
         </li>)}</ul>
       </details> : null}
-      {!readOnly ? <div className="mt-3 flex flex-wrap gap-2">
-        <button type="button" className={`${buttonClass} max-w-full break-words text-left`} disabled={busy || state.priorityId === item.id} onClick={() => reviewArrangement(item.id)}>Review Priority: {item.label}</button>
-        <button type="button" className={`${buttonClass} max-w-full break-words text-left`} disabled={busy || state.attentionId === item.id} onClick={() => submit(buildAttentionFormationIntent(state, item.id))}>Attend to: {item.label}</button>
-        <button type="button" className={`${buttonClass} max-w-full break-words text-left`} disabled={busy} onClick={() => reviewCategory(item.id)}>Review wording or combine: {item.label}</button>
-      </div> : null}
     </div>;
   }
   function chooseWaypoint(event: FormEvent<HTMLFormElement>) {
@@ -313,7 +190,7 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
       </p>
       {!readOnly && error ? <p role="alert" className="rounded-xl border border-amber-500/50 bg-slate-950 p-3 text-sm text-amber-100">{error}</p> : null}
 
-      <section aria-labelledby={`${id}-compass-title`} className={panelClass}>
+      {readOnly ? <section aria-labelledby={`${id}-compass-title`} className={panelClass}>
         <h2 id={`${id}-compass-title`} className="text-xl font-semibold text-slate-100">Session Compass</h2>
         <p className="mt-2 text-sm leading-6 text-slate-300">
           Discovery may stay empty. You choose the labels and confirm Priority; current attention can move separately.
@@ -347,83 +224,7 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
             <p className="mt-2 text-sm text-slate-300">Saved points outside the visible Compass, including points awaiting an arrangement. Every saved source remains reviewable.</p>
             {otherPaths.length === 0 ? <p className="mt-3 text-sm text-slate-400">No other paths are saved.</p> : <ul className="mt-3 space-y-3">{otherPaths.map(item => <li key={item.id}>{pointCard(item)}</li>)}</ul>}
           </details>
-          {!readOnly ? <button type="button" className={`${buttonClass} mt-4`} disabled={busy} onClick={() => reviewArrangement()}>Review Compass arrangement</button> : null}
         </>}
-        {!readOnly && arrangementDraft ? (
-          <fieldset disabled={busy || staleArrangement} className="mt-4 space-y-4 rounded-2xl border border-amber-300/50 p-4">
-            <legend className="px-1 font-semibold text-slate-100">Review Compass arrangement</legend>
-            <p className="text-sm leading-6 text-slate-300">Choose each location and relative emphasis. Up to eight points can be visible; all remaining points stay in Other paths. No point is moved automatically.</p>
-            <p className="break-words text-sm text-cyan-200">Current attention stays on: {attention?.label ?? "No attention point chosen"}.{attention?.formation !== "forming" ? " A chosen attention point must remain visible." : ""}</p>
-            {staleArrangement ? <p role="alert" className="text-sm text-amber-200">Your saved Compass changed. Close this review and open a new one before confirming.</p> : null}
-            <label htmlFor={`${id}-arrangement-priority`} className="block text-sm text-slate-200">Priority for this arrangement
-              <select id={`${id}-arrangement-priority`} className={inputClass} value={arrangementDraft.priorityId ?? ""} onChange={event => {
-                setArrangementDraft({ ...arrangementDraft, priorityId: event.target.value || null });
-                setArrangementConfirmed(false); setError(null);
-              }}>
-                {state.priorityId === null ? <option value="">No Priority confirmed</option> : null}
-                {currentPoints.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
-              </select>
-            </label>
-            {changingPriority ? <p className="break-words rounded-xl border border-amber-300/50 p-3 text-sm text-amber-100">Priority will change from {"\u201c"}{priority?.label ?? "No Priority confirmed"}{"\u201d"} to {"\u201c"}{draftPriority?.label ?? "No Priority confirmed"}{"\u201d"}. Place the new Priority at the top and explicitly relocate any point already there. Current attention remains separate.</p> : <p className="text-sm text-slate-300">{priority ? "Your existing Priority must remain at the top and cannot be cleared here." : "A point at the top does not become Priority unless you explicitly choose and confirm it."}</p>}
-            <ul className="space-y-4">{arrangementDraft.items.map((draftItem, index) => {
-              const point = currentPoints.find(item => item.id === draftItem.compassItemId);
-              if (!point) return null;
-              return <li key={draftItem.compassItemId} className="rounded-xl border border-slate-700 p-3">
-                <h3 className="break-words font-semibold text-slate-100">{point.label}</h3>
-                <p className="mt-1 text-xs text-slate-300">{point.id === arrangementDraft.priorityId ? "Proposed Priority. " : ""}{point.id === state.attentionId ? "Current attention. " : ""}Preview: {placementLabel(draftItem.anchor)}; {draftItem.emphasis === null ? "relative emphasis not chosen" : emphasisLabels[draftItem.emphasis]}.</p>
-                <label htmlFor={`${id}-location-${index}`} className="mt-3 block text-sm text-slate-200">Location for {point.label}
-                  <select id={`${id}-location-${index}`} className={inputClass} value={draftItem.anchor ?? ""} onChange={event => editArrangementItem(point.id, { anchor: event.target.value === "" ? null : event.target.value as ExplorerCompassAnchor })}>
-                    <option value="">Other paths</option>
-                    {compassPositions.map(position => <option key={position.anchor} value={position.anchor}>{position.label}</option>)}
-                  </select>
-                </label>
-                <label htmlFor={`${id}-emphasis-${index}`} className="mt-3 block text-sm text-slate-200">Relative emphasis for {point.label}
-                  <select id={`${id}-emphasis-${index}`} className={inputClass} value={draftItem.emphasis ?? ""} onChange={event => editArrangementItem(point.id, { emphasis: event.target.value === "" ? null : Number(event.target.value) as 1 | 2 | 3 })}>
-                    <option value="">Choose relative emphasis</option>
-                    <option value="1">Light</option><option value="2">Regular</option><option value="3">Strong</option>
-                  </select>
-                </label>
-              </li>;
-            })}</ul>
-            {arrangementIssues.length > 0 ? <ul aria-label="Arrangement items to resolve" className="list-disc space-y-2 rounded-xl border border-amber-300/50 p-4 pl-8 text-sm text-amber-100">{arrangementIssues.map(issue => <li key={issue}>{issue}</li>)}</ul> : null}
-            <label className="flex items-start gap-3 text-sm text-slate-200"><input type="checkbox" className="mt-1" checked={arrangementConfirmed} onChange={event => setArrangementConfirmed(event.target.checked)} />{changingPriority ? "I reviewed the new Priority, every placement and relative emphasis, and the unchanged current attention." : "I reviewed every placement and relative emphasis, the Priority choice, and the unchanged current attention."}</label>
-            <button type="button" className={buttonClass} disabled={!arrangementConfirmed || arrangementIssues.length > 0} onClick={confirmArrangement}>{changingPriority ? "Confirm new Priority and arrangement" : "Confirm arrangement"}</button>
-          </fieldset>
-        ) : null}
-        {!readOnly && arrangementDraft ? <button type="button" className={`${buttonClass} mt-3`} disabled={busy} onClick={() => { setArrangementDraft(null); setArrangementConfirmed(false); setError(null); }}>Close arrangement review</button> : null}
-        {!readOnly && categoryDraft ? <fieldset disabled={busy || staleCategory} className="mt-5 space-y-4 rounded-2xl border border-amber-300/50 p-4">
-          <legend className="px-1 font-semibold text-slate-100">Review category wording and sources</legend>
-          <p className="text-sm leading-6 text-slate-300">Update this point&apos;s wording, or combine selected current points under it. This changes your Compass only; no message is sent and nothing is shared.</p>
-          <p className="break-words text-sm text-slate-200">Current wording: {categoryTarget?.label ?? "This saved point is no longer current"}</p>
-          <label htmlFor={`${id}-category-label`} className="block text-sm text-slate-200">Wording after this change
-            <input id={`${id}-category-label`} className={inputClass} value={categoryDraft.label} onChange={event => editCategory({ label: event.target.value })} maxLength={EXPLORER_CONVERSATION_LIMITS.labelCharacters} required />
-          </label>
-          <fieldset className="space-y-3 rounded-xl border border-slate-700 p-3">
-            <legend className="px-1 text-sm font-semibold text-slate-200">Current points to include</legend>
-            {currentPoints.map(item => <label key={item.id} className="flex items-start gap-3 break-words text-sm text-slate-200">
-              <input type="checkbox" className="mt-1" checked={categoryDraft.memberItemIds.includes(item.id)} disabled={item.id === categoryDraft.targetItemId} onChange={event => editCategory({ memberItemIds: event.target.checked
-                ? [...categoryDraft.memberItemIds, item.id] : categoryDraft.memberItemIds.filter(memberId => memberId !== item.id) })} />
-              <span>{item.label}{item.id === categoryDraft.targetItemId ? " \u2014 keep this point as the category" : ""}{item.id === state.priorityId ? "; confirmed Priority" : ""}{item.id === state.attentionId ? "; current attention" : ""}</span>
-            </label>)}
-          </fieldset>
-          <p className="break-words rounded-xl border border-cyan-300/40 p-3 text-sm text-cyan-100">Proposed wording: {categoryDraft.label.trim() || "Enter wording above"}. Keep {categoryTarget?.anchor == null ? "Other paths" : placementLabel(categoryTarget.anchor)}; relative emphasis: {categoryTarget?.emphasis == null ? "not recorded" : emphasisLabels[categoryTarget.emphasis]}.</p>
-          <p className="break-words text-sm text-slate-300">Priority stays on: {priority?.id === categoryDraft.targetItemId ? categoryDraft.label.trim() || priority.label : priority?.label ?? "No Priority confirmed"}. Current attention stays on: {attention?.id === categoryDraft.targetItemId ? categoryDraft.label.trim() || attention.label : attention?.label ?? "No attention point chosen"}.</p>
-          {categoryTarget?.id === state.priorityId || categoryTarget?.id === state.attentionId ? <p className="rounded-xl border border-amber-300/50 p-3 text-sm text-amber-100">You are changing the meaning of a point selected as Priority or current attention. Review the new wording explicitly; the selection will stay on this point.</p> : null}
-          {categorySelectionConflict ? <p role="alert" className="rounded-xl border border-amber-300/50 p-3 text-sm text-amber-100">One of the other selected points is Priority or current attention. Move that selection explicitly first, then open a new category review. It will not transfer automatically.</p> : null}
-          <details className="rounded-xl border border-slate-700 p-3" open>
-            <summary className="cursor-pointer text-sm font-semibold text-cyan-200">Review all contributing saved sources ({categorySources.length})</summary>
-            <ul className="mt-3 space-y-3">{categorySources.map(item => <li key={item.id} className="break-words text-sm text-slate-200">
-              <p>{item.label}{categoryDraft.memberItemIds.includes(item.id) ? " \u2014 selected current point" : " \u2014 retained source point"}</p>
-              <SavedSource state={state} sourceMessageId={item.sourceMessageId} />
-            </li>)}</ul>
-          </details>
-          <p className="text-sm text-slate-300">Original points and sources remain saved. Combining is one-way in this private demo: it does not free a saved-point slot, and there is no split action here.</p>
-          {categoryDraft.memberItemIds.length > 1 ? <p className="text-sm text-slate-300">The other selected points will become retained source points of this category, rather than separate points on the Compass or in Other paths. Their saved sources remain reviewable.</p> : null}
-          {staleCategory ? <p role="alert" className="text-sm text-amber-200">Your saved Compass changed. Close this review and open a new one before confirming.</p> : null}
-          <label className="flex items-start gap-3 text-sm text-slate-200"><input type="checkbox" className="mt-1" checked={categoryConfirmed} onChange={event => setCategoryConfirmed(event.target.checked)} />I reviewed the wording, all contributing sources, the unchanged placement and emphasis, and the Priority and current attention selections.</label>
-          <button type="button" className={buttonClass} disabled={!categoryConfirmed || !categoryDraft.label.trim() || categoryUnchanged || categorySelectionConflict} onClick={confirmCategory}>{categoryDraft.memberItemIds.length > 1 ? "Confirm combined category" : "Confirm category wording"}</button>
-        </fieldset> : null}
-        {!readOnly && categoryDraft ? <button type="button" className={`${buttonClass} mt-3`} disabled={busy} onClick={() => { setCategoryDraft(null); setCategoryConfirmed(false); setError(null); }}>Close category review</button> : null}
         <section aria-labelledby={`${id}-route-title`} className="mt-5 border-t border-slate-700 pt-4">
           <h3 id={`${id}-route-title`} className="font-semibold text-slate-100">Route</h3>
           {route.length === 0 ? (
@@ -456,24 +257,7 @@ export function ExplorerConversationFormation({ state, busy, readOnly = false, o
             </ol>
           )}
         </section>
-        {!readOnly ? <form onSubmit={addCompass} className="mt-5 border-t border-slate-700 pt-4">
-          <fieldset disabled={busy || !hasSource || state.compassItems.length >= EXPLORER_CONVERSATION_LIMITS.compassItems} className="space-y-3">
-            <legend className="mb-3 font-semibold text-slate-100">Add a point you choose</legend>
-            <SourceSelect id={`${id}-compass-source`} state={state} value={compassSource} onChange={setCompassSource} />
-            <SavedSource state={state} sourceMessageId={compassSource} />
-            <label htmlFor={`${id}-label`} className="block text-sm text-slate-200">Your short label
-              <input id={`${id}-label`} className={inputClass} value={label} onChange={event => setLabel(event.target.value)} maxLength={EXPLORER_CONVERSATION_LIMITS.labelCharacters} required />
-            </label>
-            <div className="flex flex-wrap gap-2">
-              <button type="submit" className={buttonClass}>Save Compass point</button>
-              <button type="button" className={buttonClass} onClick={() => { setCompassSource(""); setLabel(""); setError(null); }}>Clear point draft</button>
-            </div>
-          </fieldset>
-          <p className="mt-3 text-sm text-slate-400">New points stay in Other paths with no recorded placement or emphasis until you confirm an arrangement.</p>
-          {!hasSource ? <p className="mt-3 text-sm text-slate-400">A saved conversation message is needed before adding a point.</p> : null}
-          {state.compassItems.length >= EXPLORER_CONVERSATION_LIMITS.compassItems ? <p className="mt-3 text-sm text-slate-400">This private demo stores at most {EXPLORER_CONVERSATION_LIMITS.compassItems} points. All saved points remain available; another cannot be added here.</p> : null}
-        </form> : null}
-      </section>
+      </section> : null}
 
       <section aria-labelledby={`${id}-waypoints-title`} className={panelClass}>
         <h2 id={`${id}-waypoints-title`} className="text-xl font-semibold text-slate-100">Private Waypoints</h2>

@@ -691,12 +691,14 @@ describe("governed Explorer context (synthetic SQL-shaped source and policy only
 describe("Explicit held private AV3 context entry points", () => {
   const privateVersion = `AV3:${"B".repeat(64)}`;
   it("uses AV3 current proof with the private input envelope revision (chat step slice S3)", async () => {
-    const f = fixture({ facts: { ...authority(), authorizationVersion: privateVersion } });
+    const f = fixture({ facts: { ...authority(), compassEvidence: [], authorizationVersion: privateVersion } });
     const build = createPrivateExplorerConversationContextBuilder({ repository: { read: f.read }, configuration: f.config });
     const result = await build({ ...f.input, mode: "classification_and_reply" });
     expect(result.evidence.p_authorization_version).toBe(privateVersion);
     expect(assembled(result.request.authorizedContext).contractVersion).toBe(EXPLORER_PRIVATE_CONVERSATION_CONTEXT_SELECTION_VERSION);
-    expect(assembled(result.request.authorizedContext).compassContext).toEqual({ version: "explorer-compass-context.v7",
+    expect(assembled(result.request.authorizedContext).compassContext).toEqual({ version: "explorer-compass-context.v8",
+      mode: "legacy_read_only", topics: [], messageRefs: { history: [{ ref: "h0", order: 0 }], immediate: "now" },
+      capacity: { originalsRemaining: 0, topicSlotsRemaining: 0, visibleSlotsRemaining: 0 },
       points: [], priorityId: null, attentionId: null, recentRoute: [], waypoints: [], drafts: [], immediateMessageIsReplyChoice: false });
     expect(f.read).toHaveBeenCalledOnce();
     expect(f.prepare).not.toHaveBeenCalled(); expect(f.complete).not.toHaveBeenCalled();
@@ -705,12 +707,12 @@ describe("Explicit held private AV3 context entry points", () => {
     const legacy = fixture();
     const privateBuild = createPrivateExplorerConversationContextBuilder({ repository: { read: legacy.read }, configuration: legacy.config });
     await expect(privateBuild({ ...legacy.input, mode: "classification_and_reply" })).rejects.toThrow("explorer_conversation_context_unavailable");
-    const successor = fixture({ facts: { ...authority(), authorizationVersion: privateVersion } });
+    const successor = fixture({ facts: { ...authority(), compassEvidence: [], authorizationVersion: privateVersion } });
     await expect(successor.build(successor.input)).rejects.toThrow("explorer_conversation_context_unavailable");
     expect(legacy.read).not.toHaveBeenCalled(); expect(successor.read).not.toHaveBeenCalled();
   });
   it("does not downgrade a final private read to an AV2 token", async () => {
-    const f = fixture({ facts: { ...authority(), authorizationVersion: privateVersion } });
+    const f = fixture({ facts: { ...authority(), compassEvidence: [], authorizationVersion: privateVersion } });
     f.read.mockResolvedValueOnce({ ...f.row, authority_context: authority() });
     const build = createPrivateExplorerConversationContextBuilder({ repository: { read: f.read }, configuration: f.config });
     await expect(build({ ...f.input, mode: "classification_and_reply" })).rejects.toThrow("authorized_virtual_guide_context_source_failed");
@@ -718,7 +720,7 @@ describe("Explicit held private AV3 context entry points", () => {
   });
   it("resolves and revalidates actual injected methodology under explicit AV3", async () => {
     const f = governedFixture();
-    (f.row.authority_context as ReturnType<typeof authority>).authorizationVersion = privateVersion;
+    Object.assign(f.row.authority_context as object, { authorizationVersion: privateVersion, compassEvidence: [] });
     const build = createPrivateGovernedExplorerConversationContextBuilder(f.factoryInput);
     const result = await build({ ...f.input, mode: "classification_and_reply" });
     expect(result.evidence.p_authorization_version).toBe(privateVersion);
@@ -740,7 +742,14 @@ describe("Explicit held private AV3 context entry points", () => {
 // where the database rebuild must equal GOLDEN's content, compared as jsonb, and that content, set into the
 // context, must inspect clear.
 const sx = (n: number) => `f5120000-0000-4000-8000-${String(n).padStart(12, "0")}`;
-const GOLDEN = '{"version":"explorer-compass-context.v7","points":[{"id":"f5120000-0000-4000-8000-000000000401","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},{"id":"f5120000-0000-4000-8000-000000000402","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},{"id":"f5120000-0000-4000-8000-000000000404","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],"priorityId":"f5120000-0000-4000-8000-000000000401","attentionId":"f5120000-0000-4000-8000-000000000402","recentRoute":[{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000401","label":"Money worries","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":true}],"waypoints":[{"id":"f5120000-0000-4000-8000-000000000425","title":"Read before bed","destination":"Read before bed","meaning":"Screens keep me awake","arrivalSignal":"I read on three nights","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000421","title":"Find a calmer morning","destination":"Find a calmer morning","meaning":"Mornings set\\nmy whole day","arrivalSignal":"I start two mornings a week without rushing","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000423","title":"Call my sister","destination":"Call my sister","meaning":"We have drifted apart","arrivalSignal":"We talk once a week for a month","stage":"released","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000422","title":"Walk after dinner","destination":"Walk after dinner","meaning":"It clears my head","arrivalSignal":"I walk three evenings in one week","stage":"reached","reachedEvidence":"I walked four evenings last week"}],"drafts":[],"immediateMessageIsReplyChoice":false}';
+function v8LegacyGolden(serialized: string): string {
+  const old = JSON.parse(serialized);
+  return JSON.stringify({ version: "explorer-compass-context.v8", mode: "legacy_read_only",
+    topics: [], messageRefs: { history: [{ ref: "h0", order: 0 }], immediate: "now" },
+    capacity: { originalsRemaining: 0, topicSlotsRemaining: 0, visibleSlotsRemaining: 0 },
+    ...Object.fromEntries(Object.entries(old).filter(([key]) => key !== "version")), priorityId: null });
+}
+const GOLDEN = v8LegacyGolden('{"version":"explorer-compass-context.v8","points":[{"id":"f5120000-0000-4000-8000-000000000401","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},{"id":"f5120000-0000-4000-8000-000000000402","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},{"id":"f5120000-0000-4000-8000-000000000404","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],"priorityId":"f5120000-0000-4000-8000-000000000401","attentionId":"f5120000-0000-4000-8000-000000000402","recentRoute":[{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000401","label":"Money worries","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":true}],"waypoints":[{"id":"f5120000-0000-4000-8000-000000000425","title":"Read before bed","destination":"Read before bed","meaning":"Screens keep me awake","arrivalSignal":"I read on three nights","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000421","title":"Find a calmer morning","destination":"Find a calmer morning","meaning":"Mornings set\\nmy whole day","arrivalSignal":"I start two mornings a week without rushing","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000423","title":"Call my sister","destination":"Call my sister","meaning":"We have drifted apart","arrivalSignal":"We talk once a week for a month","stage":"released","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000422","title":"Walk after dinner","destination":"Walk after dinner","meaning":"It clears my head","arrivalSignal":"I walk three evenings in one week","stage":"reached","reachedEvidence":"I walked four evenings last week"}],"drafts":[],"immediateMessageIsReplyChoice":false}');
 function s3State(): ExplorerConversationState {
   const base = state(); const source = base.messages[0].id;
   const at = (minute: number) => `2026-11-03T09:${String(minute).padStart(2, "0")}:00.000Z`;
@@ -783,7 +792,7 @@ function s3State(): ExplorerConversationState {
   };
 }
 function privateFixture(history: ExplorerConversationState, formingAttentionMove?: unknown) {
-  const f = fixture({ facts: { ...authority(), authorizationVersion: `AV3:${"B".repeat(64)}`,
+  const f = fixture({ facts: { ...authority(), compassEvidence: [], authorizationVersion: `AV3:${"B".repeat(64)}`,
     ...(formingAttentionMove === undefined ? {} : { formingAttentionMove }) }, history });
   return { ...f, input: { ...f.input, mode: "classification_and_reply" as const },
     build: createPrivateExplorerConversationContextBuilder({ repository: { read: f.read }, configuration: f.config }) };
@@ -807,7 +816,7 @@ describe("Choice voice verified marker in the actual private context builder", (
     expect(expected).not.toBeNull();
     const f = privateFixture(offered([label, "I have a question"]));
     const result = await f.build(tapped(f));
-    expect(JSON.stringify(assembled(result.request.authorizedContext).compassContext)).toBe(expected![1].trim());
+    expect(JSON.stringify(assembled(result.request.authorizedContext).compassContext)).toBe(v8LegacyGolden(expected![1].trim()));
   });
 
   it("marks only an explicitly tapped exact unique choice in the preceding saved reply", async () => {
@@ -815,7 +824,7 @@ describe("Choice voice verified marker in the actual private context builder", (
     const marked = await f.build(tapped(f));
     const typed = await f.build({ ...f.input, command: { ...f.input.command, body: label } });
     const context = assembled(marked.request.authorizedContext);
-    expect(context.compassContext!.version).toBe("explorer-compass-context.v7");
+    expect(context.compassContext!.version).toBe("explorer-compass-context.v8");
     expect(context.compassContext!.immediateMessageIsReplyChoice).toBe(true);
     expect(Object.keys(context.compassContext!).at(-1)).toBe("immediateMessageIsReplyChoice");
     expect(context.immediateExplorerMessage.content).toBe(label);
@@ -1009,7 +1018,7 @@ describe("Chat step slice S3 saved Compass and Waypoint section (private AV3 ent
       suggestionMessageId: history.messages.find(message => message.role === "virtualGuide")!.id,
     } });
     const result = await f.build(f.input);
-    expect(JSON.stringify(assembled(result.request.authorizedContext).compassContext)).toBe(expected![1].trim());
+    expect(JSON.stringify(assembled(result.request.authorizedContext).compassContext)).toBe(v8LegacyGolden(expected![1].trim()));
     expect(result.evidence.p_context_source_ids).toContain(sx(901));
   });
 
@@ -1092,7 +1101,7 @@ describe("Chat step slice S3 saved Compass and Waypoint section (private AV3 ent
     const f = privateFixture(s3State()); const result = await f.build(f.input);
     const serialized = result.request.authorizedContext;
     const context = assembled(serialized);
-    expect(context.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2+compass-v7");
+    expect(context.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2+compass-v8");
     expect(JSON.stringify(context.compassContext)).toBe(GOLDEN);
     expect(serialized).toContain(`,"compassContext":${GOLDEN},"currentSessionMessages":`);
     expect(Object.keys(context)).toEqual(["contractVersion", "aiRole", "actorRoleContext", "globalPolicy", "roleBehavior",
@@ -1204,7 +1213,7 @@ describe("Chat step slice S3 saved Compass and Waypoint section (private AV3 ent
 
   it("the governed private entry carries the same section and source ids", async () => {
     const f = governedFixture({ history: s3State() });
-    (f.row.authority_context as ReturnType<typeof authority>).authorizationVersion = `AV3:${"B".repeat(64)}`;
+    Object.assign(f.row.authority_context as object, { authorizationVersion: `AV3:${"B".repeat(64)}`, compassEvidence: [] });
     const result = await createPrivateGovernedExplorerConversationContextBuilder(f.factoryInput)({ ...f.input, mode: "classification_and_reply" });
     expect(JSON.stringify(assembled(result.request.authorizedContext).compassContext)).toBe(GOLDEN);
     expect(result.evidence.p_context_source_ids).toEqual(expect.arrayContaining([sx(401), sx(402), sx(404), sx(421), sx(422), sx(423), sx(425)]));
@@ -1242,7 +1251,7 @@ describe("Private AV3 classification-only context scope", () => {
   ];
 
   function scopedFixture(governed: boolean, history = s3State()) {
-    const f = governedFixture({ facts: { ...authority(), authorizationVersion: `AV3:${"B".repeat(64)}` }, history });
+    const f = governedFixture({ facts: { ...authority(), compassEvidence: [], authorizationVersion: `AV3:${"B".repeat(64)}` }, history });
     const build = governed ? createPrivateGovernedExplorerConversationContextBuilder(f.factoryInput)
       : createPrivateExplorerConversationContextBuilder({ repository: { read: f.read }, configuration: f.config });
     const legacy = governed ? governedFixture({ history }) : fixture({ history });
@@ -1320,7 +1329,7 @@ describe("Private AV3 classification-only context scope", () => {
   });
 });
 
-describe("S5 current forming context", () => {
+describe("v8 excludes legacy forming context", () => {
   const formingMove = { pointId: sx(402), revision: 10, recordedAt: "2026-11-03T09:09:00.000001+00:00" };
   function formingState(): ExplorerConversationState {
     const history = s3State();
@@ -1331,7 +1340,7 @@ describe("S5 current forming context", () => {
     };
   }
 
-  it("S6b reduces the wording-message pointer to the preceding-reply signal without adding sources", async () => {
+  it("v8 legacy: reduces the wording-message pointer to the preceding-reply signal without adding sources", async () => {
     const history = formingState();
     const wordingMessageId = history.messages.find(message => message.role === "virtualGuide")!.id;
     const withDisplayPointer: ExplorerConversationState = { ...history, compassItems: history.compassItems.map(item =>
@@ -1343,36 +1352,35 @@ describe("S5 current forming context", () => {
     const after = await displayed.build(displayed.input);
     const previous = assembled(before.request.authorizedContext);
     const current = assembled(after.request.authorizedContext);
-    expect(previous.compassContext!.points.find(point => point.id === formingMove.pointId)?.suggestedInPreviousReply).toBe(false);
-    expect(current.compassContext!.points.find(point => point.id === formingMove.pointId)?.suggestedInPreviousReply).toBe(true);
-    expect(after.request.authorizedContext).toBe(before.request.authorizedContext.replace(
-      '"suggestedInPreviousReply":false', '"suggestedInPreviousReply":true'));
-    expect(after.request.contextFingerprint).not.toBe(before.request.contextFingerprint);
+    expect(previous.compassContext!.points.find(point => point.id === formingMove.pointId)).toBeUndefined();
+    expect(current.compassContext!.points.find(point => point.id === formingMove.pointId)).toBeUndefined();
+    expect(after.request.authorizedContext).toBe(before.request.authorizedContext);
+    expect(after.request.contextFingerprint).toBe(before.request.contextFingerprint);
     expect(after.evidence.p_context_source_ids).toEqual(before.evidence.p_context_source_ids);
     expect(after.request.authorizedContext).not.toContain("wordingMessageId");
     expect(withDisplayPointer.compassItems.find(item => item.id === formingMove.pointId)?.sourceMessageId)
       .toBe(history.compassItems.find(item => item.id === formingMove.pointId)?.sourceMessageId);
   });
 
-  it("S6b signals only current forming wording from the last saved reply in message sequence", async () => {
+  it("v8 legacy: signals only current forming wording from the last saved reply in message sequence", async () => {
     const history = formingState();
     const olderReply = history.messages.find(message => message.role === "virtualGuide")!;
     const latestReply = { ...olderReply, id: sx(701), createdAt: "2026-10-23T05:00:00.000Z" };
     const messages = [...history.messages, latestReply, {
       id: sx(702), role: "explorer" as const, body: "That is right.", createdAt: "2026-11-03T09:10:00.000Z",
     }];
-    for (const [wordingMessageId, expected] of [[olderReply.id, false], [latestReply.id, true], [undefined, false]] as const) {
+    for (const wordingMessageId of [olderReply.id, latestReply.id, undefined]) {
       const current = { ...history, messages, compassItems: history.compassItems.map(item =>
         item.id === formingMove.pointId ? { ...item, ...(wordingMessageId === undefined ? {} : { wordingMessageId }) } : item) };
       const f = privateFixture(current);
       const context = assembled((await f.build(f.input)).request.authorizedContext);
-      expect(context.compassContext!.points.find(point => point.id === formingMove.pointId)?.suggestedInPreviousReply).toBe(expected);
+      expect(context.compassContext!.points.find(point => point.id === formingMove.pointId)).toBeUndefined();
       expect(context.compassContext!.points.filter(point => point.formation === "saved")
         .every(point => !Object.hasOwn(point, "suggestedInPreviousReply"))).toBe(true);
     }
   });
 
-  it("S6b clears eligibility after a later saved reply and omits it from classification-only context", async () => {
+  it("v8 legacy: clears eligibility after a later saved reply and omits it from classification-only context", async () => {
     const history = formingState();
     const wordingMessageId = history.messages.find(message => message.role === "virtualGuide")!.id;
     const suggested = { ...history, compassItems: history.compassItems.map(item =>
@@ -1387,10 +1395,10 @@ describe("S5 current forming context", () => {
       id: sx(703), role: "virtualGuide", body: "What would you like to explore?", createdAt: "2026-11-03T09:11:00.000Z",
     }] });
     expect(assembled((await next.build(next.input)).request.authorizedContext).compassContext!.points
-      .find(point => point.id === formingMove.pointId)?.suggestedInPreviousReply).toBe(false);
+      .find(point => point.id === formingMove.pointId)).toBeUndefined();
   });
 
-  it("S6b matches the SQL golden projection for one refined and two older suggestions", async () => {
+  it("v8 legacy: matches the SQL golden projection for one refined and two older suggestions", async () => {
     // Same labels, message sequence and projection as explorer_typed_suggestion_replies_test.sql.
     const firstReplyId = "f42c0000-0000-4000-8000-000000010015";
     const latestReplyId = "f42c0000-0000-4000-8000-000000010025";
@@ -1405,18 +1413,12 @@ describe("S5 current forming context", () => {
       })),
     });
     const result = await f.build(f.input);
-    const projection = assembled(result.request.authorizedContext).compassContext!.points.map(point => ({
-      label: point.label, suggestedInPreviousReply: point.suggestedInPreviousReply,
-    }));
-    expect(projection).toEqual([
-      { label: "Work pressure", suggestedInPreviousReply: true },
-      { label: "Rest", suggestedInPreviousReply: false },
-      { label: "Family", suggestedInPreviousReply: false },
-    ]);
+    expect(assembled(result.request.authorizedContext).compassContext!.points).toEqual([]);
+    for (const id of [sx(711), sx(712), sx(713)]) expect(result.evidence.p_context_source_ids).not.toContain(id);
     expect(result.request.authorizedContext).not.toContain("wordingMessageId");
   });
 
-  it("S6b derives eligibility from saved history even when the last reply falls outside the 24-message context window", async () => {
+  it("v8 legacy: derives eligibility from saved history even when the last reply falls outside the 24-message context window", async () => {
     const history = formingState();
     const wordingMessageId = history.messages.find(message => message.role === "virtualGuide")!.id;
     const f = privateFixture({ ...history,
@@ -1427,17 +1429,17 @@ describe("S5 current forming context", () => {
     });
     const result = await f.build(f.input);
     const context = assembled(result.request.authorizedContext);
-    expect(context.compassContext!.points.find(point => point.id === formingMove.pointId)?.suggestedInPreviousReply).toBe(true);
+    expect(context.compassContext!.points.find(point => point.id === formingMove.pointId)).toBeUndefined();
     expect(context.currentSessionMessages).toHaveLength(24);
     expect(result.request.authorizedContext).not.toContain(wordingMessageId);
     expect(result.evidence.p_context_source_ids).not.toContain(wordingMessageId);
   });
 
-  it("S6b uses false when no saved Virtual Guide reply exists", async () => {
+  it("v8 legacy: uses false when no saved Virtual Guide reply exists", async () => {
     const history = formingState();
     const f = privateFixture({ ...history, messages: history.messages.filter(message => message.role === "explorer") });
     expect(assembled((await f.build(f.input)).request.authorizedContext).compassContext!.points
-      .find(point => point.id === formingMove.pointId)?.suggestedInPreviousReply).toBe(false);
+      .find(point => point.id === formingMove.pointId)).toBeUndefined();
   });
 
   it("acknowledges an Explorer forming move with current wording without a saved Route row", async () => {
@@ -1446,10 +1448,9 @@ describe("S5 current forming context", () => {
     const f = privateFixture(history, formingMove);
     const result = await f.build(f.input);
     const section = assembled(result.request.authorizedContext).compassContext!;
-    expect(section.recentRoute.at(-1)).toEqual({ kind: "attention_changed", pointId: formingMove.pointId,
-      label: "Current forming rest", actor: "explorer", awaitingReply: true });
-    expect(section.recentRoute.filter(event => event.awaitingReply)).toHaveLength(1);
-    expect((result.evidence.p_context_source_ids as readonly string[]).filter(id => id === formingMove.pointId)).toHaveLength(1);
+    expect(section.recentRoute.some(event => event.pointId === formingMove.pointId)).toBe(false);
+    expect(section.recentRoute.filter(event => event.awaitingReply)).toHaveLength(0);
+    expect(result.evidence.p_context_source_ids).not.toContain(formingMove.pointId);
     expect(JSON.stringify(history.route)).toBe(beforeRoute);
     for (const hidden of ["formingAttentionMove", "recordedAt", "operationId"]) {
       expect(result.request.authorizedContext).not.toContain(hidden);
@@ -1457,7 +1458,7 @@ describe("S5 current forming context", () => {
     const refined = privateFixture({ ...history, compassItems: history.compassItems.map(item => item.id === formingMove.pointId
       ? { ...item, label: "Refined forming rest" } : item) }, formingMove);
     const next = assembled((await refined.build(refined.input)).request.authorizedContext).compassContext!;
-    expect(next.recentRoute.at(-1)?.label).toBe("Refined forming rest");
+    expect(next.recentRoute.some(event => event.pointId === formingMove.pointId)).toBe(false);
     expect(JSON.stringify(next)).not.toContain("Current forming rest");
   });
 
@@ -1494,8 +1495,8 @@ describe("S5 current forming context", () => {
     const f = privateFixture(current, { ...formingMove, pointId: sx(404), revision: 20 });
     const route = assembled((await f.build(f.input)).request.authorizedContext).compassContext!.recentRoute;
     expect(route).toHaveLength(5);
-    expect(route.map(event => event.awaitingReply)).toEqual([false, false, false, false, true]);
-    expect(route.at(-1)).toMatchObject({ pointId: sx(404), label: "Family", actor: "explorer" });
+    expect(route.map(event => event.awaitingReply)).toEqual([false, false, false, false, false]);
+    expect(route.at(-1)).toMatchObject({ pointId: sx(401), label: "Money worries", actor: "explorer" });
     expect(route.some(event => event.pointId === formingMove.pointId)).toBe(false);
   });
 
@@ -1566,7 +1567,7 @@ describe("S5 current forming context", () => {
     const f = privateFixture({ ...history, messages: history.messages.map(message => message.role === "virtualGuide"
       ? { ...message, createdAt: replyAt } : message) }, formingMove);
     if (eligible) {
-      expect(assembled((await f.build(f.input)).request.authorizedContext).compassContext!.recentRoute.at(-1)?.awaitingReply).toBe(true);
+      expect(assembled((await f.build(f.input)).request.authorizedContext).compassContext!.recentRoute.every(event => !event.awaitingReply)).toBe(true);
     } else {
       await expect(f.build(f.input)).rejects.toThrow("explorer_conversation_context_unavailable");
     }
@@ -1584,7 +1585,7 @@ describe("S5 current forming context", () => {
 
   it("refuses a forming move that changes during final revalidation", async () => {
     const f = privateFixture(formingState(), formingMove);
-    f.read.mockResolvedValue({ ...f.row, authority_context: { ...authority(), authorizationVersion: `AV3:${"B".repeat(64)}` } });
+    f.read.mockResolvedValue({ ...f.row, authority_context: { ...authority(), compassEvidence: [], authorizationVersion: `AV3:${"B".repeat(64)}` } });
     await expect(f.build(f.input)).rejects.toMatchObject({ code: "authorized_virtual_guide_context_source_failed" });
     expect(f.read).toHaveBeenCalledOnce();
   });
@@ -1596,14 +1597,59 @@ describe("S5 current forming context", () => {
     const f = privateFixture(forming);
     const result = await f.build(f.input);
     const section = assembled(result.request.authorizedContext).compassContext!;
-    expect(section.points.find(point => point.id === sx(402))).toMatchObject({ formation: "forming", label: "Current forming rest" });
-    expect(section.attentionId).toBe(sx(402));
+    expect(section.points.find(point => point.id === sx(402))).toBeUndefined();
+    expect(section.attentionId).toBeNull();
     expect(section.recentRoute.some(event => event.pointId === sx(402))).toBe(false);
-    expect((result.evidence.p_context_source_ids as readonly string[]).filter(id => id === sx(402))).toHaveLength(1);
+    expect((result.evidence.p_context_source_ids as readonly string[]).filter(id => id === sx(402))).toHaveLength(0);
     expect(result.request.authorizedContext).not.toContain('"Sleep"');
     const confirmed = privateFixture({ ...forming, compassItems: forming.compassItems.map(item => item.id === sx(402)
       ? { ...item, formation: "saved" as const } : item) });
     expect(assembled((await confirmed.build(confirmed.input)).request.authorizedContext).compassContext!.points
       .find(point => point.id === sx(402))?.formation).toBe("saved");
+  });
+});
+
+describe("v8 private automatic evidence", () => {
+  function automatic(count = 6) {
+    const history: ExplorerConversationState = { ...state(count), compassMode: "automatic", compassChanges: [] };
+    const f = privateFixture(history);
+    const evidence = [{ id: sx(801), label: "Time for myself", pointId: null,
+      supportingMessageIds: [history.messages[0].id, history.messages[2].id, history.messages[4].id] }];
+    Object.assign(f.row.authority_context as object, { compassEvidence: evidence });
+    return { ...f, evidence };
+  }
+  it("support survives more than twenty-four later messages without replaying old text", async () => {
+    const f = automatic(40); const result = await f.build(f.input);
+    const context = assembled(result.request.authorizedContext);
+    expect(context.currentSessionMessages).toHaveLength(24);
+    expect(context.compassContext!.topics).toEqual([{ id: sx(801), label: "Time for myself",
+      pointId: null, supportCount: 3, countedRefs: [] }]);
+    expect(context.compassContext!.capacity).toEqual({ originalsRemaining: 24, topicSlotsRemaining: 23, visibleSlotsRemaining: 8 });
+    for (const id of f.evidence[0].supportingMessageIds) {
+      expect(result.evidence.p_context_source_ids).toContain(id);
+      expect(context.currentSessionMessages.some(message => message.messageId === id)).toBe(false);
+    }
+    expect(context.compassContext!.points).toEqual([]);
+  });
+  it("v8 source sets deduplicate overlapping message references before cross-kind checks", async () => {
+    const f = automatic(); const result = await f.build(f.input);
+    expect(result.evidence.p_context_source_ids).toHaveLength(10);
+    expect(new Set(result.evidence.p_context_source_ids as readonly string[]).size).toBe(10);
+    expect(assembled(result.request.authorizedContext).compassContext!.topics[0].countedRefs).toEqual(["h0", "h2", "h4"]);
+  });
+  it("classification-only omits the v8 section and its evidence-only sources", async () => {
+    const f = automatic(40); const result = await f.build({ ...f.input, mode: "classification_only" });
+    expect(assembled(result.request.authorizedContext).compassContext).toBeUndefined();
+    for (const id of [sx(801), ...f.evidence[0].supportingMessageIds]) expect(result.evidence.p_context_source_ids).not.toContain(id);
+  });
+  it.each(["guide", "missing", "duplicate", "renamed", "collision"])("rejects %s private evidence", async defect => {
+    const f = automatic();
+    if (defect === "guide") f.evidence[0].supportingMessageIds[0] = f.input.state.messages[1].id;
+    if (defect === "missing") f.evidence[0].supportingMessageIds[0] = sx(999);
+    if (defect === "duplicate") f.evidence[0].supportingMessageIds[0] = f.evidence[0].supportingMessageIds[1];
+    if (defect === "collision") f.evidence[0].id = f.input.state.messages[0].id;
+    if (defect === "renamed") f.read.mockResolvedValue({ ...f.row, authority_context: {
+      ...(f.row.authority_context as object), compassEvidence: [{ ...f.evidence[0], label: "Other wording" }] } });
+    await expect(f.build(f.input)).rejects.toThrow();
   });
 });

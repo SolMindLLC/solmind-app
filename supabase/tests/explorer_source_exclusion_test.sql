@@ -3,7 +3,7 @@
 -- owned isolated database. No shared data, Auth login, provider, real user,
 -- operational maintenance interval, concurrency or paging claim is made here.
 begin;
-select plan(157);
+select plan(158);
 
 create function pg_temp.xid(n integer) returns uuid language sql immutable as $$
   select ('f5120000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid
@@ -59,17 +59,21 @@ insert into ai.ai_interaction_session(ai_interaction_session_id,session_type,act
 -- on a current point (oldest first, each with the point's current label), the current Waypoint heads, no drafts.
 -- S4 adds the actor and whether the latest Explorer move still awaits its first saved reply.
 create function pg_temp.compass() returns jsonb language sql stable as $$
-  select jsonb_build_object('version','explorer-compass-context.v7','immediateMessageIsReplyChoice',false,
+  select jsonb_build_object('version','explorer-compass-context.v8','immediateMessageIsReplyChoice',false,
+    'mode','legacy_read_only','topics','[]'::jsonb,
+    'capacity',jsonb_build_object('originalsRemaining',0,'topicSlotsRemaining',0,'visibleSlotsRemaining',0),
+    'messageRefs',jsonb_build_object('history',(select coalesce(jsonb_agg(jsonb_build_object('ref','h'||h.ord::text,
+      'order',h.ord) order by h.ord),'[]'::jsonb) from (
+      select recent.*,row_number() over(order by recent.sequence_number)-1 as ord from (
+        select * from ai.ai_interaction_message where ai_interaction_session_id=pg_temp.xid(51)
+        order by sequence_number desc limit 24) recent) h where h.sender_type='user'),'immediate','now'),
     'points',coalesce((select jsonb_agg(jsonb_build_object('id',c.item_id,'label',ai.solmind_exclusion_normalize_v3(c.label),
-      'order',c.ord-1,'formation',case when c.formation_status='proposed' then 'forming' else 'saved' end,'anchor',c.compass_anchor,'emphasis',c.relative_emphasis)
-      ||case when c.formation_status='proposed' then jsonb_build_object('suggestedInPreviousReply',coalesce(
-        c.wording_message_id=(select previous.ai_interaction_message_id from ai.ai_interaction_message previous
-          where previous.ai_interaction_session_id=c.conversation_id and previous.sender_type='ai'
-            and previous.ai_role='solmind_virtual_guide' order by previous.sequence_number desc limit 1),false))
-        else '{}'::jsonb end order by c.ord)
+      'order',c.ord-1,'formation',case when c.formation_status='automatic' then 'automatic' else 'saved' end,'anchor',c.compass_anchor,'emphasis',c.relative_emphasis)
+        order by c.ord)
       from (select x.*,row_number() over(order by x.display_order) as ord from ai.explorer_conversation_compass_item x
-        where x.conversation_id=pg_temp.xid(51) and x.merged_into_item_id is null and x.formation_status is distinct from 'rejected') c),'[]'::jsonb),
-    'priorityId',(select s.priority_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.xid(51)),
+        where x.conversation_id=pg_temp.xid(51) and x.merged_into_item_id is null and x.formation_status is distinct from 'rejected'
+          and x.formation_status is distinct from 'proposed') c),'[]'::jsonb),
+    'priorityId',null,
     'attentionId',(select s.attention_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.xid(51)),
     'recentRoute',coalesce((select jsonb_agg(jsonb_build_object('kind',r.compass_route_kind,'pointId',r.compass_route_item_id,
       'label',ai.solmind_exclusion_normalize_v3(r.current_label),
@@ -98,7 +102,7 @@ $$;
 create function pg_temp.context(body text default 'Synthetic ordinary immediate text',classification_only boolean default false)
 returns jsonb language sql stable as $$
   select jsonb_build_object('contractVersion',case when classification_only then 'wi007-v0.1+onboarding-fields-v2'
-    else 'wi007-v0.1+onboarding-fields-v2+compass-v7' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
+    else 'wi007-v0.1+onboarding-fields-v2+compass-v8' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy',jsonb_build_object('version','synthetic-global.v1','text','Synthetic global behavior rules.'),
     'roleBehavior',jsonb_build_object('version','synthetic-role.v1','text','Synthetic role behavior rules.'),
     'crisisBehavior',jsonb_build_object('version','synthetic-crisis.v1','text','Synthetic crisis behavior rules.'),
@@ -175,9 +179,11 @@ select is((select outcome from pg_temp.inspect()),'unavailable','unknown policy 
 select is((select outcome from pg_temp.inspect_json(pg_temp.context(classification_only=>true),true)),
   'unavailable','unknown policy also rejects the reduced classification-only envelope');
 rollback to savepoint unknown_policy;
+-- REV391: these saved points, Priority and Route rows are historical (manual formation is retired), so the
+-- conversation that holds them is a legacy-mode conversation.
 insert into ai.explorer_conversation_state(conversation_id,actor_user_account_id,safety_contract_version,
-  adult_reflection_stopped,safety_version)
-  values(pg_temp.xid(51),pg_temp.xid(1),'explorer-conversation-safety.v1',false,0);
+  adult_reflection_stopped,safety_version,compass_mode)
+  values(pg_temp.xid(51),pg_temp.xid(1),'explorer-conversation-safety.v1',false,0,'legacy');
 select is((select outcome from pg_temp.inspect()),'clear','real owned empty conversation and exact submitted sources inspect clear');
 select ok((select excluded_entity_type is null and excluded_entity_id is null from pg_temp.inspect()),'clear carries no private references');
 select is((select outcome from pg_temp.inspect_json(pg_temp.context()||'{"unknown":true}'::jsonb)),'unavailable','extra input envelope field is unavailable');
@@ -398,12 +404,16 @@ rollback to savepoint source_identity_cross_kind_collision;
 -- ("S3 golden vector"); the TypeScript serialization of the section is the literal below (compared here as jsonb).
 -- S4 extends that same vector with actor and awaitingReply; the fixture has no saved AI reply.
 savepoint compass_context;
+-- REV391: fresh manual rows are retired; these are privileged historical rows. Only the formation
+-- trigger is suspended for the fixture writes and it is restored before any assertion.
+alter table ai.explorer_conversation_compass_item disable trigger explorer_compass_formation_guard;
 insert into ai.explorer_conversation_compass_item(item_id,conversation_id,source_message_id,label,display_order,compass_anchor,relative_emphasis)
   values(pg_temp.xid(401),pg_temp.xid(51),pg_temp.xid(70),'  Money worries ',1,'apex',3),
     (pg_temp.xid(402),pg_temp.xid(51),pg_temp.xid(70),'Sleep',2,null,null),
     (pg_temp.xid(403),pg_temp.xid(51),pg_temp.xid(70),'Work stress',3,'upper_left',2),
     (pg_temp.xid(404),pg_temp.xid(51),pg_temp.xid(70),'Family',4,null,1);
 update ai.explorer_conversation_compass_item set merged_into_item_id=pg_temp.xid(401) where item_id=pg_temp.xid(403);
+alter table ai.explorer_conversation_compass_item enable trigger explorer_compass_formation_guard;
 update ai.explorer_conversation_state set priority_id=pg_temp.xid(401),attention_id=pg_temp.xid(402) where conversation_id=pg_temp.xid(51);
 insert into ai.explorer_conversation_operation(actor_user_account_id,operation_id,application_session_id,conversation_id,kind,
   request_fingerprint,command_fingerprint,initial_revision,status,completed_at,compass_route_kind,compass_route_item_id,compass_route_label)
@@ -444,7 +454,7 @@ insert into content.waypoint(waypoint_id,guide_explorer_relationship_id,source_a
       'Screens keep me awake','I read on three nights','chosen',pg_temp.xid(1),timestamptz '2026-11-03 10:04:00+00',
       null,null,null,null,null,null,pg_temp.xid(424),'revision',timestamptz '2026-11-03 10:04:00+00');
 create temp table s3_golden(section jsonb) on commit drop;
-insert into s3_golden values('{"version":"explorer-compass-context.v7","points":[{"id":"f5120000-0000-4000-8000-000000000401","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},{"id":"f5120000-0000-4000-8000-000000000402","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},{"id":"f5120000-0000-4000-8000-000000000404","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],"priorityId":"f5120000-0000-4000-8000-000000000401","attentionId":"f5120000-0000-4000-8000-000000000402","recentRoute":[{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000401","label":"Money worries","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":true}],"waypoints":[{"id":"f5120000-0000-4000-8000-000000000425","title":"Read before bed","destination":"Read before bed","meaning":"Screens keep me awake","arrivalSignal":"I read on three nights","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000421","title":"Find a calmer morning","destination":"Find a calmer morning","meaning":"Mornings set\nmy whole day","arrivalSignal":"I start two mornings a week without rushing","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000423","title":"Call my sister","destination":"Call my sister","meaning":"We have drifted apart","arrivalSignal":"We talk once a week for a month","stage":"released","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000422","title":"Walk after dinner","destination":"Walk after dinner","meaning":"It clears my head","arrivalSignal":"I walk three evenings in one week","stage":"reached","reachedEvidence":"I walked four evenings last week"}],"drafts":[],"immediateMessageIsReplyChoice":false}');
+insert into s3_golden values('{"version":"explorer-compass-context.v8","mode":"legacy_read_only","topics":[],"messageRefs":{"history":[{"ref":"h0","order":0}],"immediate":"now"},"capacity":{"originalsRemaining":0,"topicSlotsRemaining":0,"visibleSlotsRemaining":0},"points":[{"id":"f5120000-0000-4000-8000-000000000401","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},{"id":"f5120000-0000-4000-8000-000000000402","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},{"id":"f5120000-0000-4000-8000-000000000404","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],"priorityId":null,"attentionId":"f5120000-0000-4000-8000-000000000402","recentRoute":[{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000401","label":"Money worries","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":true}],"waypoints":[{"id":"f5120000-0000-4000-8000-000000000425","title":"Read before bed","destination":"Read before bed","meaning":"Screens keep me awake","arrivalSignal":"I read on three nights","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000421","title":"Find a calmer morning","destination":"Find a calmer morning","meaning":"Mornings set\nmy whole day","arrivalSignal":"I start two mornings a week without rushing","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000423","title":"Call my sister","destination":"Call my sister","meaning":"We have drifted apart","arrivalSignal":"We talk once a week for a month","stage":"released","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000422","title":"Walk after dinner","destination":"Walk after dinner","meaning":"It clears my head","arrivalSignal":"I walk three evenings in one week","stage":"reached","reachedEvidence":"I walked four evenings last week"}],"drafts":[],"immediateMessageIsReplyChoice":false}');
 create function pg_temp.with_compass(section jsonb) returns jsonb language sql stable as $$
   select jsonb_set(pg_temp.context(),'{compassContext}',section)
 $$;
@@ -474,7 +484,7 @@ begin
       then raise exception 'classification_reduced_refused'; end if;
     if (select outcome from pg_temp.inspect_json(full_context)) is distinct from 'unavailable'
       or (select outcome from pg_temp.inspect_json(reduced||jsonb_build_object(
-        'contractVersion','wi007-v0.1+onboarding-fields-v2+compass-v7'),true)) is distinct from 'unavailable'
+        'contractVersion','wi007-v0.1+onboarding-fields-v2+compass-v8'),true)) is distinct from 'unavailable'
       or (select outcome from pg_temp.inspect_json(full_context||jsonb_build_object(
         'contractVersion','wi007-v0.1+onboarding-fields-v2'))) is distinct from 'unavailable'
       or (select outcome from pg_temp.inspect_json(reduced||'{"compassContext":null}'::jsonb,true)) is distinct from 'unavailable'
@@ -523,8 +533,8 @@ select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),
   'unavailable','S5: an Explorer-saved row cannot be relabeled forming in model context');
 select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,points,1,anchor}','"lower_center"'))),
   'unavailable','S3: an invented position is unavailable');
-select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,priorityId}','null'))),
-  'unavailable','S3: the saved Priority cannot be omitted');
+select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,priorityId}',to_jsonb(pg_temp.xid(401))))),
+  'unavailable','REV391 B2.3: the stored historical Priority never enters v8 model context (priorityId is always null)');
 select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,attentionId}',to_jsonb(pg_temp.xid(401))))),
   'unavailable','S3: the needle is the saved attention, here on an unplaced point');
 select is((select outcome from pg_temp.inspect_json(jsonb_set(pg_temp.context(),'{compassContext,recentRoute}','[]'))),
@@ -606,7 +616,10 @@ insert into s3_rename select jsonb_build_object('targetItemId',c.item_id,'member
   from ai.explorer_conversation_compass_item c where c.conversation_id=pg_temp.xid(51) and c.item_id=pg_temp.xid(402);
 select ok((select ai.solmind_compass_category_change_valid(snapshot) from s3_rename),
   'S3 rename: the category rename snapshot passes the shape check');
+-- REV391: fresh renames are retired; this is a privileged historical rename (trigger restored at once).
+alter table ai.explorer_conversation_compass_item disable trigger explorer_compass_formation_guard;
 update ai.explorer_conversation_compass_item set label='Evening rest' where conversation_id=pg_temp.xid(51) and item_id=pg_temp.xid(402);
+alter table ai.explorer_conversation_compass_item enable trigger explorer_compass_formation_guard;
 insert into ai.explorer_conversation_operation(actor_user_account_id,operation_id,application_session_id,conversation_id,kind,
   request_fingerprint,command_fingerprint,initial_revision,status,completed_at,compass_route_kind,compass_category_change)
   select pg_temp.xid(1),pg_temp.xid(442),pg_temp.xid(50),pg_temp.xid(51),'confirm_compass_category',repeat('A',64),repeat('B',64),11,
@@ -635,7 +648,10 @@ select is((select outcome from pg_temp.inspect()),'clear',
 rollback to savepoint compass_rename;
 select is(pg_temp.compass(),(select section from s3_golden),'S3 rename: the rollback restores the golden section');
 savepoint compass_private_label;
+-- REV391: privileged historical relabel (trigger restored at once).
+alter table ai.explorer_conversation_compass_item disable trigger explorer_compass_formation_guard;
 update ai.explorer_conversation_compass_item set label='Canary trigger text 110.' where item_id=pg_temp.xid(404);
+alter table ai.explorer_conversation_compass_item enable trigger explorer_compass_formation_guard;
 select ok((select outcome='blocked' and excluded_entity_id=pg_temp.xid(110) from pg_temp.inspect()),
   'S3: a Compass label equal to excluded private text is blocked like any other context string');
 rollback to savepoint compass_private_label;
@@ -659,16 +675,23 @@ select is((select outcome from pg_temp.inspect()),'clear','S3: the empty saved C
 -- conversation); it inspects clear, and the deployed inspector's bound is exactly 3 to 103, as prepare's.
 select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid=p.pronamespace
     where n.nspname='ai' and p.proname='solmind_inspect_explorer_context_v3'
-      and strpos(p.prosrc,'pg_catalog.cardinality(p_context_source_ids) not between 3 and 103')>0),1,
-  'S3: the deployed inspector bounds its source ids between 3 and 103');
+      and strpos(p.prosrc,'pg_catalog.cardinality(p_context_source_ids) not between 3 and 168')>0),1,
+  'REV391: the deployed inspector bounds its source ids between 3 and 168');
+select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+    where n.nspname='ai' and p.proname='solmind_inspect_explorer_context_v3'
+      and strpos(p.prosrc,'between 3 and 103')>0),0,
+  'REV391: the previous 103-source bound is gone');
 savepoint compass_maximum;
 insert into ai.ai_interaction_message(ai_interaction_message_id,ai_interaction_session_id,sequence_number,sender_type,
   sender_user_account_id,sender_role_context,content_text)
   select pg_temp.xid(600+n),pg_temp.xid(51),1+n,'user',pg_temp.xid(1),'explorer','Synthetic later message '||n from generate_series(1,30) n;
+-- REV391: privileged historical rows (trigger restored at once).
+alter table ai.explorer_conversation_compass_item disable trigger explorer_compass_formation_guard;
 insert into ai.explorer_conversation_compass_item(item_id,conversation_id,source_message_id,label,display_order,compass_anchor,relative_emphasis)
   select pg_temp.xid(700+n),pg_temp.xid(51),pg_temp.xid(70),'Synthetic point '||n,n,
     (array['apex','upper_left','upper_right','side_left','side_right','lower_left','lower_center','lower_right'])[n],
     case when n<=8 then 2 end from generate_series(1,24) n;
+alter table ai.explorer_conversation_compass_item enable trigger explorer_compass_formation_guard;
 update ai.explorer_conversation_state set priority_id=pg_temp.xid(701),attention_id=pg_temp.xid(724) where conversation_id=pg_temp.xid(51);
 insert into ai.explorer_conversation_operation(actor_user_account_id,operation_id,application_session_id,conversation_id,kind,
   request_fingerprint,command_fingerprint,initial_revision,status,completed_at,compass_route_kind,compass_route_item_id,compass_route_label)

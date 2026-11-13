@@ -4,7 +4,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions,pg_catalog,pg_temp;
 set local statement_timeout='120s';
-select plan(74);
+select plan(80);
 
 create function pg_temp.gid(n integer) returns uuid language sql immutable as $$
   select ('f42c0000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid
@@ -135,35 +135,66 @@ begin
     pg_temp.gid(candidate_n),0,pg_temp.gid(1000),(e->>'versionId')::uuid,e->>'contentSha256',
     e->>'methodologyAuthorizationVersion',repeat('A',64));
 end $$;
+-- REV391: the conversation the Send helpers address (6005 by default; the automatic ending block below
+-- selects its own conversation and nothing after it uses these helpers).
+create temp table s4_conv(id uuid not null);
+insert into s4_conv values(pg_temp.gid(6005));
+create function pg_temp.conv() returns uuid language sql stable as $$ select id from s4_conv $$;
 -- Chat step slice S3 (2026-11-03): the saved Compass and Waypoint section and its source ids, rebuilt from this
 -- fixture conversation's rows for each new Send (the inspector compares them exactly): current points in display
 -- order, the saved Priority and attention, the last five needle moves on a current point (oldest first, each
 -- with the point's current label), the current Waypoint heads, no drafts.
 create function pg_temp.compass_context() returns jsonb language sql stable as $$
-  select jsonb_build_object('version','explorer-compass-context.v7','immediateMessageIsReplyChoice',false,
+  with forming_move as (select ai.solmind_forming_attention_move_v1(pg_temp.conv()) as value),
+  moves as (
+    select o.kind,o.completed_at,o.compass_route_kind,o.compass_route_item_id,o.initial_revision,o.operation_id
+    from ai.explorer_conversation_operation o where o.conversation_id=pg_temp.conv() and o.compass_route_kind='attention_changed'
+    union all
+    select 'set_attention',(value->>'recordedAt')::timestamptz,'attention_changed',(value->>'pointId')::uuid,
+      (value->>'revision')::integer-1,null::uuid from forming_move where value is not null
+  )
+  select jsonb_build_object('version','explorer-compass-context.v8','immediateMessageIsReplyChoice',false,
+    'mode',case when (select compass_mode from ai.explorer_conversation_state where conversation_id=pg_temp.conv())='automatic'
+      then 'automatic' else 'legacy_read_only' end,
+    'capacity',case when (select compass_mode from ai.explorer_conversation_state where conversation_id=pg_temp.conv())<>'automatic'
+      then jsonb_build_object('originalsRemaining',0,'topicSlotsRemaining',0,'visibleSlotsRemaining',0)
+      else jsonb_build_object('originalsRemaining',greatest(0,24-(select count(*) from ai.explorer_conversation_compass_item
+      where conversation_id=pg_temp.conv() and formation_status is distinct from 'rejected')),
+      'topicSlotsRemaining',greatest(0,24-(select count(*) from ai.explorer_compass_topic where conversation_id=pg_temp.conv())),
+      'visibleSlotsRemaining',greatest(0,8-(select count(*) from ai.explorer_conversation_compass_item
+        where conversation_id=pg_temp.conv() and merged_into_item_id is null and formation_status is distinct from 'rejected'))) end,
+    'messageRefs',jsonb_build_object('history',(select coalesce(jsonb_agg(jsonb_build_object('ref','h'||h.ord::text,
+      'order',h.ord) order by h.ord),'[]'::jsonb) from (
+      select recent.*,row_number() over(order by recent.sequence_number)-1 as ord from (
+        select * from ai.ai_interaction_message where ai_interaction_session_id=pg_temp.conv()
+        order by sequence_number desc limit 24) recent) h where h.sender_type='user'),'immediate','now'),
+    'topics',(select coalesce(jsonb_agg(jsonb_build_object('id',topic.topic_id,'label',topic.label,
+      'pointId',(select item_id from ai.explorer_conversation_compass_item where automatic_topic_id=topic.topic_id),
+      'supportCount',(select count(*) from ai.explorer_compass_topic_support where topic_id=topic.topic_id),
+      'countedRefs',(select coalesce(jsonb_agg('h'||h.ord::text order by h.ord),'[]'::jsonb) from (
+        select recent.*,row_number() over(order by recent.sequence_number)-1 as ord from (
+          select * from ai.ai_interaction_message where ai_interaction_session_id=pg_temp.conv()
+          order by sequence_number desc limit 24) recent) h where h.sender_type='user' and exists(
+            select 1 from ai.explorer_compass_topic_support e where e.topic_id=topic.topic_id and e.support_message_id=h.ai_interaction_message_id)))
+      order by topic.topic_slot),'[]'::jsonb) from ai.explorer_compass_topic topic where topic.conversation_id=pg_temp.conv()),
     'points',coalesce((select jsonb_agg(jsonb_build_object('id',c.item_id,'label',ai.solmind_exclusion_normalize_v3(c.label),
-      'order',c.ord-1,'formation',case when c.formation_status='proposed' then 'forming' else 'saved' end,'anchor',c.compass_anchor,'emphasis',c.relative_emphasis)
-      ||case when c.formation_status='proposed' then jsonb_build_object('suggestedInPreviousReply',coalesce(
-        c.wording_message_id=(select previous.ai_interaction_message_id from ai.ai_interaction_message previous
-          where previous.ai_interaction_session_id=c.conversation_id and previous.sender_type='ai'
-            and previous.ai_role='solmind_virtual_guide' order by previous.sequence_number desc limit 1),false))
-        else '{}'::jsonb end order by c.ord)
+      'order',c.ord-1,'formation',case when c.formation_status='automatic' then 'automatic' else 'saved' end,'anchor',c.compass_anchor,'emphasis',c.relative_emphasis)
+ order by c.ord)
       from (select x.*,row_number() over(order by x.display_order) as ord from ai.explorer_conversation_compass_item x
-        where x.conversation_id=pg_temp.gid(6005) and x.merged_into_item_id is null and x.formation_status is distinct from 'rejected') c),'[]'::jsonb),
-    'priorityId',(select s.priority_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.gid(6005)),
-    'attentionId',(select s.attention_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.gid(6005)),
+        where x.conversation_id=pg_temp.conv() and x.merged_into_item_id is null and x.formation_status is distinct from 'rejected') c),'[]'::jsonb),
+    'priorityId',null,
+    'attentionId',(select s.attention_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.conv()),
     'recentRoute',coalesce((select jsonb_agg(jsonb_build_object('kind',r.compass_route_kind,'pointId',r.compass_route_item_id,
       'label',ai.solmind_exclusion_normalize_v3(r.current_label),
       'actor',case when r.kind='follow_attention' then 'virtual_guide' else 'explorer' end,
       'awaitingReply',r.kind='set_attention'
-        and r.operation_id=(select last_move.operation_id from ai.explorer_conversation_operation last_move
-          where last_move.conversation_id=pg_temp.gid(6005) and last_move.compass_route_kind='attention_changed'
+        and r.operation_id is not distinct from (select last_move.operation_id from moves last_move
           order by last_move.initial_revision desc,last_move.operation_id desc limit 1)
-        and not exists(select 1 from ai.ai_interaction_message reply where reply.ai_interaction_session_id=pg_temp.gid(6005)
+        and not exists(select 1 from ai.ai_interaction_message reply where reply.ai_interaction_session_id=pg_temp.conv()
           and reply.sender_type='ai' and reply.created_at>=r.completed_at)) order by r.initial_revision,r.operation_id)
-      from (select o.*,c.label as current_label from ai.explorer_conversation_operation o join ai.explorer_conversation_compass_item c
-          on c.conversation_id=o.conversation_id and c.item_id=o.compass_route_item_id and c.merged_into_item_id is null and c.formation_status is distinct from 'rejected'
-        where o.conversation_id=pg_temp.gid(6005) and o.compass_route_kind='attention_changed'
+      from (select o.*,c.label as current_label from moves o join ai.explorer_conversation_compass_item c
+          on c.conversation_id=pg_temp.conv() and c.item_id=o.compass_route_item_id and c.merged_into_item_id is null and c.formation_status is distinct from 'rejected'
+        where c.formation_status is distinct from 'proposed' or o.operation_id is null
         order by o.initial_revision desc,o.operation_id desc limit 5) r),'[]'::jsonb),
     'waypoints',coalesce((select jsonb_agg(jsonb_build_object('id',w.waypoint_id,'title',ai.solmind_exclusion_normalize_v3(w.title),
       'destination',ai.solmind_exclusion_normalize_v3(w.destination),'meaning',ai.solmind_exclusion_normalize_v3(w.why_it_matters),
@@ -171,27 +202,40 @@ create function pg_temp.compass_context() returns jsonb language sql stable as $
       'stage',case when w.lifecycle_status='reached' then 'reached' when w.released_at is not null then 'released' else 'formed' end,
       'reachedEvidence',case when w.lifecycle_status='reached' then ai.solmind_exclusion_normalize_v3(w.reached_evidence) end)
       order by case when w.lifecycle_status='chosen' and w.released_at is null then 0 else 1 end,w.created_at desc,w.waypoint_id)
-      from (select h.* from content.waypoint h where h.source_ai_interaction_session_id=pg_temp.gid(6005)
+      from (select h.* from content.waypoint h where h.source_ai_interaction_session_id=pg_temp.conv()
         and not exists(select 1 from content.waypoint s where s.predecessor_waypoint_id=h.waypoint_id)
         order by case when h.lifecycle_status='chosen' and h.released_at is null then 0 else 1 end,h.created_at desc,h.waypoint_id limit 20) w),'[]'::jsonb),
-    'drafts','[]'::jsonb)
+    'drafts',coalesce((select jsonb_agg(jsonb_build_object('id',d.waypoint_draft_id,
+      'title',ai.solmind_exclusion_normalize_v3(d.title),'destination',ai.solmind_exclusion_normalize_v3(d.destination),
+      'whyItMatters',ai.solmind_exclusion_normalize_v3(d.why_it_matters),
+      'arrivalSignal',ai.solmind_exclusion_normalize_v3(d.arrival_signal),
+      'suggestedInPreviousReply',coalesce(d.suggestion_message_id=(select m.ai_interaction_message_id
+        from ai.ai_interaction_message m where m.ai_interaction_session_id=pg_temp.conv()
+          and m.sender_type='ai' and m.ai_role='solmind_virtual_guide'
+        order by m.sequence_number desc limit 1),false)))
+      from content.waypoint_draft d where d.source_ai_interaction_session_id=pg_temp.conv()
+        and d.draft_status='proposed'),'[]'::jsonb))
 $$;
 create function pg_temp.compass_source_ids() returns uuid[] language sql stable as $$
   select coalesce(array_agg(x.id),array[]::uuid[]) from (
     select c.item_id as id from ai.explorer_conversation_compass_item c
-      where c.conversation_id=pg_temp.gid(6005) and c.merged_into_item_id is null and c.formation_status is distinct from 'rejected'
-    union all select w.waypoint_id from (select h.* from content.waypoint h where h.source_ai_interaction_session_id=pg_temp.gid(6005)
+      where c.conversation_id=pg_temp.conv() and c.merged_into_item_id is null and c.formation_status is distinct from 'rejected'
+    union all select w.waypoint_id from (select h.* from content.waypoint h where h.source_ai_interaction_session_id=pg_temp.conv()
       and not exists(select 1 from content.waypoint s where s.predecessor_waypoint_id=h.waypoint_id)
-      order by case when h.lifecycle_status='chosen' and h.released_at is null then 0 else 1 end,h.created_at desc,h.waypoint_id limit 20) w) x
+      order by case when h.lifecycle_status='chosen' and h.released_at is null then 0 else 1 end,h.created_at desc,h.waypoint_id limit 20) w
+    union all select d.waypoint_draft_id from content.waypoint_draft d
+      where d.source_ai_interaction_session_id=pg_temp.conv() and d.draft_status='proposed'
+    union all select topic_id from ai.explorer_compass_topic where conversation_id=pg_temp.conv()
+    union all select support_message_id from ai.explorer_compass_topic_support where conversation_id=pg_temp.conv()) x
 $$;
 create function pg_temp.context_value(msg uuid,body text) returns jsonb language sql stable as $$
-  select jsonb_build_object('contractVersion','wi007-v0.1+onboarding-fields-v2+compass-v7','aiRole','solmind_virtual_guide','actorRoleContext','explorer',
+  select jsonb_build_object('contractVersion','wi007-v0.1+onboarding-fields-v2+compass-v8','aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy',jsonb_build_object('version','synthetic-policy.v1','text','Synthetic policy.'),
     'roleBehavior',jsonb_build_object('version','synthetic-behavior.v1','text','Synthetic behavior.'),
     'crisisBehavior',jsonb_build_object('version','synthetic-crisis.v1','text','Synthetic crisis.'),
     'methodologyContext',jsonb_build_object('version','methodology:'||v.methodology_context_pack_version_id::text,'text',v.content_markdown),
     'sessionContext',jsonb_build_object('sessionType','explorer_virtual_guide','explorerId',pg_temp.gid(24),
-      'sessionId',pg_temp.gid(6005),'continuityBindingId',pg_temp.gid(25),'explorerDisplayName',null,
+      'sessionId',pg_temp.conv(),'continuityBindingId',pg_temp.gid(25),'explorerDisplayName',null,
       'activeFocusItems','[]'::jsonb,'nextAppointment',null,'explorerSafeGuardrail',null),
     'approvedContinuity',(select jsonb_agg(jsonb_build_object('sourceId',pg_temp.gid(52),'order',f.ord-1,
       'kind','onboarding_answer','field',f.name,'content',ai.solmind_exclusion_normalize_v3(i.response_json->>f.name)) order by f.ord)
@@ -199,13 +243,13 @@ create function pg_temp.context_value(msg uuid,body text) returns jsonb language
         'communicationPreference','doNotEmphasize']) with ordinality f(name,ord) where i.intake_response_set_id=pg_temp.gid(52)),
     'compassContext',pg_temp.compass_context(),
     'currentSessionMessages',coalesce((select jsonb_agg(jsonb_build_object('messageId',h.ai_interaction_message_id,'order',h.ord-1,
-      'explorerId',pg_temp.gid(24),'sessionId',pg_temp.gid(6005),
+      'explorerId',pg_temp.gid(24),'sessionId',pg_temp.conv(),
       'role',case when h.sender_type='user' then 'explorer' else 'solmind_virtual_guide' end,
       'content',ai.solmind_exclusion_normalize_v3(h.content_text)) order by h.ord)
       from (select x.*,row_number() over(order by x.sequence_number) as ord from (select * from ai.ai_interaction_message
-        where ai_interaction_session_id=pg_temp.gid(6005) order by sequence_number desc limit 24) x) h),'[]'::jsonb),
+        where ai_interaction_session_id=pg_temp.conv() order by sequence_number desc limit 24) x) h),'[]'::jsonb),
     'immediateExplorerMessage',jsonb_build_object('messageId',msg,'explorerId',pg_temp.gid(24),
-      'sessionId',pg_temp.gid(6005),'role','explorer','content',body),
+      'sessionId',pg_temp.conv(),'role','explorer','content',body),
     'outputRequirements',jsonb_build_object('format','plain_text','includeCitations',false,'allowMarkdown',false))
   from methodology.methodology_context_pack_version v where v.methodology_context_pack_version_id=pg_temp.gid(1001)
 $$;
@@ -217,9 +261,9 @@ create function pg_temp.observe(slot integer,lvl integer default 0,minor_flag bo
 returns table(outcome text,policy_state jsonb) language plpgsql as $$
 declare rev integer;
 begin
-  select revision into rev from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005);
+  select revision into rev from ai.explorer_conversation_state where conversation_id=pg_temp.conv();
   return query select * from public.solmind_observe_explorer_conversation_fallback_v3(
-    pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),pg_temp.gid(10000+slot*10),pg_temp.gid(10004+slot*10),
+    pg_temp.gid(1),pg_temp.gid(50),pg_temp.conv(),pg_temp.gid(10000+slot*10),pg_temp.gid(10004+slot*10),
     rev,methodology.hash_json(jsonb_build_array('synthetic-command',slot)),'explorer-safety-reply.v2',
     'synthetic-fallback.v1','synthetic-model-policy.v1',repeat('A',64),lvl::smallint,minor_flag);
 end $$;
@@ -233,23 +277,23 @@ begin
   select * into saved from lifecycle_intent where slot=slot_n;
   if not found then
     select r.authority_context,r.policy_state into a,policy from public.solmind_read_explorer_conversation_v3(
-      pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005)) r;
+      pg_temp.gid(1),pg_temp.gid(50),pg_temp.conv()) r;
     e:=methodology.resolve_effective(pg_temp.gid(1000),pg_temp.gid(23));
     c:=pg_temp.compact(pg_temp.context_value(msg,b));
     select array_agg(distinct id order by id) into src from (
       select unnest(array[pg_temp.gid(52),msg,pg_temp.gid(1001)]) id union all
       select m.ai_interaction_message_id from (select * from ai.ai_interaction_message
-        where ai_interaction_session_id=pg_temp.gid(6005) order by sequence_number desc limit 24) m
+        where ai_interaction_session_id=pg_temp.conv() order by sequence_number desc limit 24) m
       union all select x from unnest(pg_temp.compass_source_ids()) x
     ) selected;
-    insert into lifecycle_intent values(slot_n,(select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005)),
+    insert into lifecycle_intent values(slot_n,(select revision from ai.explorer_conversation_state where conversation_id=pg_temp.conv()),
       b,c,src,a->>'authorizationVersion',(policy->>'version')::bigint,
       case when policy->>'restrictedLevel' is not null or (policy->>'adultReflectionStopped')::boolean or lvl>=3 or minor_flag
         then 'classification_only' else 'classification_and_reply' end,lvl,minor_flag,e->>'contentSha256',e->>'methodologyAuthorizationVersion');
     select * into saved from lifecycle_intent where slot=slot_n;
   end if;
   return query select * from public.solmind_prepare_explorer_conversation_turn_v3(
-    pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),pg_temp.gid(10000+slot_n*10),saved.revision,msg,
+    pg_temp.gid(1),pg_temp.gid(50),pg_temp.conv(),pg_temp.gid(10000+slot_n*10),saved.revision,msg,
     pg_temp.gid(10002+slot_n*10),pg_temp.gid(10003+slot_n*10),coalesce(body_override,saved.body),saved.serialization,
     upper(encode(extensions.digest(convert_to(saved.serialization,'UTF8'),'sha256'),'hex')),saved.source_ids,saved.authority,
     pg_temp.gid(52),pg_temp.gid(1001),'synthetic-prompt.v1','synthetic-policy.v1','synthetic-behavior.v1','synthetic-crisis.v1',
@@ -260,17 +304,18 @@ begin
 end $$;
 create function pg_temp.settle_private(slot_n integer,model integer default 0,minor_flag boolean default false,
   kind text default 'ordinary',body text default 'Synthetic saved reply.',status_name text default 'completed',
-  interested boolean default true,fallback_override integer default null,attention_n integer default null,choices jsonb default null)
+  interested boolean default true,fallback_override integer default null,attention_n integer default null,choices jsonb default null,
+  topics jsonb default null)
 returns table(outcome text,conversation_state jsonb,policy_state jsonb,saved_reply boolean)
 language sql as $$
-  select * from public.solmind_settle_explorer_conversation_turn_v4(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),
+  select * from public.solmind_settle_explorer_conversation_turn_v4(pg_temp.gid(1),pg_temp.gid(50),pg_temp.conv(),
     pg_temp.gid(10000+slot_n*10),status_name,case when kind='none' then null else pg_temp.gid(10005+slot_n*10) end,
     kind,case when kind='none' then null else body end,model::smallint,minor_flag,'explorer-safety-reply.v2',
     (select mode from lifecycle_intent where slot=slot_n),repeat('A',64),'synthetic-fallback.v1',
     'synthetic-model-policy.v1','synthetic-trusted.v1','synthetic-resources.v1',
     coalesce(fallback_override,(select fallback from lifecycle_intent where slot=slot_n))::smallint,
     (select minor from lifecycle_intent where slot=slot_n),interested,
-    case when attention_n is null then null else pg_temp.gid(attention_n) end,choices)
+    case when attention_n is null then null else pg_temp.gid(attention_n) end,choices,null,null,null,null,null,topics)
 $$;
 
 -- Establish the existing synthetic governed source fixture. No provider is called;
@@ -282,6 +327,16 @@ do $$ begin
   if pg_temp.admin_review(1001) is distinct from 'ok' then raise exception 'synthetic_formation_admin_failed'; end if;
   if pg_temp.guide_decision(1001) is distinct from 'ok' then raise exception 'synthetic_formation_guide_failed'; end if;
   if not exists(select 1 from pg_temp.ensure_anchor() where outcome='created') then raise exception 'synthetic_formation_anchor_failed'; end if;
+  -- REV391 (contract Part C): this conversation stands for one that existed before the migration, which the
+  -- migration marks legacy by the column's initial default. A privileged fixture write with only the mode guard
+  -- suspended, and restored at once; never an application path.
+  set constraints ai.explorer_private_state_coherent immediate;
+  set constraints ai.explorer_private_state_coherent deferred;
+  alter table ai.explorer_conversation_state disable trigger explorer_compass_mode_immutable;
+  update ai.explorer_conversation_state set compass_mode='legacy' where conversation_id=pg_temp.gid(6005);
+  set constraints ai.explorer_private_state_coherent immediate;
+  set constraints ai.explorer_private_state_coherent deferred;
+  alter table ai.explorer_conversation_state enable trigger explorer_compass_mode_immutable;
   if not exists(select 1 from pg_temp.prepare_private(1) where outcome='ok' and dispatch_permitted) then raise exception 'synthetic_formation_prepare_failed'; end if;
   if not exists(select 1 from pg_temp.settle_private(1) where outcome='ok' and saved_reply) then raise exception 'synthetic_formation_settle_failed'; end if;
 end $$;
@@ -327,26 +382,42 @@ end $$;
 create trigger synthetic_end_audit_failure before insert on audit.audit_event
   for each row execute function pg_temp.reject_end_audit();
 
--- Real saved formation/Route/Reached state, using only synthetic protocol data.
+-- REV391 (contract B4 and Part C): manual formation, Priority and arrangement are retired, so the saved points,
+-- Priority, attention and arrangement are privileged historical rows of this legacy conversation, written as the
+-- retired commands wrote them (operation rows, revisions and route kinds). Only the formation trigger is
+-- suspended for the point rows and restored before any assertion. Waypoint commands are kept and run for real.
+alter table ai.explorer_conversation_compass_item disable trigger explorer_compass_formation_guard;
+insert into ai.explorer_conversation_compass_item(item_id,conversation_id,source_message_id,label,display_order,compass_anchor,relative_emphasis)
+  values(pg_temp.gid(23001),pg_temp.gid(6005),pg_temp.gid(10011),'First ending Priority',1,'apex',3),
+    (pg_temp.gid(23002),pg_temp.gid(6005),pg_temp.gid(10015),'Independent ending attention',2,'lower_center',1);
+alter table ai.explorer_conversation_compass_item enable trigger explorer_compass_formation_guard;
+insert into ai.explorer_conversation_operation(actor_user_account_id,operation_id,application_session_id,conversation_id,kind,
+  request_fingerprint,command_fingerprint,initial_revision,status,completed_at,compass_route_kind,compass_route_item_id,compass_route_label,compass_arrangement)
+  select pg_temp.gid(1),pg_temp.gid(r.op),pg_temp.gid(50),pg_temp.gid(6005),r.kind,pg_temp.request_sha(r.op),pg_temp.request_sha(r.op),
+    (select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005))+r.n,'completed',clock_timestamp(),
+    r.route_kind,case when r.item is null then null else pg_temp.gid(r.item) end,r.label,
+    case when r.kind='confirm_compass_arrangement' then jsonb_build_object('previousPriorityId',pg_temp.gid(23001),'priorityId',pg_temp.gid(23001),
+      'items',(select jsonb_agg(x.v order by x.id) from (values
+        (pg_temp.gid(23001),jsonb_build_object('compassItemId',pg_temp.gid(23001),'label','First ending Priority','anchor','apex','emphasis',3)),
+        (pg_temp.gid(23002),jsonb_build_object('compassItemId',pg_temp.gid(23002),'label','Independent ending attention','anchor','lower_center','emphasis',1))) x(id,v))) end
+  from (values(0,23001,'add_compass',null,null,null),(1,23002,'add_compass',null,null,null),
+    (2,23101,'confirm_priority','priority_confirmed',23001,'First ending Priority'),
+    (3,23102,'set_attention','attention_changed',23002,'Independent ending attention'),
+    (4,23103,'confirm_compass_arrangement','arrangement_confirmed',null,null)) r(n,op,kind,route_kind,item,label);
+update ai.explorer_conversation_state set priority_id=pg_temp.gid(23001),attention_id=pg_temp.gid(23002),revision=revision+5
+  where conversation_id=pg_temp.gid(6005);
 do $$ begin
-  if not exists(select 1 from pg_temp.mutate(23001,'add_compass',10011,null,null,'First ending Priority') where outcome='ok')
-    then raise exception 'synthetic_end_compass_setup_failed'; end if;
-  if not exists(select 1 from pg_temp.mutate(23002,'add_compass',10015,null,null,'Independent ending attention') where outcome='ok')
-    then raise exception 'synthetic_end_compass_setup_failed'; end if;
-  if not exists(select 1 from pg_temp.mutate(23101,'confirm_priority',null,23001) where outcome='ok')
-    then raise exception 'synthetic_end_priority_setup_failed'; end if;
-  if not exists(select 1 from pg_temp.mutate(23102,'set_attention',null,23002) where outcome='ok')
-    then raise exception 'synthetic_end_attention_setup_failed'; end if;
-  if not exists(select 1 from public.solmind_confirm_explorer_compass_arrangement_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),
-    pg_temp.gid(23103),(select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005)),pg_temp.request_sha(23103),pg_temp.gid(23001),
-    jsonb_build_array(jsonb_build_object('compassItemId',pg_temp.gid(23001),'anchor','apex','emphasis',3),
-      jsonb_build_object('compassItemId',pg_temp.gid(23002),'anchor','lower_center','emphasis',1))) where outcome='ok')
-    then raise exception 'synthetic_end_arrangement_setup_failed'; end if;
   if not exists(select 1 from pg_temp.mutate(23201,'confirm_waypoint',10011,null,null,null,
     'Choose one focus','Make room for deliberate attention','One written step') where outcome='ok')
     then raise exception 'synthetic_end_waypoint_setup_failed'; end if;
   if not exists(select 1 from pg_temp.mutate(23202,'confirm_reached',null,null,23201,null,null,null,null,
     'The written first step is done.') where outcome='ok') then raise exception 'synthetic_end_reached_setup_failed'; end if;
+  -- REV391 (contract B1 item 11): a model needle move cannot override an Explorer move that still awaits its
+  -- first saved reply, so one ordinary legacy Send answers the historical Explorer move before the S4 steps.
+  if not exists(select 1 from pg_temp.prepare_private(9) where outcome='ok' and dispatch_permitted)
+    then raise exception 'synthetic_end_acknowledgment_prepare_failed'; end if;
+  if not exists(select 1 from pg_temp.settle_private(9) where outcome='ok' and saved_reply)
+    then raise exception 'synthetic_end_acknowledgment_settle_failed'; end if;
 end $$;
 select ok(pg_temp.read_state()->>'sessionStatus'='active' and pg_temp.read_state()->'ending'='null'::jsonb,
   'actual active conversation has no invented ending');
@@ -414,6 +485,7 @@ select ok((select ending_route_revision=initial_revision and ending_route_revisi
     and position('First ending Priority' in ending_directions_text)>0
     and position('Independent ending attention' in ending_directions_text)>0
     and position('The saved Route records 5 ' in ending_directions_text)>0
+    and ending_directions_text='The confirmed Priority at the end was "First ending Priority". Current attention was "Independent ending attention". The saved Route records 5 Compass changes. Review that Route for the directions taken.'
   from ai.explorer_conversation_operation where operation_id=pg_temp.gid(25001)),
   'saved factual directions count all five Route events including S4 and keep the exact pre-End boundary');
 select is(pg_temp.ended_state()-array['revision','sessionStatus','ending'],
@@ -462,7 +534,11 @@ select throws_ok($$update ai.explorer_conversation_operation set ending_directio
   where operation_id=pg_temp.gid(23001)$$,'P0001','solmind_explorer_private_immutable','historical non-send row cannot be enriched with ending facts');
 select throws_ok($$update ai.explorer_conversation_operation set ending_directions_text='Invented old ending',ending_route_revision=initial_revision
   where operation_id=pg_temp.gid(10010)$$,'P0001','solmind_explorer_private_immutable','historical model-bound send cannot be enriched with ending facts');
+-- REV391: point labels are immutable now; this privileged fixture write (formation trigger suspended and restored
+-- at once) only stands in for a later label so the captured-text property can still be checked.
+alter table ai.explorer_conversation_compass_item disable trigger explorer_compass_formation_guard;
 update ai.explorer_conversation_compass_item set label='Later synthetic source label' where item_id=pg_temp.gid(23001);
+alter table ai.explorer_conversation_compass_item enable trigger explorer_compass_formation_guard;
 select is(pg_temp.ended_state()->'ending',(select value->'ending' from saved_ended),
   'saved directions are captured text rather than reconstructed from later mutable labels');
 select throws_ok($$select * from public.solmind_read_ended_explorer_conversations_v1(pg_temp.gid(4),pg_temp.gid(54),pg_temp.gid(6005))$$,
@@ -571,6 +647,47 @@ select is((select count(*)::integer from ai.ai_model_invocation),(select invocat
   'all closure-policy, list and review cases create no additional model invocation');
 select is((select count(*)::integer from ai.ai_interaction_message),(select messages from end_effect_before),
   'empty/restricted/adult/unknown/legacy closure and review create no invented message');
+-- REV391 automatic ending. DRAFT WORDING awaiting the product owner's approval (the migration's
+-- automatic_ending_draft "This conversation ended."; contract B4 ending row). An automatic conversation ends
+-- with the draft, then the existing attention and Route sentences; it claims no confirmed Priority and no
+-- forming point. One point is formed through three Sends on the automatic path.
+create function pg_temp.topic(slot_n integer,topic_label text,refs text[],ready boolean default false)
+returns jsonb language sql stable as $$
+  select jsonb_build_object('topicId',(select t.topic_id from ai.explorer_compass_topic t
+      where t.conversation_id=pg_temp.conv() and t.label=topic_label),
+    'label',topic_label,'ready',ready,'supports',coalesce((select jsonb_agg(jsonb_build_object('ref',r,
+      'messageId',case when r='now' then ctx->'immediateExplorerMessage'->>'messageId'
+        else ctx->'currentSessionMessages'->substring(r from 2)::integer->>'messageId' end) order by ord)
+        from unnest(refs) with ordinality f(r,ord)),'[]'::jsonb))
+    from (select serialization::jsonb ctx from lifecycle_intent where slot=slot_n) saved
+$$;
+do $$ declare s integer; begin
+  if not exists(select 1 from pg_temp.ensure_anchor(6106) where outcome='created') then raise exception 'synthetic_auto_end_anchor_failed'; end if;
+  update s4_conv set id=pg_temp.gid(6106);
+  for s in 41..43 loop
+    if not exists(select 1 from pg_temp.prepare_private(s) where outcome='ok' and dispatch_permitted)
+      then raise exception 'synthetic_auto_end_prepare_failed'; end if;
+    if not exists(select 1 from pg_temp.settle_private(s,topics=>jsonb_build_array(
+      pg_temp.topic(s,'Automatic ending topic',array['now'],s=43))) where outcome='ok' and saved_reply)
+      then raise exception 'synthetic_auto_end_settle_failed'; end if;
+  end loop;
+  update s4_conv set id=pg_temp.gid(6005);
+  if (select compass_mode from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6106))<>'automatic'
+    or (select count(*) from ai.explorer_conversation_compass_item where conversation_id=pg_temp.gid(6106) and formation_status='automatic')<>1
+    then raise exception 'synthetic_auto_end_point_failed'; end if;
+end $$;
+select is((select outcome from pg_temp.end_conversation(6106,26106)),'ok','REV391 draft: an automatic conversation may End');
+select is(pg_temp.ended_state(6106)->'ending'->>'directionsTaken',
+  'This conversation ended. Current attention was "Automatic ending topic". The saved Route records 1 Compass changes. Review that Route for the directions taken.',
+  'REV391 draft: the automatic ending begins with the draft and keeps the attention and Route sentences');
+select ok((select position('Priority' in ending_directions_text)=0 and position('forming' in ending_directions_text)=0
+  from ai.explorer_conversation_operation where operation_id=pg_temp.gid(26106)),
+  'REV391 draft: the automatic ending claims no confirmed Priority and no forming point');
+select is((select outcome from pg_temp.ensure_anchor(6107,4,54)),'created','REV391 draft: a second automatic conversation is created empty');
+select is((select outcome from pg_temp.end_conversation(6107,26107,null,4,54)),'ok','REV391 draft: an empty automatic conversation may End');
+select is(pg_temp.ended_state(6107,4,54)->'ending'->>'directionsTaken',
+  'This conversation ended. No current-attention point was chosen. There are no recorded Route changes for this conversation.',
+  'REV391 draft: the empty automatic ending has no Priority or forming claim');
 select ok(has_function_privilege('service_role','public.solmind_end_explorer_conversation_v1(uuid,uuid,uuid,uuid,integer,text)','EXECUTE')
   and has_function_privilege('service_role','public.solmind_read_ended_explorer_conversations_v1(uuid,uuid,uuid)','EXECUTE')
   and not exists(select 1 from (values('anon'),('authenticated')) r(role_name) cross join (values

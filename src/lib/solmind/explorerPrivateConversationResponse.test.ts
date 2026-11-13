@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { EXPLORER_PRIVATE_RESPONSE_VERSION, parseExplorerPrivateConversationResponse } from "./explorerPrivateConversationResponse";
 
 const result = { ok: true, error: null, state: { version: "explorer-conversation.v1", conversationId: null,
+  compassMode: "legacy", compassChanges: [],
   waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true },
   waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: 0 },
   revision: 0, providerState: "unavailable", pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] } };

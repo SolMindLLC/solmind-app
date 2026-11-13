@@ -30,7 +30,8 @@ export type ExplorerConversationCompassItem = Readonly<{
   sourceMessageId: string;
   label: string;
   // Absent on retained fixtures; rejected points never enter browser state.
-  formation?: "saved" | "forming";
+  formation?: "saved" | "forming" | "automatic";
+  topicId?: string;
   // Latest saved Virtual Guide message for forming wording, separate from its original source.
   wordingMessageId?: string;
   anchor?: ExplorerCompassAnchor | null;
@@ -138,7 +139,15 @@ export type ExplorerWaypointProjection = Readonly<{
   hasMore: boolean;
   totalHeads: number;
 }>;
+export type ExplorerCompassChangeBundle = Readonly<{
+  operationId: string; replyMessageId: string; revision: number;
+  changes: readonly Readonly<{ kind: "added"; pointId: string; label: string;
+    anchor: ExplorerCompassAnchor; noticeKind: "early_topic" | "not_yet_clear" }>[];
+}>;
 export type ExplorerConversationState = Readonly<{
+  // Optional on retained in-memory fixtures; parsed results always supply both.
+  compassMode?: "legacy" | "automatic";
+  compassChanges?: readonly ExplorerCompassChangeBundle[];
   version: typeof EXPLORER_CONVERSATION_VERSION;
   conversationId: string | null;
   revision: number;
@@ -535,10 +544,13 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
   }
   if (value.ok !== true || value.error !== null || !object(value.state)) return null;
   const state = value.state;
+  const hasCompassMode = Object.hasOwn(state, "compassMode") || Object.hasOwn(state, "compassChanges");
+  const compassMode = hasCompassMode ? state.compassMode : "legacy";
+  if (compassMode !== "legacy" && compassMode !== "automatic") return null;
   const hasRoute = Object.hasOwn(state, "route");
   const hasLifecycle = Object.hasOwn(state, "sessionStatus") || Object.hasOwn(state, "ending");
   const hasSuggestionReplies = Object.hasOwn(state, "compassSuggestionReplies");
-  if (!keys(state, ["version", "conversationId", "revision", "pendingTurn", "turnedDownLimitReached", "providerState", "messages", "compassItems", "priorityId", "attentionId", "waypoints", "waypointDraft", "waypointCapacity", "waypointProjection", ...(hasRoute ? ["route"] : []), ...(hasLifecycle ? ["sessionStatus", "ending"] : []), ...(hasSuggestionReplies ? ["compassSuggestionReplies"] : [])]) ||
+  if (!keys(state, ["version", "conversationId", "revision", "pendingTurn", "turnedDownLimitReached", "providerState", "messages", "compassItems", "priorityId", "attentionId", "waypoints", "waypointDraft", "waypointCapacity", "waypointProjection", ...(hasRoute ? ["route"] : []), ...(hasLifecycle ? ["sessionStatus", "ending"] : []), ...(hasSuggestionReplies ? ["compassSuggestionReplies"] : []), ...(hasCompassMode ? ["compassMode", "compassChanges"] : [])]) ||
       state.version !== EXPLORER_CONVERSATION_VERSION || !revision(state.revision) ||
       typeof state.pendingTurn !== "boolean" ||
       typeof state.turnedDownLimitReached !== "boolean" ||
@@ -589,15 +601,24 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
   const compassItems: ExplorerConversationCompassItem[] = [];
   const compassIds = new Set<string>();
   const anchors = new Set<ExplorerCompassAnchor>();
+  const topicIds = new Set<string>();
   for (const item of state.compassItems) {
     if (!object(item)) return null;
     const hasLayout = Object.hasOwn(item, "anchor") || Object.hasOwn(item, "emphasis");
     const hasMerge = Object.hasOwn(item, "mergedIntoItemId");
     const hasFormation = Object.hasOwn(item, "formation");
     const hasWordingMessage = Object.hasOwn(item, "wordingMessageId");
-    if (!keys(item, ["id", "sourceMessageId", "label", ...(hasLayout ? ["anchor", "emphasis"] : []), ...(hasMerge ? ["mergedIntoItemId"] : []), ...(hasFormation ? ["formation"] : []), ...(hasWordingMessage ? ["wordingMessageId"] : [])]) || !id(item.id) || compassIds.has(item.id) ||
+    const hasTopic = Object.hasOwn(item, "topicId");
+    if (!keys(item, ["id", "sourceMessageId", "label", ...(hasLayout ? ["anchor", "emphasis"] : []), ...(hasMerge ? ["mergedIntoItemId"] : []), ...(hasFormation ? ["formation"] : []), ...(hasWordingMessage ? ["wordingMessageId"] : []), ...(hasTopic ? ["topicId"] : [])]) || !id(item.id) || compassIds.has(item.id) ||
         !id(item.sourceMessageId) || !messageIds.has(item.sourceMessageId) || !text(item.label, EXPLORER_CONVERSATION_LIMITS.labelCharacters)) return null;
-    if (hasFormation && item.formation !== "saved" && item.formation !== "forming") return null;
+    if (hasFormation && item.formation !== "saved" && item.formation !== "forming" && item.formation !== "automatic") return null;
+    if (item.formation === "automatic") {
+      if (compassMode !== "automatic" || !id(item.topicId) || topicIds.has(item.topicId) || item.topicId === item.id ||
+          item.label !== item.label.trim() || /[\r\n\u2028\u2029]/u.test(item.label) ||
+          item.anchor == null || !anchor(item.anchor) || item.emphasis !== 1 || item.mergedIntoItemId != null || hasWordingMessage ||
+          !messages.some(message => message.id === item.sourceMessageId && message.role === "virtualGuide")) return null;
+      topicIds.add(item.topicId);
+    } else if (hasTopic || compassMode === "automatic") return null;
     if (hasWordingMessage && (item.formation !== "forming" || !isExplorerConversationId(item.wordingMessageId) ||
         !messages.some(message => message.id === item.wordingMessageId && message.role === "virtualGuide"))) return null;
     if (hasMerge && !(item.mergedIntoItemId === null || isExplorerConversationId(item.mergedIntoItemId))) return null;
@@ -612,9 +633,45 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
       ...(hasLayout ? { anchor: item.anchor as ExplorerCompassAnchor | null, emphasis: item.emphasis as 1 | 2 | 3 | null } : {}),
       ...(hasMerge ? { mergedIntoItemId: item.mergedIntoItemId as string | null } : {}),
       ...(hasWordingMessage ? { wordingMessageId: item.wordingMessageId as string } : {}),
-      ...(hasFormation ? { formation: item.formation as "saved" | "forming" } : {}) }));
+      ...(hasFormation ? { formation: item.formation as ExplorerConversationCompassItem["formation"] } : {}),
+      ...(hasTopic ? { topicId: item.topicId as string } : {}) }));
   }
-  if (!mergeGraphValid(compassItems)) return null;
+  if (!mergeGraphValid(compassItems) || [...topicIds].some(topic => compassIds.has(topic) || messageIds.has(topic)) ||
+      (compassMode === "automatic" && (state.priorityId !== null || compassItems.length > 8))) return null;
+  const compassChanges: ExplorerCompassChangeBundle[] = [];
+  const bundleOperations = new Set<string>(), bundleReplies = new Set<string>(), addedPoints = new Set<string>();
+  let previousBundleRevision = 0, previousReplyIndex = -1;
+  if (hasCompassMode) {
+    if (!Array.isArray(state.compassChanges) || state.compassChanges.length > 24 ||
+        (compassMode === "legacy" && state.compassChanges.length !== 0)) return null;
+    for (const bundle of state.compassChanges) {
+      if (!object(bundle) || !keys(bundle, ["operationId", "replyMessageId", "revision", "changes"]) ||
+          !id(bundle.operationId) || !id(bundle.replyMessageId) || bundleOperations.has(bundle.operationId) ||
+          bundleReplies.has(bundle.replyMessageId) || !revision(bundle.revision) || bundle.revision < 2 ||
+          bundle.revision <= previousBundleRevision || bundle.revision > state.revision ||
+          !Array.isArray(bundle.changes) || bundle.changes.length < 1 || bundle.changes.length > 3) return null;
+      const replyIndex = messages.findIndex(message => message.id === bundle.replyMessageId && message.role === "virtualGuide");
+      if (replyIndex <= previousReplyIndex) return null;
+      const changes: ExplorerCompassChangeBundle["changes"][number][] = [];
+      const bundleAnchors = new Set<string>();
+      for (const change of bundle.changes) {
+        if (!object(change) || !keys(change, ["kind", "pointId", "label", "anchor", "noticeKind"]) ||
+            change.kind !== "added" || !id(change.pointId) || addedPoints.has(change.pointId) || change.anchor == null || !anchor(change.anchor) ||
+            bundleAnchors.has(change.anchor) || (change.noticeKind !== "early_topic" && change.noticeKind !== "not_yet_clear")) return null;
+        const point = compassItems.find(item => item.id === change.pointId);
+        if (point?.formation !== "automatic" || point.label !== change.label || point.anchor !== change.anchor ||
+            point.sourceMessageId !== bundle.replyMessageId) return null;
+        addedPoints.add(change.pointId); bundleAnchors.add(change.anchor);
+        changes.push(Object.freeze({ kind: "added", pointId: change.pointId, label: point.label, anchor: change.anchor,
+          noticeKind: change.noticeKind as "early_topic" | "not_yet_clear" }));
+      }
+      bundleOperations.add(bundle.operationId); bundleReplies.add(bundle.replyMessageId);
+      previousBundleRevision = bundle.revision; previousReplyIndex = replyIndex;
+      compassChanges.push(Object.freeze({ operationId: bundle.operationId, replyMessageId: bundle.replyMessageId,
+        revision: bundle.revision, changes: Object.freeze(changes) }));
+    }
+  }
+  if (compassItems.some(point => point.formation === "automatic" && !addedPoints.has(point.id))) return null;
   const currentCompass = compassItems.filter(item => item.mergedIntoItemId == null);
   const currentCompassIds = new Set(currentCompass.map(item => item.id));
   if (!(state.priorityId === null || (id(state.priorityId) && currentCompassIds.has(state.priorityId))) ||
@@ -635,6 +692,8 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
   }
   if (!waypointLineageValid(waypoints)) return null;
   const waypointDraft = parseExplorerConversationWaypointDraft(state.waypointDraft);
+  if ([...topicIds].some(topic => waypointIds.has(topic)) ||
+      (waypointDraft != null && topicIds.has(waypointDraft.id))) return null;
   if (waypointDraft === undefined || (waypointDraft !== null &&
       (state.conversationId === null || waypointIds.has(waypointDraft.id) || compassIds.has(waypointDraft.id) ||
         !messages.some(message => message.id === waypointDraft.suggestionMessageId && message.role === "virtualGuide")))) return null;
@@ -718,6 +777,7 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
     pendingTurn: state.pendingTurn,
     turnedDownLimitReached: state.turnedDownLimitReached,
     providerState: state.providerState as ExplorerConversationState["providerState"], messages: Object.freeze(messages),
+    compassMode, compassChanges: Object.freeze(compassChanges),
     compassItems: Object.freeze(compassItems), priorityId: state.priorityId as string | null,
     attentionId: state.attentionId as string | null, waypoints: Object.freeze(waypoints), waypointDraft,
     waypointCapacity, waypointProjection,

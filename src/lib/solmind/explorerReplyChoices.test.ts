@@ -74,8 +74,8 @@ describe("one group of buttons per reply (2026-11-10, item 14)", () => {
   const draft = { id: "50000000-0000-4000-8000-000000000001", title: "Calm mornings", destination: "An unhurried morning",
     whyItMatters: "Time with my family", arrivalSignal: "A calm breakfast", suggestionMessageId: GUIDE_MESSAGE };
 
-  it("holds the choices back when the same reply suggests a forming Compass point", () => {
-    expect(latestReplyChoices(state({ compassItems: forming(GUIDE_MESSAGE) }))).toBeNull();
+  it("offers choices even when a legacy forming Compass point names the same reply", () => {
+    expect(latestReplyChoices(state({ compassItems: forming(GUIDE_MESSAGE) }))).toEqual(latestReplyChoices(state()));
   });
 
   it("holds the choices back when the same reply carries a forming Waypoint draft", () => {

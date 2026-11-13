@@ -106,15 +106,17 @@ describe("provider-held pure Explorer exclusion matcher (synthetic data)", () =>
 
   it("S3: inspects the saved Compass and Waypoint section's strings and refuses unknown root keys", () => {
     const base = JSON.parse(fixture().serializedContext) as Record<string, unknown>;
-    const section = { version: "explorer-compass-context.v7",
+    const section = { version: "explorer-compass-context.v8", mode: "legacy_read_only", topics: [],
+      messageRefs: { history: (base.currentSessionMessages as { role: string; order: number }[]).filter(message => message.role === "explorer").map(message => ({ ref: `h${message.order}`, order: message.order })), immediate: "now" },
+      capacity: { originalsRemaining: 0, topicSlotsRemaining: 0, visibleSlotsRemaining: 0 },
       points: [{ id: id(8), label: "A saved synthetic point", order: 0, formation: "saved", anchor: null, emphasis: null }],
-      priorityId: null, attentionId: id(8), recentRoute: [{ kind: "attention_changed", pointId: id(8), label: "A saved synthetic point" }],
+      priorityId: null, attentionId: id(8), recentRoute: [{ kind: "attention_changed", actor: "explorer", awaitingReply: false, pointId: id(8), label: "A saved synthetic point" }],
       waypoints: [{ id: id(9), title: "Synthetic", destination: "Synthetic", meaning: "Synthetic meaning", arrivalSignal: "Synthetic signal",
         stage: "formed", reachedEvidence: null }], drafts: [], immediateMessageIsReplyChoice: false };
     const withSection = (value: unknown) => {
       const ordered: Record<string, unknown> = {};
       for (const [key, part] of Object.entries(base)) { ordered[key] = part; if (key === "approvedContinuity") ordered.compassContext = value; }
-      return JSON.stringify({ ...ordered, contractVersion: "wi007-v0.1+onboarding-fields-v2+compass-v7" });
+      return JSON.stringify({ ...ordered, contractVersion: "wi007-v0.1+onboarding-fields-v2+compass-v8" });
     };
     const clean = fixture(); clean.serializedContext = withSection(section);
     expect(inspectExplorerContextExclusions(clean)).toEqual({ status: "clear" });
@@ -122,7 +124,7 @@ describe("provider-held pure Explorer exclusion matcher (synthetic data)", () =>
       waypoints: [{ ...section.waypoints[0], meaning: PRIVATE_CANARY }] });
     expect(inspectExplorerContextExclusions(dirty)).toEqual(blocked("excluded_content"));
     const label = fixture(); label.serializedContext = withSection({ ...section,
-      points: [{ ...section.points[0], label: PRIVATE_CANARY }] });
+      points: [{ ...section.points[0], label: PRIVATE_CANARY }], recentRoute: [{ ...section.recentRoute[0], label: PRIVATE_CANARY }] });
     expect(inspectExplorerContextExclusions(label)).toEqual(blocked("excluded_content"));
     const other = fixture(); other.serializedContext = JSON.stringify({ ...base, otherContext: section });
     unavailable(other);

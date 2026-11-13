@@ -56,14 +56,17 @@ type Authority = {
   onboardingStatus: "active"; adultAffirmation: true; authorizationVersion: string;
   onboarding: { responseId: string; answers: Record<string, string> };
   requiredConsentDocumentIds: string[];
+  compassEvidence?: readonly { id: string; label: string; pointId: string | null; supportingMessageIds: readonly string[] }[];
   formingAttentionMove?: { pointId: string | null; revision: number; recordedAt: string };
 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const FIELDS = EXPLORER_ONBOARDING_CONTINUITY_FIELDS;
 const REQUIRED_FIELDS = new Set(SOLMIND_EXPLORER_STRUCTURED_FORM_FIELDS.filter(field => field.required).map(field => field.key));
 function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value) &&
-    [Object.prototype, null].includes(Object.getPrototypeOf(value));
+  return value !== null && typeof value === "object" && !types.isProxy(value) && !Array.isArray(value) &&
+    [Object.prototype, null].includes(Object.getPrototypeOf(value)) &&
+    Reflect.ownKeys(value).every(key => typeof key === "string" && Object.getOwnPropertyDescriptor(value, key)?.enumerable &&
+      "value" in (Object.getOwnPropertyDescriptor(value, key) ?? {}));
 }
 function exact(value: Record<string, unknown>, names: readonly string[]): boolean {
   return Object.keys(value).length === names.length && names.every((name) => Object.hasOwn(value, name));
@@ -74,7 +77,7 @@ function authority(value: unknown, expectedContract: "AV2" | "AV3" = "AV2"): Aut
   const hasFormingMove = record(value) && Object.hasOwn(value, "formingAttentionMove");
   if (!record(value) || !exact(value, [...ids, "applicationSessionExpiresAt", "relationshipStatus", "onboardingStatus",
     "adultAffirmation", "authorizationVersion", "onboarding", "requiredConsentDocumentIds",
-    ...(hasFormingMove ? ["formingAttentionMove"] : [])]) ||
+    ...(hasFormingMove ? ["formingAttentionMove"] : []), ...(expectedContract === "AV3" ? ["compassEvidence"] : [])]) ||
     !ids.every((key) => typeof value[key] === "string" && UUID.test(value[key] as string)) ||
     !["active", "paused"].includes(value.relationshipStatus as string) || value.onboardingStatus !== "active" ||
     value.adultAffirmation !== true || typeof value.authorizationVersion !== "string" ||
@@ -95,6 +98,23 @@ function authority(value: unknown, expectedContract: "AV2" | "AV3" = "AV2"): Aut
         typeof move.revision !== "number" || !Number.isSafeInteger(move.revision) || move.revision < 1 || move.revision > 2_147_483_647 ||
         typeof move.recordedAt !== "string" || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?(?:Z|\+00:00)$/.test(move.recordedAt) ||
         !Number.isFinite(Date.parse(move.recordedAt)) || new Date(move.recordedAt).toISOString().slice(0, 19) !== move.recordedAt.slice(0, 19)) invalid();
+  }
+  if (expectedContract === "AV3") {
+    if (!Array.isArray(value.compassEvidence) || types.isProxy(value.compassEvidence) || value.compassEvidence.length > 24) invalid();
+    const topics = new Set<string>(), labels = new Set<string>(), points = new Set<string>();
+    for (const entry of value.compassEvidence) {
+      if (!record(entry) || !exact(entry, ["id", "label", "pointId", "supportingMessageIds"]) ||
+          typeof entry.id !== "string" || !UUID.test(entry.id) || topics.has(entry.id) ||
+          typeof entry.label !== "string" || !entry.label || entry.label !== entry.label.trim() || entry.label.length > 160 ||
+          labels.has(entry.label) || !(entry.pointId === null || (typeof entry.pointId === "string" && UUID.test(entry.pointId))) ||
+          (entry.pointId !== null && points.has(entry.pointId as string)) || !Array.isArray(entry.supportingMessageIds) ||
+          types.isProxy(entry.supportingMessageIds) || entry.supportingMessageIds.length < 1 || entry.supportingMessageIds.length > 3 ||
+          !entry.supportingMessageIds.every(id => typeof id === "string" && UUID.test(id)) ||
+          new Set(entry.supportingMessageIds).size !== entry.supportingMessageIds.length ||
+          (entry.pointId !== null && entry.supportingMessageIds.length !== 3)) invalid();
+      topics.add(entry.id); labels.add(entry.label);
+      if (entry.pointId !== null) points.add(entry.pointId as string);
+    }
   }
   return structuredClone(value) as Authority;
 }
@@ -124,20 +144,22 @@ function pointRouteEvent(event: RouteEvent): event is PointRouteEvent {
 function comparableInstant(value: string): string {
   return value.slice(0, 19) + "." + (/\.(\d{1,6})/.exec(value)?.[1] ?? "").padEnd(6, "0");
 }
-// Chat step slice S3 (Paul's decision 4, decision queue 2026-11-03 12:38:07 CST; go-ahead
-// 20:50:45 CST): the saved Compass and Waypoint section, taken from the state the final
-// read returned. The safe assembler validates it, and
-// supabase/migrations/20261106010000_explorer_reply_choice_voice.sql rebuilds it from the
-// saved rows and compares it exactly before any provider call. Current points only (not
-// combined away), in saved display order; the saved Priority and attention (the needle
-// may be on an unplaced point); the last five needle moves (attention_changed) on a
-// current point, oldest first, each with that point's current label, never the label
-// the Route captured, which may be wording from before a rename (Priority changes,
-// arrangement and category events and their before-labels are never model context);
-// at most twenty current Waypoint heads and the current proposed private Waypoint draft.
-function compassContext(state: ConversationState, formingMove: Authority["formingAttentionMove"],
+// REV391 v8 is rebuilt independently by 20261111000000_explorer_automatic_compass_v1.sql.
+// Only current non-forming points enter, in saved display order; Priority is null.
+// Private topic evidence supplies counts and exact-window references without old bodies.
+// The last five eligible needle moves use current labels, never historical snapshots.
+// Waypoint selection, the forming Waypoint draft and choice verification stay unchanged.
+function compassContext(state: ConversationState, formingMove: Authority["formingAttentionMove"], evidence: NonNullable<Authority["compassEvidence"]>,
   command: Parameters<ExplorerConversationContextBuilder>[0]["command"]) {
-  const points = state.compassItems.filter((item) => item.mergedIntoItemId == null);
+  const points = state.compassItems.filter((item) => item.mergedIntoItemId == null && item.formation !== "forming");
+  const automatic = state.compassMode === "automatic";
+  if (!automatic && evidence.length !== 0) invalid();
+  const history = state.messages.slice(-24);
+  const refs = history.flatMap((message, order) => message.role === "explorer" ? [{ ref: "h" + order, order }] : []);
+  for (const topic of evidence) {
+    if (topic.supportingMessageIds.some(id => !state.messages.some(message => message.id === id && message.role === "explorer")) ||
+        (topic.pointId !== null && !points.some(point => point.id === topic.pointId && point.topicId === topic.id && point.label === topic.label))) invalid();
+  }
   const currentLabels = new Map(points.filter((item) => item.formation !== "forming").map((item) => [item.id, item.label]));
   const moves = (state.route ?? []).filter(pointRouteEvent);
   const latestMove = moves.at(-1);
@@ -152,7 +174,7 @@ function compassContext(state: ConversationState, formingMove: Authority["formin
     preceding.choices?.filter(choice => choice.label === command.body).length === 1;
   const lastReplyAt = state.messages.filter((message) => message.role === "virtualGuide")
     .map((message) => comparableInstant(message.createdAt)).sort().at(-1);
-  const formingPoint = formingMove === undefined ? undefined : points.find(point => point.id === formingMove.pointId);
+  const formingPoint = formingMove === undefined ? undefined : state.compassItems.find(point => point.id === formingMove.pointId);
   if (formingMove !== undefined) {
     // A rejected latest move retains only its chronology, preventing an older
     // acknowledgment from resurfacing without exposing the rejected point id.
@@ -168,13 +190,10 @@ function compassContext(state: ConversationState, formingMove: Authority["formin
     // Only the next saved reply may acknowledge the latest Explorer move. A tie
     // is deliberately ineligible, and a newer move on a retired point still wins.
     const awaitingReply = formingMove === undefined && actor === "explorer" && event === latestMove &&
+      event.compassItemId === state.attentionId && currentLabels.has(event.compassItemId) &&
       (lastReplyAt === undefined || comparableInstant(event.recordedAt) > lastReplyAt);
     return label === undefined ? [] : [{ kind: event.kind, pointId: event.compassItemId, label, actor, awaitingReply }];
   });
-  // Only the fresh server read can supply this label-free operation projection.
-  // The next-reply signal uses current wording without creating a saved Route event.
-  if (formingMove !== undefined && formingPoint !== undefined) recentRoute.push({ kind: "attention_changed",
-    pointId: formingPoint.id, label: formingPoint.label, actor: "explorer", awaitingReply: true });
   // The partial projection marks current heads authoritatively. Missing successors
   // never establish currentness. Match SQL: active first, newest creation instant
   // first within each group, then UUID ascending, including microsecond ties.
@@ -191,11 +210,17 @@ function compassContext(state: ConversationState, formingMove: Authority["formin
   return {
     section: {
       version: EXPLORER_COMPASS_CONTEXT_VERSION,
+      mode: automatic ? "automatic" : "legacy_read_only",
+      topics: evidence.map(topic => ({ id: topic.id, label: topic.label, pointId: topic.pointId,
+        supportCount: topic.supportingMessageIds.length, countedRefs: refs.filter(ref =>
+          topic.supportingMessageIds.includes(history[ref.order].id)).map(ref => ref.ref) })),
+      messageRefs: { history: refs, immediate: "now" },
+      capacity: { originalsRemaining: automatic ? Math.max(0, 24 - state.compassItems.length) : 0,
+        topicSlotsRemaining: automatic ? Math.max(0, 24 - evidence.length) : 0,
+        visibleSlotsRemaining: automatic ? Math.max(0, 8 - points.length) : 0 },
       points: points.map((item, order) => ({ id: item.id, label: item.label, order, formation: item.formation ?? "saved",
-        anchor: item.anchor ?? null, emphasis: item.emphasis ?? null,
-        ...(item.formation === "forming" ? { suggestedInPreviousReply:
-          previousReplyId !== undefined && item.wordingMessageId === previousReplyId } : {}) })),
-      priorityId: state.priorityId, attentionId: state.attentionId,
+        anchor: item.anchor ?? null, emphasis: item.emphasis ?? null })),
+      priorityId: null, attentionId: points.some(point => point.id === state.attentionId) ? state.attentionId : null,
       recentRoute: recentRoute.slice(-EXPLORER_SAFE_CONTEXT_LIMITS.compassRouteEventCount),
       waypoints: heads.map((waypoint) => ({ id: waypoint.id, title: waypoint.title,
         destination: waypoint.destination, meaning: waypoint.meaning, arrivalSignal: waypoint.arrivalSignal,
@@ -207,7 +232,8 @@ function compassContext(state: ConversationState, formingMove: Authority["formin
           previousReplyId !== undefined && state.waypointDraft.suggestionMessageId === previousReplyId }],
       immediateMessageIsReplyChoice,
     },
-    sourceIds: [...points.map((item) => item.id), ...heads.map((waypoint) => waypoint.id),
+    messageSourceIds: [...new Set(evidence.flatMap(topic => topic.supportingMessageIds))],
+    sourceIds: [...evidence.map(topic => topic.id), ...points.map((item) => item.id), ...heads.map((waypoint) => waypoint.id),
       ...(state.waypointDraft === null ? [] : [state.waypointDraft.id])],
   };
 }
@@ -238,7 +264,7 @@ function createConversationContextBuilder(input: ConversationContextBuilderInput
     const recent = state.messages.slice(-24);
     // Classification-only AV3 omits the section and its sources before assembly and hashing; AV2 is unchanged.
     const compass = authorizationContract === "AV3" && mode === "classification_and_reply"
-      ? compassContext(state, facts.formingAttentionMove, command) : undefined;
+      ? compassContext(state, facts.formingAttentionMove, facts.compassEvidence ?? [], command) : undefined;
     const contextInput = {
       contractVersion: compass === undefined ? EXPLORER_CONVERSATION_CONTEXT_SELECTION_VERSION
         : EXPLORER_PRIVATE_CONVERSATION_CONTEXT_SELECTION_VERSION,
@@ -282,9 +308,12 @@ function createConversationContextBuilder(input: ConversationContextBuilderInput
     });
     // Every record the context includes is listed: the current points and Waypoint heads join
     // the private sources (the database rebuilds the same set and refuses cross-kind reuse).
-    const sourceIds = [...new Set([ids.messageId, facts.onboarding.responseId,
-      config.methodologyContextPackVersionId, ...recent.map((message) => message.id),
-      ...(compass === undefined ? [] : compass.sourceIds)])].sort();
+    const messageSources = [...new Set([ids.messageId, ...recent.map(message => message.id),
+      ...(compass?.messageSourceIds ?? [])])];
+    const allSources = [facts.onboarding.responseId, config.methodologyContextPackVersionId,
+      ...messageSources, ...(compass?.sourceIds ?? [])];
+    if (new Set(allSources).size !== allSources.length || allSources.length > 168) invalid();
+    const sourceIds = allSources.sort();
     return Object.freeze({ request: composed.conversationRequest, evidence: Object.freeze({
       p_context_source_ids: Object.freeze(sourceIds), p_authorization_version: facts.authorizationVersion,
       p_intake_response_set_id: facts.onboarding.responseId,

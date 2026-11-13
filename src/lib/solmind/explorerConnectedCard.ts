@@ -19,7 +19,7 @@
 // 16:20:29 CST, and his "Yes, tap the dial" at 16:24:39 CST): the card shows
 // one view at a time. The Full view is the dial, where each point drawn on it
 // points the needle; the Compact view is the point list. Both show the
-// Priority and Current attention lines.
+// muted needle-target line.
 //
 // The chat card redesign (Paul's design and decision, decision queue
 // 2026-11-03 18:05:33 CST): the needle may point at any current point, placed
@@ -63,8 +63,7 @@ export type CardCompassPoint = Readonly<{
   id: string;
   label: string;
   place: CardCompassPlace;
-  // Where the dial draws it. The Priority is always drawn at the top, also
-  // before any arrangement; points without a position are not drawn.
+  // Only a saved anchor places a point on the dial.
   dialAnchor: ExplorerCompassAnchor | null;
   isPriority: boolean;
   isAttention: boolean;
@@ -88,15 +87,18 @@ function placeOf(anchor: ExplorerCompassAnchor | null | undefined, emphasis: num
 }
 
 export function connectedCompass(state: ExplorerConversationState): CardCompass {
-  const heads = currentCompassHeads(state);
+  const heads = currentCompassHeads(state).filter((item) =>
+    state.compassMode === "automatic"
+      ? item.formation === "automatic" && item.anchor != null
+      : item.formation !== "forming");
   const arranged = heads.some((item) => item.emphasis != null);
   const mapped = heads.map((item): CardCompassPoint => {
     const place = placeOf(item.anchor, item.emphasis);
-    const isPriority = item.id === state.priorityId;
+    const isPriority = false;
     const isAttention = item.id === state.attentionId;
-    const dialAnchor = place === "unarranged" || place === "otherPaths" ? (isPriority ? "apex" : null) : place;
+    const dialAnchor = place === "unarranged" || place === "otherPaths" ? null : place;
     const needle: CardNeedleChoice = isAttention ? "current" : "available";
-    return freeze({ id: item.id, label: item.label, place, dialAnchor, isPriority, isAttention, isForming: item.formation === "forming", needle });
+    return freeze({ id: item.id, label: item.label, place, dialAnchor, isPriority, isAttention, isForming: false, needle });
   });
   const rank = (point: CardCompassPoint) =>
     point.dialAnchor !== null
@@ -114,7 +116,7 @@ export function connectedCompass(state: ExplorerConversationState): CardCompass 
   });
 }
 
-// The names of the 8 positions, as the current tools name them, with an
+// The names of the 8 positions, as the saved review names them, with an
 // ASCII comma instead of their dash.
 export const COMPASS_POSITION_NAMES: Readonly<Record<ExplorerCompassAnchor, string>> = freeze({
   apex: "Top position",
@@ -129,7 +131,6 @@ export const COMPASS_POSITION_NAMES: Readonly<Record<ExplorerCompassAnchor, stri
 
 // The short line under a point in the list.
 export function compassPlaceText(point: CardCompassPoint): string {
-  if (point.isPriority) return "Priority";
   if (point.place === "unarranged") return "Not yet arranged";
   if (point.place === "otherPaths") return "Other paths";
   return COMPASS_POSITION_NAMES[point.place];
@@ -215,13 +216,12 @@ export function describeConnectedCompass(compass: CardCompass): string {
   const parts: string[] = [];
   for (const point of dialPoints(compass)) {
     if (point.dialAnchor === null) continue;
-    parts.push(`${point.isPriority ? "Priority" : COMPASS_POSITION_NAMES[point.dialAnchor]}: ${point.label}${point.isForming ? " (Forming)" : ""}.`);
+    parts.push(`${COMPASS_POSITION_NAMES[point.dialAnchor]}: ${point.label}.`);
   }
-  if (compass.priority === null) parts.push("No Priority is confirmed yet.");
   for (const entry of bottomRow(compass)) {
     parts.push(
       entry.kind === "point"
-        ? `${compassPlaceText(entry.point)}: ${entry.point.label}${entry.point.isForming ? " (Forming)" : ""}.`
+        ? `${compassPlaceText(entry.point)}: ${entry.point.label}.`
         : `${entry.count} more ${entry.count === 1 ? "point is" : "points are"} listed in the Compact view.`,
     );
   }
@@ -244,23 +244,18 @@ export type CardCompassView = "full" | "compact";
 
 // The dashed needle (Paul's design, 2026-11-03): a needle on a point without
 // a position is drawn dashed with the yellow symbol at its tip. It is a
-// button; a tap shows one short sentence, and the next tap hides it. In the
-// narrow drawer the current tools are behind the panel, so the sentence says
-// so; after End the tools are read-only, so it gives no instruction.
+// button; a tap shows one short sentence, and the next tap hides it. Legacy
+// placement is read-only, so the explanation gives no editing instruction.
 export const DASHED_NEEDLE_WORDING = freeze({
   button: "Why the needle is dashed",
-  unarranged: "This point isn't placed on your Compass yet. To place it, use Review Compass arrangement in your current tools.",
-  unarrangedDrawer:
-    "This point isn't placed on your Compass yet. To place it, close this panel, then use Review Compass arrangement in your current tools.",
   unarrangedEnded: "This point isn't placed on your Compass.",
   otherPaths: "This point is in Other paths, off your Compass.",
 });
 
-export function dashedNeedleText(point: CardCompassPoint, inDrawer: boolean, ended: boolean): string {
+export function dashedNeedleText(point: CardCompassPoint): string {
   const W = DASHED_NEEDLE_WORDING;
   if (point.place === "otherPaths") return W.otherPaths;
-  if (ended) return W.unarrangedEnded;
-  return inDrawer ? W.unarrangedDrawer : W.unarranged;
+  return W.unarrangedEnded;
 }
 
 // Why no point can take the needle right now, if anything holds it. Each
@@ -301,6 +296,7 @@ export function pointNeedleIntent(
   itemId: string,
 ): ExplorerConversationFormationIntent | null {
   if (state.conversationId === null || needleHold(state, flags) !== null) return null;
+  if (!connectedCompass(state).points.some(point => point.id === itemId)) return null;
   const result = buildAttentionFormationIntent(state, itemId);
   return result.ok ? result.command : null;
 }
@@ -311,11 +307,8 @@ export const CONNECTED_COMPASS_WORDING = freeze({
   emptyLead: "Discovering what matters",
   empty: "No Compass point is saved yet. Your Compass can stay empty while you explore.",
   notLoaded: "Your saved Compass is shown here when your saved conversation is available.",
-  priorityTerm: "Priority:",
-  priorityNone: "None confirmed yet",
-  priorityConfirmed: "(confirmed by you)",
-  needleTerm: "Current attention:",
-  needleNone: "No point chosen yet",
+  // Draft label for Paul's wording read, 2026-11-11.
+  needleTerm: "Pointing to:",
   // Paul's words (2026-11-03): "Just say "Point the needle to change topic"."
   // The instruction sentence under it and the placement paragraph are gone.
   chooseHeading: "Point the needle to change topic",
@@ -323,8 +316,6 @@ export const CONNECTED_COMPASS_WORDING = freeze({
   unarrangedGroup: "Not yet arranged",
   otherPathsGroup: "Other paths",
   needleHere: "The needle points here",
-  forming: "Forming",
-  apexNotPriority: "Not your Priority until you confirm it",
   // The view switch: its visible label names the view it switches to, and
   // screen readers hear " of the Compass" after it.
   compactViewButton: "Compact view",

@@ -8,6 +8,115 @@ This version has breaking changes - APIs, conventions, and file structure may al
 
 # SolMind App Agent Instructions
 
+## 2026-11-12 - Approved conclusion instructions (REV399)
+
+Paul approved the automatic Compass wording and the 24 conclusion sentences
+on 2026-11-12 at 18:38 CST. The role text and ordinary request instructions now
+carry those sentences once, in order, where the earlier listening sentence
+stood. The listed Waypoint-offer and rejection wording is replaced; the
+Close, not quite guidance stays. The two once-per-sitting topic-return
+sentences were already absent. All other instruction wording stays, including
+the automatic Compass, safety, consent, one-question and five-Waypoint rules.
+The conclusion block is ordinary-only; the classification-only request text
+and global policy remain byte-identical. All five 20261111-ac1 labels stay.
+The role is 15,611 characters/UTF-8 bytes, below the existing 20,000-character
+limit; the ordinary request instructions are 14,254 characters/UTF-8 bytes.
+Embedded and test hashes, byte counts and welcome-subtraction pins move
+together. No migration, provider activation or application gate changes.
+
+## 2026-11-12 - Automatic Compass: independent review fixes
+
+The one independent Claude review of the automatic Compass passed after fixes
+on 2026-11-12, and the same reviewer confirmed them. This section records what
+they changed; it supersedes the REV391 section below where the two differ.
+
+A reply may move the needle to a current point that has no place on the dial
+only in a legacy conversation (the rule of 2026-11-03). The automatic view
+requires a placed point. Forming points stay excluded in both. Settlement
+(st.compass_mode) and explorerPrivateConversationComposition.ts
+(state.compassMode) apply the same rule.
+
+The four retired Compass commands recheck applicationSessionExpiresAt
+immediately before a fresh operation_conflict refusal.
+
+ai.solmind_compass_additions_valid_v1 and explorerConversationContract.ts
+accept either noticeKind (early_topic, not_yet_clear) at any anchor and refuse
+any other or missing kind. ai.solmind_plan_automatic_compass_v1 alone chooses
+the kind: today early_topic only at the apex, a mapping that waits for Paul's
+confirmation.
+
+The comment on ai.explorer_conversation_operation.followed_attention_item_id
+says that a Send creating the first automatic point stores NULL there and its
+needle target on the follow_attention child row.
+
+Policy text permits 20,000 characters; the REV391 section's 16,000 is
+superseded. tests/browser/buildNotes.pw.ts expects 12 build-note labels and
+reads the filled Waypoint fields by their ids.
+
+Still owed before this work is saved: the full database run on the owned test
+database, which alone runs the suites that open a second connection.
+
+## 2026-11-12 - Automatic Compass browser fixes (REV394b)
+
+The build-note browser tests now exercise the remaining Ways to begin box,
+including its X, focus return, toggle, reload and no-storage behavior. The
+removal-marker test uses the remaining Waypoint form and checks its confirmation
+gate and local draft clearing. The tour test checks all six automatic Compass
+paragraphs and their announcement, while retaining Waypoint confirmation and
+keyboard coverage. Historical arrangement and Route fixtures now supply
+providerState unavailable for an ended conversation, as the existing parser
+requires; saved placement, Route and Reached evidence remain read-only.
+
+The role text and ordinary request instructions now say: "When uncertain what
+the Explorer means, ask gently and clarify the meaning before acting on it."
+This remains draft wording for Paul's approval. All five 20261111-ac1 labels
+stay; decoded text byte counts, SHA-256 pins and welcome-subtraction pins move
+together. Global policy and classification-only request text are unchanged.
+No screen implementation, open-at-newest fix, sign-in code or test, server
+behavior beyond that instruction sentence, or supabase file changes here.
+Browser execution and the M2 sign-in timing investigation remain Executor work.
+
+## 2026-11-11 - Automatic Compass screen (REV394)
+
+The screen now draws automatic points at their saved anchors, without Compass
+confirmation controls, Forming treatment, Priority wording, an unplaced row or
+Other paths. Both views keep full accessible labels, keyboard selection and the
+existing set_attention path. The single muted, wrapping needle-target line keeps
+its id, ref and tabIndex for focus after a successful move; with no target it is
+absent. Legacy saved heads retain their recorded positions, unplaced row and
+Other paths without editing or confirmation controls. A historical Priority
+does not invent placement. Legacy forming heads are excluded from the card.
+Historical Compass and Route facts remain in the ended read-only review.
+
+explorerCompassChanges.ts derives text only from sanitized compassChanges.
+ExplorerCompassChangeLines.tsx keeps the visit record in the mounted transcript:
+the first saved state baselines all receipts, later receipts stay under their
+own replies, and operation/reply identities deduplicate repeated reads and
+exact replay. One polite region announces only newly seen additions; the
+visible paragraphs opt out of the transcript log's announcements. A remount or
+authority loss clears the visit. No timer, storage, fetch or provider call is
+added. The open-at-newest effect, hidden markers, PendingTurnNotice and its
+browser test are unchanged.
+
+Only a latest-reply Waypoint draft suppresses reply choices. Compass suggestion
+groups and their follow-up Sends are retired; shared Waypoint buttons, follow-up
+Sends and gates remain. Current tools retain Waypoint operations and removal
+markers; obsolete Compass-tool instructions and the connected latest-change
+placeholder are removed. The latestChange note key still serves the review
+preview. The shared suggestion button renderer remains for Waypoints.
+
+Draft wording for Paul's read: CONNECTED_COMPASS_WORDING.needleTerm
+("Pointing to:"), COMPASS_EARLY_TOPIC_DRAFT, COMPASS_NOT_YET_CLEAR_DRAFT, and
+the six EXPLORER_TOUR_COMPASS_* paragraphs. Other tour steps and buttons stay.
+No other visible wording is added. The existing "Top position" name replaces
+the dial's Priority label.
+
+The policy text limit is now 20,000 characters, with 20,000/20,001 boundary
+coverage; the Executor owns the matching migration change. No other server
+implementation changes. explorerAutomaticCompass.pw.ts and revised browser
+suites use synthetic HTTP responses and are authored only. Browser, database,
+migration, integration and publication execution remain Executor work.
+
 ## A saved conversation opens at its newest messages - 2026-11-11
 
 Paul's test comment (PRJ01-SPR002 `Validation_Workspaces/Decision_Record_2026-11-11.md`,
@@ -53,6 +162,69 @@ one; that a first Send in a new conversation, a later reply and the in-page
 Reload saved conversation control do not move the page; and that opening the
 page again does. No wording, request, command or
 database change.
+
+## 2026-11-11 - Automatic Compass first building step (server only, REV391)
+
+This isolated server build implements CONTRACT.md Parts B and C under REV391
+BUILD_SPEC.md. It supersedes the earlier forming-Compass and global three-message
+pacing descriptions below for new operations. The screen increment is separate;
+no current-card or transcript behavior is redesigned here.
+
+New conversations default to automatic; existing conversations remain legacy.
+Topics retain at most three distinct owned Explorer support-message identities
+across the 24-message context window. The server verifies ownership, chronology,
+snapshot membership, uniqueness and count, not whether words support a topic.
+Automatic points require three supports and ready, are never recorded as
+Explorer-confirmed, and are placed with emphasis 1 in the same transaction as
+their reply and immutable addition receipt. Keep both 24-row limits and the
+eight visible anchors. A full dial retains evidence without an unplaced point.
+
+The sole forward migration is
+supabase/migrations/20261111000000_explorer_automatic_compass_v1.sql.
+It adds private topic, support and change-bundle tables, immutable mode and
+automatic provenance; retains RLS with no policies or API-role table grants;
+replaces the latest inspector/prepare/read/state/settlement owners; and retires
+fresh Compass formation commands after authenticated exact replay. The current
+settlement has 28 arguments; prepare retains 38. The unnamed formation-status
+check uses PostgreSQL's generated name, which the Executor must verify on the
+isolated test database. Earlier migrations and stored history remain unchanged.
+
+explorerSafetyReplyContract.ts owns the closed compass.topics shape and discards
+retired suggestions/responses without interpreting them. explorerSafeContext.ts
+owns v8: automatic or legacy_read_only mode, current non-forming points, null
+Priority, references h0..h23/now, topic counts, capacity and unchanged Waypoint
+and reply-choice fields. Policy text permits 16,000 characters; methodology
+24,000 and serialized context 524,288 bytes remain unchanged.
+
+explorerConversationContext.ts builds v8 from the authenticated state and
+authority_context.compassEvidence, revalidates both, and deduplicates message
+identities before rejecting cross-kind collisions. The ordinary source bound
+is 168; classification-only retains its section-free base envelope and excludes
+these sources. No earlier support-message body or change-history text enters
+model context. explorerPrivateConversationComposition.ts resolves references
+against exact authorized invocation bytes and sends frozen mapped topics;
+retired settlement arguments are null for new calls. The repository closes
+the new parameter and validates the private evidence projection.
+
+explorerConversationContract.ts parses automatic provenance and sanitized
+compassChanges with item/reply/revision checks. Historical fixtures missing both
+new fields normalize to legacy and empty changes; new database results require
+both explicitly. Support IDs, snapshots and private candidate topics never
+enter browser state. Shared Waypoint response types and availability remain.
+
+Preserve safety classification, restricted handling, adults-only handling,
+AI-use counting and hard stops, the Send deadline, cancellation, failed-reply
+reasons, reply choices, Waypoint drafts/typed responses and every Waypoint limit.
+Historical commands and fingerprints remain parseable solely for exact replay.
+No second provider call or settlement is used to recover a receipt.
+
+All five instruction labels end in -20261111-ac1. Part E's role, global-policy
+and request-instruction edits are DRAFT pending Paul's approval. The named SQL
+automatic_ending_draft is "This conversation ended."; old ending text is kept.
+This build authorizes no real-model call, memory, provider activation, database
+execution, deployment, cleanup or real-user changes. App and migration must
+reach a database together after Executor review. The pgTAP suite is authored
+only; the Executor owns execution and the separate screen/browser increment.
 
 ## Demo A's two wordings: the screen-welcome sentence and the failed-reply message - 2026-11-10
 

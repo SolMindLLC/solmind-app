@@ -22,10 +22,10 @@ describe("Formation presentation (static proof only)", () => {
   it("renders valid empty Discovery and no Waypoint without dispatching or inventing a choice", () => {
     const onCommand = vi.fn();
     const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: state(), busy: false, onCommand }));
-    expect(html).toContain("No Priority confirmed");
-    expect(html).toContain("No attention point chosen");
+    expect(html).not.toContain("No Priority confirmed");
+    expect(html).not.toContain("No attention point chosen");
     expect(html).toContain("No Waypoint chosen");
-    expect(html).toContain("No recorded direction changes are available yet.");
+    expect(html).not.toContain("No recorded direction changes are available yet.");
     expect(html).toContain("A saved conversation message is needed");
     expect(html).toContain('<fieldset disabled=""');
     expect(onCommand).not.toHaveBeenCalled();
@@ -40,11 +40,13 @@ describe("Formation presentation (static proof only)", () => {
       id: "waypoint-a", sourceMessageId: source.id, title: "A meaningful destination", destination: "A meaningful destination",
       meaning: "Why it matters", arrivalSignal: "An observable signal", status: "chosen",
     }] });
-    const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: current, busy: false, onCommand: vi.fn() }));
+    const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: current, busy: false, readOnly: true, onCommand: vi.fn() }));
     expect(html).toContain("Priority choice");
     expect(html).toContain("Current attention: Attention choice");
     expect(html).toContain("In progress — chosen by you");
-    expect(html).toContain("Review Reached: A meaningful destination");
+    expect(html).not.toContain("Review Reached: A meaningful destination");
+    const editable = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: current, busy: false, onCommand: vi.fn() }));
+    expect(editable).toContain("Review Reached: A meaningful destination");
     expect(html).toContain("&lt;script&gt;not markup&lt;/script&gt;");
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("Reached — confirmed by you");
@@ -73,7 +75,7 @@ describe("Formation presentation (static proof only)", () => {
       { operationId: "route-operation-third", revision: 7, kind: "attention_changed", compassItemId: "point-a", label: "Captured attention", recordedAt: "2026-10-29T07:03:00Z" },
     ] });
     const onCommand = vi.fn();
-    const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: current, busy: false, onCommand }));
+    const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: current, busy: false, readOnly: true, onCommand }));
     expect(html).toContain("Captured first Priority");
     expect(html).toContain("Captured reorientation");
     expect(html).toContain("Captured attention");
@@ -93,7 +95,7 @@ describe("Formation presentation (static proof only)", () => {
         { id: "point-b", sourceMessageId: "message-a", label: "Current second label" },
         { id: "point-a", sourceMessageId: "message-a", label: "Current first label" },
       ], priorityId: "point-a", attentionId: "point-b", route });
-      const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: current, busy: false, onCommand: vi.fn() }));
+      const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: current, busy: false, readOnly: true, onCommand: vi.fn() }));
       expect(html).toContain("No recorded direction changes are available yet.");
       expect(html).not.toContain("Priority confirmed:");
       expect(html).not.toContain("Priority reoriented:");
@@ -133,7 +135,7 @@ describe("Formation presentation (static proof only)", () => {
       conversationId: "conversation-a", messages: [source], compassItems: [overflow, ...points.toReversed()],
       priorityId: "point-0", attentionId: "point-3",
     });
-    const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: arranged, busy: false, onCommand }));
+    const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: arranged, busy: false, readOnly: true, onCommand }));
     const saved = html.slice(html.indexOf('aria-label="Saved Compass arrangement"'), html.indexOf("Other paths ("));
     const other = html.slice(html.indexOf("Other paths ("));
     expect(saved).toContain("Top position");
@@ -149,7 +151,7 @@ describe("Formation presentation (static proof only)", () => {
     // Since 2026-11-03 (migration 20261103180000; Paul's decision, decision queue 18:05:33 CST) any current
     // point can take current attention, also an Other paths point once a Compass is arranged.
     expect(other).not.toContain("Arrange this point visibly before moving attention here.");
-    expect(other).toMatch(/<button type="button" class="[^"]*">Attend to: A ninth preserved path<\/button>/);
+    expect(other).not.toContain("Attend to:");
     expect(other).not.toMatch(/<button[^>]*disabled=""[^>]*>Attend to: A ninth preserved path<\/button>/);
     expect(buildAttentionFormationIntent(arranged, overflow.id)).toEqual({ ok: true, command: { kind: "set_attention", itemId: overflow.id }, error: null });
     expect(html).toContain("Relative emphasis: Light.");
@@ -165,7 +167,7 @@ describe("Formation presentation (static proof only)", () => {
       { id: "point-b", sourceMessageId: "message-a", label: "New unarranged point", anchor: null, emphasis: null },
     ], priorityId: "point-a", attentionId: "point-b" });
     const onCommand = vi.fn();
-    const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: current, busy: false, onCommand }));
+    const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: current, busy: false, readOnly: true, onCommand }));
     const saved = html.slice(html.indexOf('aria-label="Saved Compass arrangement"'), html.indexOf("Other paths ("));
     expect(saved).not.toContain("Legacy point");
     expect(saved).not.toContain("New unarranged point");
@@ -173,7 +175,7 @@ describe("Formation presentation (static proof only)", () => {
     expect(html).toContain("Other paths (2)");
     expect(html.match(/Placement and relative emphasis have not been recorded./g)).toHaveLength(2);
     expect(html).toContain("Current attention: New unarranged point");
-    expect(html).toContain("New points stay in Other paths with no recorded placement or emphasis");
+    expect(html).not.toContain("New points stay in Other paths with no recorded placement or emphasis");
     expect(onCommand).not.toHaveBeenCalled();
   });
 
@@ -183,7 +185,7 @@ describe("Formation presentation (static proof only)", () => {
       conversationId: "conversation-a", compassItems: [
         { id: "point-a", sourceMessageId: "message-a", label: "An Explorer-placed top point", anchor: "apex", emphasis: 3 },
       ],
-    }), busy: false, onCommand }));
+    }), busy: false, readOnly: true, onCommand }));
     expect(html).toContain("An Explorer-placed top point");
     expect(html).toContain("No Priority confirmed — placement alone does not confirm it.");
     expect(html).not.toContain("Confirmed Priority. ");
@@ -204,8 +206,8 @@ describe("Formation presentation (static proof only)", () => {
       ], recordedAt: "2026-10-29T07:02:00.123456+00:00" },
       { operationId: "route-attention", revision: 7, kind: "attention_changed", compassItemId: "point-a", label: "Captured attention afterward", recordedAt: "2026-10-29T07:03:00Z" },
     ] });
-    const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: current, busy: false, onCommand }));
-    const route = html.slice(html.indexOf("Compass arrangement confirmed"), html.indexOf("Add a point you choose"));
+    const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: current, busy: false, readOnly: true, onCommand }));
+    const route = html.slice(html.indexOf("Compass arrangement confirmed"), html.indexOf("Private Waypoints"));
     expect(html.indexOf("The first captured Priority")).toBeLessThan(html.indexOf("Compass arrangement confirmed"));
     expect(html.indexOf("Compass arrangement confirmed")).toBeLessThan(html.indexOf("Captured attention afterward"));
     expect(route).toContain("Priority changed from “Captured first &lt;choice&gt;” to “Captured second choice”.");
@@ -217,19 +219,19 @@ describe("Formation presentation (static proof only)", () => {
     expect(onCommand).not.toHaveBeenCalled();
   });
 
-  it("discloses the private-demo storage bound while retaining every saved overflow point", () => {
+  it("read-only review retains all 24 saved overflow points without an add control", () => {
     const onCommand = vi.fn();
     const points = Array.from({ length: 24 }, (_, index) => ({ id: `point-${index}`, sourceMessageId: "message-a",
       label: `Retained path ${index}`, anchor: null, emphasis: null }));
     const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: state({
       conversationId: "conversation-a", compassItems: points,
       messages: [{ id: "message-a", role: "explorer", body: "A saved source for these retained points.", createdAt: "2026-10-29T07:00:00Z" }],
-    }), busy: false, onCommand }));
+    }), busy: false, readOnly: true, onCommand }));
     expect(html).toContain("Other paths (24)");
-    expect(html).toContain("This private demo stores at most 24 points.");
-    expect(html).toContain("All saved points remain available; another cannot be added here.");
+    expect(html).not.toContain("Save Compass point");
+    expect(html).not.toContain("Add a point you choose");
     for (const point of points) expect(html).toContain(`>${point.label}</h4>`);
-    expect(html).toContain('<fieldset disabled=""');
+    expect(html).not.toContain('<fieldset');
     expect(onCommand).not.toHaveBeenCalled();
   });
 });
@@ -274,14 +276,14 @@ describe("Category presentation (static proof only)", () => {
     const onCommand = vi.fn();
     const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: state({
       conversationId: "conversation-a", messages, compassItems: points, priorityId: "point-a", attentionId: "point-d",
-    }), busy: false, onCommand }));
+    }), busy: false, readOnly: true, onCommand }));
     expect(html).toContain("Current attention: Separate current attention");
     expect(html).toContain("Combined source points (3)");
     for (const source of ["Retained second point", "Retained earlier point", "An exact second saved source.", "An exact earlier contributing source."]) expect(html).toContain(source);
     expect(html).toContain("An exact first source &lt;script&gt;plain text&lt;/script&gt;");
     expect(html).not.toContain("<script>");
     expect(html).toContain("Other paths (0)");
-    expect(html).toContain("Review wording or combine: Current combined category");
+    expect(html).not.toContain("Review wording or combine:");
     for (const label of ["Retained second point", "Retained earlier point"]) {
       expect(html).not.toContain(`Review wording or combine: ${label}`);
       expect(html).not.toContain(`Attend to: ${label}`);
@@ -301,8 +303,8 @@ describe("Category presentation (static proof only)", () => {
           { compassItemId: "point-c", sourceMessageId: "message-c", label: "Earlier retained wording", mergedIntoItemId: "point-b", anchor: null, emphasis: null },
         ],
       } }],
-    }), busy: false, onCommand }));
-    const route = html.slice(html.indexOf("Categories combined"), html.indexOf("Add a point you choose"));
+    }), busy: false, readOnly: true, onCommand }));
+    const route = html.slice(html.indexOf("Categories combined"), html.indexOf("Private Waypoints"));
     expect(route).toContain("Confirmed wording: Earlier combined &lt;wording&gt;");
     expect(route).toContain("Original first wording — selected point before this change; Top position; Strong.");
     expect(route).toContain("Original second wording — selected point before this change; Excursion — lower right; Regular.");
@@ -326,7 +328,7 @@ describe("Category presentation (static proof only)", () => {
     expect(onCommand).not.toHaveBeenCalled();
   });
 
-  it("counts all retained originals toward the existing24-point storage bound", () => {
+  it("read-only review retains all 24 originals and their sources without an add control", () => {
     const compassItems = Array.from({ length: 24 }, (_, index) => ({
       id: `retained-${index}`, sourceMessageId: "message-a", label: `Stored original ${index}`,
       anchor: null, emphasis: null, mergedIntoItemId: index === 0 ? null : "retained-0",
@@ -334,12 +336,12 @@ describe("Category presentation (static proof only)", () => {
     const onCommand = vi.fn();
     const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state: state({
       conversationId: "conversation-a", messages, compassItems,
-    }), busy: false, onCommand }));
+    }), busy: false, readOnly: true, onCommand }));
     expect(html).toContain("Other paths (1)");
     expect(html).toContain("Combined source points (24)");
-    expect(html).toContain("This private demo stores at most 24 points.");
-    expect(html).toContain("All saved points remain available; another cannot be added here.");
-    expect(html).toContain('<fieldset disabled=""');
+    expect(html).not.toContain("Save Compass point");
+    expect(html).not.toContain("Add a point you choose");
+    expect(html).not.toContain('<fieldset');
     expect(html).not.toContain("Review wording or combine: Stored original 1<");
     expect(onCommand).not.toHaveBeenCalled();
   });

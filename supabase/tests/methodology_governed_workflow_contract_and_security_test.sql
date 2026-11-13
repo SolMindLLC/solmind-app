@@ -5,7 +5,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions,pg_catalog,pg_temp;
 set local statement_timeout='120s';
-select plan(58);
+select plan(59);
 
 select is((select count(*)::integer from pg_class c join pg_namespace n on n.oid=c.relnamespace
   where n.nspname='methodology' and c.relkind='r'),5,'five named methodology tables exist after additive governance');
@@ -149,7 +149,7 @@ create function pg_temp.s3_envelope(version text,with_compass boolean) returns t
 $$;
 select ok(methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2',false),
   'f5130000-0000-4000-8000-000000000001','Synthetic method.'),'S3: the existing twelve-key envelope with its version stays valid');
-select ok(methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v7',true),
+select ok(methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v8',true),
   'f5130000-0000-4000-8000-000000000001','Synthetic method.'),'S3: the envelope with the Compass section and the new version is valid');
 select ok(not methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v1',true),
   'f5130000-0000-4000-8000-000000000001','Synthetic method.'),'S5: the retired compass-v1 envelope with its section refuses');
@@ -159,19 +159,21 @@ select ok(not methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi00
   'f5130000-0000-4000-8000-000000000001','Synthetic method.'),'S6b: the retired compass-v2 envelope without its section refuses');
 select ok(not methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2',true),
   'f5130000-0000-4000-8000-000000000001','Synthetic method.'),'S3: the Compass section under the previous version refuses');
-select ok(not methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v7',false),
+select ok(not methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v8',false),
   'f5130000-0000-4000-8000-000000000001','Synthetic method.'),'S3: the new version without the Compass section refuses');
-select ok(not methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v8',true),
+select ok(not methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v9',true),
   'f5130000-0000-4000-8000-000000000001','Synthetic method.'),'S3: any other version with the Compass section refuses');
 select ok(not methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v5',true),
   'f5130000-0000-4000-8000-000000000001','Synthetic method.'),'CV: the retired compass-v5 envelope with its section refuses');
 select ok(not methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v6',true),
   'f5130000-0000-4000-8000-000000000001','Synthetic method.'),'CV: the retired compass-v6 envelope with its section refuses');
-select ok(not methodology.serialized_methodology_valid((pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v7',true)::jsonb
+select ok(not methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v7',true),
+  'f5130000-0000-4000-8000-000000000001','Synthetic method.'),'REV391: the retired compass-v7 envelope with its section refuses');
+select ok(not methodology.serialized_methodology_valid((pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v8',true)::jsonb
   ||'{"drafts":[]}'::jsonb)::text,'f5130000-0000-4000-8000-000000000001','Synthetic method.'),'S3: an extra top-level key still refuses');
-select ok(not methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v7',true),
+select ok(not methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v8',true),
   'f5130000-0000-4000-8000-000000000002','Synthetic method.'),'S3: the methodology version is still bound under the new version');
-select ok(not methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v7',true),
+select ok(not methodology.serialized_methodology_valid(pg_temp.s3_envelope('wi007-v0.1+onboarding-fields-v2+compass-v8',true),
   'f5130000-0000-4000-8000-000000000001','Other method.'),'S3: the methodology text is still bound under the new version');
 select ok((select p.provolatile='i' and not p.prosecdef and p.proconfig@>array['search_path=""']
     and p.proowner=(select oid from pg_roles where rolname='postgres')

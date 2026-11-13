@@ -92,6 +92,39 @@ returns table(outcome text,conversation_state jsonb) language sql as $$
     pg_temp.command_fp(k,pg_temp.cid(op),rev,null,source_id,item,waypoint,label,destination,meaning,arrival,evidence),
     source_id,item,waypoint,label,destination,meaning,arrival,evidence)
 $$;
+-- REV391 (contract B4 and Part C): manual formation and Priority are retired. Saved points and Priority are
+-- privileged historical rows of a legacy conversation, written exactly as the retired commands wrote them (the
+-- operation's request and command fingerprints, revision and route kind, and the point row). Only the formation
+-- trigger is suspended for the point row and restored at once; never an application path.
+create function pg_temp.historical(op integer,rev integer,k text,source_id uuid default null,item uuid default null,
+  label text default null) returns void language plpgsql as $$
+declare fp text:=pg_temp.command_fp(k,pg_temp.cid(op),rev,null,source_id,item,null,label,null,null,null,null);
+begin
+  if k='add_compass' then
+    set constraints ai.explorer_compass_automatic_proof immediate;
+    set constraints ai.explorer_compass_automatic_proof deferred;
+    alter table ai.explorer_conversation_compass_item disable trigger explorer_compass_formation_guard;
+    insert into ai.explorer_conversation_compass_item(item_id,conversation_id,source_message_id,label,display_order)
+      values(pg_temp.cid(op),pg_temp.cid(51),source_id,label,(select coalesce(max(c.display_order),0)+1
+        from ai.explorer_conversation_compass_item c where c.conversation_id=pg_temp.cid(51)));
+    set constraints ai.explorer_compass_automatic_proof immediate;
+    set constraints ai.explorer_compass_automatic_proof deferred;
+    alter table ai.explorer_conversation_compass_item enable trigger explorer_compass_formation_guard;
+  else
+    update ai.explorer_conversation_state set priority_id=item where conversation_id=pg_temp.cid(51);
+  end if;
+  insert into ai.explorer_conversation_operation(actor_user_account_id,operation_id,application_session_id,
+    conversation_id,kind,request_fingerprint,command_fingerprint,initial_revision,status,completed_at,
+    compass_route_kind,compass_route_item_id,compass_route_label)
+    values(pg_temp.cid(1),pg_temp.cid(op),pg_temp.cid(50),pg_temp.cid(51),k,
+      upper(encode(extensions.digest(convert_to(jsonb_build_array(pg_temp.cid(50),pg_temp.cid(51),rev,
+        k,source_id,item,null::uuid,label,null::text,null::text,null::text,null::text,fp)::text,'UTF8'),'sha256'),'hex')),
+      fp,rev,'completed',clock_timestamp(),case when k='confirm_priority' then 'priority_confirmed' end,
+      case when k='confirm_priority' then item end,
+      case when k='confirm_priority' then (select c.label from ai.explorer_conversation_compass_item c where c.item_id=item) end);
+  update ai.explorer_conversation_state set revision=rev+1 where conversation_id=pg_temp.cid(51) and revision=rev;
+  if not found then raise exception 'synthetic_historical_revision'; end if;
+end $$;
 
 select is((select count(*)::integer from pg_class c join pg_namespace n on n.oid=c.relnamespace
   where (n.nspname='ai' and c.relname in ('explorer_conversation_state','explorer_conversation_operation','explorer_conversation_compass_item')
@@ -109,10 +142,11 @@ select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid=
 select ok(not has_function_privilege('service_role','ai.solmind_conversation_authority(uuid,uuid,uuid)','EXECUTE'),
   'internal authority helper is not an application RPC');
 
+-- REV391 (contract B5): the state carries compassMode and compassChanges; a fresh conversation is automatic.
 -- Lane 7 (2026-11-06) adds waypointCapacity and waypointProjection, pinned by explorer_waypoint_active_limits_test.sql;
 -- these comparisons leave out only those two fields, so every field this file owns stays pinned exactly.
 select is((select conversation_state from public.solmind_read_explorer_conversation(pg_temp.cid(1),pg_temp.cid(50)))-'waypointCapacity'-'waypointProjection',
-  '{"version":"explorer-conversation.v1","conversationId":null,"revision":0,"pendingTurn":false,"turnedDownLimitReached":false,"providerState":"unavailable","sessionStatus":null,"ending":null,"messages":[],"compassItems":[],"priorityId":null,"attentionId":null,"route":[],"waypoints":[],"waypointDraft":null}'::jsonb,
+  '{"version":"explorer-conversation.v1","conversationId":null,"revision":0,"pendingTurn":false,"turnedDownLimitReached":false,"providerState":"unavailable","sessionStatus":null,"ending":null,"messages":[],"compassItems":[],"priorityId":null,"attentionId":null,"route":[],"waypoints":[],"waypointDraft":null,"compassMode":"automatic","compassChanges":[]}'::jsonb,
   'authorized empty Discovery has the exact closed browser shape');
 select ok((select authority_context->>'authorizationVersion' ~ '^AV2:[0-9A-F]{64}$'
   and authority_context->>'relationshipStatus'='active' and authority_context->>'adultAffirmation'='true'
@@ -123,6 +157,15 @@ select ok((select authority_context->>'authorizationVersion' ~ '^AV2:[0-9A-F]{64
 
 select ok((select outcome='ok' and dispatch_permitted and conversation_state->>'pendingTurn'='true'
   and conversation_state->>'revision'='1' from pg_temp.prepare_turn()),'new preparation persists one pending turn before any hypothetical dispatch');
+-- REV391 (contract Part C): the conversation stands for one that existed before the migration, which marks it
+-- legacy by the column's initial default. Privileged fixture write, only the mode guard suspended, restored at once.
+set constraints ai.explorer_private_state_coherent immediate;
+set constraints ai.explorer_private_state_coherent deferred;
+alter table ai.explorer_conversation_state disable trigger explorer_compass_mode_immutable;
+update ai.explorer_conversation_state set compass_mode='legacy' where conversation_id=pg_temp.cid(51);
+set constraints ai.explorer_private_state_coherent immediate;
+set constraints ai.explorer_private_state_coherent deferred;
+alter table ai.explorer_conversation_state enable trigger explorer_compass_mode_immutable;
 select is((select count(*)::integer from ai.ai_interaction_message where ai_interaction_session_id=pg_temp.cid(51)),1,'preparation saves one Explorer message');
 select ok((select outcome='stale_revision' and conversation_state is null and dispatch_permitted is false
   from pg_temp.prepare_turn(500,'Synthetic stale empty-state second tab',0,pg_temp.cid(9999))),
@@ -174,7 +217,18 @@ select ok((select outcome='exact_replay' and jsonb_array_length(conversation_sta
   'first-send retry after history growth succeeds before context rebuilding and adds no messages');
 select is((select count(*)::integer from ai.explorer_conversation_operation where conversation_id=pg_temp.cid(51)),1,'all send retries retain one operation');
 
-select is((select outcome from pg_temp.mutate(100,2,'add_compass',pg_temp.cid(61),null,null,'Synthetic first Compass')),'ok','Explorer explicitly selects a saved own message as Compass input');
+create temp table formation_before as select ai.solmind_conversation_state_json(pg_temp.cid(51)) state;
+create temp table formation_refusal(op integer primary key,outcome text);
+insert into formation_refusal select 110,(select outcome from pg_temp.mutate(110,2,'add_compass',pg_temp.cid(61),null,null,'Synthetic first Compass'));
+select ok((select outcome from formation_refusal where op=110)='operation_conflict'
+  and ai.solmind_conversation_state_json(pg_temp.cid(51))=(select state from formation_before)
+  and not exists(select 1 from ai.explorer_conversation_operation where operation_id=pg_temp.cid(110))
+  and not exists(select 1 from ai.explorer_conversation_compass_item where conversation_id=pg_temp.cid(51)),
+  'REV391: a fresh Compass formation from a saved own message is refused and changes nothing');
+-- The historical rows: the two saved points and the Priority, at the revisions the retired commands used.
+select pg_temp.historical(100,2,'add_compass',pg_temp.cid(61),null,'Synthetic first Compass');
+select pg_temp.historical(101,3,'add_compass',pg_temp.cid(64),null,'Synthetic selected Virtual Guide text');
+select pg_temp.historical(102,4,'confirm_priority',null,pg_temp.cid(100));
 select is((select outcome from pg_temp.mutate(100,2,'add_compass',pg_temp.cid(61),null,null,'Synthetic first Compass')),'exact_replay','Compass operation replay is idempotent');
 select throws_ok($$select * from pg_temp.mutate(100,2,'add_compass',pg_temp.cid(61),null,null,'Changed label')$$,
   'P0001','solmind_explorer_conversation_operation_conflict','changed Compass command bytes deny');
@@ -182,9 +236,17 @@ update ai.ai_interaction_message set ai_role='solmind_guide_assistant' where ai_
 select throws_ok($$select * from pg_temp.mutate(109,3,'add_compass',pg_temp.cid(64),null,null,'Other AI role')$$,
   'P0001','solmind_explorer_conversation_denied','another AI role is not an allowed Explorer formation source');
 update ai.ai_interaction_message set ai_role='solmind_virtual_guide' where ai_interaction_message_id=pg_temp.cid(64);
-select is((select outcome from pg_temp.mutate(101,3,'add_compass',pg_temp.cid(64),null,null,'Synthetic selected Virtual Guide text')),'ok',
-  'Explorer may explicitly select a saved owned Virtual Guide message without implying its truth');
-select is((select outcome from pg_temp.mutate(102,4,'confirm_priority',null,pg_temp.cid(100))),'ok','Priority requires explicit selection of an owned Compass item');
+create temp table historical_before as select ai.solmind_conversation_state_json(pg_temp.cid(51)) state;
+insert into formation_refusal select 111,(select outcome from pg_temp.mutate(111,5,'add_compass',pg_temp.cid(64),null,null,'Synthetic selected Virtual Guide text'));
+select ok((select outcome from formation_refusal where op=111)='operation_conflict'
+  and ai.solmind_conversation_state_json(pg_temp.cid(51))=(select state from historical_before)
+  and not exists(select 1 from ai.explorer_conversation_operation where operation_id=pg_temp.cid(111)),
+  'REV391: a fresh Compass formation from a saved Virtual Guide message is refused and changes nothing');
+insert into formation_refusal select 112,(select outcome from pg_temp.mutate(112,5,'confirm_priority',null,pg_temp.cid(101)));
+select ok((select outcome from formation_refusal where op=112)='operation_conflict'
+  and ai.solmind_conversation_state_json(pg_temp.cid(51))=(select state from historical_before)
+  and not exists(select 1 from ai.explorer_conversation_operation where operation_id=pg_temp.cid(112)),
+  'REV391: a fresh Priority confirmation is refused and changes nothing');
 select is((select outcome from pg_temp.mutate(103,5,'set_attention',null,pg_temp.cid(101))),'ok','attention is an independent explicit selection');
 select ok((select conversation_state->>'priorityId'=pg_temp.cid(100)::text and conversation_state->>'attentionId'=pg_temp.cid(101)::text
   from public.solmind_read_explorer_conversation(pg_temp.cid(1),pg_temp.cid(50))),'Priority and attention persist independently');
@@ -209,7 +271,12 @@ select throws_ok($$select * from pg_temp.mutate(106,8,'add_compass',pg_temp.cid(
   'P0001','solmind_explorer_conversation_invalid_input','Compass label remains single-line');
 select throws_ok($$select * from pg_temp.mutate(106,8,'confirm_waypoint',pg_temp.cid(61),null,null,null,'Destination','Meaning',E'Arrival\001control')$$,
   'P0001','solmind_explorer_conversation_invalid_input','multiline fields reject other C0 controls');
-select is((select outcome from pg_temp.mutate(106,0,'add_compass',pg_temp.cid(61),null,null,'Stale selection')),'stale_revision','stale revision refuses formation without saving an operation');
+insert into formation_refusal select 113,(select outcome from pg_temp.mutate(113,0,'add_compass',pg_temp.cid(61),null,null,'Stale selection'));
+insert into formation_refusal select 114,(select outcome from pg_temp.mutate(114,0,'set_attention',null,pg_temp.cid(100)));
+select ok((select outcome from formation_refusal where op=113)='operation_conflict'
+  and (select outcome from formation_refusal where op=114)='stale_revision'
+  and not exists(select 1 from ai.explorer_conversation_operation where operation_id in (pg_temp.cid(113),pg_temp.cid(114))),
+  'REV391: a stale fresh formation is refused, a stale kept command refuses by revision, and neither saves an operation');
 
 update identity.user_session set expires_at=now()-interval '1 minute' where user_session_id=pg_temp.cid(50);
 select throws_ok($$select * from public.solmind_read_explorer_conversation(pg_temp.cid(1),pg_temp.cid(50))$$,
@@ -243,8 +310,11 @@ update core.guide_explorer_relationship set relationship_status='active' where g
 select ok((select outcome='ok' and dispatch_permitted and conversation_state->>'pendingTurn'='true'
   and conversation_state->>'revision'='9' from pg_temp.prepare_turn(1,'Synthetic second message',8)),
   'later valid preparation creates a new pending turn at the current revision');
-select is((select outcome from pg_temp.mutate(106,9,'add_compass',pg_temp.cid(61),null,null,'Blocked while pending')),
-  'unavailable','new formation is held while the reply remains unconfirmed');
+insert into formation_refusal select 115,(select outcome from pg_temp.mutate(106,9,'add_compass',pg_temp.cid(61),null,null,'Blocked while pending'));
+insert into formation_refusal select 116,(select outcome from pg_temp.mutate(106,9,'set_attention',null,pg_temp.cid(100)));
+select ok((select outcome from formation_refusal where op=115)='operation_conflict'
+  and (select outcome from formation_refusal where op=116)='unavailable',
+  'REV391: a fresh formation is refused and a kept command is held while the reply remains unconfirmed');
 select is((select outcome from public.solmind_complete_explorer_conversation_turn(pg_temp.cid(1),pg_temp.cid(50),pg_temp.cid(51),
   pg_temp.cid(70),'failed',null,null)),'ok','explicit failed terminalization settles the owned pending operation');
 select ok((select conversation_state->>'pendingTurn'='false' and conversation_state->>'revision'='10'
@@ -282,16 +352,17 @@ select throws_ok($$select * from public.solmind_complete_explorer_conversation_t
 update identity.user_session set session_status='active',ended_at=null where user_session_id=pg_temp.cid(50);
 
 -- Exercise finite capacity using only synthetic rows in this rollback scope.
-do $$ declare x integer; r record; begin
+-- REV391: the 22 further saved points are privileged historical rows at the revisions the retired command used.
+do $$ declare x integer; begin
   for x in 0..21 loop
-    select * into r from pg_temp.mutate(200+x,12+x,'add_compass',pg_temp.cid(61),null,null,'Synthetic capacity item '||x);
-    if r.outcome is distinct from 'ok' then raise exception 'synthetic_compass_capacity_setup_failed'; end if;
+    perform pg_temp.historical(200+x,12+x,'add_compass',pg_temp.cid(61),null,'Synthetic capacity item '||x);
   end loop;
 end $$;
 select is((select count(*)::integer from ai.explorer_conversation_compass_item where conversation_id=pg_temp.cid(51)),24,
   '24 explicitly accepted Compass items fit the disclosed private-demo storage bound');
-select is((select outcome from pg_temp.mutate(222,34,'add_compass',pg_temp.cid(61),null,null,'Synthetic twenty-fifth item')),
-  'unavailable','twenty-fifth Compass item is refused without dropping saved content');
+select is((select outcome from pg_temp.mutate(222,34,'add_compass',pg_temp.cid(61),null,null,'Synthetic twenty-fifth item'))||'|'||
+  (select count(*) from ai.explorer_conversation_compass_item where conversation_id=pg_temp.cid(51)),
+  'operation_conflict|24','REV391: a fresh twenty-fifth Compass item is refused without dropping saved content');
 select is((select count(*)::integer from ai.explorer_conversation_operation where operation_id=pg_temp.cid(222)),0,
   'Compass capacity refusal has no retained operation');
 -- Lane 12: at most five different Waypoints form in one conversation, so this conversation forms three more (four with

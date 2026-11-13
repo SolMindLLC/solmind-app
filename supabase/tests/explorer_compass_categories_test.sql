@@ -139,32 +139,31 @@ end $$;
 -- fixture conversation's rows for each new Send (the inspector compares them exactly): current points in display
 -- order, the saved Priority and attention, the last five needle moves on a current point (oldest first, each
 -- with the point's current label), the current Waypoint heads, no drafts.
+-- REV391 (2026-11-11): conversation 6005 is a legacy-mode conversation (its rejected and forming rows are
+-- historical), so the section is the v8 legacy envelope: mode legacy_read_only, zero capacity, no topics, a null
+-- priorityId, no forming points, attention only when it names a supplied point (explorer_source_exclusion_test.sql).
+-- This fixture records no needle moves, so the Route is empty.
 create function pg_temp.compass_context() returns jsonb language sql stable as $$
-  select jsonb_build_object('version','explorer-compass-context.v7','immediateMessageIsReplyChoice',false,
+  select jsonb_build_object('version','explorer-compass-context.v8','immediateMessageIsReplyChoice',false,
+    'mode','legacy_read_only','topics','[]'::jsonb,
+    'capacity',jsonb_build_object('originalsRemaining',0,'topicSlotsRemaining',0,'visibleSlotsRemaining',0),
+    'messageRefs',jsonb_build_object('history',(select coalesce(jsonb_agg(jsonb_build_object('ref','h'||h.ord::text,
+      'order',h.ord) order by h.ord),'[]'::jsonb) from (
+      select recent.*,row_number() over(order by recent.sequence_number)-1 as ord from (
+        select * from ai.ai_interaction_message where ai_interaction_session_id=pg_temp.gid(6005)
+        order by sequence_number desc limit 24) recent) h where h.sender_type='user'),'immediate','now'),
     'points',coalesce((select jsonb_agg(jsonb_build_object('id',c.item_id,'label',ai.solmind_exclusion_normalize_v3(c.label),
-      'order',c.ord-1,'formation',case when c.formation_status='proposed' then 'forming' else 'saved' end,'anchor',c.compass_anchor,'emphasis',c.relative_emphasis)
-      ||case when c.formation_status='proposed' then jsonb_build_object('suggestedInPreviousReply',coalesce(
-        c.wording_message_id=(select previous.ai_interaction_message_id from ai.ai_interaction_message previous
-          where previous.ai_interaction_session_id=c.conversation_id and previous.sender_type='ai'
-            and previous.ai_role='solmind_virtual_guide' order by previous.sequence_number desc limit 1),false))
-        else '{}'::jsonb end order by c.ord)
+      'order',c.ord-1,'formation',case when c.formation_status='automatic' then 'automatic' else 'saved' end,'anchor',c.compass_anchor,'emphasis',c.relative_emphasis)
+        order by c.ord)
       from (select x.*,row_number() over(order by x.display_order) as ord from ai.explorer_conversation_compass_item x
-        where x.conversation_id=pg_temp.gid(6005) and x.merged_into_item_id is null and x.formation_status is distinct from 'rejected') c),'[]'::jsonb),
-    'priorityId',(select s.priority_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.gid(6005)),
-    'attentionId',(select s.attention_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.gid(6005)),
-    'recentRoute',coalesce((select jsonb_agg(jsonb_build_object('kind',r.compass_route_kind,'pointId',r.compass_route_item_id,
-      'label',ai.solmind_exclusion_normalize_v3(r.current_label),
-      'actor',case when r.kind='follow_attention' then 'virtual_guide' else 'explorer' end,
-      'awaitingReply',r.kind='set_attention'
-        and r.operation_id=(select last_move.operation_id from ai.explorer_conversation_operation last_move
-          where last_move.conversation_id=pg_temp.gid(6005) and last_move.compass_route_kind='attention_changed'
-          order by last_move.initial_revision desc,last_move.operation_id desc limit 1)
-        and not exists(select 1 from ai.ai_interaction_message reply where reply.ai_interaction_session_id=pg_temp.gid(6005)
-          and reply.sender_type='ai' and reply.created_at>=r.completed_at)) order by r.initial_revision,r.operation_id)
-      from (select o.*,c.label as current_label from ai.explorer_conversation_operation o join ai.explorer_conversation_compass_item c
-          on c.conversation_id=o.conversation_id and c.item_id=o.compass_route_item_id and c.merged_into_item_id is null and c.formation_status is distinct from 'rejected'
-        where o.conversation_id=pg_temp.gid(6005) and o.compass_route_kind='attention_changed'
-        order by o.initial_revision desc,o.operation_id desc limit 5) r),'[]'::jsonb),
+        where x.conversation_id=pg_temp.gid(6005) and x.merged_into_item_id is null and x.formation_status is distinct from 'rejected'
+          and x.formation_status is distinct from 'proposed') c),'[]'::jsonb),
+    'priorityId',null,
+    'attentionId',(select s.attention_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.gid(6005)
+      and exists(select 1 from ai.explorer_conversation_compass_item c where c.item_id=s.attention_id
+        and c.merged_into_item_id is null and c.formation_status is distinct from 'rejected' and c.formation_status is distinct from 'proposed')),
+    'recentRoute',case when exists(select 1 from ai.explorer_conversation_operation o where o.conversation_id=pg_temp.gid(6005)
+      and (o.compass_route_kind is not null or o.followed_attention_item_id is not null)) then null else '[]'::jsonb end,
     'waypoints',coalesce((select jsonb_agg(jsonb_build_object('id',w.waypoint_id,'title',ai.solmind_exclusion_normalize_v3(w.title),
       'destination',ai.solmind_exclusion_normalize_v3(w.destination),'meaning',ai.solmind_exclusion_normalize_v3(w.why_it_matters),
       'arrivalSignal',ai.solmind_exclusion_normalize_v3(w.arrival_signal),
@@ -180,12 +179,13 @@ create function pg_temp.compass_source_ids() returns uuid[] language sql stable 
   select coalesce(array_agg(x.id),array[]::uuid[]) from (
     select c.item_id as id from ai.explorer_conversation_compass_item c
       where c.conversation_id=pg_temp.gid(6005) and c.merged_into_item_id is null and c.formation_status is distinct from 'rejected'
+        and c.formation_status is distinct from 'proposed'
     union all select w.waypoint_id from (select h.* from content.waypoint h where h.source_ai_interaction_session_id=pg_temp.gid(6005)
       and not exists(select 1 from content.waypoint s where s.predecessor_waypoint_id=h.waypoint_id)
       order by case when h.lifecycle_status='chosen' and h.released_at is null then 0 else 1 end,h.created_at desc,h.waypoint_id limit 20) w) x
 $$;
 create function pg_temp.context_value(msg uuid,body text) returns jsonb language sql stable as $$
-  select jsonb_build_object('contractVersion','wi007-v0.1+onboarding-fields-v2+compass-v7','aiRole','solmind_virtual_guide','actorRoleContext','explorer',
+  select jsonb_build_object('contractVersion','wi007-v0.1+onboarding-fields-v2+compass-v8','aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy',jsonb_build_object('version','synthetic-policy.v1','text','Synthetic policy.'),
     'roleBehavior',jsonb_build_object('version','synthetic-behavior.v1','text','Synthetic behavior.'),
     'crisisBehavior',jsonb_build_object('version','synthetic-crisis.v1','text','Synthetic crisis.'),
@@ -281,7 +281,18 @@ do $$ begin
   if pg_temp.screen_terminal(1001) is distinct from 'ok' then raise exception 'synthetic_formation_screen_terminal_failed'; end if;
   if pg_temp.admin_review(1001) is distinct from 'ok' then raise exception 'synthetic_formation_admin_failed'; end if;
   if pg_temp.guide_decision(1001) is distinct from 'ok' then raise exception 'synthetic_formation_guide_failed'; end if;
-  if not exists(select 1 from pg_temp.ensure_anchor() where outcome='created') then raise exception 'synthetic_formation_anchor_failed'; end if;
+  if not exists(select 1 from pg_temp.ensure_anchor(6004) where outcome='created') then raise exception 'synthetic_formation_anchor_failed'; end if;
+end $$;
+-- REV391 (2026-11-11): manual Compass points, Priority, arrangement and category operations exist only from before
+-- automatic Compass, so conversation 6005 is a legacy-mode conversation: a privileged rollback-only copy of the
+-- freshly created owned conversation 6004 (session and state rows), as in explorer_automatic_compass_test.sql.
+insert into ai.ai_interaction_session select (jsonb_populate_record(null::ai.ai_interaction_session,
+  to_jsonb(s)||jsonb_build_object('ai_interaction_session_id',pg_temp.gid(6005)))).*
+  from ai.ai_interaction_session s where s.ai_interaction_session_id=pg_temp.gid(6004);
+insert into ai.explorer_conversation_state select (jsonb_populate_record(null::ai.explorer_conversation_state,
+  to_jsonb(s)||jsonb_build_object('conversation_id',pg_temp.gid(6005),'compass_mode','legacy'))).*
+  from ai.explorer_conversation_state s where s.conversation_id=pg_temp.gid(6004);
+do $$ begin
   if not exists(select 1 from pg_temp.prepare_private(1) where outcome='ok' and dispatch_permitted) then raise exception 'synthetic_formation_prepare_failed'; end if;
   if not exists(select 1 from pg_temp.settle_private(1) where outcome='ok' and saved_reply) then raise exception 'synthetic_formation_settle_failed'; end if;
 end $$;
@@ -305,7 +316,125 @@ create function pg_temp.read_state() returns jsonb language sql as $$
 $$;
 create temp table invocation_before as select count(*)::integer n from ai.ai_model_invocation;
 
-
+-- REV391 (2026-11-11): manual Compass commands are retired, so every earlier manual Compass operation in this
+-- file is a privileged historical fixture: the operation row exactly as its owner stored it (request fingerprint
+-- formulas of the latest prior owners, 20261106000000_explorer_waypoint_active_limits.sql for the mutation and
+-- 20261105010000_explorer_forming_compass_points.sql for arrangement and category, unchanged by REV391) and the
+-- stored effect it had. Direct writes happen only here; only the formation guard is suspended, and only around a
+-- point INSERT or a wording UPDATE, restored before any assertion.
+create function pg_temp.historical_mutation(op_n integer,kind_name text,source_n integer default null,
+  item_n integer default null,label_text text default null) returns void language plpgsql as $$
+declare st ai.explorer_conversation_state%rowtype; route_kind text; route_label text;
+begin
+  select * into st from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005);
+  if kind_name='add_compass' then
+    alter table ai.explorer_conversation_compass_item disable trigger explorer_compass_formation_guard;
+    insert into ai.explorer_conversation_compass_item(item_id,conversation_id,source_message_id,label,display_order)
+      values(pg_temp.gid(op_n),pg_temp.gid(6005),pg_temp.gid(source_n),label_text,
+        (select coalesce(max(c.display_order),0)+1 from ai.explorer_conversation_compass_item c where c.conversation_id=pg_temp.gid(6005)));
+    alter table ai.explorer_conversation_compass_item enable trigger explorer_compass_formation_guard;
+  elsif kind_name='confirm_priority' then
+    if st.priority_id is distinct from pg_temp.gid(item_n) then
+      route_kind:=case when st.priority_id is null then 'priority_confirmed' else 'priority_reoriented' end;
+      select c.label into route_label from ai.explorer_conversation_compass_item c where c.item_id=pg_temp.gid(item_n);
+    end if;
+    update ai.explorer_conversation_state set priority_id=pg_temp.gid(item_n) where conversation_id=pg_temp.gid(6005);
+  else raise exception 'fixture_kind'; end if;
+  insert into ai.explorer_conversation_operation(actor_user_account_id,operation_id,application_session_id,
+    conversation_id,kind,request_fingerprint,command_fingerprint,initial_revision,status,completed_at,
+    compass_route_kind,compass_route_item_id,compass_route_label)
+  values(pg_temp.gid(1),pg_temp.gid(op_n),pg_temp.gid(50),pg_temp.gid(6005),kind_name,
+    upper(encode(extensions.digest(convert_to(jsonb_build_array(pg_temp.gid(50),pg_temp.gid(6005),st.revision,
+      kind_name,case when source_n is null then null else pg_temp.gid(source_n) end,
+      case when item_n is null then null else pg_temp.gid(item_n) end,null::uuid,label_text,null::text,null::text,null::text,null::text,
+      pg_temp.request_sha(op_n))::text,'UTF8'),'sha256'),'hex')),
+    pg_temp.request_sha(op_n),st.revision,'completed',clock_timestamp(),
+    route_kind,case when route_kind is null then null else pg_temp.gid(item_n) end,route_label);
+  update ai.explorer_conversation_state set revision=revision+1 where conversation_id=pg_temp.gid(6005);
+  update ai.ai_interaction_session set last_activity_at=clock_timestamp() where ai_interaction_session_id=pg_temp.gid(6005);
+end $$;
+create function pg_temp.historical_arrangement(op_n integer,priority_n integer,p_items jsonb) returns void language plpgsql as $$
+declare st ai.explorer_conversation_state%rowtype; canonical_items jsonb; snapshot jsonb; meaningful boolean;
+  p_priority uuid:=case when priority_n is null then null else pg_temp.gid(priority_n) end;
+begin
+  select * into st from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005);
+  select coalesce(jsonb_agg(value order by value->>'compassItemId'),'[]'::jsonb) into canonical_items from jsonb_array_elements(p_items);
+  select exists(select 1 from ai.explorer_conversation_compass_item c join jsonb_array_elements(canonical_items) i
+      on c.item_id=(i->>'compassItemId')::uuid where c.conversation_id=pg_temp.gid(6005) and c.merged_into_item_id is null and c.formation_status is distinct from 'rejected' and c.formation_status is distinct from 'proposed'
+      and (c.compass_anchor is distinct from i->>'anchor' or c.relative_emphasis is distinct from (i->>'emphasis')::smallint))
+    or st.priority_id is distinct from p_priority into meaningful;
+  select jsonb_build_object('previousPriorityId',st.priority_id,'priorityId',p_priority,'items',
+    coalesce(jsonb_agg(jsonb_build_object('compassItemId',c.item_id,'label',c.label,'anchor',i->'anchor','emphasis',i->'emphasis')
+      order by c.item_id),'[]'::jsonb)) into snapshot
+    from ai.explorer_conversation_compass_item c join jsonb_array_elements(canonical_items) i
+      on c.item_id=(i->>'compassItemId')::uuid where c.conversation_id=pg_temp.gid(6005) and c.merged_into_item_id is null and c.formation_status is distinct from 'rejected' and c.formation_status is distinct from 'proposed';
+  if meaningful then
+    update ai.explorer_conversation_compass_item set compass_anchor=null where conversation_id=pg_temp.gid(6005) and merged_into_item_id is null and formation_status is distinct from 'rejected' and formation_status is distinct from 'proposed';
+    update ai.explorer_conversation_compass_item c set compass_anchor=i->>'anchor',relative_emphasis=(i->>'emphasis')::smallint
+      from jsonb_array_elements(canonical_items) i where c.conversation_id=pg_temp.gid(6005) and c.merged_into_item_id is null and c.formation_status is distinct from 'rejected' and c.formation_status is distinct from 'proposed' and c.item_id=(i->>'compassItemId')::uuid;
+    update ai.explorer_conversation_state set priority_id=p_priority where conversation_id=pg_temp.gid(6005);
+  end if;
+  insert into ai.explorer_conversation_operation(actor_user_account_id,operation_id,application_session_id,conversation_id,kind,
+    request_fingerprint,command_fingerprint,initial_revision,status,completed_at,compass_route_kind,compass_arrangement)
+    values(pg_temp.gid(1),pg_temp.gid(op_n),pg_temp.gid(50),pg_temp.gid(6005),'confirm_compass_arrangement',
+      methodology.hash_json(jsonb_build_array('compass-arrangement.v1',pg_temp.gid(50),pg_temp.gid(6005),
+        st.revision,p_priority,canonical_items,pg_temp.request_sha(op_n))),pg_temp.request_sha(op_n),
+      st.revision,'completed',clock_timestamp(),case when meaningful then 'arrangement_confirmed' else null end,
+      case when meaningful then snapshot else null end);
+  update ai.explorer_conversation_state set revision=revision+1 where conversation_id=pg_temp.gid(6005);
+  update ai.ai_interaction_session set last_activity_at=clock_timestamp() where ai_interaction_session_id=pg_temp.gid(6005);
+end $$;
+create function pg_temp.historical_category(op_n integer,target_n integer,members integer[],p_label text) returns void language plpgsql as $$
+declare st ai.explorer_conversation_state%rowtype; ids uuid[]; contributing uuid[]; snapshot jsonb; old_label text; meaningful boolean;
+  p_target uuid:=pg_temp.gid(target_n);
+begin
+  select * into st from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005);
+  select array_agg(distinct pg_temp.gid(n) order by pg_temp.gid(n)) into ids from unnest(members) n;
+  with recursive originals(item_id) as (
+    select c.item_id from ai.explorer_conversation_compass_item c where c.conversation_id=pg_temp.gid(6005) and c.item_id=any(ids)
+    union
+    select c.item_id from ai.explorer_conversation_compass_item c join originals o on c.merged_into_item_id=o.item_id
+      where c.conversation_id=pg_temp.gid(6005)
+  ) select array_agg(item_id order by item_id) into contributing from originals;
+  select c.label into old_label from ai.explorer_conversation_compass_item c where c.conversation_id=pg_temp.gid(6005) and c.item_id=p_target;
+  meaningful:=cardinality(ids)>1 or old_label is distinct from p_label;
+  if meaningful then
+    select jsonb_build_object('targetItemId',p_target,'memberItemIds',to_jsonb(ids),'beforeItems',
+      jsonb_agg(jsonb_build_object('compassItemId',c.item_id,'sourceMessageId',c.source_message_id,'label',c.label,
+        'mergedIntoItemId',c.merged_into_item_id,'anchor',c.compass_anchor,'emphasis',c.relative_emphasis) order by c.item_id),
+      'label',p_label) into snapshot
+      from ai.explorer_conversation_compass_item c where c.conversation_id=pg_temp.gid(6005) and c.item_id=any(contributing);
+    alter table ai.explorer_conversation_compass_item disable trigger explorer_compass_formation_guard;
+    update ai.explorer_conversation_compass_item set label=p_label where conversation_id=pg_temp.gid(6005) and item_id=p_target;
+    alter table ai.explorer_conversation_compass_item enable trigger explorer_compass_formation_guard;
+    update ai.explorer_conversation_compass_item set merged_into_item_id=p_target
+      where conversation_id=pg_temp.gid(6005) and item_id=any(ids) and item_id<>p_target;
+  end if;
+  insert into ai.explorer_conversation_operation(actor_user_account_id,operation_id,application_session_id,conversation_id,kind,
+    request_fingerprint,command_fingerprint,initial_revision,status,completed_at,compass_route_kind,compass_category_change)
+    values(pg_temp.gid(1),pg_temp.gid(op_n),pg_temp.gid(50),pg_temp.gid(6005),'confirm_compass_category',
+      methodology.hash_json(jsonb_build_array('compass-category.v1',pg_temp.gid(50),pg_temp.gid(6005),
+        st.revision,p_target,to_jsonb(ids),p_label,pg_temp.request_sha(op_n))),pg_temp.request_sha(op_n),
+      st.revision,'completed',clock_timestamp(),case when meaningful then 'category_confirmed' else null end,snapshot);
+  update ai.explorer_conversation_state set revision=revision+1 where conversation_id=pg_temp.gid(6005);
+  update ai.ai_interaction_session set last_activity_at=clock_timestamp() where ai_interaction_session_id=pg_temp.gid(6005);
+end $$;
+create function pg_temp.compass_rows() returns jsonb language sql stable as $$
+  select coalesce(jsonb_agg(to_jsonb(c) order by c.item_id),'[]'::jsonb) from ai.explorer_conversation_compass_item c
+    where c.conversation_id=pg_temp.gid(6005)
+$$;
+create function pg_temp.operation_count() returns bigint language sql stable as $$
+  select count(*) from ai.explorer_conversation_operation where conversation_id=pg_temp.gid(6005)
+$$;
+-- A retired fresh command (cmd returns its outcome) is refused with the definite conflict and leaves the saved
+-- state, every stored point row (rejected rows included) and the operation count byte-equal to before.
+create function pg_temp.refused(cmd text) returns boolean language plpgsql as $$
+declare s jsonb:=pg_temp.read_state(); r jsonb:=pg_temp.compass_rows(); n bigint:=pg_temp.operation_count(); result text;
+begin
+  execute cmd into result;
+  return result is not distinct from 'operation_conflict' and pg_temp.read_state()=s and pg_temp.compass_rows()=r
+    and pg_temp.operation_count()=n;
+end $$;
 create function pg_temp.category(op_n integer,target_n integer,members integer[],label_text text,revision_override integer default null)
 returns table(outcome text,conversation_state jsonb) language sql as $$
   select * from public.solmind_confirm_explorer_compass_category_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),
@@ -328,46 +457,64 @@ create function pg_temp.arrange(op_n integer,items_value jsonb) returns table(ou
       (select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005))),pg_temp.request_sha(op_n),pg_temp.gid(26001),items_value)
 $$;
 
-select is((select outcome from pg_temp.mutate(26001,'add_compass',10011,null,null,'Weekly focus')),'ok','first saved-source category added');
-select is((select outcome from pg_temp.mutate(26002,'add_compass',10015,null,null,'Supporting routine')),'ok','second saved source retained');
-select is((select outcome from pg_temp.mutate(26003,'add_compass',10011,null,null,'Time constraints')),'ok','third source point retained');
-select is((select outcome from pg_temp.mutate(26101,'confirm_priority',null,26001)),'ok','Explorer confirms original Priority');
+do $$ begin
+  perform pg_temp.historical_mutation(26001,'add_compass',10011,null,'Weekly focus');
+  perform pg_temp.historical_mutation(26002,'add_compass',10015,null,'Supporting routine');
+  perform pg_temp.historical_mutation(26003,'add_compass',10011,null,'Time constraints');
+end $$;
+select ok(pg_temp.refused($q$select outcome from pg_temp.mutate(26901,'add_compass',10011,null,null,'Weekly focus')$q$),
+  'a fresh saved-source category is refused (retired) beside the historical first point, changing nothing');
+select ok(pg_temp.refused($q$select outcome from pg_temp.mutate(26902,'add_compass',10015,null,null,'Supporting routine')$q$),
+  'a fresh second saved-source point is refused the same way, changing nothing');
+select ok(pg_temp.refused($q$select outcome from pg_temp.mutate(26903,'add_compass',10011,null,null,'Time constraints')$q$),
+  'a fresh third source point is refused the same way, changing nothing');
+select ok(pg_temp.refused($q$select outcome from pg_temp.mutate(26904,'confirm_priority',null,26001)$q$),
+  'a fresh Priority confirmation is refused (retired), changing nothing');
+do $$ begin perform pg_temp.historical_mutation(26101,'confirm_priority',null,26001); end $$;
 select is((select outcome from pg_temp.mutate(26102,'set_attention',null,26002)),'ok','attention is distinct from Priority');
 create temp table initial_layout as select pg_temp.layout() value;
-select is((select outcome from pg_temp.arrange(26201,(select value from initial_layout))),'ok','three reviewed positions saved');
+select ok(pg_temp.refused($q$select outcome from pg_temp.arrange(26905,(select value from initial_layout))$q$),
+  'a fresh arrangement of the three reviewed positions is refused (retired), changing nothing');
+do $$ begin perform pg_temp.historical_arrangement(26201,26001,(select value from initial_layout)); end $$;
 create temp table initial_route as select pg_temp.read_state()->'route' value;
 
-select is((select outcome from pg_temp.category(26301,26001,array[26001],'Weekly focus and constraints')),'ok','one-head reviewed broadening changes its descriptive label');
+select ok(pg_temp.refused($q$select outcome from pg_temp.category(26906,26001,array[26001],'Weekly focus and constraints')$q$),
+  'a fresh one-head broadening is refused (retired), changing nothing');
+do $$ begin perform pg_temp.historical_category(26301,26001,array[26001],'Weekly focus and constraints'); end $$;
 select ok((select source_message_id=pg_temp.gid(10011) and compass_anchor='apex' and relative_emphasis=3 and merged_into_item_id is null
-  from ai.explorer_conversation_compass_item where item_id=pg_temp.gid(26001)),'broadening preserves original source, stable identity and current placement');
+  from ai.explorer_conversation_compass_item where item_id=pg_temp.gid(26001)),'broadening preserves original source, stable identity and current placement (historical readback)');
 select ok((select priority_id=pg_temp.gid(26001) and attention_id=pg_temp.gid(26002)
-  from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005)),'confirmed meaning change does not transfer either selector');
+  from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005)),'confirmed meaning change does not transfer either selector (historical readback)');
 select is((select compass_category_change#>>'{beforeItems,0,label}' from ai.explorer_conversation_operation where operation_id=pg_temp.gid(26301)),
-  'Weekly focus','captured old wording is exact rather than recomputed');
+  'Weekly focus','captured old wording is exact rather than recomputed (historical readback)');
 select ok((select ai.solmind_compass_category_change_valid(compass_category_change) from ai.explorer_conversation_operation where operation_id=pg_temp.gid(26301)),
-  'new category capture obeys its exact closed shape');
+  'the historical category capture still obeys its exact closed shape (historical readback)');
 select is((select jsonb_agg(x.value order by x.ord)::text from jsonb_array_elements(pg_temp.read_state()->'route') with ordinality x(value,ord)
     where x.ord<=(select jsonb_array_length(value) from initial_route)),(select value::text from initial_route),'earlier captured Route remains exactly unchanged');
-select throws_ok($$select * from pg_temp.category(26302,26001,array[26001,26002],'Premature combined focus')$$,
-  'P0001','solmind_explorer_private_invalid_input','combining away current attention refuses instead of moving it silently');
-select throws_ok($$select * from pg_temp.category(26303,26002,array[26001,26002],'Wrong surviving Priority')$$,
-  'P0001','solmind_explorer_private_invalid_input','combining away Priority refuses');
+select ok(pg_temp.refused($q$select outcome from pg_temp.category(26302,26001,array[26001,26002],'Premature combined focus')$q$),
+  'combining away current attention is refused (retired) instead of moving it silently, changing nothing');
+select ok(pg_temp.refused($q$select outcome from pg_temp.category(26303,26002,array[26001,26002],'Wrong surviving Priority')$q$),
+  'combining away Priority is refused (retired), changing nothing');
 
-select is((select outcome from pg_temp.category(26304,26002,array[26003,26002],'Supporting themes')),'ok','attention survivor can combine another current category');
+select ok(pg_temp.refused($q$select outcome from pg_temp.category(26907,26002,array[26003,26002],'Supporting themes')$q$),
+  'a fresh combination under the attention survivor is refused (retired), changing nothing');
+do $$ begin perform pg_temp.historical_category(26304,26002,array[26003,26002],'Supporting themes'); end $$;
 select ok((select merged_into_item_id=pg_temp.gid(26002) and label='Time constraints' and compass_anchor='upper_right'
-  from ai.explorer_conversation_compass_item where item_id=pg_temp.gid(26003)),'combined original retains label, exact source and former layout');
+  from ai.explorer_conversation_compass_item where item_id=pg_temp.gid(26003)),'combined original retains label, exact source and former layout (historical readback)');
 select is((select outcome from pg_temp.mutate(26103,'set_attention',null,26001)),'ok','Explorer explicitly moves attention before the next combination');
-select is((select outcome from pg_temp.category(26305,26001,array[26002,26001],'Weekly focus and supporting themes')),'ok','two current heads combine under the explicitly chosen Priority survivor');
+select ok(pg_temp.refused($q$select outcome from pg_temp.category(26908,26001,array[26002,26001],'Weekly focus and supporting themes')$q$),
+  'a fresh combination of two current heads under the Priority survivor is refused (retired), changing nothing');
+do $$ begin perform pg_temp.historical_category(26305,26001,array[26002,26001],'Weekly focus and supporting themes'); end $$;
 select ok((select count(*)=3 and count(*) filter(where merged_into_item_id is null)=1
-  from ai.explorer_conversation_compass_item where conversation_id=pg_temp.gid(6005)),'all original rows remain while only one current category head survives');
+  from ai.explorer_conversation_compass_item where conversation_id=pg_temp.gid(6005)),'all original rows remain while only one current category head survives (historical readback)');
 select ok((select merged_into_item_id=pg_temp.gid(26002) from ai.explorer_conversation_compass_item where item_id=pg_temp.gid(26003))
   and (select merged_into_item_id=pg_temp.gid(26001) from ai.explorer_conversation_compass_item where item_id=pg_temp.gid(26002)),
-  'transitive source links retain the actual earlier grouping rather than flattening history');
+  'transitive source links retain the actual earlier grouping rather than flattening history (historical readback)');
 select is((select jsonb_array_length(compass_category_change->'beforeItems') from ai.explorer_conversation_operation where operation_id=pg_temp.gid(26305)),3,
-  'later capture contains the complete contributing closure');
+  'later capture contains the complete contributing closure (historical readback)');
 select is((select count(distinct x->>'sourceMessageId')::integer from ai.explorer_conversation_operation o,
   lateral jsonb_array_elements(o.compass_category_change->'beforeItems') x where o.operation_id=pg_temp.gid(26305)),2,
-  'both distinct exact saved-message references survive the grouping');
+  'both distinct exact saved-message references survive the grouping (historical readback)');
 select ok((select jsonb_array_length(pg_temp.read_state()->'compassItems')=3) and
   exists(select 1 from jsonb_array_elements(pg_temp.read_state()->'compassItems') x where x->>'id'=pg_temp.gid(26003)::text
     and x->>'mergedIntoItemId'=pg_temp.gid(26002)::text),'state preserves all retained IDs for old Route references and source review');
@@ -376,24 +523,30 @@ select is((select outcome from pg_temp.category(26305,26001,array[26001,26002],'
 select is((select count(*)::integer from ai.explorer_conversation_operation where operation_id=pg_temp.gid(26305)),1,'exact replay adds no duplicate operation/capture');
 select throws_ok($$select * from pg_temp.category(26305,26001,array[26001,26002],'Changed same-ID wording')$$,
   'P0001','solmind_explorer_private_operation_conflict','changed reuse of one operation conflicts');
-select is((select outcome from pg_temp.category(26306,26001,array[26001],'Stale wording',0)),'stale_revision','new stale review cannot change category wording');
+select ok(pg_temp.refused($q$select outcome from pg_temp.category(26306,26001,array[26001],'Stale wording',0)$q$),
+  'a new stale review cannot change category wording: it is refused (retired), changing nothing');
 select throws_ok($$select * from pg_temp.category(26307,26001,array[26001,26001],'Duplicate members')$$,
   'P0001','solmind_explorer_private_invalid_input','duplicate members refuse');
-select throws_ok($$select * from pg_temp.category(26308,26001,array[26001,99999],'Foreign selector')$$,
-  'P0001','solmind_explorer_private_invalid_input','missing or foreign point selector refuses');
-select throws_ok($$select * from pg_temp.category(26309,26002,array[26002],'Retired selector')$$,
-  'P0001','solmind_explorer_private_invalid_input','a retained combined-away row cannot become a fresh current target');
+select ok(pg_temp.refused($q$select outcome from pg_temp.category(26308,26001,array[26001,99999],'Foreign selector')$q$),
+  'a missing or foreign point selector is refused (retired), changing nothing');
+select ok(pg_temp.refused($q$select outcome from pg_temp.category(26309,26002,array[26002],'Retired selector')$q$),
+  'a retained combined-away row cannot become a fresh current target: refused (retired), changing nothing');
 select throws_ok($$select * from pg_temp.mutate(26104,'set_attention',null,26002)$$,'P0001',null,'legacy attention writer refuses a combined-away selector');
-select throws_ok($$select * from pg_temp.mutate(26105,'confirm_priority',null,26002)$$,'P0001',null,'legacy Priority writer refuses a combined-away selector');
+select ok(pg_temp.refused($q$select outcome from pg_temp.mutate(26105,'confirm_priority',null,26002)$q$),
+  'the retired Priority writer refuses a combined-away selector, changing nothing');
 select is((select outcome from pg_temp.arrange(26201,(select value from initial_layout))),'exact_replay','old complete arrangement fingerprint/replay survives later combinations');
-select throws_ok($$select * from pg_temp.arrange(26202,(select value from initial_layout))$$,'P0001','solmind_explorer_private_invalid_input',
-  'new arrangement cannot treat retained retired originals as current heads');
+select ok(pg_temp.refused($q$select outcome from pg_temp.arrange(26202,(select value from initial_layout))$q$),
+  'a new arrangement cannot treat retained retired originals as current heads: refused (retired), changing nothing');
 
-select is((select outcome from pg_temp.mutate(26004,'add_compass',10015,null,null,'Additional saved detail')),'ok','another current source point can be added without reusing a retained ID');
-select is((select outcome from pg_temp.arrange(26203,pg_temp.layout())),'ok','current head reuses a visible anchor retained only in historical originals');
+select ok(pg_temp.refused($q$select outcome from pg_temp.mutate(26909,'add_compass',10015,null,null,'Additional saved detail')$q$),
+  'a fresh additional source point is refused (retired), changing nothing');
+do $$ begin perform pg_temp.historical_mutation(26004,'add_compass',10015,null,'Additional saved detail'); end $$;
+select ok(pg_temp.refused($q$select outcome from pg_temp.arrange(26910,pg_temp.layout())$q$),
+  'a fresh arrangement reusing a visible anchor of a historical original is refused (retired), changing nothing');
+do $$ begin perform pg_temp.historical_arrangement(26203,26001,pg_temp.layout()); end $$;
 select ok((select compass_anchor='upper_left' from ai.explorer_conversation_compass_item where item_id=pg_temp.gid(26002)) and
   (select compass_anchor='upper_left' from ai.explorer_conversation_compass_item where item_id=pg_temp.gid(26004)),
-  'current-only uniqueness preserves retired layout without blocking the current frame');
+  'current-only uniqueness preserves retired layout without blocking the current frame (historical readback)');
 
 create temp table before_failed_capture as select revision,(select label from ai.explorer_conversation_compass_item where item_id=pg_temp.gid(26001)) label
   from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005);
@@ -403,8 +556,8 @@ create function pg_temp.reject_category_capture() returns trigger language plpgs
 end $$;
 create trigger category_capture_failure before insert on ai.explorer_conversation_operation
   for each row execute function pg_temp.reject_category_capture();
-select throws_ok($$select * from pg_temp.category(26310,26001,array[26001],'Must roll back')$$,'P0001','synthetic_category_capture_failure',
-  'operation/capture failure rolls back the associated current wording change');
+select is((select outcome from pg_temp.category(26310,26001,array[26001],'Must roll back')),'operation_conflict',
+  'the retired category command is refused before any operation or capture write (the failing capture trigger is never reached)');
 drop trigger category_capture_failure on ai.explorer_conversation_operation;
 select ok((select s.revision=b.revision and c.label=b.label from ai.explorer_conversation_state s
   join ai.explorer_conversation_compass_item c on c.item_id=pg_temp.gid(26001) cross join before_failed_capture b
@@ -418,25 +571,31 @@ select throws_ok($$delete from ai.explorer_conversation_operation where operatio
   'solmind_explorer_private_immutable','captured category operation cannot be deleted');
 
 create temp table no_op_route as select pg_temp.read_state()->'route' value;
-select is((select outcome from pg_temp.category(26311,26001,array[26001],'Weekly focus and supporting themes')),'ok','one-member same-wording request is a completed no-op');
-select is((pg_temp.read_state()->'route')::text,(select value::text from no_op_route),'no-op does not invent a meaningful Route event');
+select ok(pg_temp.refused($q$select outcome from pg_temp.category(26911,26001,array[26001],'Weekly focus and supporting themes')$q$),
+  'a fresh one-member same-wording request is refused (retired), changing nothing');
+do $$ begin perform pg_temp.historical_category(26311,26001,array[26001],'Weekly focus and supporting themes'); end $$;
+select is((pg_temp.read_state()->'route')::text,(select value::text from no_op_route),'a historical no-op does not invent a meaningful Route event');
 select throws_ok($$update ai.explorer_conversation_operation set status='failed' where operation_id=pg_temp.gid(26311)$$,
   'P0001','solmind_explorer_private_immutable','completed no-op category records are immutable too');
 
 -- Total storage remains bounded even when the number of current heads falls.
 do $$ begin
   for n in 5..24 loop
-    if not exists(select 1 from pg_temp.mutate(26000+n,'add_compass',10011,null,null,'Saved point '||n) where outcome='ok')
-      then raise exception 'synthetic_category_limit_setup_failed'; end if;
+    perform pg_temp.historical_mutation(26000+n,'add_compass',10011,null,'Saved point '||n);
   end loop;
 end $$;
-select is((select count(*)::integer from ai.explorer_conversation_compass_item where conversation_id=pg_temp.gid(6005)),24,'retained originals still count toward the 24-row storage bound');
-select is((select outcome from pg_temp.category(26312,26001,array[26004,26001],'Reviewed complete focus')),'ok','combination at storage capacity preserves its originals');
-select is((select outcome from pg_temp.mutate(26025,'add_compass',10011,null,null,'No hidden extra slot')),'unavailable','combining does not manufacture a twenty-fifth storage slot');
+select is((select count(*)::integer from ai.explorer_conversation_compass_item where conversation_id=pg_temp.gid(6005)),24,'retained originals still count toward the 24-row storage bound (historical readback)');
+select ok(pg_temp.refused($q$select outcome from pg_temp.category(26912,26001,array[26004,26001],'Reviewed complete focus')$q$),
+  'a fresh combination at storage capacity is refused (retired), changing nothing');
+do $$ begin perform pg_temp.historical_category(26312,26001,array[26004,26001],'Reviewed complete focus'); end $$;
+select ok(pg_temp.refused($q$select outcome from pg_temp.mutate(26025,'add_compass',10011,null,null,'No hidden extra slot')$q$),
+  'combining does not manufacture a twenty-fifth storage slot: a fresh point is refused (retired), changing nothing');
 select is((select count(*)::integer from ai.explorer_conversation_compass_item where conversation_id=pg_temp.gid(6005)),24,'refused extra source point does not discard an original');
-select is((select outcome from pg_temp.arrange(26204,pg_temp.layout())),'ok','all and only remaining current heads can still be arranged');
+select ok(pg_temp.refused($q$select outcome from pg_temp.arrange(26913,pg_temp.layout())$q$),
+  'a fresh arrangement of the remaining current heads is refused (retired), changing nothing');
+do $$ begin perform pg_temp.historical_arrangement(26204,26001,pg_temp.layout()); end $$;
 select ok((select count(*)<=8 from ai.explorer_conversation_compass_item where conversation_id=pg_temp.gid(6005)
-  and merged_into_item_id is null and compass_anchor is not null),'current visible frame remains bounded by eight');
+  and merged_into_item_id is null and compass_anchor is not null),'current visible frame remains bounded by eight (historical readback)');
 select ok((select bool_and(x?'mergedIntoItemId') from jsonb_array_elements(pg_temp.read_state()->'compassItems') x),
   'new projection always supplies the explicit current/retained marker');
 select throws_ok($$select * from public.solmind_confirm_explorer_compass_category_v1(pg_temp.gid(4),pg_temp.gid(54),pg_temp.gid(6005),pg_temp.gid(26313),
@@ -456,8 +615,8 @@ select is((select count(*)::integer from ai.ai_model_invocation),(select n from 
 -- A real known restricted observation blocks new formation but preserves replay;
 -- it is a SQL protocol fixture, not a real crisis classification or provider call.
 select is((select outcome from pg_temp.observe(99,3,false)),'ok','synthetic private restriction is recorded for refusal checks');
-select throws_ok($$select * from pg_temp.category(26315,26001,array[26001],'Blocked reflection')$$,'P0001','solmind_explorer_private_denied',
-  'restricted private policy refuses a new category write');
+select ok(pg_temp.refused($q$select outcome from pg_temp.category(26315,26001,array[26001],'Blocked reflection')$q$),
+  'a new category write under restricted private policy is refused (retired), changing nothing');
 select is((select outcome from pg_temp.category(26312,26001,array[26001,26004],'Reviewed complete focus')),'exact_replay',
   'existing exact category replay precedes new-reflection policy checks');
 select is((select outcome from public.solmind_end_explorer_conversation_v1(pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005),pg_temp.gid(26401),

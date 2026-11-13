@@ -47,7 +47,7 @@ const SETTLE: ExplorerPrivateSettleParameters = Object.freeze({ ...ACTOR_PARAMET
   p_request_mode: "classification_only", p_configuration_fingerprint: SHA,
   p_fallback_policy_version: "synthetic-fallback.v1", p_model_policy_version: "synthetic-model.v1",
   p_trusted_response_version: "synthetic-trusted.v1", p_resource_policy_version: "synthetic-resources.v1",
-  p_fallback_level: 3, p_fallback_minor_indicated: false, p_delivery_interested: false, p_attention_item_id: null, p_choices: null, p_compass_suggestions: null, p_compass_responses: null, p_waypoint_suggestion: null, p_waypoint_response: null, p_failure_reason: null });
+  p_fallback_level: 3, p_fallback_minor_indicated: false, p_delivery_interested: false, p_attention_item_id: null, p_choices: null, p_compass_suggestions: null, p_compass_responses: null, p_waypoint_suggestion: null, p_waypoint_response: null, p_compass_topics: null, p_failure_reason: null });
 const MUTATE: ExplorerPrivateMutateParameters = Object.freeze({ ...ACTOR_PARAMETERS, p_conversation_id: ID,
   p_operation_id: ID, p_expected_revision: 1, p_command_fingerprint: SHA, p_kind: "confirm_reached",
   p_source_message_id: null, p_item_id: null, p_waypoint_id: ID, p_label: null, p_destination: null,

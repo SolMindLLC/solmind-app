@@ -39,10 +39,14 @@ const success = (state: ExplorerConversationState) => ({
   version: "explorer-private-conversation-response.v1", result: { ok: true, state, error: null }, assistance: null,
 });
 
-async function openConversation(page: Page) {
+const newState = (): ExplorerConversationState => ({
+  ...savedState(), conversationId: null, revision: 0, sessionStatus: null, messages: [],
+});
+
+async function openConversation(page: Page, state = savedState()) {
   let commands = 0;
   await page.route("**/explorer/conversation/state", route =>
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(success(savedState())) }));
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(success(state)) }));
   await page.route("**/explorer/conversation/commands", route => { commands += 1; return route.abort(); });
   await page.goto("/explorer/conversation");
   await expect(page.getByRole("heading", { level: 1, name: "Your conversation", exact: true })).toBeFocused();
@@ -69,31 +73,34 @@ async function expectVisibleLabelsBlue(page: Page) {
 }
 
 test("conversation screen: the toggle hides every note and marker; an X hides only its box until the toggle turns them on", async ({ page }) => {
-  const commands = await openConversation(page);
+  const commands = await openConversation(page, newState());
   const toggle = toggleOf(page);
   await expect(toggle).toBeVisible();
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
   await expect(toggle).toHaveAttribute("data-build-note", "toggle");
   // The 13 controls not built yet each carry a blue label (the rail's copies are drawn on wide screens only).
-  await expect(labels(page)).toHaveCount(13);
+  await expect(labels(page)).toHaveCount(12);
   await expectVisibleLabelsBlue(page);
   const bell = page.getByRole("button", { name: /^Notifications\s*Not connected yet$/ });
   await expect(bell).toBeVisible();
-  // The latest-change area is a dashed blue box with an X in its upper corner.
-  const latest = boxOf(page, "nyi-composer-latestChange");
-  await expect(latest).toBeVisible();
-  await expect(latest).toHaveCSS("border-top-style", "dashed");
-  await expect(latest).toHaveCSS("border-top-color", BLUE);
-  await expect(latest.getByText(withoutReviewPrefix(NOT_YET_IMPLEMENTED.latestChange), { exact: true })).toBeVisible();
-  const close = latest.getByRole("button", { name: BUILD_NOTE_WORDING.hide, exact: true });
-  await expect(close).toHaveAccessibleDescription(withoutReviewPrefix(NOT_YET_IMPLEMENTED.latestChange));
-  const [boxBox, closeBox] = await Promise.all([latest.boundingBox(), close.boundingBox()]);
+  // Ways to begin is a remaining dashed blue box with an X in its upper corner.
+  const waysToBegin = boxOf(page, "nyi-chat-choiceGroup");
+  const earlierCompass = boxOf(page, "nyi-chat-earlierCompass");
+  await expect(waysToBegin).toBeVisible();
+  await expect(waysToBegin).toHaveCSS("border-top-style", "dashed");
+  await expect(waysToBegin).toHaveCSS("border-top-color", BLUE);
+  await expect(waysToBegin.getByText(withoutReviewPrefix(NOT_YET_IMPLEMENTED.choiceGroup), { exact: true })).toBeVisible();
+  const close = waysToBegin.getByRole("button", { name: BUILD_NOTE_WORDING.hide, exact: true });
+  await expect(close).toHaveAccessibleDescription(withoutReviewPrefix(NOT_YET_IMPLEMENTED.choiceGroup));
+  const [boxBox, closeBox] = await Promise.all([waysToBegin.boundingBox(), close.boundingBox()]);
   if (boxBox === null || closeBox === null) throw new Error("box_not_laid_out");
   // Upper right corner, inside the box.
   expect(closeBox.y - boxBox.y).toBeLessThanOrEqual(8);
   expect(boxBox.x + boxBox.width - (closeBox.x + closeBox.width)).toBeLessThanOrEqual(8);
   const keyInsight = boxOf(page, "nyi-panel-keyInsight");
   if (isWide(page)) await expect(keyInsight).toBeVisible();
+  await expect(earlierCompass).toBeVisible();
+  await expect(page.locator('[id="nyi-composer-latestChange"]')).toHaveCount(0);
   // The old tools carry the violet removal marker.
   const tools = page.locator('section[aria-labelledby="conversation-current-tools-heading"]');
   await expect(tools).toHaveAttribute("data-removal-marker", "outline");
@@ -102,13 +109,14 @@ test("conversation screen: the toggle hides every note and marker; an X hides on
   await expectNoSidewaysScroll(page);
   await expectNoSeriousAxeViolations(page);
 
-  // An X hides only its box; focus moves to the control before it (Slow down), not to the page.
+  // An X hides only its box; focus moves to the preceding tour button, not to the page.
   await close.click();
-  await expect(latest).toHaveCount(0);
-  await expect(page.locator('[id="nyi-composer-latestChange"]')).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /^Slow down\s*Not connected yet$/ })).toBeFocused();
+  await expect(waysToBegin).toHaveCount(0);
+  await expect(page.locator('[id="nyi-chat-choiceGroup"]')).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Show me around", exact: true })).toBeFocused();
+  await expect(earlierCompass).toBeVisible();
   if (isWide(page)) await expect(keyInsight).toBeVisible();
-  await expect(labels(page)).toHaveCount(13);
+  await expect(labels(page)).toHaveCount(12);
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
 
   // Toggle off: every blue label and box and the violet marker go; every control and tool stays.
@@ -139,8 +147,8 @@ test("conversation screen: the toggle hides every note and marker; an X hides on
   // Toggle on: everything shows again, including the box closed with its X.
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
-  await expect(labels(page)).toHaveCount(13);
-  await expect(latest).toBeVisible();
+  await expect(labels(page)).toHaveCount(12);
+  await expect(waysToBegin).toBeVisible();
   if (isWide(page)) await expect(keyInsight).toBeVisible();
   await expect(tools).toHaveAttribute("data-removal-marker", "outline");
   await expect(bell).toBeVisible();
@@ -149,25 +157,25 @@ test("conversation screen: the toggle hides every note and marker; an X hides on
 });
 
 test("conversation screen: a box closed with its X stays hidden while the toggle is off and returns when it is on", async ({ page }) => {
-  await openConversation(page);
+  await openConversation(page, newState());
   const toggle = toggleOf(page);
-  const latest = boxOf(page, "nyi-composer-latestChange");
-  await latest.getByRole("button", { name: BUILD_NOTE_WORDING.hide, exact: true }).click();
-  await expect(latest).toHaveCount(0);
+  const waysToBegin = boxOf(page, "nyi-chat-choiceGroup");
+  await waysToBegin.getByRole("button", { name: BUILD_NOTE_WORDING.hide, exact: true }).click();
+  await expect(waysToBegin).toHaveCount(0);
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
-  await expect(latest).toHaveCount(0);
+  await expect(waysToBegin).toHaveCount(0);
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
-  await expect(latest).toBeVisible();
+  await expect(waysToBegin).toBeVisible();
   // Nothing is saved: a reload shows every note, with the toggle on.
-  await latest.getByRole("button", { name: BUILD_NOTE_WORDING.hide, exact: true }).click();
+  await waysToBegin.getByRole("button", { name: BUILD_NOTE_WORDING.hide, exact: true }).click();
   await toggle.click();
   await page.reload();
   await expect(page.getByRole("heading", { level: 1, name: "Your conversation", exact: true })).toBeFocused();
   await expect(toggleOf(page)).toHaveAttribute("aria-pressed", "true");
-  await expect(boxOf(page, "nyi-composer-latestChange")).toBeVisible();
-  await expect(labels(page)).toHaveCount(13);
+  await expect(boxOf(page, "nyi-chat-choiceGroup")).toBeVisible();
+  await expect(labels(page)).toHaveCount(12);
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
   await expect(page).toHaveURL(/\/explorer\/conversation$/);
 });
@@ -205,17 +213,39 @@ test("conversation screen: the violet tag says why the old tools are planned for
   // with no command sent.
   const region = page.locator('aside[aria-label="Private Compass and Waypoints"]');
   await expect(region).toBeVisible();
-  const first = region.getByRole("button").first();
-  await expect(first).toBeEnabled();
-  // Found by its label's for, so the locator does not depend on what is typed.
-  const labelFor = await region.locator("label", { hasText: "Your short label" }).getAttribute("for");
-  const pointLabel = region.locator(`input[id="${labelFor}"]`);
-  await expect(pointLabel).toHaveCount(1);
-  await expect(pointLabel).toBeEnabled();
-  await pointLabel.fill("A synthetic point label");
-  await expect(pointLabel).toHaveValue("A synthetic point label");
-  await region.getByRole("button", { name: "Clear point draft", exact: true }).click();
-  await expect(pointLabel).toHaveValue("");
+  const source = region.getByRole("combobox", { name: "Saved conversation source", exact: true });
+  const destination = region.getByLabel("Where do you want to arrive?", { exact: true });
+  const meaning = region.getByLabel("Why does reaching it matter to you?", { exact: true });
+  const arrival = region.getByLabel("What observable signal will help you recognize arrival?", { exact: true });
+  const confirmation = region.getByRole("checkbox");
+  const save = region.getByRole("button", { name: "Confirm and save private Waypoint", exact: true });
+  const clear = region.getByRole("button", { name: "Clear Waypoint draft", exact: true });
+  await expect(source).toBeEnabled();
+  await expect(destination).toBeEnabled();
+  await expect(meaning).toBeEnabled();
+  await expect(arrival).toBeEnabled();
+  await expect(clear).toBeEnabled();
+  await expect(save).toBeDisabled();
+  await source.selectOption(savedState().messages[0].id);
+  await destination.fill("A synthetic destination");
+  await meaning.fill("A synthetic reason");
+  await arrival.fill("A synthetic arrival signal");
+  // A label's accessible name includes the text typed into its field, so the filled fields are read by their ids.
+  await expect(region.locator('textarea[id$="-destination"]')).toHaveValue("A synthetic destination");
+  await expect(region.locator('textarea[id$="-meaning"]')).toHaveValue("A synthetic reason");
+  await expect(region.locator('textarea[id$="-arrival"]')).toHaveValue("A synthetic arrival signal");
+  await expect(save).toBeDisabled();
+  await confirmation.check();
+  await expect(save).toBeEnabled();
+  await clear.click();
+  await expect(source).toHaveValue("");
+  await expect(destination).toHaveValue("");
+  await expect(meaning).toHaveValue("");
+  await expect(arrival).toHaveValue("");
+  await expect(confirmation).not.toBeChecked();
+  await expect(save).toBeDisabled();
+  await expect(clear).toBeEnabled();
+  await expect(region.getByRole("button", { name: /Save Compass point|Clear point draft/ })).toHaveCount(0);
   expect(commands()).toBe(0);
 });
 

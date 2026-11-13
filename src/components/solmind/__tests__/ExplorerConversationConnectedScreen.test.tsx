@@ -77,7 +77,7 @@ const BOX_SENTENCE_CLASS = "text-xs leading-5 text-[#D6E4FF]";
 // notes are gone. Since the chat card redesign (Paul's decision, decision queue 2026-11-03 18:05:33
 // CST) the Compass card's "formingPoint" and "needle" notes are gone too, a dated exception to the
 // rule that unbuilt areas stay marked; Key Insights keep their marked area.
-const AREA_NOTES = ["choiceGroup", "earlierCompass", "keyInsight", "latestChange"];
+const AREA_NOTES = ["choiceGroup", "earlierCompass", "keyInsight"];
 const REPLACED_AREA_NOTES = ["compass", "waypointCard", "formingPoint", "needle"] as const;
 // The card texts the redesign removed (Paul: "there is too much text explaining things"): the
 // instruction under "Point the needle", the placement paragraph and the Full view's line about
@@ -220,45 +220,32 @@ beforeEach(() => {
 afterEach(() => { expect(vi.mocked(globalThis.fetch).mock.calls.length).toBe(0); vi.restoreAllMocks(); });
 
 describe("connected Explorer conversation screen", () => {
-  it("S5 keeps forming points out of the old tools' saved-point review controls while showing current attention", () => {
+  it("S5 current tools contain only Waypoint controls, with no saved or forming Compass editor", () => {
     const original = cardState();
     const state = cardState({ attentionId: CARD_POINTS.unarranged,
       compassItems: original.compassItems.map(item => item.id === CARD_POINTS.unarranged
         ? { ...item, formation: "forming" } : item) });
     const html = renderToStaticMarkup(createElement(ExplorerConversationFormation, { state, busy: false, onCommand: () => {} }));
-    expect(textOf(html)).toContain(`Current attention: ${CARD_LABELS.unarranged}`);
-    expect(textOf(html)).not.toContain(`Review Priority: ${CARD_LABELS.unarranged}`);
-    expect(textOf(html)).not.toContain(`Review wording or combine: ${CARD_LABELS.unarranged}`);
-    expect(textOf(html)).toContain(`Review Priority: ${CARD_LABELS.detour}`);
-    expect(textOf(html)).toContain(`Review wording or combine: ${CARD_LABELS.detour}`);
+    expect(textOf(html)).not.toMatch(/Review Priority|Review wording or combine|Session Compass|Save Compass point/);
+    expect(textOf(html)).toContain("Private Waypoints");
+    expect(textOf(html)).toContain("Confirm and save private Waypoint");
   });
 
-  it("S5 shows forming points dashed and named Forming in Full, Compact and drawer views", () => {
+  it("S5 legacy forming points have no card treatment in Full, Compact or drawer views", () => {
     const original = cardState();
     const state = cardState({ compassItems: original.compassItems.map(item => ({ ...item,
       formation: item.id === CARD_POINTS.detour || item.id === CARD_POINTS.unarranged ? "forming" : "saved" })) });
     for (const scope of ["panel", "drawer"]) {
-      const full = cardMarkup({ scope, state, view: "full" });
-      const compact = cardMarkup({ scope, state, view: "compact" });
-      for (const html of [full, compact]) {
-        expect(pointButtons(html).filter(button => button.text.includes("Forming")).map(button => button.text)).toEqual([
-          "Money worries Detour, left Forming", "Asking for help Not yet arranged Forming",
-        ]);
-        expect(pointButtons(html)).toHaveLength(pointButtons(cardMarkup({ scope, view: "full" })).length);
+      for (const view of ["full", "compact"] as const) {
+        const html = cardMarkup({ scope, state, view });
+        expect(textOf(html)).not.toMatch(/Forming|Priority|Money worries|Asking for help/);
+        expect(pointButtons(html)).toHaveLength(5);
         expect(html).not.toContain("data-build-note");
-        expect(html).not.toContain("That's right");
+        expect(html).not.toContain("stroke-dasharray");
+        expect(html).not.toContain("border-dashed");
+        const saved = cardState({ compassItems: state.compassItems.map(item => ({ ...item, formation: "saved" })) });
+        expect(cardMarkup({ scope, state: saved, view })).toBe(cardMarkup({ scope, state: original, view }));
       }
-      expect(full.match(/<circle[^>]*stroke-dasharray="4 3"/g)).toHaveLength(1);
-      expect(full.match(/<rect[^>]*stroke-dasharray="4 3"/g)).toHaveLength(1);
-      expect(full.match(/<text[^>]*>Forming<\/text>/g)).toHaveLength(2);
-      expect(full).toContain("Detour, left: Money worries (Forming).");
-      expect(full).toContain("Not yet arranged: Asking for help (Forming).");
-      for (const button of pointButtons(compact)) {
-        expect((attribute(button.attrs, "class") ?? "").includes("border-dashed")).toBe(button.text.includes("Forming"));
-      }
-      const confirmed = cardState({ compassItems: state.compassItems.map(item => ({ ...item, formation: "saved" })) });
-      expect(cardMarkup({ scope, state: confirmed, view: "full" })).toBe(cardMarkup({ scope, state: original, view: "full" }));
-      expect(cardMarkup({ scope, state: confirmed, view: "compact" })).toBe(cardMarkup({ scope, state: original, view: "compact" }));
     }
   });
 
@@ -388,7 +375,7 @@ describe("connected Explorer conversation screen", () => {
     // Since Paul's build-note rule (decision queue 2026-11-03 17:59:20 CST) the only dashed edges here are the
     // blue build-note boxes of the areas not built yet, each carrying its marker.
     const dashed = [...screen.matchAll(/<\w+\b[^>]*\bborder-dashed\b[^>]*>/g)].map(([tag]) => tag);
-    expect(dashed.length).toBe(2);
+    expect(dashed.length).toBe(1);
     for (const tag of dashed) expect(BOX_OPEN.startsWith(tag), tag).toBe(true);
     const sentences = [
       ...ALL_NOTES.map((note) => note.slice(NOT_YET_IMPLEMENTED_PREFIX.length + 1)),
@@ -633,7 +620,7 @@ describe("connected Explorer conversation screen", () => {
     expect(html).not.toContain(CURRENT_TOOLS_HEADING);
     // No tools are shown below, so the panel does not point to them.
     expect(html).not.toContain(CURRENT_TOOLS_POINTER);
-    expect(render()).toContain(CURRENT_TOOLS_POINTER);
+    expect(render()).not.toContain(CURRENT_TOOLS_POINTER);
     expect(html).not.toContain("End this conversation");
   });
 
@@ -655,11 +642,13 @@ describe("connected Explorer conversation screen", () => {
     expect(html).not.toContain("End this conversation");
   });
 
-  it("CC09 the current Compass and Waypoint tools stay available and say why", () => {
+  it("CC09 the current tools retain Waypoint controls without retired Compass instructions", () => {
     const html = render();
     expect(html).toContain(CURRENT_TOOLS_HEADING);
     expect(html).toContain('aria-label="Private Compass and Waypoints"');
-    expect(html).toContain("They stay here so your saved Compass and Waypoints remain usable");
+    expect(html).not.toContain("They stay here so your saved Compass and Waypoints remain usable");
+    expect(html).toContain("Confirm and save private Waypoint");
+    expect(html).not.toContain("Confirm a Compass suggestion");
   });
 
   it("CC10 notes that name the Guide say your Guide, without a doubled label", () => {
@@ -717,7 +706,7 @@ describe("connected Explorer conversation screen", () => {
   // Other paths. Since the chat card redesign (Paul's decision, decision queue 2026-11-03 18:05:33 CST) the two
   // without a position can take the needle too, so only the current point is disabled.
   const LIST_BUTTONS = [
-    ["Talk with my sister Priority", false, "false", null],
+    ["Talk with my sister Top position", false, "false", null],
     ["What I need from it Upper left The needle points here", true, "true", null],
     ["Making room to rest after a long work week Upper right", false, "false", null],
     ["Money worries Detour, left", false, "false", null],
@@ -765,13 +754,13 @@ describe("connected Explorer conversation screen", () => {
     // The Compass card has no "Not connected yet" area left: it ends with the Priority and Current attention lines.
     const compassCard = compassSection(panel);
     expect(compassCard).not.toContain(WORKSPACE_NOT_CONNECTED_LABEL);
-    expect(compassCard).toMatch(/<\/dl><\/div><\/section>$/);
+    expect(compassCard).toMatch(/<\/div><\/div><\/section>$/);
     for (const removed of REMOVED_CARD_TEXTS) expect(textOf(panel)).not.toContain(removed);
     const dial = dialOf(panel);
     expect(dial).toContain(`<title id="panel-connected-compass-dial-title">${CONNECTED_COMPASS_WORDING.dialTitle}</title>`);
     // The description names the dial's points and the bottom row's.
     expect(unescapeHtml(/<desc id="panel-connected-compass-dial-desc">([^<]*)<\/desc>/.exec(dial)?.[1] ?? "")).toBe(
-      "Priority: Talk with my sister. Upper left: What I need from it. Upper right: Making room to rest after a long work week. " +
+      "Top position: Talk with my sister. Upper left: What I need from it. Upper right: Making room to rest after a long work week. " +
       "Detour, left: Money worries. Excursion, lower center: Planning what to say. Not yet arranged: Asking for help. " +
       "Other paths: Avoiding hard talks. The needle points to What I need from it.");
     // The bottom row, under EXCURSION (y 292): the 2 points without a position in grey, each with one yellow symbol
@@ -790,7 +779,7 @@ describe("connected Explorer conversation screen", () => {
       .map(([, classes, cx, cy, width, textX, spans]) => [cx, cy, classes, width, textX === cx,
         [...spans.matchAll(/<tspan dy="\d+" x="([^"]*)">([^<]*)<\/tspan>/g)].map(([, x, text]) => (x === cx ? text : `misplaced ${text}`))]);
     expect(bubbles).toEqual([
-      ["180", "58", "fill-amber-400/25 stroke-amber-300", "2.5", true, ["Talk with", "my sister"]],
+      ["180", "58", "fill-stone-900/90 stroke-stone-600", "1.2", true, ["Talk with", "my sister"]],
       ["114.95", "84.95", "fill-stone-900/90 stroke-orange-300", "2.5", true, ["What I need", "from it"]],
       ["245.05", "84.95", "fill-stone-900/90 stroke-stone-600", "1.2", true, ["Making room", "to rest..."]],
       ["88", "150", "fill-stone-900/90 stroke-stone-600", "1.2", true, ["Money", "worries"]],
@@ -812,12 +801,12 @@ describe("connected Explorer conversation screen", () => {
     expect(dial).not.toContain("stroke-dasharray");
     // A combined original is hidden; its category shows once.
     expect(panel).not.toContain(CARD_LABELS.merged);
-    expect(textOf(panel)).toContain("Priority: Talk with my sister (confirmed by you)");
-    expect(textOf(panel)).toContain("Current attention: What I need from it");
+    expect(textOf(compassCard)).not.toMatch(/Priority|confirmed by you|Forming/);
+    expect(textOf(panel)).toContain("Pointing to: What I need from it");
     // Fix round 2: the "Current attention" line can take focus after a confirmed move, and the live
     // line is in place (empty) before any hold or change. Fix round 3: on the wide panel that line is
     // not live (the page's own status line is not hidden there); in the drawer it is polite.
-    expect(panel).toMatch(/<div class="flex flex-wrap gap-x-2 rounded-md [^"]*" id="panel-connected-needle-current" tabindex="-1"><dt class="text-stone-400">Current attention:<\/dt>/);
+    expect(panel).toMatch(/<div class="rounded-md text-xs font-normal leading-5 text-stone-400 [^"]*" id="panel-connected-needle-current" tabindex="-1">Pointing to: What I need from it<\/div>/);
     expect(panel).toContain('id="panel-connected-needle-heading">Point the needle to change topic</h4><div id="panel-connected-needle-live"></div></div>');
     // In the drawer the line is polite, once, in either view.
     for (const shown of ["full", "compact"] as const) {
@@ -830,7 +819,7 @@ describe("connected Explorer conversation screen", () => {
     // is disabled and pressed). The dial is drawn in a 360 by 336 box since the bottom row was added.
     const buttons = pointButtons(panel);
     expect(buttons.map(({ text, disabled, pressed, describedBy, style }) => [text, disabled, pressed, describedBy, style])).toEqual([
-      ["Talk with my sister Priority", false, "false", null, "left:50%;top:17.262%;width:15.556%;height:16.667%"],
+      ["Talk with my sister Top position", false, "false", null, "left:50%;top:17.262%;width:15.556%;height:16.667%"],
       ["What I need from it Upper left The needle points here", true, "true", null, "left:31.931%;top:25.283%;width:15.556%;height:16.667%"],
       ["Making room to rest after a long work week Upper right", false, "false", null, "left:68.069%;top:25.283%;width:15.556%;height:16.667%"],
       ["Money worries Detour, left", false, "false", null, "left:24.444%;top:44.643%;width:15.556%;height:16.667%"],
@@ -866,7 +855,7 @@ describe("connected Explorer conversation screen", () => {
     expect(dial).not.toContain("<button");
     expect(dashedButton(panel)).toBeNull();
     expect(panel).not.toContain(DASHED_NEEDLE_WORDING.button);
-    expect(panel).toContain('<span class="sr-only"><span class="font-medium [overflow-wrap:anywhere]">Talk with my sister</span> <span class="text-[11px] text-stone-300">Priority</span></span></button>');
+    expect(panel).toContain('<span class="sr-only"><span class="font-medium [overflow-wrap:anywhere]">Talk with my sister</span> <span class="text-[11px] text-stone-300">Top position</span></span></button>');
     expect(panel).toContain('>Upper left</span> <span class="text-[11px] font-semibold text-orange-200">The needle points here</span></span></button>');
     expect(panel).toContain('<span class="sr-only"><span class="font-medium [overflow-wrap:anywhere]">Asking for help</span> <span class="text-[11px] text-stone-300">Not yet arranged</span></span></button>');
     // The dial and the list never show together: no list or groups in the Full view, and no instruction,
@@ -886,7 +875,7 @@ describe("connected Explorer conversation screen", () => {
     expect(panel).not.toContain("Earlier version - ");
     expect(panel).not.toContain("Say what I need in one sentence");
     expect(panel).not.toContain("Show 1 more");
-    expect(textOf(panel)).toContain(CURRENT_TOOLS_POINTER);
+    expect(textOf(panel)).not.toContain(CURRENT_TOOLS_POINTER);
     expect(CURRENT_TOOLS_POINTER).toBe(
       "To add, arrange or reword Compass points, or to choose, clarify, reach or release a Waypoint, use your current tools below the conversation.");
   });
@@ -949,7 +938,7 @@ describe("connected Explorer conversation screen", () => {
         expect(textOf(html)).not.toContain(CURRENT_TOOLS_POINTER);
         expect(textOf(html)).not.toContain("Review Compass arrangement");
       } else {
-        expect(textOf(html)).toContain(CURRENT_TOOLS_POINTER);
+        expect(textOf(html)).not.toContain(CURRENT_TOOLS_POINTER);
       }
     }
     // In the narrow drawer the reasons that name a control behind it say where it is, in either view.
@@ -980,8 +969,8 @@ describe("connected Explorer conversation screen", () => {
       expect(reason).toMatch(/^(?:To |This conversation has ended, so )/);
     }
     expect(CONNECTED_COMPASS_WORDING.chooseHeading).toMatch(/ to change topic$/);
-    expect(DASHED_NEEDLE_WORDING.unarranged).toMatch(/ To place it, use Review Compass arrangement in your current tools\.$/);
-    expect(DASHED_NEEDLE_WORDING.unarrangedDrawer).toMatch(/ To place it, close this panel, then use Review Compass arrangement in your current tools\.$/);
+    expect(DASHED_NEEDLE_WORDING.unarrangedEnded).toBe("This point isn\'t placed on your Compass.");
+    expect(DASHED_NEEDLE_WORDING.unarrangedEnded).not.toContain("Review Compass arrangement");
   });
 
   it("CC23 before a read, and for a conversation with nothing saved, the card says so and offers no point", () => {
@@ -1005,15 +994,15 @@ describe("connected Explorer conversation screen", () => {
   });
 
   // Compact and Full views (build spec 2026-11-03; Paul's decisions, decision queue 16:20:29 and 16:24:39 CST).
-  it("CC24 the Compact view is the point list, with the two lines and no dial; the unplaced points are grey with the yellow symbol", () => {
+  it("CC24 the Compact view is the point list, with one muted line and no dial; the unplaced points are grey with the yellow symbol", () => {
     const compact = cardMarkup({ view: "compact" });
     // Under the heading the button names the view it switches to; then the two lines, then "Point the needle to
     // change topic" with no instruction under it (the chat card redesign, decision queue 2026-11-03 18:05:33 CST).
     expect(compact).toMatch(new RegExp(
       `Compass</h3><div class="flex flex-wrap items-center gap-2">${toggleTag("panel", "Full view").source}</div>` +
-      '<div class="grid gap-3" id="panel-connected-compass-view"><dl class="grid gap-1 text-sm">'));
+      '<div class="grid gap-3" id="panel-connected-compass-view"><div class="rounded-md text-xs font-normal leading-5 text-stone-400'));
     expect(compact).toContain(
-      '</dl><div aria-labelledby="panel-connected-needle-heading" class="grid gap-3" role="group">' +
+      '</div><div aria-labelledby="panel-connected-needle-heading" class="grid gap-3" role="group">' +
       '<div class="grid gap-1"><h4 class="text-sm font-semibold text-stone-100" id="panel-connected-needle-heading">Point the needle to change topic</h4>' +
       '<div id="panel-connected-needle-live"></div></div>');
     // No dial in this view: no picture, no dial buttons and no bottom row.
@@ -1022,9 +1011,9 @@ describe("connected Explorer conversation screen", () => {
     expect(compact).not.toContain("-translate-x-1/2");
     expect(compact).not.toContain(" more points, shown in the Compact view");
     for (const removed of REMOVED_CARD_TEXTS) expect(textOf(compact)).not.toContain(removed);
-    expect(textOf(compact)).toContain("Priority: Talk with my sister (confirmed by you)");
-    expect(textOf(compact)).toContain("Current attention: What I need from it");
-    expect(compact).toMatch(/<div class="flex flex-wrap gap-x-2 rounded-md [^"]*" id="panel-connected-needle-current" tabindex="-1"><dt class="text-stone-400">Current attention:<\/dt>/);
+    expect(textOf(compact)).not.toMatch(/Priority|confirmed by you|Forming/);
+    expect(textOf(compact)).toContain("Pointing to: What I need from it");
+    expect(compact).toMatch(/<div class="rounded-md text-xs font-normal leading-5 text-stone-400 [^"]*" id="panel-connected-needle-current" tabindex="-1">Pointing to: What I need from it<\/div>/);
     // Every current point, placed ones first in position order, then not yet arranged, then Other paths; each one
     // but the current point can take the needle.
     const buttons = pointButtons(compact);
@@ -1034,7 +1023,7 @@ describe("connected Explorer conversation screen", () => {
       expect(style).toBeNull();
     }
     // Real spaces keep the parts of each button's name apart for screen readers.
-    expect(compact).toContain('>Talk with my sister</span> <span class="text-[11px] text-stone-300">Priority</span></button>');
+    expect(compact).toContain('>Talk with my sister</span> <span class="text-[11px] text-stone-300">Top position</span></button>');
     expect(compact).toContain('>Upper left</span> <span class="text-[11px] font-semibold text-orange-200">The needle points here</span></button>');
     // The points without a position are grey, each with the small yellow symbol (hidden from screen readers)
     // before its label; the placed points have neither.
@@ -1111,21 +1100,21 @@ describe("connected Explorer conversation screen", () => {
     });
     const beforeFull = cardMarkup({ state: before });
     expect(pointButtons(beforeFull).map(({ text, disabled, pressed, describedBy }) => [text, disabled, pressed, describedBy])).toEqual([
-      ["Third Priority", false, "false", null],
       ["First Not yet arranged The needle points here", true, "true", null],
       ["Second Not yet arranged", false, "false", null],
+      ["Third Not yet arranged", false, "false", null],
     ]);
     expect(beforeFull).not.toContain('<line class="stroke-orange-300" stroke-linecap="round"');
     const dashed = dashedNeedle(dialOf(beforeFull));
     expect(dashed).not.toBeNull();
-    expect(Number(dashed?.[1])).toBeCloseTo(124.08, 2);
-    expect(Number(dashed?.[2])).toBeCloseTo(297.25, 2);
-    expect(Math.hypot(Number(dashed?.[1]) - 120, Number(dashed?.[2]) - 308)).toBeCloseTo(11.5, 1);
-    expect(textOf(beforeFull)).toContain("Current attention: First");
+    expect(Number(dashed?.[1])).toBeCloseTo(66.96, 2);
+    expect(Number(dashed?.[2])).toBeCloseTo(298.84, 2);
+    expect(Math.hypot(Number(dashed?.[1]) - 60, Number(dashed?.[2]) - 308)).toBeCloseTo(11.5, 1);
+    expect(textOf(beforeFull)).toContain("Pointing to: First");
     expect(pointButtons(cardMarkup({ state: before, view: "compact" })).map(({ text, disabled }) => [text, disabled])).toEqual([
-      ["Third Priority", false],
       ["First Not yet arranged The needle points here", true],
       ["Second Not yet arranged", false],
+      ["Third Not yet arranged", false],
     ]);
     // No point on the dial (no Priority, nothing arranged): the Full view still offers them all, in its row.
     const nothingDrawn = savedState({
@@ -1140,7 +1129,7 @@ describe("connected Explorer conversation screen", () => {
     expect(bare).toContain(">Point the needle to change topic</h4>");
     expect(pointButtons(bare).map(({ text, disabled }) => [text, disabled])).toEqual([["First Not yet arranged", false], ["Second Not yet arranged", false]]);
     expect(rowLabels(dialOf(bare))).toEqual([[120, "First"], [240, "Second"]]);
-    expect(textOf(bare)).toContain("Current attention: No point chosen yet");
+    expect(bare).not.toContain('id="panel-connected-needle-current"');
     const bareList = cardMarkup({ state: nothingDrawn, view: "compact" });
     expect(bareList).toContain(">Point the needle to change topic</h4>");
     expect(pointButtons(bareList).map(({ text, disabled }) => [text, disabled])).toEqual([["First Not yet arranged", false], ["Second Not yet arranged", false]]);
@@ -1168,14 +1157,14 @@ describe("connected Explorer conversation screen", () => {
     expect(rowSymbols(dial)).toEqual([[60, 308], [180, 308]]);
     expect(rowLabels(dial)).toEqual([[60, "Waiting 2"], [180, "Waiting 3"], [300, "+4 more"]]);
     expect(unescapeHtml(/<desc id="panel-connected-compass-dial-desc">([^<]*)<\/desc>/.exec(dial)?.[1] ?? "")).toBe(
-      "Priority: Placed Priority. Not yet arranged: Waiting 2. Not yet arranged: Waiting 3. 4 more points are listed in the Compact view. " +
+      "Top position: Placed Priority. Not yet arranged: Waiting 2. Not yet arranged: Waiting 3. 4 more points are listed in the Compact view. " +
       "The needle points to Placed Priority.");
     // "+4 more" is a button over the third place that controls the view; it has no pressed state and is not a point.
     const more = new RegExp('<button aria-controls="panel-connected-compass-view" class="([^"]*)" style="([^"]*)" type="button"><span class="sr-only">\\+4 more points, shown in the Compact view</span></button>').exec(full);
     expect(more).not.toBeNull();
     expect(more?.[2]).toBe("left:83.333%;top:93.75%;width:31.111%;height:8.929%");
     expect(more?.[1]).toMatch(/^absolute -translate-x-1\/2 -translate-y-1\/2 rounded-lg /);
-    expect(pointButtons(full).map(({ text }) => text)).toEqual(["Placed Priority Priority The needle points here", "Waiting 2 Not yet arranged", "Waiting 3 Not yet arranged"]);
+    expect(pointButtons(full).map(({ text }) => text)).toEqual(["Placed Priority Top position The needle points here", "Waiting 2 Not yet arranged", "Waiting 3 Not yet arranged"]);
     // Held or ended, "+4 more" still works (it changes nothing saved), while the points wait.
     for (const hold of ["busy", "ended"] as const) {
       const held = cardMarkup({ hold, state: many(null) });
@@ -1194,7 +1183,7 @@ describe("connected Explorer conversation screen", () => {
     expect(sixthDial).toContain('<circle class="fill-none stroke-orange-300" cx="180" cy="308" r="8.5" stroke-width="1.5"></circle>');
     expect(sixthDial.split('class="fill-none stroke-orange-300"').length - 1).toBe(1);
     expect(pointButtons(onSixth).map(({ text, pressed }) => [text, pressed])).toEqual([
-      ["Placed Priority Priority", "false"], ["Waiting 2 Not yet arranged", "false"], ["Waiting 6 Not yet arranged The needle points here", "true"],
+      ["Placed Priority Top position", "false"], ["Waiting 2 Not yet arranged", "false"], ["Waiting 6 Not yet arranged The needle points here", "true"],
     ]);
     // The dashed needle is a button with an accessible name, controlling its sentence, collapsed at first (the
     // sentence is drawn only once shown); it sits 30 along the needle, a 34 square clear of the bubbles' buttons.
@@ -1233,15 +1222,15 @@ describe("connected Explorer conversation screen", () => {
     // 13 controls not built yet (CC04), one blue label each; the two area boxes of a saved conversation (the
     // latest-change line and Key Insights); the toggle; the outline and tag on the current tools.
     expect(count(html, "build-note:label")).toBe(13);
-    expect(count(html, "build-note:box")).toBe(2);
+    expect(count(html, "build-note:box")).toBe(1);
     expect(count(html, "build-note:toggle")).toBe(1);
     expect(count(html, "removal-marker:outline")).toBe(1);
     expect(count(html, "removal-marker:tag")).toBe(1);
-    expect(markers(html)).toHaveLength(13 + 2 + 1 + 2);
+    expect(markers(html)).toHaveLength(13 + 1 + 1 + 2);
     expect(html.split(BLUE_LABEL).length - 1).toBe(13);
     // The empty conversation adds the two "Ways to begin" boxes.
     const empty = render(view({ state: savedState({ conversationId: null, revision: 0, messages: [], sessionStatus: null }) }));
-    expect(count(empty, "build-note:box")).toBe(4);
+    expect(count(empty, "build-note:box")).toBe(3);
     // The toggle: first in the top bar's right-hand group, before the bell, pressed (the notes show), named
     // "Build notes", announcing nothing and controlling no single element.
     const toggle = /<button aria-pressed="true" class="([^"]*)" data-build-note="toggle" id="build-notes-toggle" type="button">([\s\S]*?)<\/button>/.exec(html);

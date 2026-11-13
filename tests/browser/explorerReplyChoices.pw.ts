@@ -48,11 +48,21 @@ test("REV306 Show me around opens a fixed keyboard tour with no request or chat 
   await page.keyboard.press("Enter");
   await expect(next).toBeFocused();
   await expect(dialog.getByRole("heading", { name: "How the Compass works", exact: true })).toBeVisible();
-  await expect(dialog.getByRole("status")).toContainText("Forming");
-  await expect(dialog.getByRole("status")).toContainText('Choose "That\'s right" to confirm');
+  const compassParagraphs = [
+    "A Compass point names something that may matter to you, so you can keep it in view while the conversation moves.",
+    "Points appear by themselves: when a topic has clearly come up a few times, your Virtual Guide adds it to the Compass.",
+    "When a reply changes your Compass, quiet text below that reply explains the change and stays for this visit.",
+    "The order can change as your Virtual Guide learns what matters most to you. An early topic can also start at the top without being what matters most.",
+    "If a point does not fit, tell your Virtual Guide what needs changing so it can correct the Compass. If your meaning is unclear, it asks.",
+    "To turn the conversation to another point, choose it on the dial or in Compact view when the point controls are available.",
+  ];
+  await expect(dialog.locator("#conversation-tour-step > p")).toHaveText(compassParagraphs);
+  await expect(dialog.getByRole("status")).toHaveText(["How the Compass works", ...compassParagraphs].join(" "));
+  await expect(dialog.locator("#conversation-tour-step")).not.toContainText('Choose "That\'s right" to confirm');
   await page.keyboard.press("Enter");
   await expect(dialog.getByRole("button", { name: "Finish tour", exact: true })).toBeFocused();
   await expect(dialog.getByRole("heading", { name: "How Waypoints work", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("status")).toContainText('Choose "That\'s right" to confirm the Waypoint');
   await dialog.getByRole("button", { name: "How Waypoints work", exact: true }).click();
   await expect(dialog.getByRole("button", { name: "How Waypoints work", exact: true })).toBeFocused();
   await expect(dialog.getByRole("status")).toContainText("why it matters");
@@ -351,13 +361,13 @@ test("R07 a choice clears the calm prompt immediately and makes only its one ord
   expect(requests).toHaveLength(1);
 });
 
-test("R08 Something else stays off Compass replies, pending turns and withheld reply availability", async ({ page }) => {
-  let current = savedState({ compassItems: [{
-    id: "40000000-0000-4000-8000-000000000001", sourceMessageId: GUIDE_MESSAGE, wordingMessageId: GUIDE_MESSAGE,
-    label: "Making time to rest", formation: "forming",
-  }] });
+test("R08 Something else stays off Waypoint replies, pending turns and withheld reply availability", async ({ page }) => {
+  let current = savedState({ waypointDraft: {
+    id: "80000000-0000-4000-8000-000000000001", suggestionMessageId: GUIDE_MESSAGE,
+    title: "Making time to rest", destination: "Take a walk", whyItMatters: "Room to think", arrivalSignal: "A walk completed",
+  } });
   await openPage(page, () => current);
-  const compassRow = page.getByRole("group", { name: "Reply to Compass suggestion: Making time to rest", exact: true });
+  const compassRow = page.getByRole("group", { name: "Reply to Waypoint suggestion: Making time to rest", exact: true });
   await expect(compassRow).toBeVisible();
   await expect(compassRow.getByRole("button", { name: "Something else", exact: true })).toHaveCount(0);
   // One group of buttons per reply (2026-11-10, item 14): the reply choices are held back beside a suggestion.
@@ -375,18 +385,18 @@ test("R08 Something else stays off Compass replies, pending turns and withheld r
   await expect(page.getByRole("button", { name: "Something else", exact: true })).toHaveCount(0);
 });
 
-test("R09 a Compass Close follow-up sends while the same reply's choices stay held back (one group per reply)", async ({ page }) => {
-  let current = savedState({ compassItems: [{
-    id: "40000000-0000-4000-8000-000000000001", sourceMessageId: GUIDE_MESSAGE, wordingMessageId: GUIDE_MESSAGE,
-    label: "Making time to rest", formation: "forming",
-  }] });
+test("R09 a Waypoint Close follow-up sends while the same reply's choices stay held back (one group per reply)", async ({ page }) => {
+  let current = savedState({ waypointDraft: {
+    id: "80000000-0000-4000-8000-000000000001", suggestionMessageId: GUIDE_MESSAGE,
+    title: "Making time to rest", destination: "Take a walk", whyItMatters: "Room to think", arrivalSignal: "A walk completed",
+  } });
   const requests: ExplorerConversationCommand[] = [];
   const pending: { route: Route | null } = { route: null };
   await page.route("**/explorer/conversation/commands", route => {
     const command = route.request().postDataJSON() as ExplorerConversationCommand;
     requests.push(command);
     if (requests.length === 1) {
-      expect(command).toMatchObject({ kind: "respond_compass_suggestion", response: "close", expectedRevision: 3 });
+      expect(command).toMatchObject({ kind: "respond_waypoint_draft", response: "close", expectedRevision: 3 });
       current = { ...current, revision: 4 };
       return fulfill(route, success({ ...current, providerState: "unavailable" }));
     }
@@ -399,7 +409,7 @@ test("R09 a Compass Close follow-up sends while the same reply's choices stay he
   await openPage(page, () => current);
   await composer(page).fill(DRAFT);
   await expect(choices(page)).toHaveCount(0);
-  await page.getByRole("group", { name: "Reply to Compass suggestion: Making time to rest", exact: true })
+  await page.getByRole("group", { name: "Reply to Waypoint suggestion: Making time to rest", exact: true })
     .getByRole("button", { name: "Close, not quite", exact: true }).click();
   await expect.poll(() => requests.length).toBe(2);
   await expect(transcript(page).getByRole("listitem")).toHaveCount(2);
@@ -408,7 +418,7 @@ test("R09 a Compass Close follow-up sends while the same reply's choices stay he
   await expect(composer(page)).toHaveValue(DRAFT);
   current = { ...current, revision: 5, messages: [...current.messages,
     { id: CHOSEN_EXPLORER, role: "explorer", body: 'Close, not quite: "Making time to rest"', createdAt: "2026-11-05T08:01:00.000Z" },
-    { id: NEXT_GUIDE, role: "virtualGuide", body: "A synthetic saved Compass follow-up", createdAt: "2026-11-05T08:01:01.000Z" },
+    { id: NEXT_GUIDE, role: "virtualGuide", body: "A synthetic saved Waypoint follow-up", createdAt: "2026-11-05T08:01:01.000Z" },
   ] };
   await fulfill(pending.route!, success(current));
   await expect(transcript(page).getByRole("listitem")).toHaveCount(4);

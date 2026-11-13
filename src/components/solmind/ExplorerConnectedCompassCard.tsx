@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState, type ReactNode, type RefObject }
 
 import {
   CONNECTED_COMPASS_WORDING,
+  COMPASS_POSITION_NAMES,
   DASHED_NEEDLE_WORDING,
   bottomRow,
   bottomRowLabel,
@@ -33,7 +34,7 @@ import { FOCUS_RING, QUIET_BUTTON, joinClasses } from "./ExplorerConversationScr
 // The connected Compass card (chat step slices S1 and S2): the Explorer's
 // saved Compass drawn on 8 positions in the look of the reviewed dial
 // (ExplorerConversationScreenCompassDial.tsx: the glowing ring, the
-// Priority-up frame that never rotates, labelled bubbles, the amber Priority
+// fixed frame that never rotates, labelled bubbles
 // and the orange needle), and every current point in a list. Choosing a
 // point asks the parent to point the needle there with the existing
 // set_attention command; this file sends nothing itself.
@@ -41,10 +42,10 @@ import { FOCUS_RING, QUIET_BUTTON, joinClasses } from "./ExplorerConversationScr
 // Compact and Full views (2026-11-03; Paul's decisions, decision queue
 // 16:20:29 and 16:24:39 CST): the card shows one view at a time, to save
 // space, with a button to switch, as the review version does. The Full view
-// is the dial with the Priority and Current attention lines; each point drawn
+// is the dial with one muted needle-target line; each point drawn
 // on the dial is a button over its bubble that points the needle with the
 // same rules, holds, reasons, live line and focus as the list. The Compact
-// view is the point list with the same two lines. Which view shows is the
+// view is the point list with the same line. Which view shows is the
 // parent's screen state, kept separately for the wide panel and the phone
 // drawer.
 //
@@ -52,7 +53,7 @@ import { FOCUS_RING, QUIET_BUTTON, joinClasses } from "./ExplorerConversationScr
 // reason when it starts and the result after the saved needle moves, because
 // on a narrow screen the card sits in a modal drawer and the page's own
 // status line is behind it. After a move the Explorer asked for here is
-// confirmed, focus goes to the "Current attention" line, since the chosen
+// confirmed, focus goes to the "Pointing to:" line, since the chosen
 // button is then disabled as the current point. In an ended conversation the
 // card says only that the Compass is kept as it was.
 //
@@ -204,7 +205,7 @@ function Dial({ scope, compass, row, children }: DialProps) {
         <line className="stroke-stone-700" x1={CENTER.x} x2={CENTER.x} y1={CENTER.y - RING_RADIUS + 4} y2={CENTER.y + RING_RADIUS - 4} />
         <line className="stroke-stone-700" x1={CENTER.x - RING_RADIUS + 4} x2={CENTER.x + RING_RADIUS - 4} y1={CENTER.y} y2={CENTER.y} />
         <text className="fill-stone-400 text-[9px] tracking-[0.18em]" textAnchor="middle" x={CENTER.x} y={16}>
-          PRIORITY
+          {COMPASS_POSITION_NAMES.apex}
         </text>
         <text className="fill-stone-400 text-[9px] tracking-[0.12em]" textAnchor="middle" x={28} y={153}>
           DETOUR
@@ -242,19 +243,18 @@ function Dial({ scope, compass, row, children }: DialProps) {
         {[...byAnchor].map(([anchor, point]) => {
           const at = positionOf(anchor);
           const lines = dialLabelLines(point.label);
-          const top = (lines.length === 1 ? at.y + 3 : at.y - 3) - (point.isForming ? 5 : 0);
+          const top = lines.length === 1 ? at.y + 3 : at.y - 3;
           return (
             <g key={point.id}>
               <circle
                 className={joinClasses(
-                  point.isPriority ? "fill-amber-400/25" : "fill-stone-900/90",
-                  point.isAttention ? "stroke-orange-300" : point.isPriority ? "stroke-amber-300" : "stroke-stone-600",
+                  "fill-stone-900/90",
+                  point.isAttention ? "stroke-orange-300" : "stroke-stone-600",
                 )}
                 cx={at.x}
                 cy={at.y}
                 r={BUBBLE_RADIUS}
-                strokeDasharray={point.isForming ? "4 3" : undefined}
-                strokeWidth={point.isAttention || point.isPriority ? 2.5 : 1.2}
+                strokeWidth={point.isAttention ? 2.5 : 1.2}
               />
               <text className="fill-stone-100 text-[9px] font-medium" textAnchor="middle" x={at.x} y={top}>
                 {lines.map((line, index) => (
@@ -263,9 +263,6 @@ function Dial({ scope, compass, row, children }: DialProps) {
                   </tspan>
                 ))}
               </text>
-              {point.isForming ? (
-                <text className="fill-stone-300 text-[8px]" textAnchor="middle" x={at.x} y={at.y + 18}>{W.forming}</text>
-              ) : null}
             </g>
           );
         })}
@@ -275,19 +272,13 @@ function Dial({ scope, compass, row, children }: DialProps) {
           const x = places[index];
           return entry.kind === "point" ? (
             <Fragment key={entry.point.id}>
-              {entry.point.isForming ? (
-                <rect className="fill-none stroke-stone-500" height={35} rx={6} strokeDasharray="4 3" width={108} x={x - 54} y={299} />
-              ) : null}
               {entry.point.isAttention ? (
                 <circle className="fill-none stroke-orange-300" cx={x} cy={ROW_SYMBOL_Y} r={8.5} strokeWidth={1.5} />
               ) : null}
               <SymbolMark at={{ x, y: ROW_SYMBOL_Y }} />
-              <text className="fill-stone-400 text-[9px]" textAnchor="middle" x={x} y={entry.point.isForming ? ROW_TEXT_Y - 5 : ROW_TEXT_Y}>
+              <text className="fill-stone-400 text-[9px]" textAnchor="middle" x={x} y={ROW_TEXT_Y}>
                 {bottomRowLabel(entry.point.label)}
               </text>
-              {entry.point.isForming ? (
-                <text className="fill-stone-300 text-[8px]" textAnchor="middle" x={x} y={331}>{W.forming}</text>
-              ) : null}
             </Fragment>
           ) : (
             <text className="fill-stone-400 text-[9px]" key="more" textAnchor="middle" x={x} y={ROW_TEXT_Y}>
@@ -397,18 +388,6 @@ function PointName({ point, symbol = false }: Readonly<{ point: CardCompassPoint
         label
       )}{" "}
       <span className="text-[11px] text-stone-300">{compassPlaceText(point)}</span>
-      {point.isForming ? (
-        <>
-          {" "}
-          <span className="text-[11px] text-stone-300">{W.forming}</span>
-        </>
-      ) : null}
-      {point.dialAnchor === "apex" && !point.isPriority ? (
-        <>
-          {" "}
-          <span className="text-[11px] text-amber-200">{W.apexNotPriority}</span>
-        </>
-      ) : null}
       {point.isAttention ? (
         <>
           {" "}
@@ -448,7 +427,6 @@ function PointList({ points, labelId, label, hold, ids, onPoint }: PointListProp
                 aria-pressed={point.isAttention}
                 className={joinClasses(
                   "flex w-full flex-col items-start gap-0.5 rounded-xl border px-3 py-2 text-left text-sm disabled:cursor-not-allowed",
-                  point.isForming ? "border-dashed" : null,
                   point.isAttention
                     ? "border-orange-300/70 bg-orange-300/10 text-orange-50"
                     : joinClasses(
@@ -559,29 +537,20 @@ function NeedleGroup({ ids, ended, live, children }: NeedleGroupProps) {
   );
 }
 
-type PriorityLinesProps = Readonly<{
+type NeedleLineProps = Readonly<{
   compass: CardCompass;
   ids: CardIds;
   currentRef: RefObject<HTMLDivElement | null>;
 }>;
 
-// The Priority and Current attention lines, in both views.
-function PriorityLines({ compass, ids, currentRef }: PriorityLinesProps) {
+// Full saved wording, and the focus destination after an Explorer needle move.
+function NeedleLine({ compass, ids, currentRef }: NeedleLineProps) {
+  if (compass.attention === null) return null;
   return (
-    <dl className="grid gap-1 text-sm">
-      <div className="flex flex-wrap gap-x-2">
-        <dt className="text-stone-400">{W.priorityTerm}</dt>
-        <dd className="min-w-0 font-medium text-amber-100 [overflow-wrap:anywhere]">
-          {compass.priority?.label ?? W.priorityNone}
-          {compass.priority ? <span className="text-xs font-normal text-stone-400"> {W.priorityConfirmed}</span> : null}
-        </dd>
-      </div>
-      {/* Where focus goes after a confirmed move the Explorer asked for here. */}
-      <div className={joinClasses("flex flex-wrap gap-x-2 rounded-md", FOCUS_RING)} id={ids.current} ref={currentRef} tabIndex={-1}>
-        <dt className="text-stone-400">{W.needleTerm}</dt>
-        <dd className="min-w-0 font-medium text-orange-100 [overflow-wrap:anywhere]">{compass.attention?.label ?? W.needleNone}</dd>
-      </div>
-    </dl>
+    <div className={joinClasses("rounded-md text-xs font-normal leading-5 text-stone-400 [overflow-wrap:anywhere]", FOCUS_RING)}
+      id={ids.current} ref={currentRef} tabIndex={-1}>
+      {W.needleTerm} {compass.attention.label}
+    </div>
   );
 }
 
@@ -603,7 +572,7 @@ type FullViewProps = ViewProps &
 // points the needle, a dashed needle explains itself, and "+N more" opens the
 // Compact view; then the dashed needle's sentence when shown, then the two
 // lines.
-function FullView({ scope, compass, ids, hold, live, lines, onPoint, inDrawer, whyOpen, onToggleWhy, onMore }: FullViewProps) {
+function FullView({ scope, compass, ids, hold, live, lines, onPoint, whyOpen, onToggleWhy, onMore }: FullViewProps) {
   const ended = hold === "ended";
   const row = bottomRow(compass);
   const places = rowPlacesX(row.length);
@@ -669,7 +638,7 @@ function FullView({ scope, compass, ids, hold, live, lines, onPoint, inDrawer, w
         </Dial>
         {whyOpen && target !== null && attention !== null ? (
           <p className="text-xs leading-5 text-stone-300" id={ids.why}>
-            {dashedNeedleText(attention, inDrawer, ended)}
+            {dashedNeedleText(attention)}
           </p>
         ) : null}
       </NeedleGroup>
@@ -759,7 +728,7 @@ export function ConnectedCompassCard({ scope, state, hold, view, onToggleView, o
     ids,
     hold,
     live: <LiveLine hold={hold} ids={ids} inDrawer={inDrawer} result={result} />,
-    lines: compass === null ? null : <PriorityLines compass={compass} currentRef={currentRef} ids={ids} />,
+    lines: compass === null ? null : <NeedleLine compass={compass} currentRef={currentRef} ids={ids} />,
     onPoint: choose,
   };
 

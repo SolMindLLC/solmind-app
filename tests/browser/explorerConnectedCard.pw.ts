@@ -138,59 +138,31 @@ const composer = (page: Page) => page.getByLabel("Continue the conversation", { 
 const sendButton = (page: Page) => page.getByRole("button", { name: "Send", exact: true });
 const unavailableNotice = (page: Page) => page.getByText(/Virtual Guide is unavailable\. You can review saved messages/);
 
-test("S5 reply state adds and revises a dashed Forming point that survives reload and loses its marker when confirmed", async ({ page }) => {
+test("S5 legacy forming points remain hidden through reads, reload and both views without confirmation controls", async ({ page }) => {
   const original = cardState();
-  let state = cardState({ providerState: "available",
-    compassItems: original.compassItems.filter(item => item.id !== CARD_POINTS.unarranged) });
-  let sends = 0;
-  await page.route("**/explorer/conversation/commands", async route => {
-    const command = route.request().postDataJSON() as { kind: string; body: string };
-    expect(command.kind).toBe("send");
-    sends += 1;
-    const explorerId = `20000000-0000-4000-8000-0000000000a${sends}`;
-    const replyId = `30000000-0000-4000-8000-0000000000a${sends}`;
-    const label = sends === 1 ? "Accepting help" : "Asking for support";
-    const forming = { id: CARD_POINTS.unarranged, sourceMessageId: "30000000-0000-4000-8000-0000000000a1",
-      label, formation: "forming" as const, anchor: null, emphasis: null, mergedIntoItemId: null };
-    state = { ...state, revision: state.revision + 1, messages: [...state.messages,
-      { id: explorerId, role: "explorer", body: command.body, createdAt: "2026-11-04T22:00:00.000Z" },
-      { id: replyId, role: "virtualGuide", body: `Synthetic forming reply ${sends}.`, createdAt: "2026-11-04T22:00:01.000Z" }],
-    compassItems: [...state.compassItems.filter(item => item.id !== CARD_POINTS.unarranged), forming] };
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(success(state)) });
-  });
+  let state = cardState({ compassItems: original.compassItems.map(item => item.id === CARD_POINTS.unarranged
+    ? { ...item, formation: "forming" } : item) });
+  const writes: string[] = [];
+  await page.route("**/explorer/conversation/commands", route => { writes.push(route.request().postData()!); return route.abort(); });
   await openPage(page, () => state);
-  await composer(page).fill("A synthetic topic about accepting help.");
-  await sendButton(page).click();
-  await expect(page.getByText("Synthetic forming reply 1.", { exact: true })).toBeVisible();
   let card = await openCard(page);
-  await expect(point(needleGroup(card), "Accepting help")).toHaveAccessibleName("Accepting help Not yet arranged Forming");
-  await expect(dialOf(card).locator('rect[stroke-dasharray="4 3"]')).toHaveCount(1);
-  await expect(dialOf(card).locator("text", { hasText: /^Forming$/ })).toBeVisible();
+  await expect(point(needleGroup(card), CARD_LABELS.unarranged)).toHaveCount(0);
+  await expect(compassOf(card)).not.toContainText(/Forming|Priority/);
   await showCompact(card);
-  await expect(point(needleGroup(card), "Accepting help")).toHaveCSS("border-top-style", "dashed");
-  await expect(point(needleGroup(card), "Accepting help")).toContainText("Forming");
+  await expect(point(needleGroup(card), CARD_LABELS.unarranged)).toHaveCount(0);
   await expectNoSidewaysScroll(page);
   await closeDrawer(page);
-
-  await composer(page).fill("A synthetic clarification about asking for support.");
-  await sendButton(page).click();
-  await expect(page.getByText("Synthetic forming reply 2.", { exact: true })).toBeVisible();
   await page.reload();
   card = await openCard(page);
-  await expect(point(needleGroup(card), "Asking for support")).toHaveAccessibleName("Asking for support Not yet arranged Forming");
-  await expect(point(needleGroup(card), "Accepting help")).toHaveCount(0);
-  await expect(compassOf(card).getByRole("button", { name: /That's right|That's not it/ })).toHaveCount(0);
+  await expect(point(needleGroup(card), CARD_LABELS.unarranged)).toHaveCount(0);
   await expectNoSeriousAxeViolations(page);
   await closeDrawer(page);
-
-  // Confirmation controls are S6. A subsequent saved-state read supplies the confirmed marker here.
-  state = { ...state, compassItems: state.compassItems.map(item => item.id === CARD_POINTS.unarranged
-    ? { ...item, formation: "saved" } : item) };
+  state = original;
   await page.reload();
   card = await openCard(page);
-  await expect(point(needleGroup(card), "Asking for support")).toHaveAccessibleName("Asking for support Not yet arranged");
-  await expect(dialOf(card).locator('rect[stroke-dasharray="4 3"]')).toHaveCount(0);
-  expect(sends).toBe(2);
+  await expect(point(needleGroup(card), CARD_LABELS.unarranged)).toHaveAccessibleName(`${CARD_LABELS.unarranged} Not yet arranged`);
+  await expect(compassOf(card).getByRole("button", { name: /That's right|That's not it/ })).toHaveCount(0);
+  expect(writes).toEqual([]);
 });
 
 test("the card draws the saved Compass and Waypoints, and tapping a point on the dial sends exactly the existing set_attention command", async ({ page }) => {
@@ -219,7 +191,7 @@ test("the card draws the saved Compass and Waypoints, and tapping a point on the
   const dial = dialOf(card);
   await expect(dial).toBeVisible();
   await expect(viewToggle(card)).toHaveAccessibleName("Compact view of the Compass");
-  await expect(dial).toHaveAccessibleDescription(/^Priority: Talk with my sister\. .* Not yet arranged: Asking for help\. Other paths: Avoiding hard talks\. The needle points to What I need from it\.$/);
+  await expect(dial).toHaveAccessibleDescription(/^Top position: Talk with my sister\. .* Not yet arranged: Asking for help\. Other paths: Avoiding hard talks\. The needle points to What I need from it\.$/);
   await expect(dial.locator("circle[r='28']")).toHaveCount(8);
   const group = needleGroup(card);
   // Since the redesign: "Point the needle to change topic", with no instruction under it.
@@ -248,8 +220,8 @@ test("the card draws the saved Compass and Waypoints, and tapping a point on the
   await expectPainted(dial.locator("path.fill-yellow-300").first());
   await expect(dashedLine(card)).toHaveCount(0);
   await expect(dashedButton(card)).toHaveCount(0);
-  await expect(compass.getByText("Priority:", { exact: true })).toBeVisible();
-  await expect(compass.getByText("Current attention:", { exact: true })).toBeVisible();
+  await expect(compass.getByText("Priority:", { exact: true })).toHaveCount(0);
+  await expect(compass.locator('[id$="-connected-needle-current"]')).toBeVisible();
   await expect(card.getByText(CARD_LABELS.merged)).toHaveCount(0);
   // Nothing is said in the live line before a hold or a change, and it is live only in the drawer.
   await expect(liveLine(group)).toHaveText("");
@@ -294,11 +266,11 @@ test("the card draws the saved Compass and Waypoints, and tapping a point on the
   await expectLiveOnlyInDrawer(page, group);
   const currentLine = card.locator(`#${scopeOf(page)}-connected-needle-current`);
   await expect(currentLine).toBeFocused();
-  await expect(currentLine).toHaveText(`Current attention:${CARD_LABELS.detour}`);
-  await expect(dial).toHaveAccessibleDescription(/^Priority: Talk with my sister\. .* The needle points to Money worries\.$/);
+  await expect(currentLine).toHaveText(`Pointing to: ${CARD_LABELS.detour}`);
+  await expect(dial).toHaveAccessibleDescription(/^Top position: Talk with my sister\. .* The needle points to Money worries\.$/);
   await expect(current).toHaveAttribute("aria-pressed", "false");
   await expect(current).toBeEnabled();
-  await expect(point(group, CARD_LABELS.priority)).toHaveAccessibleName(`${CARD_LABELS.priority} Priority`);
+  await expect(point(group, CARD_LABELS.priority)).toHaveAccessibleName(`${CARD_LABELS.priority} Top position`);
   await expect(point(group, CARD_LABELS.detour)).toHaveAccessibleName(`${CARD_LABELS.detour} Detour, left The needle points here`);
   await expect(group.getByText(NEEDLE_HOLD_TEXT.busy, { exact: true })).toHaveCount(0);
   // The needle is drawn toward the new point (Detour, left: its end stops 32 short of the bubble's centre at 88, 150).
@@ -308,7 +280,7 @@ test("the card draws the saved Compass and Waypoints, and tapping a point on the
   expect(Number(await needle.getAttribute("y2"))).toBeCloseTo(150, 2);
   await expectNoSeriousAxeViolations(page);
   await closeDrawer(page);
-  await expect(page.getByLabel("Private Compass and Waypoints", { exact: true }).getByText(`Current attention: ${CARD_LABELS.detour}`, { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Session Compass", exact: true })).toHaveCount(0);
   expect(bodies).toHaveLength(1);
 });
 
@@ -340,7 +312,7 @@ test("keyboard: Tab reaches each point on the dial and Enter points the needle; 
   await page.keyboard.press("Enter");
   const currentLine = card.locator(`#${scopeOf(page)}-connected-needle-current`);
   await expect(currentLine).toBeFocused();
-  await expect(currentLine).toHaveText(`Current attention:${CARD_LABELS.longLabel}`);
+  await expect(currentLine).toHaveText(`Pointing to: ${CARD_LABELS.longLabel}`);
   await expect(target).toHaveAttribute("aria-pressed", "true");
   await expect(liveLine(group)).toHaveText(needleMovedText(CARD_LABELS.longLabel));
   expect(bodies).toHaveLength(1);
@@ -438,43 +410,37 @@ test("after the needle moves, Send stays usable: the screen keeps the Virtual Gu
   expect(JSON.parse(bodies[0])).toMatchObject({ kind: "set_attention", itemId: CARD_POINTS.detour });
 });
 
-test("after a current-tools command (adding a point), Send stays usable too", async ({ page }) => {
+test("after a current-tools Waypoint command, Send stays usable too", async ({ page }) => {
   let state = cardState({ providerState: "available" });
   const source = state.messages[0].id;
-  const added = "40000000-0000-4000-8000-0000000000c9";
   const bodies: string[] = [];
   await page.route("**/explorer/conversation/commands", async route => {
-    bodies.push(route.request().postData() ?? "");
-    const command = JSON.parse(bodies[0]) as { kind: string; sourceMessageId: string; label: string };
-    state = { ...state, revision: 13, compassItems: [...state.compassItems,
-      { id: added, sourceMessageId: command.sourceMessageId, label: command.label, anchor: null, emphasis: null, mergedIntoItemId: null }] };
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(success(commandResult(state))) });
+    bodies.push(route.request().postData()!);
+    const command = JSON.parse(bodies[0]);
+    expect(command).toMatchObject({ kind: "confirm_waypoint", sourceMessageId: source,
+      destination: "Take a quiet walk", meaning: "A little room to think", arrivalSignal: "One walk completed", expectedRevision: 12 });
+    const waypoint = { id: "60000000-0000-4000-8000-0000000000c9", sourceMessageId: source,
+      title: command.destination, destination: command.destination, meaning: command.meaning, arrivalSignal: command.arrivalSignal,
+      status: "chosen" as const, isCurrent: true, createdAt: "2026-11-11T12:00:00Z" };
+    state = { ...state, revision: 13, waypoints: [...state.waypoints, waypoint],
+      waypointCapacity: { ...state.waypointCapacity, activeCount: state.waypointCapacity.activeCount + 1 },
+      waypointProjection: { ...state.waypointProjection, totalHeads: state.waypointProjection.totalHeads + 1 } };
+    await route.fulfill({ json: success(commandResult(state)) });
   });
   await openPage(page, () => state);
-  await expect(sendButton(page)).toBeEnabled();
-  const tools = page.getByRole("region", { name: "Session Compass", exact: true });
+  const tools = page.getByRole("region", { name: "Private Waypoints", exact: true });
   await tools.getByRole("combobox", { name: "Saved conversation source", exact: true }).selectOption(source);
-  await tools.getByLabel("Your short label", { exact: true }).fill("Asking for a calm hour");
-  // The current tools keep points without a position under a collapsed "Other paths" count.
-  await expect(tools.locator("summary", { hasText: "Other paths (2)" })).toBeVisible();
-  await tools.getByRole("button", { name: "Save Compass point", exact: true }).click();
+  await tools.getByLabel("Where do you want to arrive?", { exact: true }).fill("Take a quiet walk");
+  await tools.getByLabel("Why does reaching it matter to you?", { exact: true }).fill("A little room to think");
+  await tools.getByLabel("What observable signal will help you recognize arrival?", { exact: true }).fill("One walk completed");
+  await tools.getByRole("checkbox", { name: /I choose this private Waypoint/ }).check();
+  await tools.getByRole("button", { name: "Confirm and save private Waypoint", exact: true }).click();
   await expect(page.getByRole("status").first()).toHaveText("Your saved conversation is up to date.");
-  await expect(tools.locator("summary", { hasText: "Other paths (3)" })).toBeVisible();
   await expect(composer(page)).toBeEnabled();
   await expect(sendButton(page)).toBeEnabled();
   await expect(unavailableNotice(page)).toHaveCount(0);
+  await expect(tools.getByRole("heading", { name: "Take a quiet walk", exact: true })).toBeVisible();
   expect(bodies).toHaveLength(1);
-  expect(JSON.parse(bodies[0])).toMatchObject({ kind: "add_compass", sourceMessageId: source, label: "Asking for a calm hour", expectedRevision: 12 });
-  // The card shows the new point as not yet arranged: not on the dial but in its bottom row (now 3 places,
-  // after the other point not yet arranged), and in the Compact view's list.
-  const card = await openCard(page);
-  const addedPoint = point(needleGroup(card), "Asking for a calm hour");
-  await expect(addedPoint).toHaveAccessibleName("Asking for a calm hour Not yet arranged");
-  await expect(addedPoint).toBeEnabled();
-  await expectOverRowPlace(card, addedPoint, "Asking for a calm hour");
-  await expect(dialOf(card).locator("path.fill-yellow-300")).toHaveCount(3);
-  await showCompact(card);
-  await expect(point(needleGroup(card), "Asking for a calm hour")).toHaveAccessibleName("Asking for a calm hour Not yet arranged");
 });
 
 test("after a Send refused as unavailable, a needle move keeps Send disabled with its notice", async ({ page }) => {
@@ -566,7 +532,7 @@ test("the view switch shows one view at a time and keeps the choice while the pa
   for (const name of ["On your Compass", "Not yet arranged", "Other paths"]) {
     await expect(compassOf(card).getByRole("list", { name, exact: true })).toHaveCount(0);
   }
-  await expect(compassOf(card).getByText("Current attention:", { exact: true })).toBeVisible();
+  await expect(compassOf(card).locator('[id$="-connected-needle-current"]')).toBeVisible();
   // Compact, by keyboard: the list with the two lines, and no dial; focus stays on the switch.
   await toggle.focus();
   await page.keyboard.press("Enter");
@@ -579,8 +545,8 @@ test("the view switch shows one view at a time and keeps the choice while the pa
     await expect(list).toBeVisible();
     await expect(list.getByRole("button")).toHaveCount(count);
   }
-  await expect(compassOf(card).getByText("Priority:", { exact: true })).toBeVisible();
-  await expect(compassOf(card).getByText("Current attention:", { exact: true })).toBeVisible();
+  await expect(compassOf(card).getByText("Priority:", { exact: true })).toHaveCount(0);
+  await expect(compassOf(card).locator('[id$="-connected-needle-current"]')).toBeVisible();
   const group = needleGroup(card);
   await expect(compassOf(card).getByRole("heading", { level: 4, name: "Point the needle to change topic", exact: true })).toBeVisible();
   await expect(group).toHaveAccessibleDescription("");
@@ -668,7 +634,7 @@ test("Compact view: choosing a point in the list sends exactly the existing set_
   await expect(liveLine(group)).toHaveText(needleMovedText(CARD_LABELS.excursion));
   const currentLine = card.locator(`#${scopeOf(page)}-connected-needle-current`);
   await expect(currentLine).toBeFocused();
-  await expect(currentLine).toHaveText(`Current attention:${CARD_LABELS.excursion}`);
+  await expect(currentLine).toHaveText(`Pointing to: ${CARD_LABELS.excursion}`);
   // The Full view shows the same saved needle on the dial.
   await viewToggle(card).click();
   await expect(point(needleGroup(card), CARD_LABELS.excursion)).toHaveAttribute("aria-pressed", "true");
@@ -714,7 +680,7 @@ test("redesign: tapping a point in the bottom row sends exactly set_attention, a
   await expect(liveLine(group)).toHaveText(needleMovedText(CARD_LABELS.otherPath));
   const currentLine = card.locator(`#${scopeOf(page)}-connected-needle-current`);
   await expect(currentLine).toBeFocused();
-  await expect(currentLine).toHaveText(`Current attention:${CARD_LABELS.otherPath}`);
+  await expect(currentLine).toHaveText(`Pointing to: ${CARD_LABELS.otherPath}`);
   await expect(point(group, CARD_LABELS.attention)).toBeEnabled();
   // The needle is drawn dashed all the way to the place (240, 308), stopping outside its orange ring; the
   // place keeps its own yellow symbol and the needle has none at its tip; no solid needle and no orange bubble remain.
@@ -781,7 +747,7 @@ test("redesign: tapping a point in the bottom row sends exactly set_attention, a
   await expect(why).toBeFocused();
   await expect(why).toHaveCSS("outline-width", "2px");
   await page.keyboard.press("Enter");
-  const placeIt = isWide(page) ? DASHED_NEEDLE_WORDING.unarranged : DASHED_NEEDLE_WORDING.unarrangedDrawer;
+  const placeIt = DASHED_NEEDLE_WORDING.unarrangedEnded;
   await expect(compassOf(card).getByText(placeIt, { exact: true })).toBeVisible();
   await expect(why).toHaveAttribute("aria-expanded", "true");
   await page.keyboard.press("Enter");

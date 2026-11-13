@@ -9,8 +9,10 @@ import {
 
 function request(mode: "classification_and_reply" | "classification_only" = "classification_and_reply") {
   const authorizedContext = JSON.stringify({ contractVersion: mode === "classification_only"
-    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v7",
-    ...(mode === "classification_only" ? {} : { compassContext: { version: "explorer-compass-context.v7",
+    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v8",
+    ...(mode === "classification_only" ? {} : { compassContext: { version: "explorer-compass-context.v8",
+      mode: "legacy_read_only", topics: [], messageRefs: { history: [], immediate: "now" },
+      capacity: { originalsRemaining: 0, topicSlotsRemaining: 0, visibleSlotsRemaining: 0 },
       immediateMessageIsReplyChoice: false,
       points: [{ id: "00000000-0000-4000-8000-000000000005", label: "Saved point", order: 0,
         formation: "saved", anchor: null, emphasis: null }], priorityId: null, attentionId: null, recentRoute: [],
@@ -33,8 +35,8 @@ const RAW = '{"protocol":"explorer-safety-reply.v2","classification":{"level":4,
 function adapter(fetchImpl: typeof fetch) { return createOpenAiLunaExplorerSafetyTransport({ apiKey: "synthetic-never-transmitted-key", fetchImpl }); }
 describe("Dormant injected Explorer same-call HTTP transport", () => {
   it.each([
-    ["classification_only", 7708, "420277CE05E665636B6640ADF18F638E3265F6F4C9090414DF83D07A1BFCB9C5"],
-    ["classification_and_reply", 10104, "08E394C45BBDE57368286046713C6DF5D5AE9B56044ED107F3A216A92976CC45"],
+    ["classification_only", 6368, "79213E366ABBAB283120F5F6B657EB4018BF7F714906F22EFEF91928D26A591D"],
+    ["classification_and_reply", 14254, "6028F69625F017DB982C7277677F6BCB187DF23BED2432813C7DAA8007D392BA"],
   ] as const)("Lane 7 pins bounded-selection output instruction bytes and SHA-256 (%s)", (mode, bytes, sha256) => {
     const text = explorerSafetyHttpInstructions(mode);
     expect(Buffer.byteLength(text, "utf8")).toBe(bytes);
@@ -52,7 +54,7 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
     expect(createHash("sha256").update(sent.input).digest("hex").toUpperCase()).toBe(input.contextFingerprint);
     const context = JSON.parse(sent.input);
     expect(context.contractVersion).toBe(mode === "classification_only"
-      ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v7");
+      ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v8");
     if (mode === "classification_only") {
       expect(context).not.toHaveProperty("compassContext");
       for (const text of ["Saved point", "Saved destination", "Saved meaning", "Saved arrival",
@@ -76,13 +78,13 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
   it("S4/S5 instructions bound suggestions, shift mentions, one acknowledgment and optional first-reply choices", () => {
     const text = explorerSafetyHttpInstructions("classification_and_reply");
     for (const sentence of [
-      "compass may contain attention, a current head point id from compassContext or null, and suggestions, an array of at most three objects with label (plain text, single-line, 1 to 160 characters) and optional pointId naming a forming point; omit pointId for a new point.",
+      "compass may contain only attention, a current placed point id from compassContext or null, and topics, an array of zero to three objects with exactly topicId (a supplied topic id or null), label (plain text, single-line, 1 to 160 characters), supportRefs (zero to three distinct supplied message references) and ready (boolean). A new topic needs at least one supportRef; an existing label stays unchanged.",
       "choices is an array of one to three objects, each with exactly label, a plain-text single-line label of 1 to 40 characters.",
-      "Hold space first: reflect what you hear and ask open, curious questions one at a time; where it helps, name two or three possible meanings for the Explorer to choose from. Suggest short Compass point wording in compass.suggestions only once the concern is clear; when unsure, keep listening. Do not suggest or promise new or refined Compass point wording before the Explorer has sent at least three messages in this conversation, counting the immediate message. When supplied state shows a point or Waypoint is confirmed and the Explorer says \"That's right\", acknowledge it briefly and continue from what matters to them. Suggest wording only with an ordinary reply below classification level 2 in an unrestricted conversation. Refine only forming points, never saved points. Never claim a suggestion is saved or confirmed; the Explorer chooses confirmation, Priority and arrangement.",
+      "Track a topic in compass.topics only from distinct Explorer responses in this conversation that support it; mere mentions, unrelated answers and disputes do not count. Use topicId from compassContext.topics for an existing topic, or null for a new one, and a plain-text label of 1 to 160 characters; keep an existing label unchanged. Supply at most three topics per reply and at most three distinct supportRefs per topic, using only compassContext.messageRefs. Earlier accepted supportCount carries forward; never recount a message. Set ready true only when at least three distinct responses support that topic and you are highly confident it is clear; otherwise use false. Points go straight onto the dial without confirmation; do not send compass.suggestions or compass.responses. Use topics only with an ordinary reply below classification level 2 in an unrestricted conversation. Do not promise that a point or change was saved; the application may drop it. When uncertain what the Explorer means, ask gently and clarify the meaning before acting on it. When supplied state shows a Waypoint is confirmed and the Explorer says \"That's right\", acknowledge it briefly and continue from what matters to them.",
       "Only propose a needle move with an ordinary reply in an unrestricted conversation; the application validates it and may ignore it.",
       "Never claim that a proposed move or choices were saved or applied.",
       "Mention a shift only when substantial and not just announced by the Explorer, once per shift, never at classification level 2 or above or in restricted conversations.",
-      "Offer to return to the original topic at most once per sitting (a change of topic does not start a new sitting; not again if you already offered in the recent messages), never as pressure, in your own words.",
+      "Follow the Explorer's changes of topic without pressure.",
       "When the latest compassContext.recentRoute entry has actor explorer and awaitingReply true, acknowledge the Explorer's needle move once, briefly, then follow the Explorer's lead without proposing a different needle move in that same reply; do not repeat acknowledgments of historical moves with awaitingReply false.",
       "Offer optional choices whenever they would make answering easier, not to meet a target number of replies with choices, never at classification level 2 or above or in restricted conversations.",
       'In the conversation\'s first reply, if the Explorer has not named a topic, you may offer "Show me around", "I have a question" and "Let\'s begin".',
@@ -93,10 +95,9 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
     expect(explorerSafetyHttpInstructions("classification_only")).toContain("candidateReply MUST be null; omit compass, waypointSuggestion, waypointResponse and choices.");
   });
   it.each([
-    "Hold space first: reflect what you hear and ask open, curious questions one at a time; where it helps, name two or three possible meanings for the Explorer to choose from.",
-    "Suggest short Compass point wording in compass.suggestions only once the concern is clear; when unsure, keep listening.",
-    "Do not suggest or promise new or refined Compass point wording before the Explorer has sent at least three messages in this conversation, counting the immediate message.",
-    "When supplied state shows a point or Waypoint is confirmed and the Explorer says \"That's right\", acknowledge it briefly and continue from what matters to them.",
+    "Apply these conclusion and suggestion steps only in ordinary replies below classification level 2 in unrestricted conversations, keeping all existing safety, permission, reply-length and one-question limits.",
+    "Track a topic in compass.topics only from distinct Explorer responses in this conversation that support it; mere mentions, unrelated answers and disputes do not count. Use topicId from compassContext.topics for an existing topic, or null for a new one, and a plain-text label of 1 to 160 characters; keep an existing label unchanged. Supply at most three topics per reply and at most three distinct supportRefs per topic, using only compassContext.messageRefs. Earlier accepted supportCount carries forward; never recount a message. Set ready true only when at least three distinct responses support that topic and you are highly confident it is clear; otherwise use false. Points go straight onto the dial without confirmation; do not send compass.suggestions or compass.responses. Use topics only with an ordinary reply below classification level 2 in an unrestricted conversation. Do not promise that a point or change was saved; the application may drop it. When uncertain what the Explorer means, ask gently and clarify the meaning before acting on it.",
+    "When supplied state shows a Waypoint is confirmed and the Explorer says \"That's right\", acknowledge it briefly and continue from what matters to them.",
   ])("TF limits the pacing and confirmation instruction to ordinary replies: %s", sentence => {
     const ordinary = explorerSafetyHttpInstructions("classification_and_reply");
     const classification = explorerSafetyHttpInstructions("classification_only");
@@ -124,10 +125,10 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
     expect(ordinary).toContain('you may offer "Show me around", "I have a question" and "Let\'s begin". ' + sentence + " Always answer questions about how things work.");
     expect(classification).not.toContain("already shown its welcome");
     expect(classification).toContain('you may offer "Show me around", "I have a question" and "Let\'s begin". Always answer questions about how things work.');
-    // Nothing else changed: without the sentence the ordinary text is the earlier pinned text (9830 bytes).
+    // Pin the current ordinary text with only Paul's welcome sentence and its separating space removed.
     const earlier = ordinary.replace(" " + sentence, "");
-    expect(Buffer.byteLength(earlier, "utf8")).toBe(9830);
-    expect(createHash("sha256").update(earlier, "utf8").digest("hex").toUpperCase()).toBe("3D5A42EACD78D715B87882F315E81A4910D8F065F18A9DF814B03F1CBE977E96");
+    expect(Buffer.byteLength(earlier, "utf8")).toBe(13980);
+    expect(createHash("sha256").update(earlier, "utf8").digest("hex").toUpperCase()).toBe("F7F3161528C83AA45E973CA0B24B3446F3FC1AC26844C019481FAFD73D36AA76");
   });
   it("CV teaches Explorer-voice labels and explains the ordinary-only verified choice marker", () => {
     const voice = "Write every choice label as the Explorer's own reply, in their voice, as a complete answer to your question or invitation, never as a question to you or as your own words.";
@@ -146,20 +147,20 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
       expect({ bytes: Buffer.byteLength(text, "utf8"),
         sha256: createHash("sha256").update(text, "utf8").digest("hex").toUpperCase() })
         .toEqual(mode === "classification_and_reply"
-          ? { bytes: 10104, sha256: "08E394C45BBDE57368286046713C6DF5D5AE9B56044ED107F3A216A92976CC45" }
-          : { bytes: 7708, sha256: "420277CE05E665636B6640ADF18F638E3265F6F4C9090414DF83D07A1BFCB9C5" });
+          ? { bytes: 14254, sha256: "6028F69625F017DB982C7277677F6BCB187DF23BED2432813C7DAA8007D392BA" }
+          : { bytes: 6368, sha256: "79213E366ABBAB283120F5F6B657EB4018BF7F714906F22EFEF91928D26A591D" });
     });
-  it("S6b instructions bound typed responses to a clear answer to the preceding saved suggestion", () => {
+  it("automatic instructions retire Compass response authorization", () => {
     const text = explorerSafetyHttpInstructions("classification_and_reply");
-    expect(text).toContain("compass may also contain responses, an array of at most three objects with exactly pointId naming a forming point and response equal to right, close or not_it.");
-    expect(text).toContain("Record a typed answer in compass.responses only when the Explorer's latest message clearly answers a forming point from your immediately preceding saved reply, marked suggestedInPreviousReply true in compassContext. Use right only when the Explorer accepts the exact stored wording, close when they say it needs a change, and not_it when they turn it down. Never infer an answer from silence, a change of topic or an ambiguous message, and never answer for the Explorer; when unsure, ask instead. With close, ask what to change; if you offer new wording, refine that point with its pointId in compass.suggestions and omit its response. With not_it, ask an open question. Do not respond to a point you refine in the same reply. Use responses only with an ordinary reply below classification level 2 in an unrestricted conversation. Never claim a response was saved or applied; the application may drop it.");
+    expect(text).not.toContain("compass may also contain responses, an array of at most three objects with exactly pointId naming a forming point and response equal to right, close or not_it.");
+    expect(text).not.toContain("Record a typed answer in compass.responses only when the Explorer's latest message clearly answers a forming point from your immediately preceding saved reply, marked suggestedInPreviousReply true in compassContext. Use right only when the Explorer accepts the exact stored wording, close when they say it needs a change, and not_it when they turn it down. Never infer an answer from silence, a change of topic or an ambiguous message, and never answer for the Explorer; when unsure, ask instead. With close, ask what to change; if you offer new wording, refine that point with its pointId in compass.suggestions and omit its response. With not_it, ask an open question. Do not respond to a point you refine in the same reply. Use responses only with an ordinary reply below classification level 2 in an unrestricted conversation. Never claim a response was saved or applied; the application may drop it.");
     expect(explorerSafetyHttpInstructions("classification_only")).toContain("candidateReply MUST be null; omit compass, waypointSuggestion, waypointResponse and choices.");
   });
   it("S7a/S7b bounds one Waypoint draft and its clear typed answer to the preceding saved suggestion", () => {
     const text = explorerSafetyHttpInstructions("classification_and_reply");
     expect(text).toContain("waypointResponse is one object with exactly draftId naming the forming Waypoint in compassContext.drafts and response equal to right, close or not_it.");
     expect(text).toContain("waypointSuggestion is one object with exactly title, destination, whyItMatters and arrivalSignal, each a nonempty plain-text string; the title is about six words and the other fields have 1 to 1000 characters.");
-    expect(text).toContain("When the Explorer describes a place they want to reach, you may suggest one Waypoint draft in waypointSuggestion, with a title of about six words, where they are heading, why it matters, and what Reached would look like, in their own terms. Suggest a Waypoint only when the conversation clearly points to a place the Explorer wants to reach; when unsure, keep exploring or ask. Refine the existing draft in compassContext.drafts instead of starting a second. While a draft is forming, any waypointSuggestion replaces its wording; suggest a different Waypoint only after the Explorer answers it. Suggest a Waypoint only with an ordinary reply below classification level 2 in an unrestricted conversation, at most one per reply. Never claim a Waypoint suggestion is saved or confirmed; only the Explorer's reply button or clear typed answer can confirm it. When they choose \"Close, not quite\", ask what to change and keep any new wording forming; when they choose \"That's not it\", ask an open question. Record a typed answer in waypointResponse only when the Explorer's latest message clearly answers the forming Waypoint from your immediately preceding saved reply, marked suggestedInPreviousReply true in compassContext.drafts. Use right only when the Explorer accepts the exact stored wording, close when they say it needs a change, and not_it when they turn it down. Never infer an answer from silence, a change of topic or an ambiguous message, and never answer for the Explorer; when unsure, ask instead. With close, ask what to change; put any new wording in waypointSuggestion and omit waypointResponse. With not_it, ask an open question. Do not send waypointResponse in a reply that also has waypointSuggestion. Use waypointResponse only with an ordinary reply below classification level 2 in an unrestricted conversation. Never claim a response was saved or applied; the application may drop it.");
+    expect(text).toContain("When the Explorer describes a place they want to reach, you may suggest one Waypoint draft in waypointSuggestion, with a title of about six words, where they are heading, why it matters, and what Reached would look like, in their own terms. Refine the existing draft in compassContext.drafts instead of starting a second. While a draft is forming, any waypointSuggestion replaces its wording; suggest a different Waypoint only after the Explorer answers it. Suggest a Waypoint only with an ordinary reply below classification level 2 in an unrestricted conversation, at most one per reply. Never claim a Waypoint suggestion is saved or confirmed; only the Explorer's reply button or clear typed answer can confirm it. When they choose \"Close, not quite\", ask what to change and keep any new wording forming. Record a typed answer in waypointResponse only when the Explorer's latest message clearly answers the forming Waypoint from your immediately preceding saved reply, marked suggestedInPreviousReply true in compassContext.drafts. Use right only when the Explorer accepts the exact stored wording, close when they say it needs a change, and not_it when they turn it down. Never infer an answer from silence, a change of topic or an ambiguous message, and never answer for the Explorer; when unsure, ask instead. With close, ask what to change; put any new wording in waypointSuggestion and omit waypointResponse. Do not send waypointResponse in a reply that also has waypointSuggestion. Use waypointResponse only with an ordinary reply below classification level 2 in an unrestricted conversation. Never claim a response was saved or applied; the application may drop it.");
   });
   it("extracts malformed prose untouched so the owner can retain classification first", async () => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify(envelope(RAW))));

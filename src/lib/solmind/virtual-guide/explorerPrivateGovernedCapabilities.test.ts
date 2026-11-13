@@ -32,7 +32,7 @@ function fixture() {
     versionId: VERSION, versionNumber: 1, contentMarkdown: METHODOLOGY, contentSha256: subject.subjectSha256,
     methodologyAuthorizationVersion: "MV1:" + SHA };
   const source = { read: vi.fn<EffectiveMethodologySource["read"]>(async () => selection) };
-  const authority = { accountId: ACTOR.accountId, applicationSessionId: ACTOR.applicationSessionId,
+  const authority = { compassEvidence: [], accountId: ACTOR.accountId, applicationSessionId: ACTOR.applicationSessionId,
     explorerId: uuid(7), relationshipId: uuid(8), guideId: GUIDE, practiceId: uuid(9), organizationId: uuid(10),
     applicationSessionExpiresAt: "2100-01-01T00:00:00.000Z", relationshipStatus: "active", onboardingStatus: "active",
     adultAffirmation: true, authorizationVersion: "AV3:" + SHA,
@@ -168,7 +168,7 @@ describe("explicit private governed capability composition with synthetic proven
     const ordinary = await f.capabilities.buildContext({ actor: ACTOR, row: f.row, state: populated, command, ids, readiness,
       mode: "classification_and_reply", signal: new AbortController().signal });
     const full = JSON.parse(ordinary.request.authorizedContext) as { contractVersion: string };
-    expect(full.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2+compass-v7");
+    expect(full.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2+compass-v8");
     expect(Object.hasOwn(full, "compassContext")).toBe(true);
     expect(ordinary.evidence.p_context_source_ids).toContain(point);
     expect(f.provider.generate).not.toHaveBeenCalled(); expect(f.write).not.toHaveBeenCalled();

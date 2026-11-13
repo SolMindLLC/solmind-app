@@ -29,6 +29,28 @@ beforeEach(() => { hooks.step = { index: 0, announce: false }; hooks.refs = []; 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Fixed conversation tour", () => {
+  it("shows and announces the six approved automatic Compass paragraphs in their exact order", () => {
+    const approvedParagraphs = [
+      "A Compass point names something that may matter to you, so you can keep it in view while the conversation moves.",
+      "Points appear by themselves: when a topic has clearly come up a few times, your Virtual Guide adds it to the Compass.",
+      "When a reply changes your Compass, quiet text below that reply explains the change and stays for this visit.",
+      "The order can change as your Virtual Guide learns what matters most to you. An early topic can also start at the top without being what matters most.",
+      "If a point does not fit, tell your Virtual Guide what needs changing so it can correct the Compass. If your meaning is unclear, it asks.",
+      "To turn the conversation to another point, choose it on the dial or in Compact view when the point controls are available.",
+    ];
+    let tree = ExplorerConversationTour({ opener: null, onClose: vi.fn() });
+    button(tree, "How the Compass works").props.onClick?.();
+    tree = ExplorerConversationTour({ opener: null, onClose: vi.fn() });
+    const step = elements(tree).find(element => element.props.id === "conversation-tour-step");
+    expect(step).toBeDefined();
+    expect(elements(step!.props.children).filter(element => element.type === "p")
+      .map(element => element.props.children)).toEqual(approvedParagraphs);
+    const announcements = elements(tree).filter(element => element.props.role === "status");
+    expect(announcements).toHaveLength(1);
+    expect(announcements[0].props.children).toBe(["How the Compass works", ...approvedParagraphs].join(" "));
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("opens a modal, focuses its title describing the first step once, and restores its opener on close", () => {
     const opener = { isConnected: true, focus: vi.fn() };
     const onClose = vi.fn();

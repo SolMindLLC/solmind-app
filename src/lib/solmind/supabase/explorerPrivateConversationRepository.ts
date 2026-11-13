@@ -21,7 +21,7 @@ const PORTS = Object.freeze({
     columns: ["outcome", "conversation_state", "dispatch_permitted", "policy_state"] }),
   settle: Object.freeze({ name: "solmind_settle_explorer_conversation_turn_v4", parameters: [...ACTOR, "p_conversation_id", "p_operation_id", "p_status", "p_reply_message_id", "p_reply_kind", "p_reply_body",
     "p_model_level", "p_model_minor_indicated", "p_protocol_version", "p_request_mode", "p_configuration_fingerprint", "p_fallback_policy_version", "p_model_policy_version", "p_trusted_response_version", "p_resource_policy_version",
-    "p_fallback_level", "p_fallback_minor_indicated", "p_delivery_interested", "p_attention_item_id", "p_choices", "p_compass_suggestions", "p_compass_responses", "p_waypoint_suggestion", "p_waypoint_response", "p_failure_reason"], columns: ["outcome", "conversation_state", "policy_state", "saved_reply"] }),
+    "p_fallback_level", "p_fallback_minor_indicated", "p_delivery_interested", "p_attention_item_id", "p_choices", "p_compass_suggestions", "p_compass_responses", "p_waypoint_suggestion", "p_waypoint_response", "p_failure_reason", "p_compass_topics"], columns: ["outcome", "conversation_state", "policy_state", "saved_reply"] }),
   mutate: Object.freeze({ name: "solmind_mutate_explorer_conversation_v3", parameters: [...ACTOR, "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint", "p_kind", "p_source_message_id", "p_item_id", "p_waypoint_id", "p_label", "p_destination", "p_meaning", "p_arrival_signal", "p_evidence"],
     columns: ["outcome", "conversation_state"] }),
   arrange: Object.freeze({ name: "solmind_confirm_explorer_compass_arrangement_v1", parameters: [...ACTOR,
@@ -76,6 +76,70 @@ function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !types.isProxy(value) && !Array.isArray(value) &&
     (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
 }
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+function closedData(value: unknown, names: readonly string[]): Record<string, unknown> {
+  if (!object(value) || Reflect.ownKeys(value).length !== names.length) throw new Error(FAILURE);
+  const result: Record<string, unknown> = {};
+  for (const name of names) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, name);
+    if (!descriptor?.enumerable || !("value" in descriptor)) throw new Error(FAILURE);
+    result[name] = descriptor.value;
+  }
+  return result;
+}
+function dataArray(value: unknown, maximum: number): unknown[] {
+  if (types.isProxy(value) || !Array.isArray(value) || value.length > maximum ||
+      Reflect.ownKeys(value).length !== value.length + 1) throw new Error(FAILURE);
+  const result: unknown[] = [];
+  for (let index = 0; index < value.length; index++) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+    if (!descriptor?.enumerable || !("value" in descriptor)) throw new Error(FAILURE);
+    result.push(descriptor.value);
+  }
+  return result;
+}
+function uuid(value: unknown): value is string { return typeof value === "string" && value.length === 36 && UUID.test(value); }
+function compassLabel(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 160 && value === value.trim() &&
+    !/[\u0000-\u001f\u007f-\u009f\u200b-\u200d\u2028-\u202e\u2060\u2066-\u2069\ufeff]/u.test(value) &&
+    !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value);
+}
+function compassEvidence(value: unknown) {
+  const ids = new Set<string>(), labels = new Set<string>(), points = new Set<string>();
+  return Object.freeze(dataArray(value, 24).map(entry => {
+    const topic = closedData(entry, ["id", "label", "pointId", "supportingMessageIds"]);
+    const supports = dataArray(topic.supportingMessageIds, 3);
+    if (!uuid(topic.id) || ids.has(topic.id) || !compassLabel(topic.label) || labels.has(topic.label) ||
+        !(topic.pointId === null || uuid(topic.pointId)) || (topic.pointId !== null && points.has(topic.pointId)) ||
+        supports.length === 0 || !supports.every(uuid) || new Set(supports).size !== supports.length ||
+        (topic.pointId !== null && supports.length !== 3)) throw new Error(FAILURE);
+    ids.add(topic.id); labels.add(topic.label);
+    if (topic.pointId !== null) points.add(topic.pointId);
+    return Object.freeze({ id: topic.id, label: topic.label, pointId: topic.pointId,
+      supportingMessageIds: Object.freeze(supports as string[]) });
+  }));
+}
+function mappedTopics(value: unknown) {
+  const identities = new Set<string>();
+  return Object.freeze(dataArray(value, 3).map(entry => {
+    const topic = closedData(entry, ["topicId", "label", "supports", "ready"]);
+    if (!(topic.topicId === null || uuid(topic.topicId)) || !compassLabel(topic.label) ||
+        typeof topic.ready !== "boolean") throw new Error(FAILURE);
+    const identity = topic.topicId ?? "new:" + topic.label;
+    if (identities.has(identity)) throw new Error(FAILURE);
+    identities.add(identity);
+    const refs = new Set<string>(), messages = new Set<string>();
+    const supports = dataArray(topic.supports, 3).map(value => {
+      const support = closedData(value, ["ref", "messageId"]);
+      if (typeof support.ref !== "string" || !/^(now|h(?:[0-9]|1[0-9]|2[0-3]))$/.test(support.ref) ||
+          refs.has(support.ref) || !uuid(support.messageId) || messages.has(support.messageId)) throw new Error(FAILURE);
+      refs.add(support.ref); messages.add(support.messageId);
+      return Object.freeze({ ref: support.ref, messageId: support.messageId });
+    });
+    if (topic.topicId === null && supports.length === 0) throw new Error(FAILURE);
+    return Object.freeze({ topicId: topic.topicId, label: topic.label, ready: topic.ready, supports: Object.freeze(supports) });
+  }));
+}
 function parameters(input: object, expected: readonly string[]): Readonly<Record<string, unknown>> {
   if (!object(input) || Reflect.ownKeys(input).length !== expected.length) throw new Error(FAILURE);
   const copied: Record<string, unknown> = {};
@@ -83,6 +147,7 @@ function parameters(input: object, expected: readonly string[]): Readonly<Record
     const property = Object.getOwnPropertyDescriptor(input, key);
     if (!property?.enumerable || !("value" in property)) throw new Error(FAILURE);
     const value: unknown = property.value;
+    if (key === "p_compass_topics" && value !== null) { copied[key] = mappedTopics(value); continue; }
     if (key === "p_failure_reason" && value !== null && !["deadline", "transport_failed", "invalid_response",
       "delivery_canceled_before_dispatch", "dispatch_not_admitted", "trusted_render_unavailable"].includes(value as string)) throw new Error(FAILURE);
     if (key === "p_reply_choice" && typeof value !== "boolean") throw new Error(FAILURE);
@@ -260,7 +325,23 @@ export function createExplorerPrivateConversationRepository(client: SupabaseClie
       }
       if (error || !Array.isArray(data) || data.length !== 1 || !object(data[0])) throw new Error(FAILURE);
       const row = data[0];
+      let authority = row.authority_context;
+      if (port === "read" && authority != null) {
+        if (!object(authority)) throw new Error(FAILURE);
+        const evidence = Object.getOwnPropertyDescriptor(authority, "compassEvidence");
+        if (!evidence?.enumerable || !("value" in evidence)) throw new Error(FAILURE);
+        const copiedAuthority: Record<string, unknown> = {};
+        for (const key of Reflect.ownKeys(authority)) {
+          if (typeof key !== "string") throw new Error(FAILURE);
+          const property = Object.getOwnPropertyDescriptor(authority, key);
+          if (!property?.enumerable || !("value" in property)) throw new Error(FAILURE);
+          copiedAuthority[key] = property.value;
+        }
+        authority = Object.freeze({ ...copiedAuthority, compassEvidence: compassEvidence(evidence.value) });
+      }
       if (row.conversation_state != null && (!object(row.conversation_state) ||
+          !["legacy", "automatic"].includes(Object.getOwnPropertyDescriptor(row.conversation_state, "compassMode")?.value) ||
+          !Array.isArray(Object.getOwnPropertyDescriptor(row.conversation_state, "compassChanges")?.value) ||
           typeof Object.getOwnPropertyDescriptor(row.conversation_state, "turnedDownLimitReached")?.value !== "boolean" ||
           parseExplorerWaypointCapacity(Object.getOwnPropertyDescriptor(row.conversation_state, "waypointCapacity")?.value) === null ||
           parseExplorerConversationWaypointDraft(Object.getOwnPropertyDescriptor(row.conversation_state, "waypointDraft")?.value) === undefined)) throw new Error(FAILURE);
@@ -290,7 +371,7 @@ export function createExplorerPrivateConversationRepository(client: SupabaseClie
           return Object.freeze({ ...row, waypoint_page: page }) as ExplorerPrivateRpcRow;
         }
       }
-      return Object.freeze({ ...row, ...(row.conversation_state == null ? {} : {
+      return Object.freeze({ ...row, ...(Object.hasOwn(row, "authority_context") ? { authority_context: authority } : {}), ...(row.conversation_state == null ? {} : {
         conversation_state: Object.freeze({ ...row.conversation_state as object,
           waypointCapacity: parseExplorerWaypointCapacity((row.conversation_state as Record<string, unknown>).waypointCapacity) }),
       }) }) as ExplorerPrivateRpcRow;

@@ -10,8 +10,6 @@ import {
   CONNECTED_SPEAKER_LABELS,
   CONNECTED_TITLE,
   CURRENT_TOOLS_HEADING,
-  CURRENT_TOOLS_INTRO,
-  CURRENT_TOOLS_POINTER,
   CURRENT_TOOLS_REMOVAL_REASON,
   OPENING_GREETING_LABEL,
   OPENING_GREETING_TEXT,
@@ -37,7 +35,7 @@ import { SPEAKER_LABEL_STYLE, speakerLabelClass } from "@/lib/solmind/explorerSp
 import { SOLMIND_TERMS } from "@/lib/solmind/terms";
 
 import { ConnectedCompassCard } from "./ExplorerConnectedCompassCard";
-import { ExplorerCompassSuggestionReplies } from "./ExplorerCompassSuggestionReplies";
+import { CompassChangeLines, useCompassChangeVisit } from "./ExplorerCompassChangeLines";
 import { ExplorerReplyChoices } from "./ExplorerReplyChoices";
 import { ExplorerConversationTour } from "./ExplorerConversationTour";
 import { ExplorerWaypointDraft } from "./ExplorerWaypointDraft";
@@ -407,6 +405,7 @@ function SavedTranscript({ state, view, actions, choicesDismissed, onShowTour, o
 }>) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const count = state.messages.length;
+  const visit = useCompassChangeVisit(state, view.signInRequired);
 
   useEffect(() => {
     const box = scrollRef.current;
@@ -414,6 +413,10 @@ function SavedTranscript({ state, view, actions, choicesDismissed, onShowTour, o
   }, [count]);
 
   return (
+    <>
+    <div aria-live="polite" aria-atomic="true" className="sr-only" data-compass-change-announcement="">
+      {visit.announcement}
+    </div>
     <div
       aria-label="Conversation transcript"
       className={joinClasses(
@@ -452,13 +455,7 @@ function SavedTranscript({ state, view, actions, choicesDismissed, onShowTour, o
             {state.messages.map((message) => (
               <li className={joinClasses("grid", FOCUS_RING)} key={message.id} tabIndex={-1}>
                 <MessageBubble message={message} />
-                <ExplorerCompassSuggestionReplies
-                  followUpHeld={view.sendUnavailable || view.atMessageCapacity}
-                  held={view.held}
-                  messageId={message.id}
-                  onCommand={actions.onCommand}
-                  state={state}
-                />
+                <CompassChangeLines bundles={visit.visible} messageId={message.id} />
                 <ExplorerWaypointDraft
                   followUpHeld={view.sendUnavailable || view.atMessageCapacity}
                   held={view.held}
@@ -481,6 +478,7 @@ function SavedTranscript({ state, view, actions, choicesDismissed, onShowTour, o
         )}
       </div>
     </div>
+    </>
   );
 }
 
@@ -492,8 +490,7 @@ type ComposerProps = Readonly<{
 }>;
 
 // The real message form, with the designed controls that are not built yet
-// beside Send, each with its sentence directly under it, and the marked
-// latest-change line.
+// beside Send, each with its sentence directly under it.
 function ConnectedComposer({ view, actions, composerRef, calmPrompt }: ComposerProps) {
   const disabled = view.held || view.sendUnavailable || view.atMessageCapacity;
   const describedBy = [
@@ -569,8 +566,6 @@ function ConnectedComposer({ view, actions, composerRef, calmPrompt }: ComposerP
           </button>
         </div>
       </form>
-      {/* The latest-change line is not built yet: its build-note box. */}
-      <NotYetImplementedNote id={noteId("composer", "latestChange")} noteKey="latestChange" standalone />
     </div>
   );
 }
@@ -705,7 +700,6 @@ function ConnectedSupportBody({ scope, view, compassView, onToggleCompassView, o
         </h3>
         <NotYetImplementedNote id={noteId(scope, "keyInsight")} noteKey="keyInsight" standalone />
       </section>
-      {state !== null && !view.ended ? <p className="px-4 py-4 text-xs leading-5 text-stone-300">{CURRENT_TOOLS_POINTER}</p> : null}
     </>
   );
 }
@@ -716,12 +710,9 @@ type ToolsProps = Readonly<{
   onCommand: (intent: ExplorerConversationFormationIntent) => void;
 }>;
 
-// The existing Compass and Waypoint tools, unchanged, until the conversation
-// forms them (rebuild steps 4 and 5). They are planned for removal once the
-// Compass & Waypoint card does everything they do (Paul's chat-step decision
-// 8), so while the build notes show they carry the violet removal marker: a
-// dashed violet outline and the "Planned for removal" tag with its sentence.
-// The tools keep working.
+// The remaining Waypoint tools keep their behavior and violet removal marker
+// (Paul's chat-step decision 8). Compass editing is retired; an ended review
+// still shows the recorded Compass facts.
 function CurrentTools({ state, view, onCommand }: ToolsProps) {
   const headingId = "conversation-current-tools-heading";
   const marked = useBuildNotesShown();
@@ -738,7 +729,6 @@ function CurrentTools({ state, view, onCommand }: ToolsProps) {
         </h2>
         <RemovalTag id="removal-current-tools" reason={CURRENT_TOOLS_REMOVAL_REASON} />
       </div>
-      <p className="mt-1 text-sm leading-6 text-stone-300">{CURRENT_TOOLS_INTRO}</p>
       <div className="mt-4">
         <ExplorerConversationFormation busy={view.held} onCommand={onCommand} readOnly={view.ended} state={state} />
       </div>

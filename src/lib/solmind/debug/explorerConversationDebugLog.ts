@@ -171,7 +171,7 @@ function settlementSummary(value: unknown): Readonly<Record<string, unknown>> {
     return { status: closed("p_status"), replyKind: closed("p_reply_kind"), failureReason: closed("p_failure_reason"),
       modelLevel: typeof settlement.p_model_level === "number" ? settlement.p_model_level : null,
       attentionProposed: settlement.p_attention_item_id != null, choices: count("p_choices"),
-      compassSuggestions: count("p_compass_suggestions"), compassResponses: count("p_compass_responses"),
+      compassTopics: count("p_compass_topics"), // SOLMIND-DEBUG: counts only; never evidence identities or wording.
       waypointSuggestion: settlement.p_waypoint_suggestion != null, waypointResponse: settlement.p_waypoint_response != null };
   } catch { return {}; }
 }

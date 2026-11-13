@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it, vi } from "vitest";
 import type { ExplorerConversationState } from "../../src/lib/solmind/explorerConversationContract";
-import { formingSuggestionsForMessage } from "../../src/lib/solmind/explorerCompassSuggestionReplies";
+import { connectedCompass } from "../../src/lib/solmind/explorerConnectedCard";
 import { EXPLORER_PRIVATE_RESPONSE_VERSION, parseExplorerPrivateConversationResponse } from "../../src/lib/solmind/explorerPrivateConversationResponse";
 import { createExplorerPrivateConversationRepository } from "../../src/lib/solmind/supabase/explorerPrivateConversationRepository";
 import { getExplorerPrivateConfigurationCandidate } from "../../src/lib/solmind/virtual-guide/explorerPrivateConfiguration";
@@ -24,8 +24,9 @@ const ACTOR = { accountId: id(1), applicationSessionId: id(2) };
 const POLICY = { known: true, contractVersion: "explorer-conversation-safety.v1", restrictedLevel: null, adultReflectionStopped: false, version: 0 };
 const CHOICES = [{ label: "Explore this topic" }, { label: "I have a question" }];
 const COMMAND = { kind: "send", operationId: id(8), expectedRevision: 1, body: "Synthetic message about money worries." } as const;
-const COMPASS = { version: "explorer-compass-context.v7", points: [{ id: id(9), label: "Money worries", order: 0,
-  formation: "saved", anchor: null, emphasis: null }], priorityId: null, attentionId: null, recentRoute: [],
+const COMPASS = { version: "explorer-compass-context.v8", mode: "legacy_read_only", topics: [],
+  messageRefs: { history: [{ ref: "h0", order: 0 }], immediate: "now" }, capacity: { originalsRemaining: 0, topicSlotsRemaining: 0, visibleSlotsRemaining: 0 }, points: [{ id: id(9), label: "Money worries", order: 0,
+  formation: "saved", anchor: "apex", emphasis: 1 }], priorityId: null, attentionId: null, recentRoute: [],
   waypoints: [{ id: id(12), title: "Review my spending", destination: "Review my spending", meaning: "Find room for rest",
     arrivalSignal: "One review completed", stage: "formed", reachedEvidence: null }], drafts: [], immediateMessageIsReplyChoice: false };
 
@@ -37,20 +38,20 @@ function fixture(proposals: Record<string, unknown>, options: { restrictedLevel?
     sourceVerificationReceiptSha256: SHA, resourceVerificationReceiptSha256: SHA,
     rendererVerificationReceiptSha256: SHA, signalVerificationReceiptSha256: SHA,
     methodology: { packId: id(6), versionId: id(7), contentSha256: SHA, authorizationVersion: "MV1:" + SHA } };
-  let current: ExplorerConversationState = { waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 1, hasMore: false }, version: "explorer-conversation.v1", conversationId: id(3),
+  let current: ExplorerConversationState = { compassMode: "legacy", compassChanges: [], waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 1, hasMore: false }, version: "explorer-conversation.v1", conversationId: id(3),
     revision: 1, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable",
     messages: [{ id: id(10), role: "explorer", body: "Synthetic source about money worries.", createdAt: "2026-11-04T12:00:00Z" },
       ...(options.pacingReady ? [{ id: id(14), role: "explorer" as const, body: "Synthetic concern in my own words.", createdAt: "2026-11-04T12:00:00.250Z" }] : []),
       ...(options.forming ? [{ id: id(13), role: "virtualGuide" as const, body: "Does Money worries fit?", createdAt: "2026-11-04T12:00:00.500Z" }] : [])],
     compassItems: [{ id: id(9), sourceMessageId: id(10), label: "Money worries",
-      ...(options.forming ? { formation: "forming" as const, wordingMessageId: id(13) } : {}) }], priorityId: null, attentionId: null,
+      ...(options.forming ? { formation: "forming" as const, wordingMessageId: id(13) } : { anchor: "apex" as const, emphasis: 1 as const }) }], priorityId: null, attentionId: null,
     waypoints: [{ isCurrent: true, createdAt: "2026-11-06T09:00:00.000Z", id: id(12), sourceMessageId: id(10), title: "Review my spending", destination: "Review my spending", meaning: "Find room for rest",
       arrivalSignal: "One review completed", status: "chosen" }] };
   let policy = { ...POLICY, restrictedLevel: options.restrictedLevel ?? null,
     adultReflectionStopped: options.adultReflectionStopped ?? false };
   const command = { ...COMMAND, body: options.body ?? COMMAND.body };
   let settled = false; let fingerprint: string | null = null;
-  const authority = { explorerId: id(4), authorizationVersion: "AV3:" + SHA };
+  const authority = { compassEvidence: [], explorerId: id(4), authorizationVersion: "AV3:" + SHA };
   const rpc = vi.fn((name: string, parameters: Readonly<Record<string, unknown>>) => ({
     abortSignal: async (_signal: AbortSignal) => {
       void _signal;
@@ -111,12 +112,12 @@ function fixture(proposals: Record<string, unknown>, options: { restrictedLevel?
   });
   const buildContext = vi.fn<NonNullable<ExplorerPrivateConversationDependencies["buildContext"]>>(async input => {
     const authorizedContext = JSON.stringify({ contractVersion: input.mode === "classification_only"
-      ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v7",
+      ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v8",
       globalPolicy: { version: configuration.globalPolicy.version, text: configuration.globalPolicy.text },
       roleBehavior: { version: configuration.roleBehavior.version, text: configuration.roleBehavior.text },
       crisisBehavior: { version: configuration.crisisBehavior.version, text: configuration.crisisBehavior.text },
       ...(input.mode === "classification_only" ? {} : { compassContext: options.forming ? { ...COMPASS,
-        points: [{ ...COMPASS.points[0], formation: "forming", suggestedInPreviousReply: true }] } : COMPASS }),
+        points: [] } : COMPASS }),
       immediateExplorerMessage: { messageId: input.ids.messageId, content: input.command.body }, outputRequirements: { format: "plain_text" } });
     return { request: { contractVersion: EXPLORER_SAFETY_REQUEST_VERSION, invocationId: input.ids.invocationId,
       explorerId: id(4), sessionId: input.ids.conversationId, contextSnapshotId: input.ids.snapshotId,
@@ -167,7 +168,7 @@ async function expectPreparedHttpInput(f: ReturnType<typeof fixture>, mode: "cla
   expect(prepared.p_context_source_ids).toEqual(built.evidence.p_context_source_ids);
   const context = JSON.parse(sent.input);
   expect(context.contractVersion).toBe(mode === "classification_only"
-    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v7");
+    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v8");
   if (mode === "classification_only") {
     expect(context).not.toHaveProperty("compassContext");
     for (const value of [id(9), id(12), "Money worries", "Review my spending", "Find room for rest", "One review completed"]) {
@@ -204,39 +205,42 @@ describe("S4 joined current private path, with injected synthetic HTTP and RPC r
     expect(f.rpc.mock.calls.filter(([name]) => name === "solmind_prepare_explorer_conversation_turn_v3")).toHaveLength(1);
   });
 
-  it("S5 passes independently validated suggestions through the one-call parser, controller and exact RPC port", async () => {
+  it("retired suggestions are discarded through the one-call parser, controller and exact RPC port", async () => {
     const f = fixture({ compass: { attention: id(9), suggestions: [{ label: "Evening rest" }, { label: "" }, { label: "Family time" }] } }, { pacingReady: true });
     const result = await commandExplorerPrivateConversation({ command: COMMAND, dependencies: f.dependencies });
     expect(result.assistance).toBeNull(); expect(result.result.ok).toBe(true);
     await expectPreparedHttpInput(f, "classification_and_reply");
     const terminals = f.rpc.mock.calls.filter(([name]) => name === "solmind_settle_explorer_conversation_turn_v4");
     expect(terminals).toHaveLength(1);
-    expect(Object.keys(terminals[0][1])).toHaveLength(27);
+    expect(Object.keys(terminals[0][1])).toHaveLength(28);
     expect(terminals[0][1]).toMatchObject({ p_reply_kind: "ordinary", p_attention_item_id: id(9), p_failure_reason: null,
-      p_compass_suggestions: [{ label: "Evening rest" }, { label: "Family time" }] });
+      p_compass_suggestions: null, p_compass_topics: null });
     const replay = await commandExplorerPrivateConversation({ command: COMMAND, dependencies: f.dependencies });
     expect(replay.result.ok).toBe(true); expect(f.fetchImpl).toHaveBeenCalledOnce();
     expect(f.rpc.mock.calls.filter(([name]) => name === "solmind_settle_explorer_conversation_turn_v4")).toHaveLength(1);
   });
-  it("S6b carries a typed answer through injected HTTP, settlement, saved-state decoding and reply-row removal once", async () => {
+  it("S6b retires typed Compass effects through HTTP and settlement while preserving prose, historical state and exact replay", async () => {
     const f = fixture({ compass: { responses: [{ pointId: id(9), response: "right" }, { pointId: "bad", response: "not_it" }] } },
       { forming: true, body: "Yes, that's it." });
     const result = await commandExplorerPrivateConversation({ command: f.command, dependencies: f.dependencies });
     expect(result.assistance).toBeNull(); expect(result.result.ok).toBe(true);
     expect(f.fetchImpl).toHaveBeenCalledOnce(); expect(f.buildContext).toHaveBeenCalledOnce();
     const before = f.buildContext.mock.calls[0][0].state;
-    expect(formingSuggestionsForMessage(before, id(13))).toHaveLength(1);
+    expect(before.compassItems[0].formation).toBe("forming");
+    expect(connectedCompass(before).points).toEqual([]);
     const [, init] = f.fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     const httpInput = JSON.parse(JSON.parse(init.body as string).input);
-    expect(httpInput.compassContext.points[0]).toMatchObject({ formation: "forming", suggestedInPreviousReply: true });
+    expect(httpInput.compassContext.points).toEqual([]);
+    expect(httpInput.compassContext.mode).toBe("legacy_read_only");
     expect(httpInput.immediateExplorerMessage.content).toBe("Yes, that's it.");
     const terminals = f.rpc.mock.calls.filter(([name]) => name === "solmind_settle_explorer_conversation_turn_v4");
-    expect(terminals).toHaveLength(1); expect(Object.keys(terminals[0][1])).toHaveLength(27);
-    expect(terminals[0][1]).toMatchObject({ p_reply_kind: "ordinary", p_failure_reason: null, p_compass_responses: [{ pointId: id(9), response: "right" }] });
+    expect(terminals).toHaveLength(1); expect(Object.keys(terminals[0][1])).toHaveLength(28);
+    expect(terminals[0][1]).toMatchObject({ p_reply_kind: "ordinary", p_failure_reason: null, p_compass_responses: null, p_compass_topics: null });
     const browser = parseExplorerPrivateConversationResponse(JSON.parse(JSON.stringify({ version: EXPLORER_PRIVATE_RESPONSE_VERSION, ...result })));
     if (!browser?.result.ok) throw new Error("synthetic_saved_state_missing");
-    expect(browser.result.state.compassItems[0]).toMatchObject({ label: "Money worries", formation: "saved" });
-    expect(formingSuggestionsForMessage(browser.result.state, id(13))).toEqual([]);
+    expect(browser.result.state.compassItems[0]).toMatchObject({ label: "Money worries", formation: "forming" });
+    expect(connectedCompass(browser.result.state).points).toEqual([]);
+    expect(browser.result.state.messages.at(-1)?.body).toBe("We can explore what matters about that topic.");
     const replay = await commandExplorerPrivateConversation({ command: f.command, dependencies: f.dependencies });
     // Exact replay returns before provider readiness is checked again.
     expect(replay.result).toEqual({ ...browser.result, state: { ...browser.result.state, providerState: "unavailable" } });

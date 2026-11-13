@@ -61,7 +61,7 @@ describe("S7a Waypoint proposals", () => {
     expect(result.waypointSuggestion).toEqual(waypointSuggestion);
     expect(Object.isFrozen(result.waypointSuggestion)).toBe(true);
     expect(result.candidate.kind).toBe("usable");
-    expect(result.compass?.suggestions).toEqual([{ label: "Mornings" }]);
+    expect(result.compass).toBeUndefined();
   });
   it("drops every malformed suggestion independently without discarding prose or other proposals", () => {
     for (const invalid of [null, [], [waypointSuggestion], {}, { ...waypointSuggestion, extra: true },
@@ -71,7 +71,7 @@ describe("S7a Waypoint proposals", () => {
         compass: { suggestions: [{ label: "Mornings" }] } }), "classification_and_reply");
       expect(result.waypointSuggestion).toBeUndefined();
       expect(result.candidate.kind).toBe("usable");
-      expect(result.compass?.suggestions).toEqual([{ label: "Mornings" }]);
+      expect(result.compass).toBeUndefined();
     }
   });
   it("accepts exact text bounds and excludes the suggestion from classification-only observations", () => {
@@ -249,123 +249,17 @@ describe("Explorer same-call raw body contract (synthetic mechanics)", () => {
   });
 });
 
-describe("S5 forming Compass suggestion proposals", () => {
-  it("keeps reply v2 and accepts independently optional attention and suggestions as frozen data", () => {
-    const suggestions = [{ label: "Money worries" }, { label: "Evening rest", pointId: POINT }];
-    for (const compass of [{ suggestions }, { attention: POINT, suggestions }]) {
-      const result = parseExplorerSafetyReplyBody(proposedBody({ compass }), "classification_and_reply");
-      expect(result.compass).toEqual(compass);
-      expect(Object.isFrozen(result.compass?.suggestions)).toBe(true);
-      expect(Object.isFrozen(result.compass?.suggestions?.[0])).toBe(true);
+describe("retired Compass proposal fields", () => {
+  it.each([null, [], {}, "right", [{ label: "Time for myself" }],
+    [{ pointId: POINT, response: "right" }], [{ pointId: POINT, response: "close" }],
+    [{ pointId: POINT, response: "not_it" }], [{ label: " padded " }], [{ label: "\\ud800" }]])(
+    "discards retired values without interpreting them: %j", value => {
+      const result = parseExplorerSafetyReplyBody(proposedBody({ compass: { suggestions: value, responses: value } }),
+        "classification_and_reply");
+      expect(result.compass).toBeUndefined();
+      expect(result.classification).toEqual({ level: 0, minorIndicated: false });
       expect(result.candidate.kind).toBe("usable");
-    }
-    expect(EXPLORER_SAFETY_REPLY_PROTOCOL).toBe("explorer-safety-reply.v2");
-  });
-  it.each([null, {}, "topic", { label: "" }, { label: " " }, { label: " padded " },
-    { label: "x".repeat(161) }, { label: "Line\nbreak" }, { label: "Tab\tvalue" },
-    { label: "hidden\u200bvalue" }, { label: "hidden\u2066value" }, { label: "line\u2028break" },
-    { label: "\ud800" }, { label: "Topic", pointId: null }, { label: "Topic", pointId: "unknown" },
-    { label: "Topic", pointId: POINT + "\n" }, { label: "Topic", extra: true }])(
-    "drops only invalid entry %j while preserving its valid neighbors and the reply", (invalid) => {
-      const result = parseExplorerSafetyReplyBody(proposedBody({ compass: { attention: POINT,
-        suggestions: [{ label: "Before" }, invalid, { label: "After", pointId: POINT }] }, choices: [{ label: "Begin" }] }), "classification_and_reply");
-      expect(result.compass).toEqual({ attention: POINT, suggestions: [{ label: "Before" }, { label: "After", pointId: POINT }] });
-      expect(result.candidate.kind).toBe("usable"); expect(result.classification.level).toBe(0);
-      expect(result.choices).toEqual([{ label: "Begin" }]);
+      expect(parseExplorerSafetyReplyBody(proposedBody({ compass: { attention: POINT, suggestions: value, responses: value } }),
+        "classification_and_reply").compass).toEqual({ attention: POINT });
     });
-  it("inspects at most three submitted positions and never substitutes a later entry for an invalid one", () => {
-    const suggestions = [{ label: "First" }, { label: "" }, { label: "Third" }, { label: "Ignored fourth" }];
-    expect(parseExplorerSafetyReplyBody(proposedBody({ compass: { suggestions } }), "classification_and_reply").compass)
-      .toEqual({ suggestions: [{ label: "First" }, { label: "Third" }] });
-  });
-  it("preserves valid suggestions despite invalid attention and valid attention despite invalid suggestions", () => {
-    expect(parseExplorerSafetyReplyBody(proposedBody({ compass: { attention: "invalid", suggestions: [{ label: "Topic" }] } }),
-      "classification_and_reply").compass).toEqual({ suggestions: [{ label: "Topic" }] });
-    for (const suggestions of [null, {}, [], [{ label: "" }]]) {
-      expect(parseExplorerSafetyReplyBody(proposedBody({ compass: { attention: POINT, suggestions } }), "classification_and_reply").compass)
-        .toEqual({ attention: POINT });
-    }
-  });
-  it("accepts the existing 160 UTF-16 label bound and refuses an extra scalar without truncating", () => {
-    for (const label of ["x".repeat(160), "\u{1f642}".repeat(80)]) {
-      expect(parseExplorerSafetyReplyBody(proposedBody({ compass: { suggestions: [{ label }] } }), "classification_and_reply").compass)
-        .toEqual({ suggestions: [{ label }] });
-      expect(parseExplorerSafetyReplyBody(proposedBody({ compass: { suggestions: [{ label: label + "x" }] } }), "classification_and_reply").compass)
-        .toBeUndefined();
-    }
-  });
-  it("discards suggestions together with other proposals in classification-only mode", () => {
-    const result = parseExplorerSafetyReplyBody(proposedBody({ compass: { attention: POINT,
-      suggestions: [{ label: "Topic", pointId: POINT }] } }), "classification_only");
-    expect(result).toEqual({ classification: { level: 0, minorIndicated: false }, candidate: { kind: "not_requested" } });
-  });
-});
-
-describe("S6b typed Compass suggestion responses", () => {
-  const anotherPoint = "00000000-0000-4000-8000-000000000006";
-  it.each(["right", "close", "not_it"] as const)("accepts %s in every optional compass combination without changing v2", response => {
-    const responses = [{ pointId: POINT, response }];
-    for (const compass of [{ responses }, { attention: POINT, responses },
-      { suggestions: [{ label: "Another topic" }], responses },
-      { attention: null, suggestions: [{ label: "Another topic" }], responses }]) {
-      const result = parseExplorerSafetyReplyBody(proposedBody({ compass }), "classification_and_reply");
-      expect(result.compass).toEqual(compass);
-      expect(Object.isFrozen(result.compass)).toBe(true);
-      expect(Object.isFrozen(result.compass?.responses)).toBe(true);
-      expect(Object.isFrozen(result.compass?.responses?.[0])).toBe(true);
-      expect(result.candidate.kind).toBe("usable");
-    }
-    expect(EXPLORER_SAFETY_REPLY_PROTOCOL).toBe("explorer-safety-reply.v2");
-  });
-  it.each([null, [], {}, "right", { pointId: POINT }, { response: "right" },
-    { pointId: null, response: "right" }, { pointId: "unknown", response: "right" },
-    { pointId: POINT + "\n", response: "right" }, { pointId: POINT, response: "Right" },
-    { pointId: POINT, response: " right " }, { pointId: POINT, response: "not it" },
-    { pointId: POINT, response: null }, { pointId: POINT, response: "right", extra: true }])(
-    "drops only malformed response %j and keeps its siblings, other proposals and reply", invalid => {
-      const responses = [{ pointId: POINT, response: "close" }, invalid, { pointId: anotherPoint, response: "right" }];
-      const result = parseExplorerSafetyReplyBody(proposedBody({ compass: { attention: POINT,
-        suggestions: [{ label: "Another topic" }], responses }, choices: [{ label: "Begin" }] }), "classification_and_reply");
-      expect(result).toEqual({ classification: { level: 0, minorIndicated: false },
-        candidate: { kind: "usable", content: "We can explore that." }, compass: { attention: POINT,
-          suggestions: [{ label: "Another topic" }],
-          responses: [{ pointId: POINT, response: "close" }, { pointId: anotherPoint, response: "right" }] },
-        choices: [{ label: "Begin" }] });
-    });
-  it("considers only the first three submitted responses and does not backfill a malformed position", () => {
-    const responses = [{ pointId: POINT, response: "close" }, null,
-      { pointId: anotherPoint, response: "not_it" }, { pointId: POINT, response: "right" }];
-    expect(parseExplorerSafetyReplyBody(proposedBody({ compass: { responses } }), "classification_and_reply").compass)
-      .toEqual({ responses: [{ pointId: POINT, response: "close" }, { pointId: anotherPoint, response: "not_it" }] });
-    const three = [{ pointId: POINT, response: "right" }, { pointId: anotherPoint, response: "close" },
-      { pointId: "00000000-0000-4000-8000-000000000007", response: "not_it" }];
-    expect(parseExplorerSafetyReplyBody(proposedBody({ compass: { responses: [...three,
-      { pointId: "00000000-0000-4000-8000-000000000008", response: "right" }] } }), "classification_and_reply").compass)
-      .toEqual({ responses: three });
-  });
-  it("keeps only the first valid response for a point", () => {
-    const responses = [{ pointId: POINT, response: "unknown" }, { pointId: POINT, response: "close" },
-      { pointId: POINT, response: "right" }];
-    expect(parseExplorerSafetyReplyBody(proposedBody({ compass: { responses } }), "classification_and_reply").compass)
-      .toEqual({ responses: [{ pointId: POINT, response: "close" }] });
-  });
-  it("isolates malformed optional groups from valid responses and valid other groups from malformed responses", () => {
-    const responses = [{ pointId: POINT, response: "right" }];
-    expect(parseExplorerSafetyReplyBody(proposedBody({ compass: { attention: "invalid", suggestions: null, responses } }),
-      "classification_and_reply").compass).toEqual({ responses });
-    for (const responses of [null, {}, "right", [], [null]]) {
-      const result = parseExplorerSafetyReplyBody(proposedBody({ compass: { attention: POINT,
-        suggestions: [{ label: "Topic" }], responses } }), "classification_and_reply");
-      expect(result.compass).toEqual({ attention: POINT, suggestions: [{ label: "Topic" }] });
-      expect(result.candidate.kind).toBe("usable");
-      expect(parseExplorerSafetyReplyBody(proposedBody({ compass: { responses } }), "classification_and_reply").compass)
-        .toBeUndefined();
-    }
-  });
-  it("ignores typed responses in classification-only mode even when all proposals are valid", () => {
-    expect(parseExplorerSafetyReplyBody(proposedBody({ compass: { attention: POINT,
-      suggestions: [{ label: "Topic" }], responses: [{ pointId: POINT, response: "right" }] },
-      choices: [{ label: "Begin" }] }), "classification_only"))
-      .toEqual({ classification: { level: 0, minorIndicated: false }, candidate: { kind: "not_requested" } });
-  });
 });

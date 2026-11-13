@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { CARD_POINTS, cardState } from "../../../tests/browser/connectedCardFixture";
+import { CARD_POINTS, cardState as historicalCardState } from "../../../tests/browser/connectedCardFixture";
 import { parseExplorerConversationState } from "./explorerConversationContract";
 import {
   buildAttentionFormationIntent,
@@ -11,6 +11,10 @@ import {
   currentCompassHeads,
   savedCompassHeads,
 } from "./explorerConversationFormation";
+
+function cardState(...args: Parameters<typeof historicalCardState>) {
+  return { ...historicalCardState(...args), compassMode: "legacy" as const, compassChanges: [] };
+}
 
 describe("S5 optional browser Compass formation", () => {
   it("keeps forming attention separate from saved arrangement, Priority and category snapshots", () => {

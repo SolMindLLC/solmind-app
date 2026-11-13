@@ -16,7 +16,7 @@ import {
   EXPLORER_SAFETY_REQUEST_VERSION, EXPLORER_SAFETY_REPLY_PROTOCOL, EXPLORER_SAFETY_REPLY_LIMITS, EXPLORER_SEND_TIME_LIMITS,
   explorerSendDeadlineMilliseconds, explorerSafetyUnicodeValid, parseExplorerSafetyReplyRequest,
   type ExplorerSafetyReplyRequest, type ExplorerSafetyClassification, type ExplorerSafetyCompassSuggestion, type ExplorerSafetyCompassResponse,
-  type ExplorerSafetyWaypointSuggestion, type ExplorerSafetyWaypointResponse,
+  type ExplorerSafetyWaypointSuggestion, type ExplorerSafetyWaypointResponse, type ExplorerSafetyCompassTopic,
 } from "./explorerSafetyReplyContract";
 import { invokeExplorerSafetyReply, type ExplorerSafetyReplyTransport } from "./explorerSafetyReplyInvocation";
 import type { ExplorerPrivateAssistance } from "../explorerPrivateConversationResponse";
@@ -25,7 +25,31 @@ import {
   type ExplorerConversationPolicy, type ExplorerFallbackObservation, type ExplorerSafetyReplyPlan,
 } from "./explorerConversationSafety";
 
-export const EXPLORER_COMPASS_SUGGESTION_MIN_MESSAGES = 3;
+// References are resolved only from the exact authorized invocation bytes.
+export function mapExplorerCompassTopics(authorizedContext: string, topics: readonly ExplorerSafetyCompassTopic[] | undefined):
+  readonly ExplorerPrivateCompassTopic[] | null {
+  if (!topics?.length) return null;
+  try {
+    const context = JSON.parse(authorizedContext);
+    const section = context.compassContext;
+    if (context.contractVersion !== EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION || section?.mode !== "automatic") return null;
+    const refs = new Map<string, string>([["now", context.immediateExplorerMessage.messageId]]);
+    for (const reference of section.messageRefs.history) {
+      const message = context.currentSessionMessages.find((message: { order: number }) => message.order === reference.order);
+      if (!message || message.role !== "explorer" || reference.ref !== "h" + reference.order) return null;
+      refs.set(reference.ref, message.messageId);
+    }
+    const mapped = topics.flatMap(topic => {
+      if (topic.topicId !== null && !section.topics.some((known: { id: string; label: string }) =>
+        known.id === topic.topicId && known.label === topic.label)) return [];
+      if (topic.topicId === null && section.topics.some((known: { label: string }) => known.label === topic.label)) return [];
+      if (topic.supportRefs.some(ref => !refs.has(ref))) return [];
+      return [Object.freeze({ topicId: topic.topicId, label: topic.label, ready: topic.ready,
+        supports: Object.freeze(topic.supportRefs.map(ref => Object.freeze({ ref, messageId: refs.get(ref)! }))) })];
+    });
+    return mapped.length ? Object.freeze(mapped) : null;
+  } catch { return null; }
+}
 
 type ActorParameters = Readonly<{ p_actor_user_account_id: string; p_user_session_id: string }>;
 type MethodologyParameters = Readonly<{ p_methodology_context_pack_id: string; p_methodology_context_pack_version_id: string;
@@ -52,6 +76,9 @@ export type ExplorerPrivateReplyFailureReason = "deadline" | "transport_failed" 
 // after a fresh readiness check. It is true for a typed Send, whose words stay in the message box; for a Send started
 // by a button the screen shows EXPLORER_FAILED_REPLY_BUTTON_NOTE instead (explorerPrivateConversationResponse.ts).
 export const EXPLORER_FAILED_REPLY_RETRY_DRAFT = "Your Virtual Guide's reply didn't come through, so your message has no answer yet. Your words are still in the message box. To try again, choose Send.";
+export type ExplorerPrivateCompassTopic = Readonly<{
+  topicId: string | null; label: string; supports: readonly Readonly<{ ref: string; messageId: string }>[]; ready: boolean;
+}>;
 export type ExplorerPrivateSettleParameters = ActorParameters & Readonly<{
   p_conversation_id: string; p_operation_id: string; p_status: "completed" | "failed" | "canceled";
   p_reply_message_id: string | null; p_reply_kind: ExplorerPrivateReplyKind; p_reply_body: string | null;
@@ -64,7 +91,8 @@ export type ExplorerPrivateSettleParameters = ActorParameters & Readonly<{
   p_compass_responses: readonly ExplorerSafetyCompassResponse[] | null;
   p_waypoint_suggestion: ExplorerSafetyWaypointSuggestion | null;
   p_waypoint_response: ExplorerSafetyWaypointResponse | null;
-  p_failure_reason: ExplorerPrivateReplyFailureReason | null }>;
+  p_failure_reason: ExplorerPrivateReplyFailureReason | null;
+  p_compass_topics: readonly ExplorerPrivateCompassTopic[] | null }>;
 export type ExplorerPrivateMutateParameters = ActorParameters & Readonly<{
   p_conversation_id: string; p_operation_id: string; p_expected_revision: number; p_command_fingerprint: string;
   p_kind: string; p_source_message_id: string | null; p_item_id: string | null; p_waypoint_id: string | null;
@@ -571,6 +599,8 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
     // Historical exact command replay precedes new configuration/source/model work.
     if (readRow.outcome === "exact_replay") return command.kind === "send"
       ? replayedSend(readRow, false, actor, command, dependencies, input.signal) : Object.freeze({ result: read, assistance: null });
+    if (["add_compass", "confirm_priority", "respond_compass_suggestion", "confirm_compass_arrangement",
+      "confirm_compass_category"].includes(command.kind)) return failed("refresh_required");
     if (read.state.pendingTurn || input.signal?.aborted) return failed("refresh_required");
     if (command.kind === "release_waypoint") {
       // Owned closure introduces no reflection: SQL retains all current private
@@ -918,22 +948,19 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
       const ordinaryExtras = replyKind === "ordinary" && terminalDeliveryInterested && mode === "classification_and_reply" &&
         safety.policyKnown && safety.restrictedLevel === null && !safety.adultReflectionStopped;
       const proposedAttention = observedModel?.observation?.compass?.attention;
-      const attentionItemId = ordinaryExtras && typeof proposedAttention === "string" &&
-        builderState.state.compassItems.some((item) => item.id === proposedAttention && !item.mergedIntoItemId)
+      const latestContextMove = JSON.parse(request.authorizedContext).compassContext?.recentRoute?.at(-1);
+      const awaitingExplorerMove = latestContextMove?.actor === "explorer" && latestContextMove.awaitingReply === true;
+      const attentionItemId = ordinaryExtras && !awaitingExplorerMove && typeof proposedAttention === "string" &&
+        builderState.state.compassItems.some((item) => item.id === proposedAttention && !item.mergedIntoItemId &&
+          item.formation !== "forming" &&
+          // Only the automatic view requires a placed point; an older conversation keeps the rule of
+          // 2026-11-03 (a current saved point need not have a position).
+          (builderState.state.compassMode !== "automatic" || item.anchor != null))
         ? proposedAttention : null;
       const choices = ordinaryExtras && safety.currentLevel !== null && safety.currentLevel < 2
         ? observedModel?.observation?.choices ?? null : null;
-      // The authenticated full message read predates prepare; count this Send once.
-      // Choices and suggestion follow-ups are ordinary Explorer messages too.
-      const explorerMessageCount = builderState.state.messages.filter((message) => message.role === "explorer").length + 1;
-      // A same-reply rewording excludes a typed answer even when pacing drops it.
-      const rewordedPointIds = new Set(observedModel?.observation?.compass?.suggestions
-        ?.map((suggestion) => suggestion.pointId).filter((pointId) => pointId !== undefined));
-      const proposedPoints = ordinaryExtras && safety.currentLevel !== null && safety.currentLevel < 2 &&
-        explorerMessageCount >= EXPLORER_COMPASS_SUGGESTION_MIN_MESSAGES
-        ? observedModel?.observation?.compass?.suggestions?.filter((suggestion) => suggestion.pointId === undefined ||
-          builderState.state.compassItems.some((item) => item.id === suggestion.pointId &&
-            item.formation === "forming" && !item.mergedIntoItemId)) : undefined;
+      const compassTopics = ordinaryExtras && safety.currentLevel !== null && safety.currentLevel < 2
+        ? mapExplorerCompassTopics(request.authorizedContext, observedModel?.observation?.compass?.topics) : null;
       const previousReply = [...builderState.state.messages].reverse().find((message) => message.role === "virtualGuide");
       const proposedWaypointSuggestion = ordinaryExtras && safety.currentLevel !== null && safety.currentLevel < 2
         ? observedModel?.observation?.waypointSuggestion ?? null : null;
@@ -947,11 +974,6 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
         previousReply && proposedWaypointSuggestion === null && proposedWaypointResponse && waypointDraft &&
         waypointDraft.id === proposedWaypointResponse.draftId && waypointDraft.suggestionMessageId === previousReply.id
         ? proposedWaypointResponse : null;
-      const proposedResponses = ordinaryExtras && safety.currentLevel !== null && safety.currentLevel < 2 && previousReply
-        ? observedModel?.observation?.compass?.responses?.filter((response) =>
-          builderState.state.compassItems.some((item) => item.id === response.pointId && item.formation === "forming" &&
-            !item.mergedIntoItemId && item.wordingMessageId === previousReply.id) &&
-          !rewordedPointIds.has(response.pointId)) : undefined;
       const settlement: ExplorerPrivateSettleParameters = { ...base(actor), p_conversation_id: ids.conversationId,
         p_operation_id: command.operationId, p_status: model !== null ? "completed" : terminalDeliveryInterested ? "failed" : "canceled",
         p_reply_message_id: replyKind === "none" ? null : ids.replyId, p_reply_kind: replyKind, p_reply_body: replyBody,
@@ -961,8 +983,7 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
         p_trusted_response_version: readiness.configuration.trustedResponses.version, p_resource_policy_version: readiness.resourcePolicyVersion,
         p_fallback_level: fallback.classification.level, p_fallback_minor_indicated: fallback.classification.minorIndicated,
         p_delivery_interested: terminalDeliveryInterested, p_attention_item_id: attentionItemId, p_choices: choices,
-        p_compass_suggestions: proposedPoints?.length ? Object.freeze(proposedPoints) : null,
-        p_compass_responses: proposedResponses?.length ? Object.freeze(proposedResponses) : null,
+        p_compass_suggestions: null, p_compass_responses: null, p_compass_topics: compassTopics,
         p_waypoint_suggestion: waypointSuggestion, p_waypoint_response: waypointResponse,
         p_failure_reason: replyKind !== "none" ? null : observedModel?.reason ?? (model === null
           ? dispatchAdmitted ? replyInTime ? "transport_failed" : "deadline" : "dispatch_not_admitted"

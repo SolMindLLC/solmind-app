@@ -3,6 +3,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
   EXPLORER_CONVERSATION_VERSION,
+  parseExplorerConversationState,
   type ExplorerConversationCommand,
   type ExplorerConversationState,
 } from "../../src/lib/solmind/explorerConversationContract";
@@ -42,57 +43,37 @@ async function mockState(page: Page, read: () => unknown) {
   });
 }
 
-test("F02 explicit arrangement is saved once and read back after reload without Send", async ({ page }) => {
+test("F02 saved arrangement facts remain read-only after reload without a new Compass command", async ({ page }) => {
   const first = "40000000-0000-4000-8000-000000000001";
   const second = "40000000-0000-4000-8000-000000000002";
-  let current: ExplorerConversationState = { ...savedState(), compassItems: [
-    { id: first, sourceMessageId: EXPLORER_MESSAGE, label: "Alpha", anchor: null, emphasis: null },
-    { id: second, sourceMessageId: GUIDE_MESSAGE, label: "Beta", anchor: null, emphasis: null },
-  ], route: [] };
-  let writes = 0;
-  await mockState(page, () => success(current));
-  await page.route("**/explorer/conversation/commands", route => {
-    const command = route.request().postDataJSON() as ExplorerConversationCommand;
-    expect(command.kind).toBe("confirm_compass_arrangement");
-    if (command.kind !== "confirm_compass_arrangement") throw new Error("unexpected_command");
-    expect(command.expectedRevision).toBe(1);
-    expect(command.priorityId).toBe(first);
-    expect(command.items).toEqual([
-      { compassItemId: first, anchor: "apex", emphasis: 2 },
-      { compassItemId: second, anchor: "side_right", emphasis: 1 },
-    ]);
-    writes += 1;
-    current = { ...current, revision: 2, priorityId: first, compassItems: current.compassItems.map(point => {
-      const item = command.items.find(item => item.compassItemId === point.id)!;
-      return { ...point, anchor: item.anchor, emphasis: item.emphasis };
-    }), route: [{ operationId: command.operationId, revision: 2, kind: "arrangement_confirmed",
-      previousPriorityId: null, priorityId: first, items: command.items.map(item => ({ ...item,
-        label: current.compassItems.find(point => point.id === item.compassItemId)!.label })),
-      recordedAt: "2026-10-29T09:00:00.123456+00:00" }] };
-    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(success(current)) });
-  });
+  const state: ExplorerConversationState = { ...savedState(), revision: 3, sessionStatus: "ended", ending: null, providerState: "unavailable",
+    compassItems: [
+      { id: first, sourceMessageId: EXPLORER_MESSAGE, label: "Alpha", anchor: "apex", emphasis: 2 },
+      { id: second, sourceMessageId: GUIDE_MESSAGE, label: "Beta", anchor: "side_right", emphasis: 1 },
+    ], priorityId: first, route: [{ operationId: "50000000-0000-4000-8000-000000000001", revision: 2,
+      kind: "arrangement_confirmed", previousPriorityId: null, priorityId: first, recordedAt: "2026-10-29T09:00:00Z",
+      items: [{ compassItemId: first, label: "Alpha", anchor: "apex", emphasis: 2 },
+        { compassItemId: second, label: "Beta", anchor: "side_right", emphasis: 1 }] }] };
+  expect(parseExplorerConversationState(state)).not.toBeNull();
+  const commands: string[] = [];
+  await mockState(page, () => success(state));
+  await page.route("**/explorer/conversation/commands", route => { commands.push(route.request().postData()!); return route.abort(); });
   await page.goto("/explorer/conversation");
-  await page.getByRole("button", { name: "Review Compass arrangement", exact: true }).click();
-  await page.getByLabel(/Location for Alpha/).selectOption("apex");
-  await page.getByLabel(/Relative emphasis for Alpha/).selectOption("2");
-  await page.getByLabel(/Location for Beta/).selectOption("side_right");
-  await page.getByLabel(/Relative emphasis for Beta/).selectOption("1");
-  await page.getByLabel(/Priority for this arrangement/).selectOption(first);
-  await page.getByRole("checkbox", { name: /I reviewed the new Priority/ }).check();
-  await page.getByRole("button", { name: "Confirm new Priority and arrangement", exact: true }).click();
-  await expect(page.getByText("Compass arrangement confirmed", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Close arrangement review", exact: true }).click();
-  await expect(page.getByRole("region", { name: "Saved Compass arrangement", exact: true })).toContainText("Alpha");
-  await page.reload();
-  await expect(page.getByText("Compass arrangement confirmed", { exact: true })).toBeVisible();
-  await page.getByText("Review recorded placement and emphasis", { exact: true }).click();
-  await expect(page.getByText(/Alpha — .*Regular/)).toBeVisible();
-  expect(writes).toBe(1);
+  for (const reload of [false, true]) {
+    if (reload) await page.reload();
+    await expect(page.getByText("This saved conversation has ended. It is available for read-only review.", { exact: true })).toBeVisible();
+    await expect(page.getByText("Compass arrangement confirmed", { exact: true })).toBeVisible();
+    await page.getByText("Review recorded placement and emphasis", { exact: true }).click();
+    await expect(page.getByText(/Alpha .*Regular/)).toBeVisible();
+    await expect(page.getByRole("region", { name: "Saved Compass arrangement", exact: true })).toContainText("Beta");
+    await expect(page.getByRole("button", { name: /Confirm.*arrangement|Review Compass arrangement|Save Compass point/ })).toHaveCount(0);
+  }
+  expect(commands).toEqual([]);
 });
 
 test("F01 saved Route and Reached evidence remain reviewable after reload without a command", async ({ page }) => {
   const pointId = "40000000-0000-4000-8000-000000000001";
-  const state: ExplorerConversationState = { ...savedState(), revision: 5,
+  const state: ExplorerConversationState = { ...savedState(), revision: 5, sessionStatus: "ended", ending: null, providerState: "unavailable",
     waypointProjection: { kind: "current_heads", limit: 20, totalHeads: 1, hasMore: false },
     compassItems: [{ id: pointId, sourceMessageId: EXPLORER_MESSAGE, label: "Current point label" }],
     priorityId: pointId, attentionId: pointId,
@@ -103,10 +84,12 @@ test("F01 saved Route and Reached evidence remain reviewable after reload withou
       title: "One calm choice", destination: "One calm choice", meaning: "Room for what matters", arrivalSignal: "I can name a next step",
       status: "reached", reachedEvidence: "I named a next step. <script>not markup</script>",
       reachedAt: "2026-10-29T07:01:00.123456+00:00" }] };
+  expect(parseExplorerConversationState(state)).not.toBeNull();
   let writes = 0;
   await mockState(page, () => success(state));
   await page.route("**/explorer/conversation/commands", route => { writes += 1; return route.abort(); });
   await page.goto("/explorer/conversation");
+  await expect(page.getByText("This saved conversation has ended. It is available for read-only review.", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Route", exact: true })).toBeVisible();
   await expect(page.getByText("Captured earlier direction", { exact: false })).toBeVisible();
   await page.getByText("Review saved Reached confirmation", { exact: true }).click();
@@ -319,7 +302,7 @@ test("C12 saved-message capacity disables sending and keeps formation available"
   await expect(page.getByText(/This conversation has reached its saved-message limit/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
   await expect(page.getByLabel("Continue the conversation", { exact: true })).toBeDisabled();
-  await expect(page.getByRole("region", { name: "Session Compass", exact: true }).getByRole("combobox", { name: "Saved conversation source", exact: true })).toBeEnabled();
+  await expect(page.getByRole("region", { name: "Private Waypoints", exact: true }).getByRole("combobox", { name: "Saved conversation source", exact: true })).toBeEnabled();
   expect(writes).toBe(0);
 });
 

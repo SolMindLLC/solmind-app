@@ -140,39 +140,31 @@ end $$;
 -- fixture conversation's rows for each new Send (the inspector compares them exactly): current points in display
 -- order, the saved Priority and attention, the last five needle moves on a current point (oldest first, each
 -- with the point's current label), the current Waypoint heads, no drafts.
+-- REV391 (2026-11-11): conversation 6005 is a legacy-mode conversation (its rejected and forming rows are
+-- historical), so the section is the v8 legacy envelope: mode legacy_read_only, zero capacity, no topics, a null
+-- priorityId, no forming points, attention only when it names a supplied point (explorer_source_exclusion_test.sql).
+-- This fixture records no needle moves, so the Route is empty.
 create function pg_temp.compass_context() returns jsonb language sql stable as $$
-  with forming_move as (select ai.solmind_forming_attention_move_v1(pg_temp.gid(6005)) as value),
-  moves as (
-    select o.kind,o.completed_at,o.compass_route_kind,o.compass_route_item_id,o.initial_revision,o.operation_id
-    from ai.explorer_conversation_operation o where o.conversation_id=pg_temp.gid(6005) and o.compass_route_kind='attention_changed'
-    union all
-    select 'set_attention',(value->>'recordedAt')::timestamptz,'attention_changed',(value->>'pointId')::uuid,
-      (value->>'revision')::integer-1,null::uuid from forming_move where value is not null
-  )
-  select jsonb_build_object('version','explorer-compass-context.v7','immediateMessageIsReplyChoice',false,
+  select jsonb_build_object('version','explorer-compass-context.v8','immediateMessageIsReplyChoice',false,
+    'mode','legacy_read_only','topics','[]'::jsonb,
+    'capacity',jsonb_build_object('originalsRemaining',0,'topicSlotsRemaining',0,'visibleSlotsRemaining',0),
+    'messageRefs',jsonb_build_object('history',(select coalesce(jsonb_agg(jsonb_build_object('ref','h'||h.ord::text,
+      'order',h.ord) order by h.ord),'[]'::jsonb) from (
+      select recent.*,row_number() over(order by recent.sequence_number)-1 as ord from (
+        select * from ai.ai_interaction_message where ai_interaction_session_id=pg_temp.gid(6005)
+        order by sequence_number desc limit 24) recent) h where h.sender_type='user'),'immediate','now'),
     'points',coalesce((select jsonb_agg(jsonb_build_object('id',c.item_id,'label',ai.solmind_exclusion_normalize_v3(c.label),
-      'order',c.ord-1,'formation',case when c.formation_status='proposed' then 'forming' else 'saved' end,'anchor',c.compass_anchor,'emphasis',c.relative_emphasis)
-      ||case when c.formation_status='proposed' then jsonb_build_object('suggestedInPreviousReply',coalesce(
-        c.wording_message_id=(select previous.ai_interaction_message_id from ai.ai_interaction_message previous
-          where previous.ai_interaction_session_id=c.conversation_id and previous.sender_type='ai'
-            and previous.ai_role='solmind_virtual_guide' order by previous.sequence_number desc limit 1),false))
-        else '{}'::jsonb end order by c.ord)
+      'order',c.ord-1,'formation',case when c.formation_status='automatic' then 'automatic' else 'saved' end,'anchor',c.compass_anchor,'emphasis',c.relative_emphasis)
+        order by c.ord)
       from (select x.*,row_number() over(order by x.display_order) as ord from ai.explorer_conversation_compass_item x
-        where x.conversation_id=pg_temp.gid(6005) and x.merged_into_item_id is null and x.formation_status is distinct from 'rejected') c),'[]'::jsonb),
-    'priorityId',(select s.priority_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.gid(6005)),
-    'attentionId',(select s.attention_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.gid(6005)),
-    'recentRoute',coalesce((select jsonb_agg(jsonb_build_object('kind',r.compass_route_kind,'pointId',r.compass_route_item_id,
-      'label',ai.solmind_exclusion_normalize_v3(r.current_label),
-      'actor',case when r.kind='follow_attention' then 'virtual_guide' else 'explorer' end,
-      'awaitingReply',r.kind='set_attention'
-        and r.operation_id is not distinct from (select last_move.operation_id from moves last_move
-          order by last_move.initial_revision desc,last_move.operation_id desc limit 1)
-        and not exists(select 1 from ai.ai_interaction_message reply where reply.ai_interaction_session_id=pg_temp.gid(6005)
-          and reply.sender_type='ai' and reply.created_at>=r.completed_at)) order by r.initial_revision,r.operation_id)
-      from (select o.*,c.label as current_label from moves o join ai.explorer_conversation_compass_item c
-          on c.conversation_id=pg_temp.gid(6005) and c.item_id=o.compass_route_item_id and c.merged_into_item_id is null and c.formation_status is distinct from 'rejected'
-        where c.formation_status is distinct from 'proposed' or o.operation_id is null
-        order by o.initial_revision desc,o.operation_id desc limit 5) r),'[]'::jsonb),
+        where x.conversation_id=pg_temp.gid(6005) and x.merged_into_item_id is null and x.formation_status is distinct from 'rejected'
+          and x.formation_status is distinct from 'proposed') c),'[]'::jsonb),
+    'priorityId',null,
+    'attentionId',(select s.attention_id from ai.explorer_conversation_state s where s.conversation_id=pg_temp.gid(6005)
+      and exists(select 1 from ai.explorer_conversation_compass_item c where c.item_id=s.attention_id
+        and c.merged_into_item_id is null and c.formation_status is distinct from 'rejected' and c.formation_status is distinct from 'proposed')),
+    'recentRoute',case when exists(select 1 from ai.explorer_conversation_operation o where o.conversation_id=pg_temp.gid(6005)
+      and (o.compass_route_kind is not null or o.followed_attention_item_id is not null)) then null else '[]'::jsonb end,
     'waypoints',coalesce((select jsonb_agg(jsonb_build_object('id',w.waypoint_id,'title',ai.solmind_exclusion_normalize_v3(w.title),
       'destination',ai.solmind_exclusion_normalize_v3(w.destination),'meaning',ai.solmind_exclusion_normalize_v3(w.why_it_matters),
       'arrivalSignal',ai.solmind_exclusion_normalize_v3(w.arrival_signal),
@@ -188,13 +180,14 @@ create function pg_temp.compass_source_ids() returns uuid[] language sql stable 
   select coalesce(array_agg(x.id),array[]::uuid[]) from (
     select c.item_id as id from ai.explorer_conversation_compass_item c
       where c.conversation_id=pg_temp.gid(6005) and c.merged_into_item_id is null and c.formation_status is distinct from 'rejected'
+        and c.formation_status is distinct from 'proposed'
     union all select w.waypoint_id from (select h.* from content.waypoint h where h.source_ai_interaction_session_id=pg_temp.gid(6005)
       and not exists(select 1 from content.waypoint s where s.predecessor_waypoint_id=h.waypoint_id)
       order by case when h.lifecycle_status='chosen' and h.released_at is null then 0 else 1 end,h.created_at desc,h.waypoint_id limit 20) w) x
 $$;
 create function pg_temp.context_value(msg uuid,body text,classification_only boolean default false) returns jsonb language sql stable as $$
   select jsonb_build_object('contractVersion',case when classification_only then 'wi007-v0.1+onboarding-fields-v2'
-    else 'wi007-v0.1+onboarding-fields-v2+compass-v7' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
+    else 'wi007-v0.1+onboarding-fields-v2+compass-v8' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy',jsonb_build_object('version','synthetic-policy.v1','text','Synthetic policy.'),
     'roleBehavior',jsonb_build_object('version','synthetic-behavior.v1','text','Synthetic behavior.'),
     'crisisBehavior',jsonb_build_object('version','synthetic-crisis.v1','text','Synthetic crisis.'),
@@ -289,8 +282,17 @@ do $$ begin
   if not exists(select 1 from pg_temp.screen_start(1001) where outcome='ok' and dispatch_permitted) then raise exception 'fixture'; end if;
   if pg_temp.screen_terminal(1001)<>'ok' or pg_temp.admin_review(1001)<>'ok' or pg_temp.guide_decision(1001)<>'ok'
     then raise exception 'fixture'; end if;
-  if not exists(select 1 from pg_temp.ensure_anchor() where outcome='created') then raise exception 'fixture'; end if;
+  if not exists(select 1 from pg_temp.ensure_anchor(6004) where outcome='created') then raise exception 'fixture'; end if;
 end $$;
+-- REV391 (2026-11-11): rejected and forming rows exist only from before automatic Compass, so conversation 6005
+-- is a legacy-mode conversation: a privileged rollback-only copy of the freshly created owned conversation 6004
+-- (session and state rows), as in explorer_automatic_compass_test.sql. No guard is suspended for this copy.
+insert into ai.ai_interaction_session select (jsonb_populate_record(null::ai.ai_interaction_session,
+  to_jsonb(s)||jsonb_build_object('ai_interaction_session_id',pg_temp.gid(6005)))).*
+  from ai.ai_interaction_session s where s.ai_interaction_session_id=pg_temp.gid(6004);
+insert into ai.explorer_conversation_state select (jsonb_populate_record(null::ai.explorer_conversation_state,
+  to_jsonb(s)||jsonb_build_object('conversation_id',pg_temp.gid(6005),'compass_mode','legacy'))).*
+  from ai.explorer_conversation_state s where s.conversation_id=pg_temp.gid(6004);
 create function pg_temp.state() returns jsonb language sql stable as $$
   select ai.solmind_conversation_state_json(pg_temp.gid(6005))
 $$;
@@ -309,10 +311,23 @@ create function pg_temp.answer(op_n integer,point_id uuid,response_name text,rev
       (select revision from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005))),
     coalesce(fingerprint_override,pg_temp.request_sha(op_n)),point_id,response_name)
 $$;
-create function pg_temp.send_suggestions(slot_n integer,suggestions jsonb,attention uuid default null) returns boolean language plpgsql as $$
+-- One ordinary legacy Send through the real prepare and settlement owners; it saves the reply whose id is
+-- 10005+slot*10, which the historical rows below name as their source and wording.
+create function pg_temp.send_turn(slot_n integer) returns boolean language plpgsql as $$
 begin
   if not exists(select 1 from pg_temp.prepare_private(slot_n) where outcome='ok' and dispatch_permitted) then return false; end if;
-  return exists(select 1 from pg_temp.settle_private(slot_n,suggestions=>suggestions,attention_id=>attention) where outcome='ok' and saved_reply);
+  return exists(select 1 from pg_temp.settle_private(slot_n) where outcome='ok' and saved_reply);
+end $$;
+-- Privileged historical rows (REV391): only the formation guard is suspended, for these INSERTs alone, and it is
+-- restored before any assertion. Each row's source and wording are the saved reply of its own Send.
+create function pg_temp.historical_point(slot_n integer,point_label text,status_name text) returns void language plpgsql as $$
+begin
+  alter table ai.explorer_conversation_compass_item disable trigger explorer_compass_formation_guard;
+  insert into ai.explorer_conversation_compass_item(item_id,conversation_id,source_message_id,label,display_order,
+    formation_status,wording_message_id)
+    values(pg_temp.gid(72000+slot_n),pg_temp.gid(6005),pg_temp.gid(10005+slot_n*10),point_label,slot_n,
+      status_name,pg_temp.gid(10005+slot_n*10));
+  alter table ai.explorer_conversation_compass_item enable trigger explorer_compass_formation_guard;
 end $$;
 
 -- Pin the complete pre-change serializer, including nested fields, on the same
@@ -379,26 +394,27 @@ select ok(not has_function_privilege('anon','ai.solmind_conversation_state_json(
   'TDL02: no API role or PUBLIC gains direct state access');
 -- Lane 7 (2026-11-06) adds waypointCapacity and waypointProjection, pinned by explorer_waypoint_active_limits_test.sql;
 -- these comparisons leave out only those two fields, so every field this file owns stays pinned exactly.
+-- REV391 (2026-11-11) adds compassMode and compassChanges (contract B5); each comparison pins their exact values.
 select is(ai.solmind_conversation_state_json(null)-'waypointCapacity'-'waypointProjection',
-  pg_temp.previous_state(null)||jsonb_build_object('turnedDownLimitReached',false),
-  'TDL03: blank Discovery adds exactly a false boolean');
+  pg_temp.previous_state(null)||jsonb_build_object('turnedDownLimitReached',false,'compassMode','automatic','compassChanges','[]'::jsonb),
+  'TDL03: blank Discovery adds exactly a false boolean, automatic mode and no Compass changes');
 
--- Real command owners create each rejected row; no trigger is bypassed.
-do $$ declare n integer; point_id uuid; begin
+-- REV391: button rejections are retired, so each rejected row is a privileged historical row whose source and
+-- wording are the saved reply of a real ordinary legacy Send.
+do $$ declare n integer; begin
   for n in 1..23 loop
-    if not pg_temp.send_suggestions(n,jsonb_build_array(jsonb_build_object('label','Turned down '||n))) then raise exception 'fixture'; end if;
-    select item_id into point_id from ai.explorer_conversation_compass_item
-      where conversation_id=pg_temp.gid(6005) and label='Turned down '||n;
-    if pg_temp.answer(73000+n,point_id,'not_it')<>'ok' then raise exception 'fixture'; end if;
+    if not pg_temp.send_turn(n) then raise exception 'fixture'; end if;
+    perform pg_temp.historical_point(n,'Turned down '||n,'rejected');
   end loop;
 end $$;
 select is((select count(*)::integer from ai.explorer_conversation_compass_item
     where conversation_id=pg_temp.gid(6005) and formation_status='rejected'),23,
-  'TDL04: fixture retains 23 rejected rows');
+  'TDL04: fixture retains 23 rejected rows (historical readback)');
 select is(pg_temp.state()->'turnedDownLimitReached','false'::jsonb,
   'TDL05: 23 rejected rows do not reach the limit');
-select is(pg_temp.state()-'turnedDownLimitReached'-'waypointCapacity'-'waypointProjection',pg_temp.previous_state(pg_temp.gid(6005)),
-  'TDL06: at 23 every prior state field is unchanged');
+select is(pg_temp.state()-'turnedDownLimitReached'-'waypointCapacity'-'waypointProjection',
+  pg_temp.previous_state(pg_temp.gid(6005))||jsonb_build_object('compassMode','legacy','compassChanges','[]'::jsonb),
+  'TDL06: at 23 every prior state field is unchanged, with legacy mode and no Compass changes');
 select is((select conversation_state from public.solmind_read_explorer_conversation_v3(
     pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005))),pg_temp.state(),
   'TDL07: the authorized private read retains the full state contract');
@@ -406,18 +422,17 @@ select throws_ok($$select * from public.solmind_read_explorer_conversation_v3(
     pg_temp.gid(4),pg_temp.gid(54),pg_temp.gid(6005))$$,
   'P0001','solmind_explorer_private_unavailable','TDL08: another Explorer cannot read the below-limit flag');
 
-do $$ declare point_id uuid; begin
-  if not pg_temp.send_suggestions(24,'[{"label":"Turned down 24"}]') then raise exception 'fixture'; end if;
-  select item_id into point_id from ai.explorer_conversation_compass_item
-    where conversation_id=pg_temp.gid(6005) and label='Turned down 24';
-  if pg_temp.answer(73024,point_id,'not_it')<>'ok' then raise exception 'fixture'; end if;
+do $$ begin
+  if not pg_temp.send_turn(24) then raise exception 'fixture'; end if;
+  perform pg_temp.historical_point(24,'Turned down 24','rejected');
 end $$;
 select is((select count(*)::integer from ai.explorer_conversation_compass_item
     where conversation_id=pg_temp.gid(6005) and formation_status='rejected'),24,
-  'TDL09: fixture reaches the trigger existing 24-row rejection cap');
+  'TDL09: the historical fixture holds the 24-row rejection maximum (historical readback)');
 select is(pg_temp.state()->'turnedDownLimitReached','true'::jsonb,
   'TDL10: 24 rejected rows reach the limit');
-select is(pg_temp.state()-'turnedDownLimitReached'-'waypointCapacity'-'waypointProjection',pg_temp.previous_state(pg_temp.gid(6005)),
+select is(pg_temp.state()-'turnedDownLimitReached'-'waypointCapacity'-'waypointProjection',
+  pg_temp.previous_state(pg_temp.gid(6005))||jsonb_build_object('compassMode','legacy','compassChanges','[]'::jsonb),
   'TDL11: at 24 every prior state field is unchanged and no extra count appears');
 select ok(not exists(select 1 from ai.explorer_conversation_compass_item c
     where c.conversation_id=pg_temp.gid(6005) and c.formation_status='rejected'
@@ -427,7 +442,7 @@ select is((select conversation_state from public.solmind_read_explorer_conversat
     pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005))),pg_temp.state(),
   'TDL13: the authorized read carries the true flag and unchanged remaining fields');
 select is((select conversation_state from public.solmind_read_explorer_conversation_v3(pg_temp.gid(4),pg_temp.gid(54)))-'waypointCapacity'-'waypointProjection',
-  pg_temp.previous_state(null)||jsonb_build_object('turnedDownLimitReached',false),
+  pg_temp.previous_state(null)||jsonb_build_object('turnedDownLimitReached',false,'compassMode','automatic','compassChanges','[]'::jsonb),
   'TDL14: another Explorer empty Discovery does not inherit the limit');
 select throws_ok($$select * from public.solmind_read_explorer_conversation_v3(
     pg_temp.gid(4),pg_temp.gid(54),pg_temp.gid(6005))$$,
@@ -437,23 +452,29 @@ do $$ begin
 end $$;
 select is((select conversation_state from public.solmind_read_explorer_conversation_v3(
     pg_temp.gid(4),pg_temp.gid(54),pg_temp.gid(6006)))-'waypointCapacity'-'waypointProjection',
-  pg_temp.previous_state(pg_temp.gid(6006))||jsonb_build_object('turnedDownLimitReached',false),
+  pg_temp.previous_state(pg_temp.gid(6006))||jsonb_build_object('turnedDownLimitReached',false,'compassMode','automatic','compassChanges','[]'::jsonb),
   'TDL16: another owned conversation counts only its own rejected rows');
 select is(pg_temp.state()->'turnedDownLimitReached','true'::jsonb,
   'TDL17: another conversation leaves the first conversation limit unchanged');
 
 do $$ begin
-  if not pg_temp.send_suggestions(25,'[{"label":"Still forming"}]') then raise exception 'fixture'; end if;
+  if not pg_temp.send_turn(25) then raise exception 'fixture'; end if;
+  perform pg_temp.historical_point(25,'Still forming','proposed');
 end $$;
 create temp table before_refusal as select pg_temp.state() state,
-  (select count(*) from ai.explorer_conversation_operation) operations;
+  (select count(*) from ai.explorer_conversation_operation) operations,
+  (select jsonb_agg(to_jsonb(c) order by c.item_id) from ai.explorer_conversation_compass_item c
+    where c.conversation_id=pg_temp.gid(6005)) items;
 select is(pg_temp.answer(73999,(select item_id from ai.explorer_conversation_compass_item
     where conversation_id=pg_temp.gid(6005) and label='Still forming'),'not_it'),'operation_conflict',
-  'TDL18: a racing button rejection still receives the existing definite conflict');
+  'TDL18: a fresh button rejection at the limit receives the definite conflict of the retired command');
 select ok(pg_temp.state()=(select state from before_refusal)
-    and (select count(*) from ai.explorer_conversation_operation)=(select operations from before_refusal),
-  'TDL19: the server limit refusal changes no state and records no operation');
-select is(pg_temp.state()-'turnedDownLimitReached'-'waypointCapacity'-'waypointProjection',pg_temp.previous_state(pg_temp.gid(6005)),
+    and (select count(*) from ai.explorer_conversation_operation)=(select operations from before_refusal)
+    and (select jsonb_agg(to_jsonb(c) order by c.item_id) from ai.explorer_conversation_compass_item c
+      where c.conversation_id=pg_temp.gid(6005))=(select items from before_refusal),
+  'TDL19: the refusal changes no state, no stored point (rejected rows included) and records no operation');
+select is(pg_temp.state()-'turnedDownLimitReached'-'waypointCapacity'-'waypointProjection',
+  pg_temp.previous_state(pg_temp.gid(6005))||jsonb_build_object('compassMode','legacy','compassChanges','[]'::jsonb),
   'TDL20: the nonempty forming-point projection retains every previous field');
 
 select is((select outcome from public.solmind_end_explorer_conversation_v1(pg_temp.gid(1),pg_temp.gid(50),
@@ -461,8 +482,8 @@ select is((select outcome from public.solmind_end_explorer_conversation_v1(pg_te
   'ok','TDL21: ending the at-limit conversation retains its normal command contract');
 select is((select conversation_state from public.solmind_read_ended_explorer_conversations_v1(
     pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005)))-'waypointCapacity'-'waypointProjection',
-  pg_temp.previous_state(pg_temp.gid(6005))||jsonb_build_object('turnedDownLimitReached',true),
-  'TDL22: owned ended review adds only the same limit boolean');
+  pg_temp.previous_state(pg_temp.gid(6005))||jsonb_build_object('turnedDownLimitReached',true,'compassMode','legacy','compassChanges','[]'::jsonb),
+  'TDL22: owned ended review adds only the same limit boolean, legacy mode and no Compass changes');
 select throws_ok($$select * from public.solmind_read_ended_explorer_conversations_v1(
     pg_temp.gid(4),pg_temp.gid(54),pg_temp.gid(6005))$$,
   'P0001','solmind_explorer_conversation_denied','TDL23: another Explorer cannot read the ended limit state');

@@ -6,7 +6,7 @@ export const EXPLORER_SAFETY_REPLY_PROTOCOL = "explorer-safety-reply.v2" as cons
 export const EXPLORER_SAFETY_REPLY_LIMITS = Object.freeze({
   contextUtf8Bytes: 524_288, modelBodyUtf8Bytes: 262_144,
   candidateUtf16Units: 8_192, candidateWords: 300,
-  choices: 3, choiceLabelCharacters: 40, compassSuggestions: 3, compassResponses: 3, compassLabelCharacters: 160,
+  choices: 3, choiceLabelCharacters: 40, compassTopics: 3, compassSupportRefs: 3, compassLabelCharacters: 160,
   minimumTimeoutMilliseconds: 10, maximumTimeoutMilliseconds: 60_000,
 });
 // Correction D-12 (2026-11-09; REV341b finding 3): one overall deadline for a Send, set when the Send starts: the setup
@@ -50,9 +50,11 @@ export type ExplorerSafetyWaypointSuggestion = Readonly<{
   title: string; destination: string; whyItMatters: string; arrivalSignal: string;
 }>;
 export type ExplorerSafetyWaypointResponse = Readonly<{ draftId: string; response: "right" | "close" | "not_it" }>;
+export type ExplorerSafetyCompassTopic = Readonly<{
+  topicId: string | null; label: string; supportRefs: readonly string[]; ready: boolean;
+}>;
 export type ExplorerSafetyCompass = Readonly<{
-  attention?: string | null; suggestions?: readonly ExplorerSafetyCompassSuggestion[];
-  responses?: readonly ExplorerSafetyCompassResponse[];
+  attention?: string | null; topics?: readonly ExplorerSafetyCompassTopic[];
 }>;
 export type ExplorerSafetyChoice = Readonly<{ label: string }>;
 export type ExplorerSafetyReplyObservation = Readonly<{
@@ -143,51 +145,51 @@ function candidate(input: unknown): ExplorerSafetyCandidate {
   }
   return Object.freeze({ kind: "usable", content });
 }
-function compassSuggestions(input: unknown): readonly ExplorerSafetyCompassSuggestion[] | undefined {
-  if (!Array.isArray(input)) return undefined;
-  const result: ExplorerSafetyCompassSuggestion[] = [];
-  // Only the first three entries are proposals. Each invalid entry is discarded
-  // independently; malformed optional data never discards accepted reply prose.
-  for (const item of input.slice(0, EXPLORER_SAFETY_REPLY_LIMITS.compassSuggestions)) {
-    if ((!dataObject(item, ["label"]) && !dataObject(item, ["label", "pointId"])) ||
-        typeof item.label !== "string" || !explorerSafetyUnicodeValid(item.label)) continue;
-    const label = item.label;
-    // Match existing label/state/context restrictions before any suggestion is
-    // persisted, including their UTF-16 bound and single-line text rules.
-    if (!label.trim() || label !== label.trim() || label.length > EXPLORER_SAFETY_REPLY_LIMITS.compassLabelCharacters ||
-        PROHIBITED.test(label) || /[\n\u2028\u2029]/u.test(label)) continue;
-    const hasPoint = Object.hasOwn(item, "pointId");
-    if (hasPoint && (typeof item.pointId !== "string" || item.pointId.length !== 36 || !UUID.test(item.pointId))) continue;
-    result.push(Object.freeze({ label, ...(hasPoint ? { pointId: item.pointId as string } : {}) }));
-  }
-  return result.length === 0 ? undefined : Object.freeze(result);
-}
-function compassResponses(input: unknown): readonly ExplorerSafetyCompassResponse[] | undefined {
-  if (!Array.isArray(input)) return undefined;
-  const result: ExplorerSafetyCompassResponse[] = [];
-  const seen = new Set<string>();
-  for (const item of input.slice(0, EXPLORER_SAFETY_REPLY_LIMITS.compassResponses)) {
-    if (!dataObject(item, ["pointId", "response"]) || typeof item.pointId !== "string" ||
-        item.pointId.length !== 36 || !UUID.test(item.pointId) ||
-        (item.response !== "right" && item.response !== "close" && item.response !== "not_it") || seen.has(item.pointId)) continue;
-    seen.add(item.pointId);
-    result.push(Object.freeze({ pointId: item.pointId, response: item.response }));
-  }
-  return result.length === 0 ? undefined : Object.freeze(result);
+export function parseExplorerSafetyCompassTopics(input: unknown): readonly ExplorerSafetyCompassTopic[] | undefined {
+  try {
+    if (!Array.isArray(input) || input.length > EXPLORER_SAFETY_REPLY_LIMITS.compassTopics) return undefined;
+    const result: ExplorerSafetyCompassTopic[] = [];
+    const identities = new Set<string>();
+    for (const item of input) {
+      if (item === null || typeof item !== "object" || Array.isArray(item) ||
+          !dataObject(item, Reflect.ownKeys(item) as string[])) continue;
+      // Duplicate targets invalidate the batch, even if another field of an entry is malformed.
+      const identity = typeof item.topicId === "string" && UUID.test(item.topicId) ? item.topicId
+        : item.topicId === null && typeof item.label === "string" ? "new:" + item.label : null;
+      if (identity !== null) {
+        if (identities.has(identity)) return undefined;
+        identities.add(identity);
+      }
+      if (!dataObject(item, ["topicId", "label", "supportRefs", "ready"])) continue;
+      if (!(item.topicId === null || (typeof item.topicId === "string" && UUID.test(item.topicId))) ||
+          typeof item.label !== "string" || !explorerSafetyUnicodeValid(item.label) ||
+          !item.label.trim() || item.label !== item.label.trim() ||
+          item.label.length > EXPLORER_SAFETY_REPLY_LIMITS.compassLabelCharacters ||
+          PROHIBITED.test(item.label) || /[\n\u2028\u2029]/u.test(item.label) ||
+          typeof item.ready !== "boolean" || !Array.isArray(item.supportRefs) ||
+          item.supportRefs.length > EXPLORER_SAFETY_REPLY_LIMITS.compassSupportRefs ||
+          (item.topicId === null && item.supportRefs.length === 0) ||
+          item.supportRefs.some(ref => typeof ref !== "string" || !/^(now|h(?:[0-9]|1[0-9]|2[0-3]))$/.test(ref)) ||
+          new Set(item.supportRefs).size !== item.supportRefs.length) continue;
+      result.push(Object.freeze({ topicId: item.topicId, label: item.label,
+        supportRefs: Object.freeze([...item.supportRefs]), ready: item.ready }));
+    }
+    return Object.freeze(result);
+  } catch { return undefined; }
 }
 function compass(input: unknown): ExplorerSafetyCompass | undefined {
   try {
-    if (!dataObject(input, ["attention"]) && !dataObject(input, ["suggestions"]) &&
-        !dataObject(input, ["responses"]) && !dataObject(input, ["attention", "suggestions"]) &&
-        !dataObject(input, ["attention", "responses"]) && !dataObject(input, ["suggestions", "responses"]) &&
-        !dataObject(input, ["attention", "suggestions", "responses"])) return undefined;
+    if (input === null || typeof input !== "object" || Array.isArray(input)) return undefined;
+    const keys = Reflect.ownKeys(input);
+    if (keys.some(key => typeof key !== "string" || !["attention", "topics", "suggestions", "responses"].includes(key)) ||
+        !dataObject(input, keys as string[])) return undefined;
+    // Retired values are deliberately not interpreted; optional siblings remain independent.
     const validAttention = input.attention === null ||
       (typeof input.attention === "string" && input.attention.length === 36 && UUID.test(input.attention));
-    const suggestions = compassSuggestions(input.suggestions);
-    const responses = compassResponses(input.responses);
-    if (!validAttention && suggestions === undefined && responses === undefined) return undefined;
+    const topics = parseExplorerSafetyCompassTopics(input.topics);
+    if (!validAttention && topics === undefined) return undefined;
     return Object.freeze({ ...(validAttention ? { attention: input.attention as string | null } : {}),
-      ...(suggestions === undefined ? {} : { suggestions }), ...(responses === undefined ? {} : { responses }) });
+      ...(topics === undefined ? {} : { topics }) });
   } catch { return undefined; }
 }
 function choices(input: unknown): readonly ExplorerSafetyChoice[] | undefined {

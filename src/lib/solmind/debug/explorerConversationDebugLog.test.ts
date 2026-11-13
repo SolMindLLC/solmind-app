@@ -136,11 +136,11 @@ describe("debug conversation log (SOLMIND-DEBUG)", () => {
     const folder = await logFolder();
     const wrapped = withExplorerConversationDebugLog(dependencies(async () => GOOD));
     await wrapped.repository.settle({ p_status: "failed", p_reply_kind: "none", p_reply_body: "words of the reply",
-      p_failure_reason: "invalid_response", p_model_level: null, p_choices: [{ label: "a" }], p_compass_suggestions: null,
+      p_failure_reason: "invalid_response", p_model_level: null, p_choices: [{ label: "a" }], p_compass_topics: null, p_compass_suggestions: null,
       p_compass_responses: null, p_waypoint_suggestion: null, p_waypoint_response: null, p_attention_item_id: null } as never);
     const all = await rows(folder);
     expect(all.find(row => row.event === "send_settlement")).toMatchObject({ status: "failed", replyKind: "none",
-      failureReason: "invalid_response", choices: 1, compassSuggestions: 0, waypointSuggestion: false });
+      failureReason: "invalid_response", choices: 1, compassTopics: 0, waypointSuggestion: false });
     expect(JSON.stringify(all)).not.toContain("words of the reply");
   });
 

@@ -1,10 +1,7 @@
 import type { ExplorerConversationState } from "@/lib/solmind/explorerConversationContract";
 import type { ExplorerConversationFormationIntent } from "@/lib/solmind/explorerConversationFormation";
 import {
-  COMPASS_SUGGESTION_REPLY_HOLDS,
   COMPASS_SUGGESTION_REPLY_LABELS,
-  COMPASS_SUGGESTION_TURNED_DOWN_LIMIT_REASON,
-  formingSuggestionsForMessage,
   type CompassSuggestionReply,
 } from "@/lib/solmind/explorerCompassSuggestionReplies";
 import { SECONDARY_BUTTON, joinClasses } from "./ExplorerConversationScreenNotYetImplemented";
@@ -39,35 +36,15 @@ export function suggestionReplyButtons({ held, followUpHeld, rightHeld = false, 
   );
 }
 
-// Presentation only, inside the saved suggesting message's existing list item.
-export function ExplorerCompassSuggestionReplies({ state, messageId, held, followUpHeld, onCommand }: Readonly<{
+// Retained import surface for historical callers; Compass replies are retired.
+// The shared button renderer above still belongs to the Waypoint draft row.
+export function ExplorerCompassSuggestionReplies(_props: Readonly<{
   state: ExplorerConversationState;
   messageId: string;
   held: boolean;
   followUpHeld: boolean;
   onCommand: (intent: ExplorerConversationFormationIntent) => void;
 }>) {
-  const suggestions = formingSuggestionsForMessage(state, messageId);
-  if (suggestions.length === 0) return null;
-  const availability = state.compassSuggestionReplies ?? "unavailable";
-  if (availability !== "available") {
-    return <p className="mt-2 text-sm leading-6 text-stone-300">{COMPASS_SUGGESTION_REPLY_HOLDS[availability]}</p>;
-  }
-  return suggestions.map(item => (
-    <div
-      aria-describedby={state.turnedDownLimitReached ? `compass-suggestion-limit-${item.id}` : undefined}
-      aria-label={`Reply to Compass suggestion: ${item.label}`}
-      className="mt-3 grid gap-2" key={item.id} role="group"
-    >
-      <p className="text-sm text-stone-200 [overflow-wrap:anywhere]">{item.label}</p>
-      {suggestionReplyButtons({ held: held || state.pendingTurn, followUpHeld,
-        notItHeld: state.turnedDownLimitReached,
-        onReply: response => onCommand({ kind: "respond_compass_suggestion", itemId: item.id, response }) })}
-      {state.turnedDownLimitReached && (
-        <p className="text-sm leading-6 text-stone-300" id={`compass-suggestion-limit-${item.id}`}>
-          {COMPASS_SUGGESTION_TURNED_DOWN_LIMIT_REASON}
-        </p>
-      )}
-    </div>
-  ));
+  void _props;
+  return null;
 }

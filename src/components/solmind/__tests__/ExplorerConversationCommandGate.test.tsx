@@ -76,20 +76,20 @@ async function loaded(turnedDownLimitReached: boolean, overrides: Partial<Explor
 
 describe("Explorer conversation turned-down limit command gate", () => {
   it.each(["denied", "unavailable"])("asks the notice boundary to recheck after a confirmed %s command response", async (error) => {
-    const f = await loaded(false);
+    const f = await loaded(false, { waypointDraft: WAYPOINT_DRAFT });
     f.fetch.mockResolvedValue(new Response(JSON.stringify({ version: EXPLORER_PRIVATE_RESPONSE_VERSION,
       result: { ok: false, state: null, error }, assistance: null,
     }), { headers: { "Content-Type": "application/json" } }));
-    f.actions.onCommand({ kind: "respond_compass_suggestion", itemId: POINT, response: "right" });
+    f.actions.onCommand({ kind: "respond_waypoint_draft", draftId: WAYPOINT_DRAFT.id, response: "right" });
     await vi.advanceTimersByTimeAsync(0);
     expect(captured.noticeRecheck).toHaveBeenCalledOnce();
     expect(f.fetch).toHaveBeenCalledOnce();
   });
   it("does not notify from a late command response after the page lifetime ends", async () => {
-    const f = await loaded(false);
+    const f = await loaded(false, { waypointDraft: WAYPOINT_DRAFT });
     let finish: (response: Response) => void = () => undefined;
     f.fetch.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
-    f.actions.onCommand({ kind: "respond_compass_suggestion", itemId: POINT, response: "right" });
+    f.actions.onCommand({ kind: "respond_waypoint_draft", draftId: WAYPOINT_DRAFT.id, response: "right" });
     for (const cleanup of cleanups.splice(0)) cleanup();
     finish(new Response(JSON.stringify({ version: EXPLORER_PRIVATE_RESPONSE_VERSION,
       result: { ok: false, state: null, error: "denied" }, assistance: null,
@@ -106,14 +106,10 @@ describe("Explorer conversation turned-down limit command gate", () => {
 
   it.each([
     [false, "not_it"], [true, "right"], [true, "close"],
-  ] as const)("permits response %s / %s through the same gate", async (limit, response) => {
+  ] as const)("retires Compass response at limit %s / %s without a request", async (limit, response) => {
     const f = await loaded(limit);
     f.actions.onCommand({ kind: "respond_compass_suggestion", itemId: POINT, response });
-    expect(f.fetch).toHaveBeenCalledOnce();
-    expect(f.fetch.mock.calls[0][0]).toBe("/explorer/conversation/commands");
-    expect(JSON.parse(f.fetch.mock.calls[0][1]!.body as string)).toMatchObject({
-      kind: "respond_compass_suggestion", itemId: POINT, response, expectedRevision: 3,
-    });
+    expect(f.fetch).not.toHaveBeenCalled();
   });
 });
 
@@ -131,11 +127,12 @@ describe("Tapped reply choice Send ownership", () => {
     { ...state(false).messages[0], choices: [{ label }] },
   ] });
 
-  it("refuses a tapped choice while the same reply shows a forming Compass suggestion (one group per reply)", async () => {
+  it("allows a tapped choice despite a retired legacy Compass suggestion", async () => {
     const f = await loaded(false, { messages: [{ ...state(false).messages[0], choices: [{ label }] }] });
     f.actions.onReplyChoice(label);
     await vi.advanceTimersByTimeAsync(0);
-    expect(f.fetch).not.toHaveBeenCalled();
+    expect(f.fetch).toHaveBeenCalledOnce();
+    expect(JSON.parse(f.fetch.mock.calls[0][1]!.body as string)).toMatchObject({ kind: "send", body: label, replyChoice: true });
   });
 
   it("never dispatches the fixed tour label through the Send owner", async () => {
@@ -161,13 +158,13 @@ describe("Tapped reply choice Send ownership", () => {
   // margin); the other commands keep the 70-second wait.
   it.each([["a Send", 130_000], ["another command", 70_000]] as const)("waits for %s's answer for %i ms", async (kind, wait) => {
     // The Compass answer needs the base state's forming point; the tapped choice needs a reply without one.
-    const f = await loaded(false, kind === "a Send" ? offered() : {});
+    const f = await loaded(false, kind === "a Send" ? offered() : { waypointDraft: WAYPOINT_DRAFT });
     let signal: AbortSignal | null = null;
     f.fetch.mockImplementation((_url, init) => { signal = init!.signal!; return new Promise<Response>(() => undefined); });
     if (kind === "a Send") f.actions.onReplyChoice(label);
-    else f.actions.onCommand({ kind: "respond_compass_suggestion", itemId: POINT, response: "right" });
+    else f.actions.onCommand({ kind: "respond_waypoint_draft", draftId: WAYPOINT_DRAFT.id, response: "right" });
     expect(f.fetch).toHaveBeenCalledOnce();
-    expect(JSON.parse(f.fetch.mock.calls[0][1]!.body as string).kind).toBe(kind === "a Send" ? "send" : "respond_compass_suggestion");
+    expect(JSON.parse(f.fetch.mock.calls[0][1]!.body as string).kind).toBe(kind === "a Send" ? "send" : "respond_waypoint_draft");
     await vi.advanceTimersByTimeAsync(wait - 1);
     expect(signal!.aborted).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
@@ -337,9 +334,8 @@ describe("S7a Waypoint draft reply command ownership", () => {
   });
 });
 
-describe("Confirmed That's right follow-up for both suggestion kinds", () => {
+describe("Confirmed That\'s right follow-up for Waypoint drafts", () => {
   const cases = [
-    { kind: "respond_compass_suggestion" as const, itemId: POINT, response: "right" as const },
     { kind: "respond_waypoint_draft" as const, draftId: WAYPOINT_DRAFT.id, response: "right" as const },
   ];
   function confirmed(): ExplorerConversationState {
@@ -365,7 +361,7 @@ describe("Confirmed That's right follow-up for both suggestion kinds", () => {
     const commands = f.fetch.mock.calls.map(call => JSON.parse(call[1]!.body as string));
     expect(commands[0]).toMatchObject({ ...intent, expectedRevision: 3 });
     expect(commands[1]).toEqual({ kind: "send", expectedRevision: 4, operationId: expect.any(String),
-      body: `That's right: "${intent.kind === "respond_compass_suggestion" ? "A tentative point" : WAYPOINT_DRAFT.title}"` });
+      body: `That's right: "${WAYPOINT_DRAFT.title}"` });
     expect(commands[1].operationId).not.toBe(commands[0].operationId);
     expect(commands.filter(command => command.kind === "send")).toHaveLength(1);
   });
@@ -375,7 +371,7 @@ describe("Confirmed That's right follow-up for both suggestion kinds", () => {
     captured.updates = [];
     const answered = confirmed();
     const afterSend = { ...answered, revision: 5, messages: [...answered.messages,
-      { id: id(60), role: "explorer" as const, body: "That's right: \"A tentative point\"", createdAt: "2026-11-10T12:00:00Z" }] };
+      { id: id(60), role: "explorer" as const, body: `That\'s right: "${WAYPOINT_DRAFT.title}"`, createdAt: "2026-11-10T12:00:00Z" }] };
     f.fetch.mockImplementation(async (_url, init) => JSON.parse(init!.body as string).kind === "send"
       ? new Response(JSON.stringify({ version: EXPLORER_PRIVATE_RESPONSE_VERSION,
         result: { ok: true, state: afterSend, error: null },
@@ -385,7 +381,7 @@ describe("Confirmed That's right follow-up for both suggestion kinds", () => {
     f.actions.onCommand(cases[0]);
     await vi.advanceTimersByTimeAsync(0);
     expect(f.fetch).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(f.fetch.mock.calls[1][1]!.body as string)).toMatchObject({ kind: "send", body: "That's right: \"A tentative point\"" });
+    expect(JSON.parse(f.fetch.mock.calls[1][1]!.body as string)).toMatchObject({ kind: "send", body: `That\'s right: "${WAYPOINT_DRAFT.title}"` });
     const notices = captured.updates.filter(value => typeof value === "object" && value !== null && "persisted" in value);
     expect(notices.at(-1)).toEqual({ kind: "reply_failed", body: EXPLORER_FAILED_REPLY_BUTTON_NOTE, persisted: false });
   });

@@ -154,12 +154,12 @@ describe("reply choices as buttons on the connected screen (round r2)", () => {
     expect(choiceGroup(renderScreen(state({ pendingTurn: true }), { held: true }))).toBeNull();
   });
 
-  it("shows only the Compass suggestion replies when the same reply also suggested a point (one group per reply)", () => {
+  it("shows only reply choices when a legacy forming Compass point names the same reply", () => {
     const next = state({ compassItems: [{ id: POINT, sourceMessageId: GUIDE_MESSAGE, wordingMessageId: GUIDE_MESSAGE,
       label: "Making time to rest", formation: "forming" }] });
     const item = transcriptItems(renderScreen(next))[1];
-    expect(item).toContain('aria-label="Reply to Compass suggestion: Making time to rest"');
-    expect(choiceGroup(item)).toBeNull();
+    expect(item).not.toContain('aria-label="Reply to Compass suggestion:');
+    expect(choiceButtons(item)).toEqual(CHOICES.map(label => ({ label, disabled: false })));
   });
 });
 
@@ -206,19 +206,18 @@ describe("Something else beside saved reply choices", () => {
         label: "Making time to rest", formation: "forming" }],
     });
     const html = renderScreen(next);
-    expect(html).toContain('aria-label="Reply to Compass suggestion: Making time to rest"');
+    expect(html).not.toContain('aria-label="Reply to Compass suggestion:');
     expect(html).not.toContain("Something else");
     expect(choiceGroup(html)).toBeNull();
   });
 
-  it("holds back the choices and Something else when the reply also carries a Compass suggestion", () => {
+  it("keeps choices and Something else available without a retired Compass group", () => {
     const next = state({ compassItems: [{ id: POINT, sourceMessageId: GUIDE_MESSAGE, wordingMessageId: GUIDE_MESSAGE,
       label: "Making time to rest", formation: "forming" }] });
     const item = transcriptItems(renderScreen(next))[1];
-    const compass = /<div[^>]*aria-label="Reply to Compass suggestion: Making time to rest"[^>]*>[\s\S]*?<\/div>/.exec(item)?.[0] ?? "";
-    expect(compass).toContain("That&#x27;s right");
-    expect(item).not.toContain("Something else");
-    expect(choiceGroup(item)).toBeNull();
+    expect(item).not.toContain("Reply to Compass suggestion:");
+    expect(item).toContain("Something else");
+    expect(choiceButtons(item)).toEqual(CHOICES.map(label => ({ label, disabled: false })));
   });
 
   it("dispatches only the local Something else callback, without a send or request", () => {
