@@ -72,6 +72,7 @@ export function ExplorerConversation() {
   const notifyExplorerEarlyTestNoticeRecheck = useExplorerEarlyTestNoticeRecheck();
   const [state, setState] = useState<ExplorerConversationState | null>(null);
   const [busy, setBusy] = useState(true);
+  const [awaitingReply, setAwaitingReply] = useState(false);
   const [error, setError] = useState<ExplorerConversationError | null>(null);
   const [uncertain, setUncertain] = useState(false);
   const [draft, setDraft] = useState("");
@@ -101,6 +102,7 @@ export function ExplorerConversation() {
     activeRef.current?.abort();
     activeRef.current = controller;
     busyRef.current = true;
+    setAwaitingReply(false);
     setAssistance(null);
     if (!initial) { setBusy(true); setNotice(""); }
     const timer = setTimeout(() => controller.abort(), RESPONSE_BUDGET_MS);
@@ -158,6 +160,7 @@ export function ExplorerConversation() {
       generationRef.current += 1;
       activeRef.current?.abort();
       busyRef.current = true;
+      setAwaitingReply(false);
       replaceState(null);
       setDraft("");
       setAssistance(null);
@@ -181,6 +184,7 @@ export function ExplorerConversation() {
     if (pending.command.kind === "send") setSendSequence(sequence => sequence + 1);
     busyRef.current = true;
     setBusy(true);
+    setAwaitingReply(pending.command.kind === "send");
     setUncertain(false);
     setNotice("");
     setAssistance(null);
@@ -282,6 +286,7 @@ export function ExplorerConversation() {
         activeRef.current = null;
         busyRef.current = false;
         setBusy(false);
+        setAwaitingReply(false);
         // This is the next, separately counted ordinary Send only after a
         // confirmed response command. Uncertain outcomes keep their exact bytes.
         if (followUp !== null) void dispatchPending(followUp);
@@ -384,8 +389,9 @@ export function ExplorerConversation() {
       view={{
         state,
         busy,
+        awaitingReply,
         sendSequence,
-        statusText: busy ? (state === null ? "Loading your saved conversation..." : "Checking your change...") : notice,
+        statusText: awaitingReply ? "" : busy ? (state === null ? "Loading your saved conversation..." : "Checking your change...") : notice,
         assistance,
         errorMessage: error !== null && !uncertain ? errorCopy(error) : null,
         signInRequired: error === "denied",

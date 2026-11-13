@@ -52,6 +52,7 @@ function view(next: ExplorerConversationState, overrides: Partial<ConnectedConve
     state: next,
     sendSequence: 0,
     busy: false,
+    awaitingReply: false,
     statusText: "",
     assistance: null,
     errorMessage: null,

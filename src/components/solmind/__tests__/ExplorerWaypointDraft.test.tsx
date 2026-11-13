@@ -28,6 +28,7 @@ const actions = { onReload: () => {}, onRetry: () => {}, onDraftChange: () => {}
 function screen(next = state(), overrides: Partial<ConnectedConversationView> = {}) {
   return renderToStaticMarkup(createElement(ExplorerConversationConnectedScreen, {
     view: { state: next, busy: false, sendSequence: 0, statusText: "", assistance: null, errorMessage: null,
+      awaitingReply: false,
       signInRequired: false, uncertain: false, reloadAvailable: true, draft: "", draftError: "",
       endReviewOpen: false, staleEndReview: false, ended: false, endBlocked: false, held: false,
       sendUnavailable: false, atMessageCapacity: false, ...overrides }, actions,

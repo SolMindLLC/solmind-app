@@ -179,6 +179,7 @@ function view(overrides: Partial<ConnectedConversationView> = {}): ConnectedConv
     state: savedState(),
     sendSequence: 0,
     busy: false,
+    awaitingReply: false,
     statusText: "",
     assistance: null,
     errorMessage: null,
@@ -523,6 +524,48 @@ describe("REV415 composer Enter key", () => {
 });
 
 describe("connected Explorer conversation screen", () => {
+  it("REV424 keeps one empty waiting announcement before and after a reply wait", () => {
+    const announcement = (html: string) => [...html.matchAll(/<p\b([^>]*data-waiting-announcement=""[^>]*)>([^<]*)<\/p>/g)];
+    const sentence = "Waiting for your Virtual Guide's reply...";
+    for (const next of [view(), view({ state: null, busy: true }), view({ busy: true, held: true }),
+      view({ endReviewOpen: true, held: true }), view({ state: savedState({ pendingTurn: true }), held: true })]) {
+      const html = render(next);
+      const regions = announcement(html);
+      expect(regions).toHaveLength(1);
+      expect(regions[0][2]).toBe("");
+      expect(attribute(regions[0][1], "role")).toBe("status");
+      expect(attribute(regions[0][1], "aria-atomic")).toBe("true");
+      expect(html).not.toContain("data-waiting-indicator");
+    }
+    const waiting = view({ awaitingReply: true, busy: true, held: true });
+    const first = render(waiting);
+    const repeated = render({ ...waiting, draft: "An unchanged reply wait." });
+    expect(announcement(first)).toHaveLength(1);
+    expect(unescapeHtml(announcement(first)[0][2])).toBe(sentence);
+    expect(announcement(repeated)[0][0]).toBe(announcement(first)[0][0]);
+    expect(announcement(first)[0].index).toBeLessThan(first.indexOf('<div aria-busy="true">'));
+    expect(announcement(render(view()))[0][2]).toBe("");
+  });
+
+  it("REV424 puts the waiting row after the saved messages without a second live announcement", () => {
+    const html = render(view({ awaitingReply: true, busy: true, held: true }));
+    const row = markupElements(html).find(element => /^<div\b[^>]*data-waiting-indicator=""/.test(html.slice(element.start, element.end)));
+    expect(row).toBeDefined();
+    const markup = html.slice(row!.start, row!.end);
+    expect(textOf(markup).trim()).toBe("Waiting for your Virtual Guide's reply...");
+    expect(attribute(markup, "aria-live")).toBe("off");
+    expect(attribute(markup, "role")).toBeNull();
+    expect(row!.start).toBeGreaterThan(html.indexOf("</ol>"));
+    expect(row!.start).toBeLessThan(html.indexOf("<textarea"));
+    let parent = row!.parent;
+    const ancestors: string[] = [];
+    while (parent !== null) {
+      ancestors.push(html.slice(parent.start, html.indexOf(">", parent.start) + 1));
+      parent = parent.parent;
+    }
+    expect(ancestors.some(tag => attribute(tag, "role") === "log")).toBe(true);
+  });
+
   it("S5 current tools contain only Waypoint controls, with no saved or forming Compass editor", () => {
     const original = cardState();
     const state = cardState({ attentionId: CARD_POINTS.unarranged,

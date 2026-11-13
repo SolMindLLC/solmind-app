@@ -121,3 +121,129 @@ describe("REV306 failed-reply controller", () => {
     send(); expect(fetch).toHaveBeenCalledOnce();
   });
 });
+
+describe("REV424 waiting indicator command lifetime", () => {
+  const label = "I have a question";
+  const offered: ExplorerConversationState = { ...state, revision: 1, messages: [{
+    id: id(3), role: "virtualGuide", body: "A synthetic reply", createdAt: "2026-11-13T10:00:00Z",
+    choices: [{ label }],
+  }] };
+  const waypointDraft = { id: id(5), title: "A calm conversation", destination: "Speak without rushing",
+    whyItMatters: "We can hear each other", arrivalSignal: "We each finish a thought", suggestionMessageId: id(3) };
+
+  function hold(fetch: Awaited<ReturnType<typeof loaded>>) {
+    let resolve: (response: Response) => void = () => {};
+    let reject: (reason: unknown) => void = () => {};
+    let signal: AbortSignal | null = null;
+    fetch.mockImplementation((_url, init) => new Promise<Response>((yes, no) => {
+      resolve = yes; reject = no; signal = init!.signal!;
+      signal.addEventListener("abort", () => no(new DOMException("Aborted", "AbortError")), { once: true });
+    }));
+    return { resolve: (value: Response) => resolve(value), reject: (error: unknown) => reject(error),
+      signal: () => signal! };
+  }
+
+  function expectWaiting(waiting: boolean) {
+    render();
+    expect(hooks.view!.awaitingReply).toBe(waiting);
+    if (waiting) expect(hooks.view).toMatchObject({ busy: true, statusText: "" });
+  }
+
+  it.each(["typed", "reply choice"] as const)("waits only while the dispatched %s Send is in flight", async kind => {
+    const fetch = await loaded(offered);
+    const held = hold(fetch);
+    expectWaiting(false);
+    if (kind === "typed") send();
+    else hooks.actions!.onReplyChoice(label);
+    expectWaiting(true);
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(JSON.parse(fetch.mock.calls[0][1]!.body as string)).toMatchObject({ kind: "send",
+      body: kind === "typed" ? draft : label });
+    await vi.advanceTimersByTimeAsync(8_000);
+    expectWaiting(true);
+    held.resolve(response({ ok: true, state: { ...offered, revision: 2 }, error: null }));
+    await vi.advanceTimersByTimeAsync(0);
+    expectWaiting(false);
+    expect(hooks.view!.busy).toBe(false);
+  });
+
+  it.each(["right", "close", "not_it"] as const)("waits for the %s suggestion follow-up, after its formation command finishes", async answer => {
+    const initial = { ...offered, waypointDraft };
+    const fetch = await loaded(initial);
+    const held = hold(fetch);
+    hooks.actions!.onCommand({ kind: "respond_waypoint_draft", draftId: waypointDraft.id, response: answer });
+    expectWaiting(false);
+    expect(hooks.view).toMatchObject({ busy: true, statusText: "Checking your change..." });
+    const answered = { ...initial, revision: 2, waypointDraft: answer === "close" ? waypointDraft : null };
+    held.resolve(response({ ok: true, state: answered, error: null }));
+    await vi.advanceTimersByTimeAsync(0);
+    expectWaiting(true);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetch.mock.calls[1][1]!.body as string)).toMatchObject({ kind: "send", expectedRevision: 2 });
+    held.resolve(response({ ok: true, state: { ...answered, revision: 3 }, error: null }));
+    await vi.advanceTimersByTimeAsync(0);
+    expectWaiting(false);
+  });
+
+  it.each(["refused", "reported failed reply", "fetch failure", "abort", "timeout"] as const)(
+    "clears the wait when a Send ends with %s", async outcome => {
+      const fetch = await loaded(offered);
+      const held = hold(fetch);
+      send();
+      expectWaiting(true);
+      if (outcome === "refused") held.resolve(response({ ok: false, state: null, error: "provider_unavailable" }));
+      else if (outcome === "reported failed reply") held.resolve(response({ ok: true, state: { ...offered, revision: 2 }, error: null },
+        { kind: "reply_failed", body: EXPLORER_FAILED_REPLY_RETRY_DRAFT, persisted: false }));
+      else if (outcome === "fetch failure") held.reject(new Error("Synthetic transport failure"));
+      else if (outcome === "abort") held.reject(new DOMException("Aborted", "AbortError"));
+      else {
+        await vi.advanceTimersByTimeAsync(129_999);
+        expectWaiting(true);
+        expect(held.signal().aborted).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(held.signal().aborted).toBe(true);
+      }
+      await vi.advanceTimersByTimeAsync(0);
+      expectWaiting(false);
+      expect(hooks.view!.busy).toBe(false);
+      expect(fetch).toHaveBeenCalledOnce();
+    });
+
+  it("clears the wait on pagehide even before the aborted transport settles", async () => {
+    const fetch = await loaded(offered);
+    let finish: (response: Response) => void = () => {};
+    let signal: AbortSignal | null = null;
+    fetch.mockImplementation((_url, init) => new Promise(resolve => { finish = resolve; signal = init!.signal!; }));
+    send();
+    expectWaiting(true);
+    const leave = vi.mocked(window.addEventListener).mock.calls.find(call => call[0] === "pagehide")![1] as () => void;
+    leave();
+    expectWaiting(false);
+    expect(signal!.aborted).toBe(true);
+    expect(hooks.view!.state).toBeNull();
+    finish(response({ ok: true, state: { ...offered, revision: 2 }, error: null }));
+    await vi.advanceTimersByTimeAsync(0);
+    expectWaiting(false);
+    expect(hooks.view!.state).toBeNull();
+  });
+
+  it("keeps loading, reload and End review outside the reply wait", async () => {
+    render();
+    expect(hooks.view).toMatchObject({ busy: true, awaitingReply: false, statusText: "Loading your saved conversation..." });
+    const fetch = await loaded(offered);
+    expectWaiting(false);
+    hooks.actions!.onReviewEnd();
+    expectWaiting(false);
+    expect(hooks.view!.endReviewOpen).toBe(true);
+    hooks.actions!.onKeepOpen();
+    render();
+    const held = hold(fetch);
+    hooks.actions!.onReload();
+    expectWaiting(false);
+    expect(hooks.view).toMatchObject({ busy: true, statusText: "Checking your change..." });
+    held.resolve(response({ ok: true, state: offered, error: null }));
+    await vi.advanceTimersByTimeAsync(0);
+    expectWaiting(false);
+    expect(hooks.view!.busy).toBe(false);
+  });
+});

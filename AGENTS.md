@@ -8,6 +8,18 @@ This version has breaking changes - APIs, conventions, and file structure may al
 
 # SolMind App Agent Instructions
 
+## 2026-11-13 - Waiting indicator (REV424)
+
+The approved revision-3 eclipse and exact waiting sentence show after the saved
+messages only while a dispatched wire send is in flight, including reply choices
+and Waypoint follow-ups. ExplorerConversation owns the display boolean and clears
+it with command completion or page departure; command, retry and timeout rules
+stay unchanged. One always-mounted status region outside the busy transcript
+announces waiting; the visible row opts out of log announcements. The SVG keeps
+the 40px size, four-second loop, peak 1 and per-instance paint ids. Reduced motion
+disables every animation and uses an explicit diamond-ring still. Browser tests
+use invented responses; their execution remains Executor work.
+
 ## 2026-11-12 - Approved conclusion instructions (REV399)
 
 Paul approved the automatic Compass wording and the 24 conclusion sentences

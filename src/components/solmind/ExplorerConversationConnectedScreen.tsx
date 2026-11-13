@@ -10,6 +10,7 @@ import {
   CONNECTED_SHELL,
   CONNECTED_SPEAKER_LABELS,
   CONNECTED_TITLE,
+  CONNECTED_WAITING_REPLY_TEXT,
   CURRENT_TOOLS_HEADING,
   CURRENT_TOOLS_REMOVAL_REASON,
   OPENING_GREETING_LABEL,
@@ -39,6 +40,7 @@ import { ConnectedCompassCard } from "./ExplorerConnectedCompassCard";
 import { CompassChangeLines, useCompassChangeVisit } from "./ExplorerCompassChangeLines";
 import { ExplorerReplyChoices } from "./ExplorerReplyChoices";
 import { ExplorerConversationTour } from "./ExplorerConversationTour";
+import { ExplorerWaitingIndicator } from "./ExplorerWaitingIndicator";
 import { ExplorerWaypointDraft } from "./ExplorerWaypointDraft";
 import { ConnectedWaypointCard } from "./ExplorerConnectedWaypointCard";
 import {
@@ -117,6 +119,7 @@ const CALM_PROMPT_ID = "conversation-calm-prompt";
 export type ConnectedConversationView = Readonly<{
   state: ExplorerConversationState | null;
   busy: boolean;
+  awaitingReply: boolean;
   // Local display signal for every actual ordinary Send, including a follow-up.
   sendSequence: number;
   statusText: string;
@@ -288,6 +291,10 @@ function ConversationNotices({ view, actions, errorRef, noticesRef }: NoticesPro
       <p aria-atomic="true" aria-live="polite" className="min-h-6 text-sm text-stone-200" role="status">
         {view.statusText}
       </p>
+      {/* Keep the waiting announcement mounted and outside the busy transcript. */}
+      <p aria-atomic="true" className="sr-only" data-waiting-announcement="" role="status">
+        {view.awaitingReply ? CONNECTED_WAITING_REPLY_TEXT : ""}
+      </p>
       {view.assistance !== null ? (
         <div className={ALERT_CLASS} role="alert">
           <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{view.assistance.body}</p>
@@ -396,7 +403,7 @@ function PendingTurnNotice({ markerRef }: Readonly<{ markerRef?: RefObject<HTMLD
 }
 
 // The saved messages, oldest first, in the designed transcript box. The box
-// scrolls to the newest message whenever the saved count changes.
+// scrolls to the newest message or the waiting row when either changes.
 function SavedTranscript({ state, view, actions, choicesDismissed, onShowTour, onSomethingElse }: Readonly<{
   state: ExplorerConversationState;
   view: ConnectedConversationView;
@@ -412,7 +419,7 @@ function SavedTranscript({ state, view, actions, choicesDismissed, onShowTour, o
   useEffect(() => {
     const box = scrollRef.current;
     if (box) box.scrollTop = box.scrollHeight;
-  }, [count]);
+  }, [count, view.awaitingReply]);
 
   return (
     <>
@@ -478,6 +485,7 @@ function SavedTranscript({ state, view, actions, choicesDismissed, onShowTour, o
             ))}
           </ol>
         )}
+        {view.awaitingReply ? <ExplorerWaitingIndicator /> : null}
       </div>
     </div>
     </>

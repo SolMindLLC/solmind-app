@@ -67,6 +67,9 @@ export const CONNECTED_SPEAKER_LABELS: Readonly<Record<ScreenSpeaker, string>> =
 // The heading the screen focuses when it opens.
 export const CONNECTED_TITLE = "Your conversation";
 
+// Paul's approved waiting sentence (screen wording part 5, 2026-11-12).
+export const CONNECTED_WAITING_REPLY_TEXT = "Waiting for your Virtual Guide's reply...";
+
 // The existing live sentence from the earlier connected screen.
 export const CONNECTED_INTRO = `Explore with the ${SOLMIND_TERMS.virtualGuide}. Your conversation, Compass and Waypoints stay private; nothing is shared from this screen.`;
 
