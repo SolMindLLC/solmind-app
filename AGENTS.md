@@ -2546,6 +2546,12 @@ publication remain required. The earlier standalone 67-case draft proof is
 separate from the migration candidate's regression; neither is operational AI
 screening or human approval. Banking is final only when the current purpose
 root's PUBLICATION_METHODOLOGY_STORAGE_R05/STATUS_CLOSEOUT.json is PASS.
+(Note added 2026-11-16: PUBLICATION_METHODOLOGY_STORAGE_R05/STATUS_CLOSEOUT.json
+was checked PASS at the PRJ01-SPR001 close on 2026-11-07 at 09:29 CST; that
+result and the receipt's SHA-256 are recorded in
+solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md, "Catch-up: commits
+not named in the ledger and the 2026-10-24 to 27 banking receipts - 2026-11-07",
+so this banking condition no longer depends on retaining that proposal root.)
 
 Provider/context factory wiring, UI, current request/response contracts, shared
 demo schema/data/passwords and package dependencies stay unchanged. No shared
@@ -2614,6 +2620,12 @@ at this capture; banking is final only at
 PUBLICATION_GOVERNANCE_R06/STATUS_CLOSEOUT.json PASS in the retained purpose root.
 Default factories/provider/shared demo remain held; no real screen, operational
 human approval, new slice/outcome, genuine-AI acceptance or wider effect follows.
+(Note added 2026-11-16: PUBLICATION_GOVERNANCE_R06/STATUS_CLOSEOUT.json was
+checked PASS at the PRJ01-SPR001 close on 2026-11-07 at 09:29 CST; that result
+and the receipt's SHA-256 are recorded in
+solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md, "Catch-up: commits
+not named in the ledger and the 2026-10-24 to 27 banking receipts - 2026-11-07",
+so this banking condition no longer depends on retaining that proposal root.)
 
 
 ### Provider-held exact-field exclusion matcher construction - 2026-10-25
@@ -2657,6 +2669,12 @@ assurance/application/publication remain gated at this capture; banking is final
 only at PUBLICATION_EXCLUSION_R07/STATUS_CLOSEOUT.json PASS in the retained
 purpose root. No authoritative source/freshness, complete exclusion coverage,
 runtime audit/default wiring, scheduled control or genuine AI follows.
+(Note added 2026-11-16: PUBLICATION_EXCLUSION_R07/STATUS_CLOSEOUT.json was
+checked PASS at the PRJ01-SPR001 close on 2026-11-07 at 09:29 CST; that result
+and the receipt's SHA-256 are recorded in
+solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md, "Catch-up: commits
+not named in the ledger and the 2026-10-24 to 27 banking receipts - 2026-11-07",
+so this banking condition no longer depends on retaining that proposal root.)
 
 
 ### Held methodology screening caller construction - 2026-10-25
@@ -2699,6 +2717,12 @@ class, telemetry capability or SQL change follows. Current full-folder Root
 assurance/application/publication remain gates. Checked banking becomes final
 only at PUBLICATION_SCREENING_R08/STATUS_CLOSEOUT.json PASS in the retained
 purpose root; no extra slice/outcome/forecast/readiness credit follows.
+(Note added 2026-11-16: PUBLICATION_SCREENING_R08/STATUS_CLOSEOUT.json was
+checked PASS at the PRJ01-SPR001 close on 2026-11-07 at 09:29 CST; that result
+and the receipt's SHA-256 are recorded in
+solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md, "Catch-up: commits
+not named in the ledger and the 2026-10-24 to 27 banking receipts - 2026-11-07",
+so this banking condition no longer depends on retaining that proposal root.)
 
 
 ### Explorer assembly static source isolation construction - 2026-10-25
@@ -2734,6 +2758,12 @@ Rootformalreview/application/live/publication/checked banking remain gates;
 only PUBLICATION_SOURCE_ISOLATION_R09/STATUS_CLOSEOUT.json PASS is final banking.
 Required productprivacy control does not adopt deferred optional process work
 or add an accepted outcome. Source/currency gaps remain explicit preparation.
+(Note added 2026-11-16: PUBLICATION_SOURCE_ISOLATION_R09/STATUS_CLOSEOUT.json
+was checked PASS at the PRJ01-SPR001 close on 2026-11-07 at 09:29 CST; that
+result and the receipt's SHA-256 are recorded in
+solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md, "Catch-up: commits
+not named in the ledger and the 2026-10-24 to 27 banking receipts - 2026-11-07",
+so this banking condition no longer depends on retaining that proposal root.)
 
 
 ### Virtual Guide immediate transport-return guard construction - 2026-10-25
@@ -2757,6 +2787,12 @@ checks, counts, durations and results are UNRUN; Root retains formal review,
 exact application, live validation and publication. Checked banking is final
 only when PUBLICATION_TRANSPORT_RETURN_R10/STATUS_CLOSEOUT.json is PASS in
 the retained purpose root. Earlier dated evidence is not current R10 proof.
+(Note added 2026-11-16: PUBLICATION_TRANSPORT_RETURN_R10/STATUS_CLOSEOUT.json
+was checked PASS at the PRJ01-SPR001 close on 2026-11-07 at 09:29 CST; that
+result and the receipt's SHA-256 are recorded in
+solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md, "Catch-up: commits
+not named in the ledger and the 2026-10-24 to 27 banking receipts - 2026-11-07",
+so this banking condition no longer depends on retaining that proposal root.)
 
 
 ### Virtual Guide transport-return technical proof - 2026-10-25 02:24:15 CDT
@@ -2771,6 +2807,12 @@ parser/adapter/composition/replay behavior; no late drain, safety-state/policy,
 SQL/default/provider/dependency change. Characters/Rootformalreview/application/
 live/publication/checked banking remain gates; final banking only at
 PUBLICATION_TRANSPORT_RETURN_R10/STATUS_CLOSEOUT.json PASS. No outcome credit.
+(Note added 2026-11-16: PUBLICATION_TRANSPORT_RETURN_R10/STATUS_CLOSEOUT.json
+was checked PASS at the PRJ01-SPR001 close on 2026-11-07 at 09:29 CST; that
+result and the receipt's SHA-256 are recorded in
+solmind-docs/execution/17_SolMind_MVP0_Slice_Ledger_v0_1.md, "Catch-up: commits
+not named in the ledger and the 2026-10-24 to 27 banking receipts - 2026-11-07",
+so this banking condition no longer depends on retaining that proposal root.)
 
 ## Chat slice S4: reply v2 construction - 2026-11-04
 
