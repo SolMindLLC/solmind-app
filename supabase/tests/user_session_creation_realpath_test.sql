@@ -1,5 +1,5 @@
 begin;
-select plan(65);
+select plan(66);
 
 insert into identity.user_account (user_account_id,display_name,account_status)
 values
@@ -339,6 +339,26 @@ select throws_ok($$select * from public.solmind_create_user_session('def50004-10
 select throws_ok($$select * from public.solmind_create_user_session('def50004-1000-4000-8000-000000000001','admin','def50004-2000-4000-8000-000000000005','contact_verify',300)$$,'P0001','solmind_session_invalid_purpose','provisioning purpose is rejected before evidence lookup');
 select throws_ok($$select * from public.solmind_create_user_session('def50004-1000-4000-8000-000000000002','admin','def50004-2000-4000-8000-000000000006','login',300)$$,'P0001','solmind_session_ineligible_account','inactive account fails closed');
 select throws_ok($$select * from public.solmind_create_user_session('def50004-1000-4000-8000-000000000001','guide','def50004-2000-4000-8000-000000000003','login',300)$$,'P0001','solmind_session_ineligible_role','inactive selected role fails closed');
+reset role;
+
+-- AUTH-DEF5-S4-002: future-dated challenge use receives the fixed stale-evidence denial.
+insert into identity.verification_challenge (
+  verification_challenge_id,user_account_id,user_contact_method_id,normalized_contact_value,
+  contact_method_type,purpose,delivery_channel,code_hash,expires_at,used_at
+) values (
+  'def50004-2000-4000-8000-000000000013','def50004-1000-4000-8000-000000000001',
+  'def50004-1200-4000-8000-000000000001','def5s4-admin@synthetic.invalid','email','login','email',
+  'svf1:1313131313131313131313131313131313131313131313131313131313131313',
+  now()+interval '10 minutes',clock_timestamp()+interval '1 day'
+);
+set local role service_role;
+select throws_ok(
+  $$select * from public.solmind_create_user_session(
+    'def50004-1000-4000-8000-000000000001','admin',
+    'def50004-2000-4000-8000-000000000013','login',300)$$,
+  'P0001','solmind_session_stale_evidence',
+  'future-dated evidence fails closed for new creation'
+);
 reset role;
 
 delete from identity.session_creation_freshness_policy;

@@ -1,5 +1,5 @@
 begin;
-select plan(74);
+select plan(75);
 
 select has_table('identity', 'authorizing_evidence_consumption', 'shared authorizing-evidence table exists');
 select columns_are(
@@ -124,6 +124,37 @@ select is(
   'CREATE UNIQUE INDEX user_session_one_per_challenge_idx ON identity.user_session USING btree (verification_challenge_id) WHERE (verification_challenge_id IS NOT NULL)',
   'per-challenge backstop has the exact definition'
 );
+
+-- AUTH-DEF5-S4-001: direct rejection as test owner; the enclosing transaction rolls back all fixture rows.
+insert into identity.user_account (user_account_id,display_name,account_status)
+values ('def50004-1000-4000-8000-000000000001','DEF5-S4 synthetic admin','active');
+insert into identity.verification_challenge (
+  verification_challenge_id,user_account_id,normalized_contact_value,
+  contact_method_type,purpose,delivery_channel,code_hash,expires_at,used_at
+) values (
+  'def50004-2000-4000-8000-000000000001','def50004-1000-4000-8000-000000000001',
+  'def5s4-admin@synthetic.invalid','email','login','email',
+  'svf1:1111111111111111111111111111111111111111111111111111111111111111',
+  now()+interval '10 minutes',clock_timestamp()
+);
+insert into identity.user_session (
+  user_account_id,active_role_context,verification_challenge_id,expires_at,session_status,ended_at
+) values (
+  'def50004-1000-4000-8000-000000000001','admin','def50004-2000-4000-8000-000000000001',
+  now()+interval '5 minutes','revoked',now()
+);
+select throws_ok(
+  $$insert into identity.user_session (
+      user_account_id,active_role_context,verification_challenge_id,expires_at,session_status,ended_at
+    )
+    select user_account_id,active_role_context,verification_challenge_id,expires_at,session_status,ended_at
+      from identity.user_session
+     where verification_challenge_id='def50004-2000-4000-8000-000000000001'$$,
+  '23505',
+  'duplicate key value violates unique constraint "user_session_one_per_challenge_idx"',
+  'per-challenge backstop rejects a second session for the same non-null challenge'
+);
+
 select ok((select prosrc like '%solmind_session_conflicting_retry%' from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='solmind_create_user_session'),'function carries fixed conflicting-retry identifier');
 select ok((select prosrc like '%solmind_session_policy_unavailable%' from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='solmind_create_user_session'),'function carries fixed unavailable-policy identifier');
 select ok((select prosrc like '%solmind_session_active_cardinality_violation%' from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='solmind_create_user_session'),'function carries fixed active-cardinality identifier');
