@@ -8,6 +8,23 @@ This version has breaking changes - APIs, conventions, and file structure may al
 
 # SolMind App Agent Instructions
 
+## 2026-11-14 - The three sentences from the test of 2026-11-13 in the Virtual Guide's instructions (REV432)
+
+Paul approved the direction during his test (PRJ01-SPR002 decision record 2026-11-13, entry of 14:46:22 CST) and the
+exact words at 2026-11-16 10:55:21 CST ("Approve all, except as below:"; Validation_Workspaces/Three_Sentences_From_The_Test_For_Paul_2026-11-13_R02.md).
+Both instruction texts carry them, each directly after its anchor: the role text in
+explorerPrivateConfigurationCandidate.ts and the ordinary request instructions in openAiLunaExplorerSafetyTransport.ts
+(the classification-only instructions are unchanged). Compass: track every distinct topic the Explorer's responses
+support, within the existing support, readiness and safety rules, and report up to three in compass.topics. Waypoint:
+make the offer in the first reply that meets every existing Waypoint requirement, even when the Explorer also asks for
+help with what to say or do. Fit: after new or changed direct wording or a single direct suggestion, the reply's one
+question asks whether it fits; with a Waypoint offer in the same reply the question names both, and approval of the
+wording alone never confirms the Waypoint. Role text 16,543 characters (limit 20,000), SHA-256
+E145603A83A4EA2933748A110E182AF1F482C9EBDA25AF2FE0DA4BA8CBB69BD6; ordinary request instructions 15,186 characters,
+SHA-256 259D2DCDBB65AB5DCDE7B7E38EAE931EC8C389AE7DBB4F16391A09C138143947. The version labels stay 20261111-ac1.
+explorerThreeSentenceInstructions.test.ts checks each sentence once, directly after its anchor, in both texts. Change
+these words only with Paul's approval of the new words.
+
 ## 2026-11-13 - Mark Reached and Release on the Compass & Waypoint card (REV435)
 
 Paul's decision (PRJ01-SPR002 decision record 2026-11-13 14:51:29 CST): Reached and Release come to the card. A current

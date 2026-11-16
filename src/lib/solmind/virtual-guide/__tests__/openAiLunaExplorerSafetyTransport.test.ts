@@ -36,7 +36,7 @@ function adapter(fetchImpl: typeof fetch) { return createOpenAiLunaExplorerSafet
 describe("Dormant injected Explorer same-call HTTP transport", () => {
   it.each([
     ["classification_only", 6368, "79213E366ABBAB283120F5F6B657EB4018BF7F714906F22EFEF91928D26A591D"],
-    ["classification_and_reply", 14254, "6028F69625F017DB982C7277677F6BCB187DF23BED2432813C7DAA8007D392BA"],
+    ["classification_and_reply", 15212, "D7DAAC23B8A908AD22C2DA78D4166CE0E494C2896514CAB2ECD027516A3CD809"],
   ] as const)("Lane 7 pins bounded-selection output instruction bytes and SHA-256 (%s)", (mode, bytes, sha256) => {
     const text = explorerSafetyHttpInstructions(mode);
     expect(Buffer.byteLength(text, "utf8")).toBe(bytes);
@@ -80,7 +80,7 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
     for (const sentence of [
       "compass may contain only attention, a current placed point id from compassContext or null, and topics, an array of zero to three objects with exactly topicId (a supplied topic id or null), label (plain text, single-line, 1 to 160 characters), supportRefs (zero to three distinct supplied message references) and ready (boolean). A new topic needs at least one supportRef; an existing label stays unchanged.",
       "choices is an array of one to three objects, each with exactly label, a plain-text single-line label of 1 to 40 characters.",
-      "Track a topic in compass.topics only from distinct Explorer responses in this conversation that support it; mere mentions, unrelated answers and disputes do not count. Use topicId from compassContext.topics for an existing topic, or null for a new one, and a plain-text label of 1 to 160 characters; keep an existing label unchanged. Supply at most three topics per reply and at most three distinct supportRefs per topic, using only compassContext.messageRefs. Earlier accepted supportCount carries forward; never recount a message. Set ready true only when at least three distinct responses support that topic and you are highly confident it is clear; otherwise use false. Points go straight onto the dial without confirmation; do not send compass.suggestions or compass.responses. Use topics only with an ordinary reply below classification level 2 in an unrestricted conversation. Do not promise that a point or change was saved; the application may drop it. When uncertain what the Explorer means, ask gently and clarify the meaning before acting on it. When supplied state shows a Waypoint is confirmed and the Explorer says \"That's right\", acknowledge it briefly and continue from what matters to them.",
+      "Track a topic in compass.topics only from distinct Explorer responses in this conversation that support it; mere mentions, unrelated answers and disputes do not count. Within the existing support, readiness, preference and safety rules, track every distinct topic the Explorer's responses support, not only the main one, and report up to three of them in compass.topics in each reply as their support grows. Use topicId from compassContext.topics for an existing topic, or null for a new one, and a plain-text label of 1 to 160 characters; keep an existing label unchanged. Supply at most three topics per reply and at most three distinct supportRefs per topic, using only compassContext.messageRefs. Earlier accepted supportCount carries forward; never recount a message. Set ready true only when at least three distinct responses support that topic and you are highly confident it is clear; otherwise use false. Points go straight onto the dial without confirmation; do not send compass.suggestions or compass.responses. Use topics only with an ordinary reply below classification level 2 in an unrestricted conversation. Do not promise that a point or change was saved; the application may drop it. When uncertain what the Explorer means, ask gently and clarify the meaning before acting on it. When supplied state shows a Waypoint is confirmed and the Explorer says \"That's right\", acknowledge it briefly and continue from what matters to them.",
       "Only propose a needle move with an ordinary reply in an unrestricted conversation; the application validates it and may ignore it.",
       "Never claim that a proposed move or choices were saved or applied.",
       "Mention a shift only when substantial and not just announced by the Explorer, once per shift, never at classification level 2 or above or in restricted conversations.",
@@ -96,7 +96,7 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
   });
   it.each([
     "Apply these conclusion and suggestion steps only in ordinary replies below classification level 2 in unrestricted conversations, keeping all existing safety, permission, reply-length and one-question limits.",
-    "Track a topic in compass.topics only from distinct Explorer responses in this conversation that support it; mere mentions, unrelated answers and disputes do not count. Use topicId from compassContext.topics for an existing topic, or null for a new one, and a plain-text label of 1 to 160 characters; keep an existing label unchanged. Supply at most three topics per reply and at most three distinct supportRefs per topic, using only compassContext.messageRefs. Earlier accepted supportCount carries forward; never recount a message. Set ready true only when at least three distinct responses support that topic and you are highly confident it is clear; otherwise use false. Points go straight onto the dial without confirmation; do not send compass.suggestions or compass.responses. Use topics only with an ordinary reply below classification level 2 in an unrestricted conversation. Do not promise that a point or change was saved; the application may drop it. When uncertain what the Explorer means, ask gently and clarify the meaning before acting on it.",
+    "Track a topic in compass.topics only from distinct Explorer responses in this conversation that support it; mere mentions, unrelated answers and disputes do not count. Within the existing support, readiness, preference and safety rules, track every distinct topic the Explorer's responses support, not only the main one, and report up to three of them in compass.topics in each reply as their support grows. Use topicId from compassContext.topics for an existing topic, or null for a new one, and a plain-text label of 1 to 160 characters; keep an existing label unchanged. Supply at most three topics per reply and at most three distinct supportRefs per topic, using only compassContext.messageRefs. Earlier accepted supportCount carries forward; never recount a message. Set ready true only when at least three distinct responses support that topic and you are highly confident it is clear; otherwise use false. Points go straight onto the dial without confirmation; do not send compass.suggestions or compass.responses. Use topics only with an ordinary reply below classification level 2 in an unrestricted conversation. Do not promise that a point or change was saved; the application may drop it. When uncertain what the Explorer means, ask gently and clarify the meaning before acting on it.",
     "When supplied state shows a Waypoint is confirmed and the Explorer says \"That's right\", acknowledge it briefly and continue from what matters to them.",
   ])("TF limits the pacing and confirmation instruction to ordinary replies: %s", sentence => {
     const ordinary = explorerSafetyHttpInstructions("classification_and_reply");
@@ -127,8 +127,8 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
     expect(classification).toContain('you may offer "Show me around", "I have a question" and "Let\'s begin". Always answer questions about how things work.');
     // Pin the current ordinary text with only Paul's welcome sentence and its separating space removed.
     const earlier = ordinary.replace(" " + sentence, "");
-    expect(Buffer.byteLength(earlier, "utf8")).toBe(13980);
-    expect(createHash("sha256").update(earlier, "utf8").digest("hex").toUpperCase()).toBe("F7F3161528C83AA45E973CA0B24B3446F3FC1AC26844C019481FAFD73D36AA76");
+    expect(Buffer.byteLength(earlier, "utf8")).toBe(14938);
+    expect(createHash("sha256").update(earlier, "utf8").digest("hex").toUpperCase()).toBe("D7A653971C709601093F24BF6B1DFF1CD02A21DE562E88E3515A70FD50DD68A1");
   });
   it("CV teaches Explorer-voice labels and explains the ordinary-only verified choice marker", () => {
     const voice = "Write every choice label as the Explorer's own reply, in their voice, as a complete answer to your question or invitation, never as a question to you or as your own words.";
@@ -147,7 +147,7 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
       expect({ bytes: Buffer.byteLength(text, "utf8"),
         sha256: createHash("sha256").update(text, "utf8").digest("hex").toUpperCase() })
         .toEqual(mode === "classification_and_reply"
-          ? { bytes: 14254, sha256: "6028F69625F017DB982C7277677F6BCB187DF23BED2432813C7DAA8007D392BA" }
+          ? { bytes: 15212, sha256: "D7DAAC23B8A908AD22C2DA78D4166CE0E494C2896514CAB2ECD027516A3CD809" }
           : { bytes: 6368, sha256: "79213E366ABBAB283120F5F6B657EB4018BF7F714906F22EFEF91928D26A591D" });
     });
   it("automatic instructions retire Compass response authorization", () => {

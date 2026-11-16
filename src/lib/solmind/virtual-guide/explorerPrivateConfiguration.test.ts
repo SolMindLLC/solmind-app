@@ -48,7 +48,7 @@ describe("private Explorer exact inert configuration candidate", () => {
     const expected = [
       [value.globalPolicy, 2415, "263F52F283446A80022BBAE012CA67BA7A9D4A2793B43375C4FDA3FDF42045F2"],
       [value.crisisBehavior, 2222, "7B39A9C98351D25E2FAC5DA236E2086B3F33CCBD8987A80AE6716E5242208D84"],
-      [value.roleBehavior, 15611, "33FCC472643C0870E72C6E7BCD99B0EE4E3B02A1E45EF5BFE645F83229C0368C"],
+      [value.roleBehavior, 16569, "995491E1BBAF490AF1B7D2E43EA2CAA099CD6A0EC8002EECBD12DFF14BB7307B"],
     ] as const;
     for (const [part, bytes, sha] of expected) {
       expect(Buffer.byteLength(part.text, "utf8")).toBe(bytes);
@@ -114,7 +114,7 @@ describe("private Explorer exact inert configuration candidate", () => {
       "Write every choice label as the Explorer's own reply, in their voice, as a complete answer to your question or invitation, never as a question to you or as your own words.",
       'In a conversation\'s first reply, when the Explorer has not named a topic, you may offer "Show me around", "I have a question" and "Let\'s begin".',
       "Always answer when the Explorer asks how things work.",
-      "Track a topic in compass.topics only from distinct Explorer responses in this conversation that support it; mere mentions, unrelated answers and disputes do not count. Use topicId from compassContext.topics for an existing topic, or null for a new one, and a plain-text label of 1 to 160 characters; keep an existing label unchanged. Supply at most three topics per reply and at most three distinct supportRefs per topic, using only compassContext.messageRefs. Earlier accepted supportCount carries forward; never recount a message. Set ready true only when at least three distinct responses support that topic and you are highly confident it is clear; otherwise use false. Points go straight onto the dial without confirmation; do not send compass.suggestions or compass.responses. Use topics only with an ordinary reply below classification level 2 in an unrestricted conversation. Do not promise that a point or change was saved; the application may drop it. When uncertain what the Explorer means, ask gently and clarify the meaning before acting on it. When supplied state shows a Waypoint is confirmed and the Explorer says \"That's right\", acknowledge it briefly and continue from what matters to them.",
+      "Track a topic in compass.topics only from distinct Explorer responses in this conversation that support it; mere mentions, unrelated answers and disputes do not count. Within the existing support, readiness, preference and safety rules, track every distinct topic the Explorer's responses support, not only the main one, and report up to three of them in compass.topics in each reply as their support grows. Use topicId from compassContext.topics for an existing topic, or null for a new one, and a plain-text label of 1 to 160 characters; keep an existing label unchanged. Supply at most three topics per reply and at most three distinct supportRefs per topic, using only compassContext.messageRefs. Earlier accepted supportCount carries forward; never recount a message. Set ready true only when at least three distinct responses support that topic and you are highly confident it is clear; otherwise use false. Points go straight onto the dial without confirmation; do not send compass.suggestions or compass.responses. Use topics only with an ordinary reply below classification level 2 in an unrestricted conversation. Do not promise that a point or change was saved; the application may drop it. When uncertain what the Explorer means, ask gently and clarify the meaning before acting on it. When supplied state shows a Waypoint is confirmed and the Explorer says \"That's right\", acknowledge it briefly and continue from what matters to them.",
       "When the Explorer describes a place they want to reach, you may suggest one Waypoint draft in waypointSuggestion, with a title of about six words, where they are heading, why it matters, and what Reached would look like, in their own terms. Refine the existing draft in compassContext.drafts instead of starting a second. While a draft is forming, any waypointSuggestion replaces its wording; suggest a different Waypoint only after the Explorer answers it.",
       "Each conversation can form at most five different Waypoints, including any later Reached or Released; revising or revisiting an existing Waypoint does not make it a different Waypoint.",
       "For this limit, each entry in compassContext.waypoints represents one different Waypoint from this conversation; entries in compassContext.drafts do not count.",
@@ -160,9 +160,17 @@ describe("private Explorer exact inert configuration candidate", () => {
     const ordinary = explorerSafetyHttpInstructions("classification_and_reply");
     const classification = explorerSafetyHttpInstructions("classification_only");
     expect(sentences).toHaveLength(24);
+    // Preserve the full approved block with only the two REV432 insertions between its sentences.
+    const withAdditions = [
+      ...sentences.slice(0, 11),
+      "After giving new or changed direct wording or a single direct suggestion, use the reply's one question to ask whether it fits, unless the Explorer has already said it fits or a needed clarifying question must come first; never repeat a fit question the Explorer has already answered. If the same reply also offers a Waypoint, the question names both the wording and the Waypoint, and approval of the wording alone never confirms the Waypoint.",
+      ...sentences.slice(11, 16),
+      "Make the Waypoint offer in the first reply in which all the existing Waypoint requirements are met, even when the Explorer also asks for help with what to say or do; the clarification, unanswered-draft, five-Waypoint, one-question, confirmation and safety rules still apply.",
+      ...sentences.slice(16),
+    ];
     expect(role.length).toBeLessThanOrEqual(EXPLORER_SAFE_CONTEXT_LIMITS.policyTextCharacters);
     for (const text of [role, ordinary]) {
-      expect(text).toContain(sentences.join(" "));
+      expect(text).toContain(withAdditions.join(" "));
       for (const sentence of sentences) expect(text.split(sentence)).toHaveLength(2);
       for (const removed of [
         "Hold space first: reflect what you hear and ask open, curious questions one at a time; where it helps, name two or three possible meanings for the Explorer to choose from.",
@@ -184,8 +192,8 @@ describe("private Explorer exact inert configuration candidate", () => {
     expect(text).toContain('you may offer "Show me around", "I have a question" and "Let\'s begin". ' + sentence + " Always answer when the Explorer asks how things work.");
     // Pin the current role text with only Paul's welcome sentence and its separating space removed.
     const earlier = text.replace(" " + sentence, "");
-    expect(Buffer.byteLength(earlier, "utf8")).toBe(15337);
-    expect(createHash("sha256").update(earlier, "utf8").digest("hex").toUpperCase()).toBe("24F9DC0C01AC3197FDF752B8A0A407F3A2C306DAFE286481EF55A973455136EA");
+    expect(Buffer.byteLength(earlier, "utf8")).toBe(16295);
+    expect(createHash("sha256").update(earlier, "utf8").digest("hex").toUpperCase()).toBe("2BD53FA432C243286095DA4C122AA8010CD3944B70417E79D164176781021908");
   });
 
   it("keeps resource identities and trusted text explicitly unverified and unapproved", () => {
