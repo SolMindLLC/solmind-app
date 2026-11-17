@@ -436,14 +436,29 @@ describe("compact header: the title, the chat panel and the start marker", () =>
     }
   });
 
-  it("the chat panel carries the c1 colours, and the transcript keeps its height classes (step A does not size it)", () => {
+  it("the chat panel carries the c1 colours, and the transcript carries its fallback height classes (step B sizes it by script)", () => {
     const html = render();
     expect(html).toContain('<div class="mx-2 mb-3 mt-3 rounded-2xl border border-amber-300/40 bg-[#12100b]" data-chat-panel="">');
     expect(html).toContain('border-b border-amber-200/20 bg-[#292412] px-3 py-2 sm:px-5" data-chat-panel-band="">');
     expect(/<div class="grid gap-3 rounded-b-\[15px\] border-t border-amber-200\/15 bg-\[#12100b\] px-3 py-3 sm:px-5" data-composer-bar="">/.test(html)).toBe(true);
     expect(html).not.toContain("bg-[#0c0a08]/95");
     const transcript = /<div aria-label="Conversation transcript" class="([^"]*)"/.exec(html)?.[1] ?? "";
-    expect(transcript.startsWith("h-[60vh] min-h-[32rem] max-h-[52rem] overflow-y-auto px-3 py-4 max-lg:scroll-py-2 sm:px-5 lg:h-[clamp(36rem,65vh,52rem)]")).toBe(true);
+    // Step B: before the script runs the transcript is 60vh, never under 14rem (224 px) or over 52rem (832 px);
+    // the old 32rem minimum and the desktop clamp are gone. The server markup carries no inline height.
+    expect(transcript.startsWith("h-[60vh] min-h-[14rem] max-h-[52rem] overflow-y-auto px-3 py-4 max-lg:scroll-py-2 sm:px-5 focus-visible:")).toBe(true);
+    expect(html).not.toContain("min-h-[32rem]");
+    expect(html).not.toContain("clamp(36rem,65vh,52rem)");
+    const log = /<div aria-label="Conversation transcript"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(log).not.toContain("style=");
+    // It stays a named, focusable scroll region for keyboard and screen-reader users.
+    expect(attribute(log, "role")).toBe("log");
+    expect(attribute(log, "tabindex")).toBe("0");
+    expect(attribute(log, "aria-label")).toBe("Conversation transcript");
+    // The two page-open markers: one at the end of the conversation area, a second after an ended conversation's explanation.
+    expect(html.split('data-conversation-end=""').length - 1).toBe(1);
+    const endedHtml = render(view({ state: savedState({ sessionStatus: "ended" }), ended: true, held: true }));
+    expect(endedHtml.split('data-conversation-end=""').length - 1).toBe(2);
+    expect(endedHtml.lastIndexOf('data-conversation-end=""')).toBeGreaterThan(endedHtml.indexOf("This saved conversation has ended."));
     // The panel holds the transcript, the composer and the end marker; End Session stays outside it.
     const panelAt = html.indexOf("data-chat-panel=");
     expect(panelAt).toBeLessThan(html.indexOf("<textarea"));
@@ -497,8 +512,9 @@ describe("compact header: the title, the chat panel and the start marker", () =>
     }
     expect(source.slice(keeperAt).indexOf("</section>")).toBeLessThan(700);
     // The transcript scrolls itself to its end only with saved messages or while a Send is awaited.
-    expect(source).toContain("if (box && (count > 0 || view.awaitingReply)) box.scrollTop = box.scrollHeight;");
-    expect(source).toContain("}, [count, view.awaitingReply]);");
+    // (Since step B the same condition is the named rule connectedTranscriptScrollsToEnd, tested with the sizing.)
+    expect(source).toContain("if (box && connectedTranscriptScrollsToEnd(count, view.awaitingReply)) box.scrollTop = box.scrollHeight;");
+    expect(source).toContain("}, [count, view.awaitingReply, scrollRef]);");
   });
 
   it("a press outside the remembered control drops the focus memory (REV491b)", () => {

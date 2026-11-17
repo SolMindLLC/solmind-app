@@ -230,6 +230,37 @@ export function connectedStatusText(status: Exclude<ConnectedConversationStatus,
   }
 }
 
+// The transcript sized to the window (compact header step B; Paul's choice "A + B", decision record
+// 2026-11-16 17:53:42 and 21:27:10 CST). All figures are CSS pixels. "gap" is the space kept under the
+// message box area; it equals the 16 px scroll margin of the page-open markers, so a transcript that was
+// sized to fit needs no page move when the conversation opens.
+export const TRANSCRIPT_HEIGHT = freeze({ smallest: 224, largest: 832, gap: 16 });
+
+// height = Math.min(832, Math.max(224, availableHeight)), with
+// availableHeight = windowHeight - gap - top - below, where "top" is the distance from the top of the page
+// (not of the window) to the top of the transcript and "below" is the distance from the bottom of the
+// transcript to the bottom of what must stay in view with it (the message box area, or the read-only
+// explanation of an ended conversation). It does not depend on the transcript's present height or on how far
+// the page is scrolled.
+export function connectedTranscriptHeight(input: Readonly<{ windowHeight: number; top: number; below: number }>): number {
+  const available = input.windowHeight - TRANSCRIPT_HEIGHT.gap - input.top - input.below;
+  if (!Number.isFinite(available)) return TRANSCRIPT_HEIGHT.smallest;
+  return Math.min(TRANSCRIPT_HEIGHT.largest, Math.max(TRANSCRIPT_HEIGHT.smallest, Math.round(available)));
+}
+
+// The transcript scrolls itself to its newest end only with saved messages or while a Send is awaited; a
+// conversation with no saved message and nothing being sent stays at position zero, so its start marker and
+// welcome are in view.
+export function connectedTranscriptScrollsToEnd(messageCount: number, awaitingReply: boolean): boolean {
+  return messageCount > 0 || awaitingReply;
+}
+
+// The once-only page move on open is skipped when its target (the end of the conversation area, with its
+// scroll margin under it) is already inside the window.
+export function connectedOpenTargetInView(input: Readonly<{ top: number; bottom: number; windowHeight: number }>): boolean {
+  return input.top >= 0 && input.bottom + TRANSCRIPT_HEIGHT.gap <= input.windowHeight + 1;
+}
+
 export const COMPOSER_LABEL = "Continue the conversation";
 export const COMPOSER_KEY_HINT = "To send your message, press Enter. To start a new line, press Shift+Enter or Alt+Enter.";
 export const COMPOSER_PLACEHOLDER = "Share what comes to mind...";

@@ -21,9 +21,12 @@ import {
   RELOAD_HELP_BUTTON_NAME,
   RELOAD_HELP_TEXT,
   RELOAD_REASON_TEXT,
+  connectedOpenTargetInView,
   connectedSavedStatus,
   connectedStatusText,
   connectedStripFocusTarget,
+  connectedTranscriptHeight,
+  connectedTranscriptScrollsToEnd,
   connectedWaitingFocusTarget,
   nextStripExplanation,
   type ConnectedConversationStatus,
@@ -476,6 +479,75 @@ function StripFocusKeeper({ heldFocusRef, focusWaitsOnTitleRef, headingRef, relo
   return null;
 }
 
+// Step B: writes the transcript's height from the sizing rule. Nothing is requested, stored or sent, and the
+// transcript's scroll position is never written here.
+function fitTranscript(box: HTMLDivElement | null, end: HTMLElement | null) {
+  if (box === null || end === null) return;
+  const place = box.getBoundingClientRect();
+  const height = connectedTranscriptHeight({
+    windowHeight: document.documentElement.clientHeight,
+    top: place.top + window.scrollY,
+    below: end.getBoundingClientRect().bottom - place.bottom,
+  });
+  const value = `${height}px`;
+  if (box.style.height !== value) box.style.height = value;
+}
+
+type SizerProps = Readonly<{
+  transcriptRef: RefObject<HTMLDivElement | null>;
+  conversationEndRef: RefObject<HTMLDivElement | null>;
+  endedEndRef: RefObject<HTMLDivElement | null>;
+  noticesRef: RefObject<HTMLDivElement | null>;
+  // Which parts are drawn: the observed elements are picked again when this changes.
+  drawn: string;
+}>;
+
+// Sizes the transcript to the window so the message box stays in view (an ended conversation: its read-only
+// explanation). It draws nothing and stands after the chat panel, so the refs it reads are set. It runs after
+// every render of the screen (an explanation opening, an alert arriving, the Menu opening, the Compass panel
+// hidden), when the window is resized, and when the parts above or below the transcript change height without
+// a render (the Explorer drags the message box taller, a font loads). For that it observes, each by its border
+// box (so that a padding change counts): the page body; the strip-and-alerts area; the area that holds the
+// transcript and the message box; an ended conversation's End area; and the earlier siblings of the transcript
+// and of each of its ancestors up to the page body. Observer work is deferred to a frame and unchanged heights
+// are not rewritten; browser tests check settling after the covered layout changes.
+function TranscriptSizer({ transcriptRef, conversationEndRef, endedEndRef, noticesRef, drawn }: SizerProps) {
+  useLayoutEffect(() => {
+    fitTranscript(transcriptRef.current, endedEndRef.current ?? conversationEndRef.current);
+  });
+  useEffect(() => {
+    const fit = () => fitTranscript(transcriptRef.current, endedEndRef.current ?? conversationEndRef.current);
+    let frame = 0;
+    const later = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(fit);
+    };
+    window.addEventListener("resize", fit);
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(later) : null;
+    if (observer !== null) {
+      const box = transcriptRef.current;
+      const busyArea = box?.parentElement ?? null;
+      const endArea = endedEndRef.current?.previousElementSibling ?? null;
+      // Border boxes: a padding or border change moves what follows without changing a content box.
+      const watch = (element: Element) => observer.observe(element, { box: "border-box" });
+      for (const element of [document.body, noticesRef.current, busyArea, endArea]) {
+        if (element !== null) watch(element);
+      }
+      // What stands above the transcript in the page: the earlier siblings of the transcript and of each of its
+      // ancestors. A change there moves the transcript's top even when the page body keeps its size.
+      for (let node: Element | null = box; node !== null && node !== document.body; node = node.parentElement) {
+        for (let above = node.previousElementSibling; above !== null; above = above.previousElementSibling) watch(above);
+      }
+    }
+    return () => {
+      window.removeEventListener("resize", fit);
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+    };
+  }, [transcriptRef, conversationEndRef, endedEndRef, noticesRef, drawn]);
+  return null;
+}
+
 type AlertsProps = Readonly<{
   view: ConnectedConversationView;
   actions: ConnectedConversationActions;
@@ -603,8 +675,11 @@ function PendingTurnNotice({ markerRef }: Readonly<{ markerRef?: RefObject<HTMLD
 }
 
 // The saved messages, oldest first, in the designed transcript box. The box
-// scrolls to the newest message or the waiting row when either changes.
-function SavedTranscript({ state, view, actions, choicesDismissed, onShowTour, onSomethingElse }: Readonly<{
+// scrolls to the newest message or the waiting row when either changes. Its
+// height is written by TranscriptSizer (step B); the classes below are what
+// stands before the script runs.
+function SavedTranscript({ state, view, actions, choicesDismissed, onShowTour, onSomethingElse, transcriptRef }: Readonly<{
+  transcriptRef: RefObject<HTMLDivElement | null>;
   state: ExplorerConversationState;
   view: ConnectedConversationView;
   actions: ConnectedConversationActions;
@@ -612,7 +687,7 @@ function SavedTranscript({ state, view, actions, choicesDismissed, onShowTour, o
   onShowTour: () => void;
   onSomethingElse: () => void;
 }>) {
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollRef = transcriptRef;
   const count = state.messages.length;
   const sendingMessage = view.awaitingReply ? view.sendingMessage : null;
   const visit = useCompassChangeVisit(state, view.signInRequired);
@@ -624,8 +699,8 @@ function SavedTranscript({ state, view, actions, choicesDismissed, onShowTour, o
     // Send (tests/browser/explorerOpenAtNewest.pw.ts, "the page moves once").
     // A conversation with no saved message and nothing being sent stays at its
     // top, so the start marker and the welcome are in view.
-    if (box && (count > 0 || view.awaitingReply)) box.scrollTop = box.scrollHeight;
-  }, [count, view.awaitingReply]);
+    if (box && connectedTranscriptScrollsToEnd(count, view.awaitingReply)) box.scrollTop = box.scrollHeight;
+  }, [count, view.awaitingReply, scrollRef]);
 
   return (
     <>
@@ -635,7 +710,7 @@ function SavedTranscript({ state, view, actions, choicesDismissed, onShowTour, o
     <div
       aria-label="Conversation transcript"
       className={joinClasses(
-        "h-[60vh] min-h-[32rem] max-h-[52rem] overflow-y-auto px-3 py-4 max-lg:scroll-py-2 sm:px-5 lg:h-[clamp(36rem,65vh,52rem)]",
+        "h-[60vh] min-h-[14rem] max-h-[52rem] overflow-y-auto px-3 py-4 max-lg:scroll-py-2 sm:px-5",
         FOCUS_RING,
       )}
       ref={scrollRef}
@@ -1069,6 +1144,10 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
   // notice is then drawn above the transcript with it. Otherwise the pending-turn
   // notice sits beside the message box and comes into view with the move. An
   // ended conversation lands after its read-only explanation and review link.
+  // Step B: the transcript was sized so that, with the page at its top, the end of the conversation area
+  // already sits inside the window whenever there is room; the move below is then skipped and the page
+  // stays at its top. On a small window the transcript is at its smallest height and the page moves as before.
+  const transcriptRef = useRef<HTMLDivElement>(null);
   const conversationEndRef = useRef<HTMLDivElement>(null);
   const endedEndRef = useRef<HTMLDivElement>(null);
   const pendingAboveRef = useRef<HTMLDivElement>(null);
@@ -1094,7 +1173,10 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
     }
     if (state.messages.length === 0) return;
     const end = (view.ended ? endedEndRef.current : null) ?? conversationEndRef.current;
-    if (end !== null && typeof end.scrollIntoView === "function") end.scrollIntoView({ behavior: "instant", block: "end" });
+    if (end === null || typeof end.scrollIntoView !== "function") return;
+    const place = typeof end.getBoundingClientRect === "function" ? end.getBoundingClientRect() : null;
+    if (place !== null && connectedOpenTargetInView({ top: place.top, bottom: place.bottom, windowHeight: document.documentElement.clientHeight })) return;
+    end.scrollIntoView({ behavior: "instant", block: "end" });
   }, [state, noticeAtOpen, view.ended]);
   const repliesDisabled = view.held || view.sendUnavailable || view.atMessageCapacity;
   // Opens the local tour: no message, no request and no AI call.
@@ -1265,6 +1347,7 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
                             onShowTour={openTour}
                             onSomethingElse={showSomethingElse}
                             state={state}
+                            transcriptRef={transcriptRef}
                             view={view}
                           />
                           {/* Outside the scrolling transcript, beside the composer, so it
@@ -1277,15 +1360,23 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
                           )}
                           {/* An empty marker at the end of the conversation area: where the page
                               lands when a saved conversation opens (see conversationEndRef). */}
-                          <div aria-hidden="true" className="scroll-mb-4" ref={conversationEndRef} />
+                          <div aria-hidden="true" className="scroll-mb-4" data-conversation-end="" ref={conversationEndRef} />
                         </div>
                       </div>
                       <EndSession actions={actions} state={state} view={view} />
-                      {view.ended ? <div aria-hidden="true" className="scroll-mb-4" ref={endedEndRef} /> : null}
+                      {view.ended ? <div aria-hidden="true" className="scroll-mb-4" data-conversation-end="" ref={endedEndRef} /> : null}
                     </>
                   ) : (
                     <div className="pb-4" />
                   )}
+                  {/* After the chat panel, so the refs it measures are set (step B). */}
+                  <TranscriptSizer
+                    conversationEndRef={conversationEndRef}
+                    drawn={state === null ? "none" : view.ended ? "ended" : "open"}
+                    endedEndRef={endedEndRef}
+                    noticesRef={noticesRef}
+                    transcriptRef={transcriptRef}
+                  />
                   {/* Last in the card, after the strip, the alerts and the chat panel: its effect runs once
                       every newly drawn focus target (the title, Reload, Retry, Sign in) has its ref. */}
                   <StripFocusKeeper

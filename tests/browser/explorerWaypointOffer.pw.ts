@@ -984,6 +984,492 @@ for (const kind of ["reached", "change"] as const) for (const start of ["where t
   });
 }
 
+// Compact header step B (the transcript sized to the window; REV486 finding 2): inside the transcript, an answer
+// that is not followed by a message keeps the Explorer's reading position (the application writes no scroll
+// position and the message count does not change), while an answer followed by the automatic Send keeps ordinary
+// Send scrolling (to the newest end when the Send starts and when its reply arrives). Neither moves the page.
+const historyBox = (page: Page) => page.getByRole("log", { name: "Conversation transcript", exact: true });
+type HistoryMeasure = Readonly<{ top: number; range: number; height: number; box: number }>;
+const measureHistory = (page: Page): Promise<HistoryMeasure> => historyBox(page).evaluate(element => ({
+  top: Math.round(element.scrollTop), range: Math.round(element.scrollHeight - element.clientHeight), height: element.scrollHeight,
+  box: element.clientHeight }));
+// What happened to the transcript since the watch began, recorded inside the page (GPT-6 Astra REV494c finding 1).
+// - scrollWrites: every scroll position written on the transcript by script (its scrollTop, scrollTo, scrollBy,
+//   scroll, or scrollIntoView on anything inside it). The application's one write is the move to the newest end.
+// - samples: states the browser was really in, each read in one go (content height, the transcript's own height
+//   and the offset together): each time the application measures the transcript (the sizer does, right after a
+//   render, and by then the browser has laid out the new content in the transcript's present height), immediately
+//   before each height the application writes on it, at each frame, and at each scroll event. Nothing is paired
+//   from different moments.
+type HistorySample = Readonly<{ at: string; content: number; box: number; top: number }>;
+type HistoryWatch = Readonly<{ scrollWrites: number; heightWrites: number; samples: readonly HistorySample[] }>;
+type WatchRecord = { scrollWrites: number; heightWrites: number; samples: HistorySample[] };
+async function watchHistory(page: Page) {
+  await historyBox(page).evaluate(element => {
+    const holder = window as unknown as { historyWatch?: WatchRecord };
+    if (holder.historyWatch !== undefined) {
+      holder.historyWatch.scrollWrites = 0;
+      holder.historyWatch.heightWrites = 0;
+      holder.historyWatch.samples = [];
+      return;
+    }
+    const record: WatchRecord = { scrollWrites: 0, heightWrites: 0, samples: [] };
+    holder.historyWatch = record;
+    const native = Object.getOwnPropertyDescriptor(Element.prototype, "scrollTop")!;
+    const sample = (at: string) => {
+      const now = { at, content: element.scrollHeight, box: element.clientHeight, top: Math.round(native.get!.call(element) as number) };
+      const last = record.samples[record.samples.length - 1];
+      if (last !== undefined && last.content === now.content && last.box === now.box && last.top === now.top) return;
+      if (record.samples.length < 400) record.samples.push(now);
+    };
+    Object.defineProperty(element, "scrollTop", { configurable: true,
+      get() { return native.get!.call(element) as number; },
+      set(value: number) { record.scrollWrites += 1; native.set!.call(element, value); sample("scroll write"); } });
+    for (const name of ["scrollTo", "scrollBy", "scroll"] as const) {
+      const own = element[name].bind(element) as (...parts: unknown[]) => void;
+      (element as unknown as Record<string, unknown>)[name] = (...parts: unknown[]) => { record.scrollWrites += 1; own(...parts); };
+    }
+    const intoView = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function scrollIntoViewCounted(this: Element, ...parts: [(boolean | ScrollIntoViewOptions)?]) {
+      if (element.contains(this)) record.scrollWrites += 1;
+      intoView.apply(this, parts);
+    };
+    // The application measures the transcript: the browser has just laid it out.
+    const measureOwn = Element.prototype.getBoundingClientRect;
+    (element as unknown as { getBoundingClientRect: () => DOMRect }).getBoundingClientRect = () => {
+      const place = measureOwn.call(element);
+      sample("measured by the application");
+      return place;
+    };
+    // The application writes the transcript's height: the state immediately before it.
+    const style = (element as HTMLElement).style;
+    Object.defineProperty(style, "height", { configurable: true,
+      get() { return style.getPropertyValue("height"); },
+      set(value: string) { sample("before a height write"); record.heightWrites += 1; style.setProperty("height", value); } });
+    element.addEventListener("scroll", () => sample("scroll event"));
+    const step = () => { sample("frame"); requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  });
+}
+const readWatch = (page: Page): Promise<HistoryWatch> => page.evaluate(() => {
+  const record = (window as unknown as { historyWatch: WatchRecord }).historyWatch;
+  return { scrollWrites: record.scrollWrites, heightWrites: record.heightWrites, samples: [...record.samples] };
+});
+function longOfferState(kind: Kind): ExplorerConversationState {
+  const base = savedState(kind);
+  const filler: ExplorerConversationState["messages"][number][] = [];
+  for (let index = 1; index <= 8; index += 1) {
+    filler.push({ id: `20000000-0000-4000-8000-0000000000f${index}`, role: "explorer",
+      body: `A synthetic earlier message number ${index}: invented words about an ordinary day, long enough to wrap onto a second line.`,
+      createdAt: `2026-11-16T07:0${index}:00.000Z` });
+    filler.push({ id: `30000000-0000-4000-8000-0000000000f${index}`, role: "virtualGuide",
+      body: `A synthetic earlier reply number ${index}: an invented reflection of a few sentences. It is here only to fill the page.`,
+      createdAt: `2026-11-16T07:0${index}:30.000Z` });
+  }
+  return { ...base, messages: [...filler, ...base.messages] };
+}
+// A reading position the given distance above the newest end, set from inside the page; the watch begins after it.
+async function readAboveTheEnd(page: Page, above = 160): Promise<HistoryMeasure> {
+  await historyBox(page).evaluate((element, distance) => { element.scrollTop = Math.max(0, element.scrollHeight - element.clientHeight - distance); }, above);
+  const at = await measureHistory(page);
+  expect(at.range, `the transcript has nothing to scroll: ${JSON.stringify(at)}`).toBeGreaterThan(160);
+  expect(Math.abs(at.range - at.top - above)).toBeLessThanOrEqual(1);
+  await watchHistory(page);
+  return at;
+}
+// Scroll anchoring off, for the tests that measure the offset alone: what remains is the application's writes and
+// the browser's own return to a largest offset. The first step B run failed on the narrow project with the offset
+// 124 px lower and the second on the desktop project with it 14 px lower. Scroll anchoring was the first, likely
+// explanation and was never proven; the second failure happened with anchoring off. The same scenarios also run
+// with the browser's anchoring left on.
+const withoutScrollAnchoring = (page: Page) => page.addStyleTag({ content: "html, body, body * { overflow-anchor: none !important; }" });
+
+// The reader's position, measured by the text itself and not by the offset (REV494c, REV494d). A snapshot remembers
+// every element of the transcript with its place in the content, and every line of text; the lines that were
+// wholly in view are the reader's. Afterwards, for each such line that still exists:
+// - where it is and whether it is wholly in view;
+// - how far it moved inside the content (measured on the line itself); and
+// - how far it had to move inside the content, derived without looking at the line: from the blocks above it, at
+//   each level of the page's structure up to the transcript (a block that went gives up the room it took, a new
+//   block takes its room, a block that stayed counts with its change of height).
+type ReaderLine = Readonly<{ text: string; was: number; now: number; height: number; contentMoved: number; expectedContentMove: number | null;
+  whole: boolean }>;
+type ReaderView = Readonly<{ lines: readonly ReaderLine[]; gone: number; answerWasWhole: boolean;
+  scrollY: number; messageBoxTop: number; messageBoxInWindow: boolean; noticesHeight: number;
+  savedLineWhole: boolean | null; savedLineBelowBy: number | null }>;
+type Place = { top: number; bottom: number };
+type Snapshot = { places: Map<Element, Place>; children: Map<Element, Element[]>;
+  lines: { node: Element; text: string; was: number; height: number; whole: boolean }[]; answerWasWhole: boolean };
+const LEAVES = "p, time, h3, h4, dt, dd, span, li, button, a";
+const rememberLines = (page: Page, key: string) => historyBox(page).evaluate((element, [leaves, name]) => {
+  const view = Element.prototype.getBoundingClientRect.call(element);
+  const top = element.scrollTop;
+  const whole = (place: DOMRect) => place.height > 0 && place.top >= view.top - 0.5 && place.bottom <= view.bottom + 0.5 && place.top >= 0 && place.bottom <= window.innerHeight;
+  const snapshot: Snapshot = { places: new Map(), children: new Map(), lines: [], answerWasWhole: false };
+  for (const node of [element, ...element.querySelectorAll("*")]) {
+    const place = node === element ? view : node.getBoundingClientRect();
+    snapshot.places.set(node, { top: place.top - view.top + top, bottom: place.bottom - view.top + top });
+    snapshot.children.set(node, [...node.children]);
+  }
+  for (const node of element.querySelectorAll(leaves)) {
+    const text = (node.textContent ?? "").trim();
+    if (node.children.length > 0 || text === "") continue;
+    const place = node.getBoundingClientRect();
+    if (place.height === 0) continue;
+    snapshot.lines.push({ node, text: text.slice(0, 60), was: place.top - view.top, height: place.height, whole: whole(place) });
+  }
+  const buttons = [...element.querySelectorAll("[data-waypoint-offer] button")];
+  snapshot.answerWasWhole = buttons.length > 0 && buttons.every(control => whole(control.getBoundingClientRect()));
+  const holder = window as unknown as { snapshots?: Record<string, Snapshot> };
+  holder.snapshots = { ...(holder.snapshots ?? {}), [name]: snapshot };
+  return snapshot.lines.filter(each => each.whole).length;
+}, [LEAVES, key] as const);
+const readerView = (page: Page, key: string, savedLine: string): Promise<ReaderView> => historyBox(page).evaluate((element, [saved, name]) => {
+  const view = Element.prototype.getBoundingClientRect.call(element);
+  const top = element.scrollTop;
+  const whole = (place: DOMRect) => place.height > 0 && place.top >= view.top - 0.5 && place.bottom <= view.bottom + 0.5 && place.top >= 0 && place.bottom <= window.innerHeight;
+  const snapshot = (window as unknown as { snapshots: Record<string, Snapshot> }).snapshots[name];
+  const nowPlace = (node: Element): Place => {
+    const place = node.getBoundingClientRect();
+    return { top: place.top - view.top + top, bottom: place.bottom - view.top + top };
+  };
+  const stayed = (node: Element, parent: Element) => node.isConnected && node.parentElement === parent && snapshot.places.has(node);
+  // How far the line had to move inside the content, from the blocks above it and never from the line itself.
+  const expectedMove = (line: Element): number | null => {
+    let move = 0;
+    for (let node = line; node !== element; node = node.parentElement as Element) {
+      const parent = node.parentElement;
+      if (parent === null || !snapshot.places.has(parent) || !snapshot.places.has(node)) return null;
+      const before = snapshot.children.get(parent) ?? [];
+      const at = before.indexOf(node);
+      if (at === -1) return null;
+      const nodeWas = snapshot.places.get(node)!;
+      // Blocks that stood before it in the same parent: one that stayed counts with its change of height when it
+      // stood above (not beside) the node; a run of blocks that went gives up the room from its top to the top of
+      // what followed it.
+      for (let index = 0; index < at;) {
+        const sibling = before[index];
+        const was = snapshot.places.get(sibling)!;
+        if (stayed(sibling, parent)) {
+          if (was.bottom <= nodeWas.top + 0.5) {
+            const now = nowPlace(sibling);
+            move += (now.bottom - now.top) - (was.bottom - was.top);
+          }
+          index += 1;
+          continue;
+        }
+        let end = index;
+        while (end < at && !stayed(before[end], parent)) end += 1;
+        const lastGone = snapshot.places.get(before[end - 1])!;
+        const followed = snapshot.places.get(before[end])!;
+        if (lastGone.bottom <= followed.top + 0.5) move -= followed.top - was.top;
+        index = end;
+      }
+      // New blocks before it in the same parent: a run takes the room of its own height and the gap the parent
+      // keeps between its blocks, measured on the run and its parent.
+      const after = [...parent.children];
+      const nowAt = after.indexOf(node);
+      const gap = Number.parseFloat(getComputedStyle(parent).rowGap) || 0;
+      for (let index = 0; index < nowAt;) {
+        if (snapshot.places.has(after[index])) { index += 1; continue; }
+        let end = index;
+        while (end < nowAt && !snapshot.places.has(after[end])) end += 1;
+        const first = nowPlace(after[index]);
+        const last = nowPlace(after[end - 1]);
+        const next = nowPlace(after[end]);
+        if (last.bottom <= next.top + 0.5) {
+          const styleFirst = getComputedStyle(after[index]);
+          const styleLast = getComputedStyle(after[end - 1]);
+          move += (last.bottom - first.top) + gap + (Number.parseFloat(styleFirst.marginTop) || 0) + (Number.parseFloat(styleLast.marginBottom) || 0);
+        }
+        index = end;
+      }
+    }
+    return move;
+  };
+  const lines: ReaderLine[] = [];
+  let gone = 0;
+  for (const each of snapshot.lines) {
+    if (!each.whole) continue;
+    if (!each.node.isConnected) { gone += 1; continue; }
+    const place = each.node.getBoundingClientRect();
+    const was = snapshot.places.get(each.node)!;
+    const now = place.top - view.top;
+    lines.push({ text: each.text, was: each.was, now, height: each.height, contentMoved: now + top - was.top,
+      expectedContentMove: expectedMove(each.node), whole: whole(place) });
+  }
+  const bar = document.querySelector("[data-composer-bar]")!.getBoundingClientRect();
+  const notices = document.querySelector("[data-conversation-strip]")!.parentElement!.getBoundingClientRect();
+  const savedNode = [...element.querySelectorAll("p, span")].find(node => node.children.length === 0 && (node.textContent ?? "").includes(saved)) ?? null;
+  const savedPlace = savedNode === null ? null : savedNode.getBoundingClientRect();
+  return { lines, gone, answerWasWhole: snapshot.answerWasWhole,
+    scrollY: Math.round(window.scrollY), messageBoxTop: Math.round(bar.top),
+    messageBoxInWindow: bar.top >= 0 && bar.bottom <= window.innerHeight, noticesHeight: Math.round(notices.height),
+    savedLineWhole: savedPlace === null ? null : whole(savedPlace),
+    savedLineBelowBy: savedPlace === null ? null : Math.max(0, Math.round(savedPlace.bottom - view.bottom)) };
+}, [savedLine, key] as const);
+
+type Transition = Readonly<{ moment: string; phase: "unconfirmed" | "settled"; anchoring: "off" | "on"; before: HistoryMeasure; after: HistoryMeasure;
+  watch: HistoryWatch; viewBefore: ReaderView; view: ReaderView }>;
+type TransitionRecord = Readonly<{ moment: string; anchoring: string; before: HistoryMeasure; after: HistoryMeasure; scrollWrites: number;
+  heightWrites: number; smallestObservedRange: number; shortestSample: HistorySample | null; offsetFell: number; offsetReason: string;
+  readerLines: number; gone: number; movedOnScreen: readonly number[]; expectedContentMoves: readonly number[]; clipped: readonly string[];
+  savedLineWhole: boolean | null; answerWasWhole: boolean }>;
+const SMALLEST_TRANSCRIPT = 224;
+// One transition, checked.
+// 1. The application wrote no scroll position on the transcript.
+// 2. The offset's change has one of the justified reasons, and no other: none (it did not move); an observed
+//    clamp (the offset is exactly at the smallest range the browser was observed in, and a sample shows the
+//    browser there); or, with the browser's anchoring on, the browser holding a line of the reader's text (the
+//    offset changed by exactly what the blocks above that line gave up or took). With anchoring off only the
+//    first two exist. When everything that was in view went with the answer there is no line to hold: the offset
+//    may then have fallen by no more than the height the content lost, and the Saved line must be wholly in view.
+// 3. Each surviving line of the reader's text moved inside the content by what the blocks above it explain
+//    (derived from those blocks, not from the line), within one pixel; so on screen it moved by that plus the
+//    justified change of the offset, and by nothing else.
+// 4. Whole visibility. Settled (after the Saved line, after the Retry): every surviving line that was wholly in
+//    view is wholly in view, without exception. While a lost answer is unconfirmed, one exception: the alert took
+//    room, the transcript became shorter by exactly the sizing rule's amount, the content's extent is unchanged,
+//    the line's movement is explained, and the line is cut by the lower edge only.
+// 5. The page did not move; the message box is lower by exactly what the area above the conversation and the
+//    transcript grew by (nothing, when neither changed).
+function checkTransition({ moment, phase, anchoring, before, after, watch, viewBefore, view }: Transition): TransitionRecord {
+  const ranges = watch.samples.map(each => each.content - each.box);
+  const smallestObservedRange = Math.min(before.range, after.range, ...ranges);
+  const shortest = watch.samples.find(each => each.content - each.box === smallestObservedRange) ?? null;
+  const offsetFell = before.top - after.top;
+  const clampFall = before.top - Math.min(before.top, smallestObservedRange);
+  const seenAtClamp = watch.samples.some(each => Math.abs((each.content - each.box) - smallestObservedRange) <= 1 && Math.abs(each.top - (each.content - each.box)) <= 1);
+  const heldLine = view.lines.find(line => line.expectedContentMove !== null && Math.abs(offsetFell + line.expectedContentMove) <= 1) ?? null;
+  const offsetReason = Math.abs(offsetFell) <= 1 ? "did not move"
+    : clampFall > 1 && Math.abs(offsetFell - clampFall) <= 1 && seenAtClamp ? "observed clamp"
+      : anchoring === "on" && heldLine !== null ? "the browser held the reader's text"
+        : anchoring === "on" && view.lines.length === 0 ? "everything in view went"
+          : "unexplained";
+  const clipped = view.lines.filter(line => !line.whole);
+  const movedOnScreen = [...new Set(view.lines.map(line => Math.round(line.now - line.was)))].sort((a, b) => a - b);
+  const expectedContentMoves = [...new Set(view.lines.map(line => line.expectedContentMove === null ? Number.NaN : Math.round(line.expectedContentMove)))].sort((a, b) => a - b);
+  const record: TransitionRecord = { moment, anchoring, before, after, scrollWrites: watch.scrollWrites, heightWrites: watch.heightWrites,
+    smallestObservedRange, shortestSample: shortest, offsetFell, offsetReason, readerLines: view.lines.length, gone: view.gone,
+    movedOnScreen, expectedContentMoves, clipped: clipped.map(line => `${line.text} (was ${Math.round(line.was)}, now ${Math.round(line.now)}, height ${Math.round(line.height)})`),
+    savedLineWhole: view.savedLineWhole, answerWasWhole: viewBefore.answerWasWhole };
+  const evidence = `${moment}: ${JSON.stringify(record)} lines ${JSON.stringify(view.lines)} samples ${JSON.stringify(watch.samples.slice(0, 40))}`;
+  // 1.
+  expect(watch.scrollWrites, `the application wrote a scroll position on the transcript. ${evidence}`).toBe(0);
+  // 2.
+  expect(offsetReason, `the offset moved without a justified reason. ${evidence}`).not.toBe("unexplained");
+  // REV494e finding 1: whenever anchoring is on and no reader line survived, whatever the offset's reason.
+  if (anchoring === "on" && view.lines.length === 0) {
+    expect(view.gone, `nothing was in view to begin with. ${evidence}`).toBeGreaterThan(0);
+    expect(view.savedLineWhole, `the text in view went and the Saved line is not wholly in view. ${evidence}`).toBe(true);
+    const lost = Math.max(before.height, ...watch.samples.map(each => each.content)) - after.height;
+    expect(offsetFell, evidence).toBeGreaterThanOrEqual(-1);
+    expect(offsetFell, evidence).toBeLessThanOrEqual(lost + 1);
+  }
+  // 3.
+  for (const line of view.lines) {
+    expect(line.expectedContentMove, `"${line.text}" changed its place in the page's structure. ${evidence}`).not.toBeNull();
+    expect(Math.abs(line.contentMoved - line.expectedContentMove!), `"${line.text}" moved inside the content by ${line.contentMoved}, and the blocks above it explain ${line.expectedContentMove}. ${evidence}`).toBeLessThanOrEqual(1);
+    expect(Math.abs((line.now - line.was) - (line.expectedContentMove! + offsetFell)), `"${line.text}" is not where the blocks above it and the offset put it. ${evidence}`).toBeLessThanOrEqual(1.5);
+  }
+  // 4.
+  if (phase === "settled") {
+    expect(clipped, `a line that was wholly in view is not wholly in view. ${evidence}`).toEqual([]);
+  } else {
+    const noticesGrew = view.noticesHeight - viewBefore.noticesHeight;
+    for (const line of clipped) {
+      const approvedShrink = noticesGrew > 0 && after.box < before.box && Math.abs(after.box - Math.max(SMALLEST_TRANSCRIPT, before.box - noticesGrew)) <= 1;
+      const sameExtent = Math.abs(after.height - before.height) <= 1;
+      const lowerEdgeOnly = line.now >= -0.5 && line.now + line.height > after.box && line.now + line.height <= before.box + 0.5;
+      expect({ approvedShrink, sameExtent, lowerEdgeOnly }, `"${line.text}" was wholly in view and is not any more. ${evidence}`)
+        .toEqual({ approvedShrink: true, sameExtent: true, lowerEdgeOnly: true });
+    }
+  }
+  // 5.
+  expect(view.scrollY, evidence).toBe(viewBefore.scrollY);
+  expect(view.messageBoxTop - viewBefore.messageBoxTop, `the message box moved otherwise. ${evidence}`)
+    .toBe((view.noticesHeight - viewBefore.noticesHeight) + (after.box - before.box));
+  return record;
+}
+
+test("O19b step B: answering a change offer keeps ordinary Send scrolling for its follow-up message, when it starts and when its reply arrives; the page does not move", async ({ page }) => {
+  let current = longOfferState("change");
+  const requests: ExplorerConversationCommand[] = [];
+  // The automatic Send's answer is held, to see the moment the Send starts.
+  let releaseSend: () => void = () => {};
+  const sendGate = new Promise<void>(resolve => { releaseSend = resolve; });
+  let sendArrived: () => void = () => {};
+  const sendStarted = new Promise<void>(resolve => { sendArrived = resolve; });
+  await page.route("**/explorer/conversation/commands", async route => {
+    const command = commandOf(route);
+    requests.push(command);
+    if (command.kind === "respond_waypoint_offer") {
+      current = answered(current, "change", "right");
+      return fulfill(route, success(current, stored("change", "right")));
+    }
+    if (command.kind !== "send") throw new Error("unexpected_command");
+    sendArrived();
+    await sendGate;
+    current = afterSend(current, command.body, 3);
+    return fulfill(route, success(current));
+  });
+  await open(page, () => current);
+  await withoutScrollAnchoring(page);
+  await expect(box(page, "change")).toBeVisible();
+  const item = transcript(page).getByRole("listitem").nth(17);
+  await readAboveTheEnd(page);
+  const pageBefore = await measurePage(item);
+  await button(box(page, "change"), "change", "right").evaluate(control => (control as HTMLButtonElement).click());
+  await sendStarted;
+  // The Send has started and its reply is awaited: the answer was accepted (its Saved line shows), the waiting
+  // row is drawn, and the transcript went to its newest end, as for any Send. The page did not move.
+  await expect(box(page, "change")).toContainText(SAVED_LINE.change);
+  await expect(page.locator("[data-waiting-indicator]")).toBeVisible();
+  await expect(transcript(page).getByRole("listitem")).toHaveCount(18);
+  await expect.poll(async () => { const now = await measureHistory(page); return now.range - now.top; }).toBeLessThanOrEqual(2);
+  expect((await readWatch(page)).scrollWrites).toBeGreaterThan(0);
+  expectPageDidNotMove(pageBefore, await measurePage(item), "while the follow-up Send waits");
+  releaseSend();
+  await expect(transcript(page).getByRole("listitem")).toHaveCount(20);
+  await expect(page.locator("[data-waiting-indicator]")).toHaveCount(0);
+  expect(requests).toHaveLength(2);
+  expect(requests[1]).toMatchObject({ kind: "send" });
+  // The reply arrived: the transcript is at its newest end with it.
+  const after = await measureHistory(page);
+  expect(after.range - after.top, `not at the newest end: ${JSON.stringify(after)}`).toBeLessThanOrEqual(2);
+  expectPageDidNotMove(pageBefore, await measurePage(item), "when settled");
+});
+
+// The answers that are not followed by a message, each from the reading position 160 px above the newest end with
+// the browser's scroll anchoring off (the offset alone) and on (what the reader sees), and from the newest end
+// with anchoring on (where the Explorer is when the offer has just arrived). Both projects.
+const RESPONSE_ONLY = [
+  { name: "a reached answer", kind: "reached", lost: false, heldBack: false },
+  { name: "a change answer whose follow-up is held back (the conversation advanced after the press)", kind: "change", lost: false, heldBack: true },
+  { name: "a reached answer that is lost and then retried", kind: "reached", lost: true, heldBack: false },
+] as const;
+const READING = [
+  { anchoring: "off", above: 160 },
+  { anchoring: "on", above: 160 },
+  { anchoring: "on", above: 0 },
+] as const;
+for (const scenario of RESPONSE_ONLY) for (const reading of READING) {
+  const where = reading.above === 0 ? "at the newest end" : `${reading.above} px above the newest end`;
+  test(`O19b step B: ${scenario.name}, read ${where}, browser scroll anchoring ${reading.anchoring}: no scroll write, the reading position survives, the page does not move`, async ({ page }) => {
+    const kind = scenario.kind;
+    let current = longOfferState(kind);
+    const requests: ExplorerConversationCommand[] = [];
+    await page.route("**/explorer/conversation/commands", route => {
+      const command = commandOf(route);
+      requests.push(command);
+      if (command.kind !== "respond_waypoint_offer") throw new Error("unexpected_command");
+      if (scenario.lost && requests.length === 1) {
+        // The answer is saved and its response is lost.
+        current = answered(current, kind, "right");
+        return route.abort("failed");
+      }
+      if (!scenario.lost) {
+        const saved = answered(current, kind, "right");
+        // Held back: another change in another tab is saved before this answer's result is read, so the returned
+        // state is two revisions on, with no new message, and the follow-up is skipped without a notice.
+        current = scenario.heldBack ? { ...saved, revision: saved.revision + 1 } : saved;
+      }
+      return fulfill(route, success(current, stored(kind, "right")));
+    });
+    await open(page, () => current);
+    if (reading.anchoring === "off") await withoutScrollAnchoring(page);
+    await expect(box(page, kind)).toBeVisible();
+    // Where the page opened, before the test moves the transcript: the message box wholly in the window and the
+    // transcript at its newest end.
+    await expect(composer(page)).toBeInViewport({ ratio: 0.99 });
+    const opened = await measureHistory(page);
+    expect(opened.range - opened.top, `not opened at the newest end: ${JSON.stringify(opened)}`).toBeLessThanOrEqual(2);
+    const item = transcript(page).getByRole("listitem").nth(17);
+    const records: TransitionRecord[] = [];
+    const startHistory = await readAboveTheEnd(page, reading.above);
+    expect(await rememberLines(page, "start")).toBeGreaterThan(0);
+    const started = await readerView(page, "start", SAVED_LINE[kind]);
+    // Moving the transcript did not move the page: the message box is still wholly in the window.
+    expect(started.messageBoxInWindow, JSON.stringify(started)).toBe(true);
+    await expect(composer(page)).toBeInViewport({ ratio: 0.99 });
+    const pageStart = await measurePage(item);
+    let before = startHistory;
+    let viewBefore = started;
+    let pageBefore = pageStart;
+    let key = "start";
+    await button(box(page, kind), kind, "right").evaluate(control => (control as HTMLButtonElement).click());
+    if (scenario.lost) {
+      await expect(retry(page)).toHaveCount(1);
+      await expect(retry(page)).toBeVisible();
+      await expect(statusLine(page)).toHaveText("");
+      // The "could not confirm" alert stands above the conversation with its Retry button in view. On a window
+      // with room the transcript becomes shorter by what the alert takes; on the phone the message box is lower
+      // by it. Neither the transcript's scroll position nor the page's was written.
+      const uncertain = await measureHistory(page);
+      const uncertainView = await readerView(page, "start", SAVED_LINE[kind]);
+      records.push(checkTransition({ moment: "while the answer is unconfirmed", phase: "unconfirmed", anchoring: reading.anchoring, before,
+        after: uncertain, watch: await readWatch(page), viewBefore, view: uncertainView }));
+      expectPageDidNotMove(pageBefore, await measurePage(item), "while the answer is unconfirmed");
+      expect(uncertainView.noticesHeight).toBeGreaterThan(viewBefore.noticesHeight);
+      expect(uncertainView.lines.length, JSON.stringify(uncertainView)).toBeGreaterThan(0);
+      await expect(retry(page)).toBeInViewport({ ratio: 0.99 });
+      // The second transition starts from here, with its own snapshot; the first snapshot is kept.
+      before = uncertain;
+      key = "unconfirmed";
+      await watchHistory(page);
+      expect(await rememberLines(page, key)).toBeGreaterThan(0);
+      viewBefore = await readerView(page, key, SAVED_LINE[kind]);
+      pageBefore = await measurePage(item);
+      await retry(page).evaluate(control => (control as HTMLButtonElement).click());
+    }
+    // Accepted: the Saved line shows; settled, with no message requested or in flight.
+    await expect(box(page, kind)).toContainText(SAVED_LINE[kind]);
+    await expectSettledWithoutSend(page, requests.filter(command => command.kind === "send"));
+    expect(requests).toHaveLength(scenario.lost ? 2 : 1);
+    await expect(page.locator("[data-waiting-indicator]")).toHaveCount(0);
+    await expect(transcript(page).getByRole("listitem")).toHaveCount(18);
+    if (kind === "change") await expect(transcript(page)).not.toContainText(`That's right: "${TITLE}"`);
+    const after = await measureHistory(page);
+    const view = await readerView(page, key, SAVED_LINE[kind]);
+    records.push(checkTransition({ moment: scenario.lost ? "after the Retry" : "after the Saved line", phase: "settled", anchoring: reading.anchoring,
+      before, after, watch: await readWatch(page), viewBefore, view }));
+    expectPageDidNotMove(pageBefore, await measurePage(item), "when settled");
+    expectPageDidNotMove(pageStart, await measurePage(item), "from the start to settled");
+    // Against the first snapshot (the Retry path keeps it): every line that was wholly in view at the start and
+    // still exists is wholly in view, without exception.
+    const fromStart = await readerView(page, "start", SAVED_LINE[kind]);
+    const report = JSON.stringify({ project: test.info().project.name, scenario: scenario.name, read: where, records,
+      fromStart: { lines: fromStart.lines.length, gone: fromStart.gone, notWhole: fromStart.lines.filter(line => !line.whole).map(line => line.text) } });
+    test.info().annotations.push({ type: "O19b transition records", description: report });
+    console.log(`[O19b record] ${report}`);
+    expect(fromStart.lines.filter(line => !line.whole), report).toEqual([]);
+    // REV494e finding 2: against the first snapshot, each surviving line also moved inside the content only by
+    // what the blocks above it explain, so a line clipped while the answer was unconfirmed is checked too.
+    for (const line of fromStart.lines) {
+      expect(line.expectedContentMove, `"${line.text}" changed its place in the page's structure since the start. ${report}`).not.toBeNull();
+      expect(Math.abs(line.contentMoved - line.expectedContentMove!), `"${line.text}" moved inside the content by ${line.contentMoved} since the start, and the blocks above it explain ${line.expectedContentMove}. ${report}`).toBeLessThanOrEqual(1);
+    }
+    // A Reached answer leaves lines of the offer standing, so there is text to judge by; only the held-back change
+    // read at the newest end can have had nothing in view but what went with the answer.
+    if (kind === "reached") expect(fromStart.lines.length, report).toBeGreaterThan(0);
+    // Settled: the page and the message box are exactly where they were at the start, and the message box is
+    // wholly in the window, in every case.
+    expect(view.scrollY, report).toBe(started.scrollY);
+    expect(view.messageBoxTop, report).toBe(started.messageBoxTop);
+    expect(view.messageBoxInWindow, report).toBe(true);
+    await expect(composer(page)).toBeInViewport({ ratio: 0.99 });
+    // The confirmation: when the Explorer had the answer buttons wholly in view, the Saved line is wholly in view.
+    expect(view.savedLineWhole, report).not.toBeNull();
+    if (started.answerWasWhole) expect(view.savedLineWhole, report).toBe(true);
+    // At the newest end, where the Explorer is when an offer has just arrived, the buttons were in view, so the
+    // Saved line must be.
+    if (reading.above === 0) {
+      expect(started.answerWasWhole, report).toBe(true);
+      expect(view.savedLineWhole, report).toBe(true);
+    }
+  });
+}
+
 // REV488b finding 3 (2026-11-16 night): the invitation of decision 1 follows the composer as the owner derives it.
 test.describe("O20 a changed Waypoint's invitation follows the composer", () => {
   const changedOffer = () => offer("change", { targetCurrent: false, typedAnswerEligible: false });
