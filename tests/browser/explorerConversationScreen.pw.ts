@@ -315,7 +315,12 @@ test("narrow: the menu entry for this page keeps a typed message instead of relo
   let reads = 0;
   page.on("request", (request) => { if (new URL(request.url()).pathname === "/explorer/conversation/state") reads += 1; });
   const commands = await open(page, { ...savedState(), providerState: "available" });
+  // open() returns when the title has focus, which comes before the screen's first state read; wait until that
+  // read is counted (exactly one), so the count below is the open's and the menu's own reads are what is checked.
+  await expect.poll(() => reads).toBe(1);
+  await expect(page.getByRole("list", { name: "Saved conversation", exact: true })).toBeVisible();
   const readsAtOpen = reads;
+  expect(readsAtOpen).toBe(1);
   const field = page.getByLabel("Continue the conversation", { exact: true });
   await field.fill("A synthetic draft that must survive the menu");
   const menuButton = page.getByRole("button", { name: "Menu", exact: true });
