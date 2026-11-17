@@ -1,7 +1,8 @@
 // Synthetic HTTP responses prove browser behaviour only. The Executor runs this suite.
 // The compact conversation header, step B (Paul's choice "A + B", PRJ01-SPR002 decision record 2026-11-16 17:53:42
-// and 21:27:10 CST): the transcript is sized to the window, so the message box stays in view and the messages
-// scroll inside the chat panel. Paul accepted that some scrolling remains on a phone. No real person's words.
+// and 21:27:10 CST): the transcript is sized to the window and the messages scroll inside the chat panel, so at
+// 1440 by 900 the message box and Send stay in view. The proposal of the design Paul approved says the start
+// without scrolling is met at 1440 by 900 only, not at 390 by 844. No real person's words.
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 import {
