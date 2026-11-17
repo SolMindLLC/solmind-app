@@ -24,8 +24,8 @@ export function suggestionReplyButtons({ held, followUpHeld, rightHeld = false, 
           key={response}
           onClick={(event) => {
             onReply(response);
-            // Confirmation or rejection can remove this button during its Send.
-            event.currentTarget.closest("li")?.focus();
+            // Confirmation or rejection can remove this button during its Send; keep the tall reply from moving the page.
+            event.currentTarget.closest("li")?.focus({ preventScroll: true });
           }}
           type="button"
         >

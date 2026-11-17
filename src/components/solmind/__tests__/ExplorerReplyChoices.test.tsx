@@ -247,13 +247,16 @@ describe("Something else beside saved reply choices", () => {
     const onChoose = vi.fn();
     const onSomethingElse = vi.fn();
     const focus = vi.fn();
+    const savedMessage = { focus };
+    const closest = vi.fn(() => savedMessage);
     const tree = ExplorerReplyChoices({ state: state(), messageId: GUIDE_MESSAGE,
       disabled: false, onChoose, onSomethingElse });
     const choice = buttonElements(tree)[1];
-    choice.props.onClick?.({ currentTarget: { closest: () => ({ focus }) } } as unknown as MouseEvent<HTMLButtonElement>);
+    choice.props.onClick?.({ currentTarget: { closest } } as unknown as MouseEvent<HTMLButtonElement>);
     expect(onChoose).toHaveBeenCalledExactlyOnceWith("I have a question");
     expect(onSomethingElse).not.toHaveBeenCalled();
-    expect(focus).toHaveBeenCalledOnce();
+    expect(closest).toHaveBeenCalledExactlyOnceWith("li");
+    expect(savedMessage.focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true });
   });
 
   it("keeps the tour's actual button as its focus return target", () => {

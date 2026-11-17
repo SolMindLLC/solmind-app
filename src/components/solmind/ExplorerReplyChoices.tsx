@@ -29,8 +29,8 @@ export function ExplorerReplyChoices({ state, messageId, disabled, onChoose, onS
               return;
             }
             onChoose(label);
-            // Keep keyboard focus on the saved message when Send removes the row.
-            event.currentTarget.closest("li")?.focus();
+            // Keep focus on the saved message when Send removes the row, without moving the page to a tall reply.
+            event.currentTarget.closest("li")?.focus({ preventScroll: true });
           }}
           type="button"
         >

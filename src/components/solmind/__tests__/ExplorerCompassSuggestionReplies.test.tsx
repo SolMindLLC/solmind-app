@@ -174,9 +174,12 @@ describe("retired Compass suggestion replies", () => {
           ({ label, disabled: held || (index > 0 && followUpHeld) })));
         for (const [index, button] of buttonElements(tree).entries()) {
           const focus = vi.fn();
-          button.props.onClick?.({ currentTarget: { closest: () => ({ focus }) } } as unknown as MouseEvent<HTMLButtonElement>);
+          const savedMessage = { focus };
+          const closest = vi.fn(() => savedMessage);
+          button.props.onClick?.({ currentTarget: { closest } } as unknown as MouseEvent<HTMLButtonElement>);
           expect(onReply).toHaveBeenLastCalledWith(["right", "close", "not_it"][index]);
-          expect(focus).toHaveBeenCalledOnce();
+          expect(closest).toHaveBeenCalledExactlyOnceWith("li");
+          expect(savedMessage.focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true });
         }
       }
     }
