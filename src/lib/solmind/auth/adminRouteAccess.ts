@@ -62,12 +62,10 @@ if (typeof window !== "undefined") {
 // Admin the lowest-ambiguity first candidate.
 export const ADMIN_ACCESS_ROUTE = "/admin" as const;
 
-// The DEFERRED service-role record-load seam. Real service-role SolMind record
-// loading is not safe to wire yet (no concrete request-time service-role read site
-// exists; AUTH-RLS-DEF-009, AUTH-RLS-DEF-010). Until it lands, the boundary uses an
-// empty, deterministic in-memory auth source that holds no records and therefore
-// denies by default. It reads no env, uses no service-role key, and performs no DB
-// access -- so wiring the boundary now cannot leak service-role behavior.
+// The empty fallback for callers that omit the auth source. Real service-role
+// record loading is supplied by adminAccessRequest.ts through createAdminAuthSource.
+// This fallback holds no records and therefore denies by default. It reads no
+// env, uses no service-role key, and performs no DB access.
 export function createDeferredAdminAuthSource(): SolMindAuthSource {
   return createInMemoryAuthSource();
 }
@@ -77,9 +75,9 @@ export function createDeferredAdminAuthSource(): SolMindAuthSource {
 //   - principalSource: the request-auth identity port (WHO). At the route
 //     composition root this is the real Supabase-backed adapter built from the
 //     request cookies; tests inject an in-memory principal source.
-//   - authSource (optional): the record-load seam (WHAT). Defaults to the deferred
-//     deny-by-default in-memory seam above. A future slice injects the real
-//     service-role-backed source here, with no change to this signature.
+//   - authSource (optional): the record-load seam (WHAT). Defaults to the empty
+//     deny-by-default in-memory seam above. adminAccessRequest.ts injects the real
+//     service-role-backed source.
 //   - onServiceRoleRead / onAuthResolutionFailure (optional): the two value-free,
 //     default-off audit seams of composeRequestAuthContext, forwarded verbatim. This
 //     helper only THREADS them through; it builds no audit event and imports no event

@@ -3,10 +3,10 @@
 //
 // Purpose:
 //   - compose, in one explicit place, the two already-built halves of the auth
-//     chain that have never been wired together: request IDENTITY (who) from the
-//     request-auth principal source, and SolMind RECORDS (what) from the
-//     service-role-backed auth source, into a single deterministic, deny-by-default
-//     route-access decision a future route/server action can call;
+//     chain: request IDENTITY (who) from the request-auth principal source, and
+//     SolMind RECORDS (what) from the service-role-backed auth source, into a single
+//     deterministic, deny-by-default route-access decision a route/server action
+//     can call;
 //   - keep identity verification and service-role record loading STRUCTURALLY
 //     separate (AUTH-RLS-DEC-015): a null principal denies BEFORE any record load
 //     is attempted, and the resolved principal flows into the load only as a
@@ -24,20 +24,26 @@
 //     headers(). The concrete identity adapter (requestAuthClient.ts) and the
 //     concrete service-role-backed auth source are injected by the composition
 //     root, so this module never touches a Supabase client and is unit-testable
-//     with in-memory test doubles. No real service-role DB read is wired here; that
-//     wiring is a later, separately-approved step (AUTH-RLS-DEF-010).
+//     with in-memory test doubles. Real service-role DB reads are wired through
+//     the injected auth source by the server composition roots
+//     (adminAccessRequest.ts via adminRouteAccess.ts, explorerHomeAccess.ts,
+//     guideHomeAccess.ts, explorerConversationRequestDependencies.ts)
+//     (AUTH-RLS-DEF-010).
 //   - server-only enforcement: the `server-only` package is now installed
 //     (AUTH-RLS-DEC-023, AUTH-RLS-DEF-001), so this module carries the
 //     `import "server-only";` marker below as the import-time guard, backed by the
 //     same runtime browser guard as serviceRoleClient.ts and requestAuthClient.ts.
 //   - Audit seam placement (AUTH-RLS-DEC-024): the OPTIONAL onServiceRoleRead hook
-//     below is the dedicated audit seam, placed at THIS guarded boundary and nowhere
-//     else. It is deliberately NOT inside requestAuthClient.ts (which reads no
+//     below remains a value-free pre-read marker at this guarded boundary.
+//     It is deliberately NOT inside requestAuthClient.ts (which reads no
 //     records) nor inside the generic supabaseAuthQueryClient / serverAuthSourceAdapter
-//     (which stay audit-free). This module fixes the audit PLACEMENT only; the audit
-//     implementation (fields, sink, redaction, and the final audit-write-failure
-//     fail-open-vs-closed posture) remains deferred (AUTH-RLS-DEF-003, AUTH-RLS-DEF-009).
-//     Until then the seam is default-off: omit it and no audit call is made.
+//     (which stay audit-free). For the Admin routes (/admin/access, /admin/home,
+//     the Admin workspace pages), adminAccessRequest.ts persists through the real
+//     audit writer (AUTH-RLS-DEF-003, AUTH-RLS-DEF-009), requiring the
+//     post-resolution guarded-read row, then the allow-decision row, before allow
+//     (AUTH-RLS-DEC-029/030).
+//     No production composition passes this optional hook; required persistence
+//     does not depend on it.
 //   - Fail closed (AUTH-RLS-DEC-009, AUTH-RLS-DEC-016): any abnormal state -- a null
 //     principal, a thrown/rejected principal source, a thrown/rejected record load,
 //     or a derivation/route failure -- collapses to the single opaque route-access
@@ -63,21 +69,22 @@ if (typeof window !== "undefined") {
   );
 }
 
-// --- Audit seam (placement only; implementation deferred) ---
+// --- Audit seam (value-free pre-read marker; optional) ---
 //
 // A minimal, value-free marker that a guarded service-role auth-context read was
 // attempted at this boundary. It intentionally carries NO principal, token,
-// cookie, record, or secret, so the seam cannot leak identity detail. The concrete
-// audit fields, sink, redaction, and failure posture are decided in the
-// implementation slice (AUTH-RLS-DEF-003, AUTH-RLS-DEF-009); this type fixes only
-// that an audit seam exists at the guarded boundary (AUTH-RLS-DEC-024).
+// cookie, record, or secret, so the seam cannot leak identity detail. Persisted
+// Admin audit events (model in authRlsAuditEvent.ts, writer in
+// auditEventWriter.ts) are built and written by adminAccessRequest.ts, which owns
+// the failure posture (AUTH-RLS-DEF-003, AUTH-RLS-DEF-009); this type fixes only
+// that a seam exists at the guarded boundary (AUTH-RLS-DEC-024).
 export type ServiceRoleReadAuditEvent = {
   kind: "server_auth_context_read";
 };
 
-// The injected audit sink. Optional: when omitted, no audit call is made (the
-// seam is default-off until the audit implementation lands). As of AUD-2 the sink
-// may be asynchronous (void | Promise<void>, the awaited-sink contract of Doc 22
+// The injected audit sink. Optional: when omitted, no audit call is made; no
+// production composition passes it. As of AUD-2 the sink may be asynchronous
+// (void | Promise<void>, the awaited-sink contract of Doc 22
 // Section 11) and is AWAITED at its single call site inside the guarded try, so an
 // asynchronous rejection fails closed (denies) exactly like a synchronous throw
 // and can never float as an unhandled rejection.
@@ -173,9 +180,9 @@ export async function composeRequestAuthContext(
     // Fail closed: a thrown/rejected principal source, record load, or audit sink
     // collapses to the opaque denial. The error is swallowed (not logged, not
     // propagated) so no token, cookie, record, or secret leaks through an error
-    // path. The final audit-write-failure posture is decided in the audit
-    // implementation slice (AUTH-RLS-DEF-003, AUTH-RLS-DEF-009); failing closed here
-    // is the conservative MVP0 interim.
+    // path. Admin audit-write failures are results in adminAccessRequest.ts, never
+    // exceptions, so none lands in this catch; failing closed here also covers a
+    // throwing or rejecting marker sink.
     //
     // Signal the value-free auth-resolution-failure seam (Doc 16 section 5) BEFORE
     // returning. It is wrapped in its own guard so a throwing failure-audit hook can

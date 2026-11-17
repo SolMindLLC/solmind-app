@@ -7,9 +7,10 @@
 //
 // Architecture notes (MVP0):
 //   - This module imports NO Supabase client. It depends only on the narrow
-//     SupabaseQueryExecutor interface below; serviceRoleClient.ts adapts the real
-//     @supabase/supabase-js client to it. That keeps this loader dependency-free
-//     and unit-testable with a plain mock (no network, DB, env, or cookies).
+//     SupabaseQueryExecutor interface below; serviceRoleRpcExecutor.ts adapts the
+//     real @supabase/supabase-js client to it. That keeps this loader
+//     dependency-free and unit-testable with a plain mock (no network, DB, env,
+//     or cookies).
 //   - It LOADS records only and authorizes nothing. deriveTrustedServerAuthContext
 //     and the guard layer remain the authority and re-validate everything.
 //   - Fail closed: a query error, a non-array result, an invalid row shape, a
@@ -55,8 +56,9 @@ export type SupabaseQueryResult = {
   error: unknown;
 };
 
-// A minimal scoped-select interface. The real implementation (serviceRoleClient)
-// wraps a server-only service-role Supabase client; tests pass a mock.
+// A minimal scoped-select interface. The real implementation
+// (serviceRoleRpcExecutor.ts) wraps a server-only service-role Supabase client;
+// tests pass a mock.
 export interface SupabaseQueryExecutor {
   select(spec: SupabaseQuerySpec): Promise<SupabaseQueryResult>;
 }
@@ -177,7 +179,8 @@ const GUIDE_EXPLORER_RELATIONSHIP_KEYS = [
 ] as const;
 
 // Create a SolMindAuthQueryClient backed by the injected query executor.
-//   - client: narrow scoped-select executor (real service-role client or mock).
+//   - client: narrow scoped-select executor (the service-role RPC executor or a
+//     mock).
 //   - now: server-supplied current-time provider, called per session lookup so
 //     the expiration rule stays deterministic and testable.
 export function createSupabaseAuthQueryClient(args: {

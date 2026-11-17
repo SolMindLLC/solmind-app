@@ -6,9 +6,10 @@
 //     projection shapes that deriveTrustedServerAuthContext and the relationship
 //     guards already consume;
 //   - keep this layer dependency-free and deterministic: it imports no Supabase
-//     client, reads no env, and performs no IO of its own. The real
-//     Supabase-backed query client (env + service-role + network) is a later,
-//     separately-approved slice that implements SolMindAuthQueryClient.
+//     client, reads no env, and performs no IO of its own. The real query client,
+//     createSupabaseAuthQueryClient in supabaseAuthQueryClient.ts, implements
+//     SolMindAuthQueryClient over an injected server-only service-role RPC
+//     executor (serviceRoleRpcExecutor.ts).
 //
 // Architecture notes (MVP0):
 //   - This adapter LOADS records only. It makes NO allow/deny decisions and
@@ -108,9 +109,10 @@ export type GuideExplorerRelationshipRow = {
 
 // --- Injected query client (the only IO boundary) ---
 //
-// The real implementation (a later slice) wraps a server-only, service-role
-// Supabase client. Each method returns the matching row or null. The methods
-// load records only; they make no access decisions. A concrete implementation
+// The real implementation in supabaseAuthQueryClient.ts uses an injected executor
+// backed by server-only, service-role RPCs in the concrete compositions.
+// Each method returns the matching row or null. The methods load records only;
+// they make no access decisions. A concrete implementation
 // must scope every query by the provided keys and must never widen a lookup
 // using a browser-supplied value.
 export interface SolMindAuthQueryClient {
