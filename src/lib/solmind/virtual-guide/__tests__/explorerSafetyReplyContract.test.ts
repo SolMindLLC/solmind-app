@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   EXPLORER_SAFETY_REQUEST_VERSION, EXPLORER_SAFETY_REPLY_PROTOCOL,
   explorerSafetyReplyRepeatsName, parseExplorerSafetyReplyBody, parseExplorerSafetyReplyRequest,
+  explorerSafetyReplyHasConflictingOuterKey, explorerSafetyWaypointOfferInvalid,
+  parseExplorerSafetyWaypointOffer, parseExplorerSafetyWaypointOfferResponse,
 } from "../explorerSafetyReplyContract";
 
 function request() {
@@ -433,4 +435,117 @@ describe("retired Compass proposal fields", () => {
       expect(parseExplorerSafetyReplyBody(proposedBody({ compass: { attention: POINT, suggestions: value, responses: value } }),
         "classification_and_reply").compass).toEqual({ attention: POINT });
     });
+});
+
+describe("offers build step 2: waypointOffer and waypointOfferResponse reply fields", () => {
+  const WAYPOINT = "00000000-0000-4000-8000-000000000006";
+  const OFFER = "00000000-0000-4000-8000-000000000007";
+  const wording = { title: "A slower morning", destination: "A slow breakfast", whyItMatters: "Time with my family",
+    arrivalSignal: "Three calm breakfasts" };
+  const change = { kind: "change", waypointId: WAYPOINT, ...wording };
+  const revisit = { ...change, kind: "revisit" };
+  const reached = { kind: "reached", waypointId: WAYPOINT, evidence: "We ate together twice this week." };
+  const parse = (proposals: Record<string, unknown>, mode: "classification_and_reply" | "classification_only" = "classification_and_reply") =>
+    parseExplorerSafetyReplyBody(proposedBody(proposals), mode);
+
+  it.each([change, revisit, reached])("accepts one frozen offer with exactly the fields of its kind: %j", waypointOffer => {
+    const result = parse({ waypointOffer });
+    expect(result.waypointOffer).toEqual(waypointOffer);
+    expect(Object.isFrozen(result.waypointOffer)).toBe(true);
+    expect(result).not.toHaveProperty("waypointOfferInvalid");
+    expect(result.candidate.kind).toBe("usable");
+    expect(parseExplorerSafetyWaypointOffer(waypointOffer)).toEqual(waypointOffer);
+    expect(EXPLORER_SAFETY_REPLY_PROTOCOL).toBe("explorer-safety-reply.v2");
+  });
+  it("normalizes Reached evidence as the database does: line endings and outer white space only", () => {
+    const result = parse({ waypointOffer: { ...reached, evidence: "  We ate together\r\ntwice this week.\r\n " } });
+    expect(result.waypointOffer).toEqual({ ...reached, evidence: "We ate together\ntwice this week." });
+    expect(parse({ waypointOffer: { ...reached, evidence: "x".repeat(1000) } }).waypointOffer).toEqual({ ...reached, evidence: "x".repeat(1000) });
+    expect(parse({ waypointOffer: { ...reached, evidence: " " + "x".repeat(1000) + " " } }).waypointOffer).toEqual({ ...reached, evidence: "x".repeat(1000) });
+    expect(parse({ waypointOffer: { ...change, title: "x".repeat(1000), whyItMatters: "One\nTwo" } }).waypointOffer)
+      .toEqual({ ...change, title: "x".repeat(1000), whyItMatters: "One\nTwo" });
+  });
+  const invalidOffers: readonly [unknown, string | null][] = [
+    [{}, null], [[], null], ["change", null], [7, null], [true, null], [[change], null],
+    [{ kind: "release", waypointId: WAYPOINT }, null], [{ kind: null, waypointId: WAYPOINT, ...wording }, null],
+    [{ waypointId: WAYPOINT, ...wording }, null],
+    [{ ...change, extra: true }, "change"], [{ ...change, evidence: "Synthetic words" }, "change"],
+    [{ ...change, waypointId: "unknown" }, "change"], [{ ...change, waypointId: WAYPOINT + "\n" }, "change"],
+    [{ ...change, waypointId: null }, "change"], [{ kind: "change", ...wording }, "change"],
+    [{ ...revisit, offerId: OFFER }, "revisit"], [{ kind: "revisit", waypointId: WAYPOINT, title: "Only a title" }, "revisit"],
+    [{ ...reached, title: "Synthetic" }, "reached"], [{ ...reached, evidence: "" }, "reached"], [{ ...reached, evidence: " \r\n " }, "reached"],
+    [{ ...reached, evidence: "x".repeat(1001) }, "reached"], [{ ...reached, evidence: null }, "reached"],
+    [{ ...reached, evidence: "bad\u0000text" }, "reached"], [{ ...reached, evidence: "bad\ttext" }, "reached"],
+    [{ ...reached, evidence: "bad\u200btext" }, "reached"], [{ ...reached, evidence: "\ud800" }, "reached"],
+    [{ kind: "reached", waypointId: WAYPOINT }, "reached"], [{ kind: "reached", evidence: reached.evidence }, "reached"],
+    ...Object.keys(wording).flatMap(field => [undefined, null, "", " ", " padded ", "x".repeat(1001), "\ud800", "bad\u0000text",
+      "bad\ttext", "bad\u200btext", "bad\u202etext", 7].map((value): [unknown, string | null] => [{ ...change, [field]: value }, "change"])),
+  ];
+  it("reports a present but invalid offer with its readable kind, never discards it silently, and keeps the reply", () => {
+    for (const [invalid, kind] of invalidOffers) {
+      const result = parse({ waypointOffer: invalid, compass: { attention: POINT }, choices: [{ label: "Begin" }],
+        waypointResponse: { draftId: POINT, response: "right" } });
+      expect(result.waypointOffer).toBeUndefined();
+      expect(result.waypointOfferInvalid).toEqual({ kind, reason: "invalid" });
+      expect(Object.isFrozen(result.waypointOfferInvalid)).toBe(true);
+      expect(result.candidate).toEqual({ kind: "usable", content: "We can explore that." });
+      expect(result.classification).toEqual({ level: 0, minorIndicated: false });
+      expect(result.compass).toEqual({ attention: POINT });
+      expect(result.choices).toEqual([{ label: "Begin" }]);
+      expect(result.waypointResponse).toEqual({ draftId: POINT, response: "right" });
+      expect(parseExplorerSafetyWaypointOffer(invalid)).toBeUndefined();
+      expect(explorerSafetyWaypointOfferInvalid(invalid)).toEqual({ kind, reason: "invalid" });
+    }
+  });
+  it("reads an absent or null offer as no offer, with no invalid report", () => {
+    for (const proposals of [{}, { waypointOffer: null }]) {
+      const result = parse(proposals);
+      expect(result).not.toHaveProperty("waypointOffer");
+      expect(result).not.toHaveProperty("waypointOfferInvalid");
+    }
+  });
+  it.each(["right", "close", "not_it"] as const)("accepts one frozen typed %s answer with exactly offerId and response", response => {
+    const waypointOfferResponse = { offerId: OFFER, response };
+    const result = parse({ waypointOfferResponse });
+    expect(result.waypointOfferResponse).toEqual(waypointOfferResponse);
+    expect(Object.isFrozen(result.waypointOfferResponse)).toBe(true);
+    expect(parseExplorerSafetyWaypointOfferResponse(waypointOfferResponse)).toEqual(waypointOfferResponse);
+  });
+  it.each([null, {}, [], "right", [{ offerId: OFFER, response: "right" }], { offerId: OFFER }, { response: "right" },
+    { offerId: null, response: "right" }, { offerId: OFFER + "\n", response: "right" }, { offerId: "unknown", response: "right" },
+    { offerId: OFFER, response: "Right" }, { offerId: OFFER, response: " right " }, { offerId: OFFER, response: null },
+    { draftId: OFFER, response: "right" }, { offerId: OFFER, response: "right", extra: true }])(
+    "drops malformed typed answer %j without losing valid siblings or prose", invalid => {
+      const result = parse({ waypointOfferResponse: invalid, waypointOffer: change, waypointResponse: { draftId: POINT, response: "close" } });
+      expect(result.waypointOfferResponse).toBeUndefined();
+      expect(result.waypointOffer).toEqual(change);
+      expect(result.waypointResponse).toEqual({ draftId: POINT, response: "close" });
+      expect(result.candidate.kind).toBe("usable");
+    });
+  it("carries all optional fields side by side as received, leaving the choice between them to the composition", () => {
+    const suggestion = { title: "Calm mornings", destination: "An unhurried breakfast", whyItMatters: "Time with my family", arrivalSignal: "Two calm breakfasts" };
+    const result = parse({ waypointOffer: reached, waypointOfferResponse: { offerId: OFFER, response: "not_it" },
+      waypointSuggestion: suggestion, waypointResponse: { draftId: POINT, response: "right" } });
+    expect(result).toMatchObject({ waypointOffer: reached, waypointOfferResponse: { offerId: OFFER, response: "not_it" },
+      waypointSuggestion: suggestion, waypointResponse: { draftId: POINT, response: "right" } });
+  });
+  it("never reads offers in classification-only mode", () => {
+    const result = parse({ waypointOffer: change, waypointOfferResponse: { offerId: OFFER, response: "right" } }, "classification_only");
+    expect(result).toEqual({ classification: { level: 0, minorIndicated: false }, candidate: { kind: "not_requested" } });
+    expect(parse({ waypointOffer: { kind: "change" } }, "classification_only")).not.toHaveProperty("waypointOfferInvalid");
+  });
+  it("treats a misspelled offer field as a conflicting outer key, like the other known fields", () => {
+    for (const key of ["waypoint_offer", "WaypointOffer", "waypoint-offer-response", "waypointofferresponse"]) {
+      expect(explorerSafetyReplyHasConflictingOuterKey({ [key]: change })).toBe(true);
+      expect(() => parse({ [key]: change })).toThrow("explorer_safety_invalid_response");
+    }
+    expect(explorerSafetyReplyHasConflictingOuterKey({ waypointOffer: change, waypointOfferResponse: null })).toBe(false);
+    expect(parse({ waypointReached: reached, waypointChange: change }).candidate.kind).toBe("usable");
+    expect(parse({ waypointReached: reached })).not.toHaveProperty("waypointOffer");
+  });
+  it("rejects a reply whose outer waypointOffer name repeats", () => {
+    const raw = '{"protocol":"explorer-safety-reply.v2","classification":{"level":0,"minorIndicated":false},' +
+      '"candidateReply":{"content":"We can explore that."},"waypointOffer":null,"waypointOffer":' + JSON.stringify(change) + "}";
+    expect(() => parseExplorerSafetyReplyBody(raw, "classification_and_reply")).toThrow("explorer_safety_invalid_response");
+  });
 });

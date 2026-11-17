@@ -50,6 +50,17 @@ export type ExplorerSafetyWaypointSuggestion = Readonly<{
   title: string; destination: string; whyItMatters: string; arrivalSignal: string;
 }>;
 export type ExplorerSafetyWaypointResponse = Readonly<{ draftId: string; response: "right" | "close" | "not_it" }>;
+// Saved Waypoint offers (step 2 of the offers build): one offer at most per reply, and one typed answer to the
+// offer the previous reply carried. A Reached offer quotes the Explorer's own words as evidence; a change or
+// revisit offer carries the whole offered wording.
+export type ExplorerSafetyWaypointOfferKind = "reached" | "change" | "revisit";
+export type ExplorerSafetyWaypointOffer =
+  | Readonly<{ kind: "reached"; waypointId: string; evidence: string }>
+  | Readonly<{ kind: "change" | "revisit"; waypointId: string; title: string; destination: string;
+      whyItMatters: string; arrivalSignal: string }>;
+export type ExplorerSafetyWaypointOfferResponse = Readonly<{ offerId: string; response: "right" | "close" | "not_it" }>;
+// The fact that a reply carried an offer that could not be read: its kind when that much is readable.
+export type ExplorerSafetyWaypointOfferInvalid = Readonly<{ kind: ExplorerSafetyWaypointOfferKind | null; reason: "invalid" }>;
 export type ExplorerSafetyCompassTopic = Readonly<{
   topicId: string | null; label: string; supportRefs: readonly string[]; ready: boolean;
 }>;
@@ -62,6 +73,10 @@ export type ExplorerSafetyReplyObservation = Readonly<{
   compass?: ExplorerSafetyCompass; choices?: readonly ExplorerSafetyChoice[];
   waypointSuggestion?: ExplorerSafetyWaypointSuggestion;
   waypointResponse?: ExplorerSafetyWaypointResponse;
+  waypointOffer?: ExplorerSafetyWaypointOffer;
+  // Present only when the reply carried an offer that did not parse; never together with waypointOffer.
+  waypointOfferInvalid?: ExplorerSafetyWaypointOfferInvalid;
+  waypointOfferResponse?: ExplorerSafetyWaypointOfferResponse;
 }>;
 export type ExplorerSafetyReplyErrorCode =
   | "explorer_safety_invalid_request" | "explorer_safety_invalid_response"
@@ -220,6 +235,56 @@ export function parseExplorerSafetyWaypointSuggestion(input: unknown): ExplorerS
       whyItMatters: input.whyItMatters as string, arrivalSignal: input.arrivalSignal as string });
   } catch { return undefined; }
 }
+const WAYPOINT_OFFER_TEXT_PROHIBITED = /[\u0000-\u0009\u000b\u000c\u000e-\u001f\u007f-\u009f\u200b-\u200d\u202a-\u202e\u2060\u2066-\u2069\ufeff]/u;
+function waypointOfferText(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0 && value === value.trim() && value.length <= 1_000 &&
+    explorerSafetyUnicodeValid(value) && !WAYPOINT_OFFER_TEXT_PROHIBITED.test(value);
+}
+function waypointOfferKind(input: object): ExplorerSafetyWaypointOfferKind | null {
+  const descriptor = Object.getOwnPropertyDescriptor(input, "kind");
+  return descriptor !== undefined && descriptor.enumerable === true && "value" in descriptor &&
+    (descriptor.value === "reached" || descriptor.value === "change" || descriptor.value === "revisit") ? descriptor.value : null;
+}
+// Strict like parseExplorerSafetyWaypointSuggestion: exactly the fields of the offer's kind, each text 1 to 1000
+// characters. Reached evidence is normalized as the database normalizes it (line endings, outer white space), so the
+// model, the check, the box and the saved evidence use the same text.
+export function parseExplorerSafetyWaypointOffer(input: unknown): ExplorerSafetyWaypointOffer | undefined {
+  try {
+    if (input === null || typeof input !== "object" || Array.isArray(input)) return undefined;
+    const kind = waypointOfferKind(input);
+    if (kind === null) return undefined;
+    if (kind === "reached") {
+      if (!dataObject(input, ["kind", "waypointId", "evidence"]) || typeof input.waypointId !== "string" ||
+          input.waypointId.length !== 36 || !UUID.test(input.waypointId) || typeof input.evidence !== "string" ||
+          !explorerSafetyUnicodeValid(input.evidence)) return undefined;
+      const evidence = input.evidence.replace(/\r\n?/g, "\n").trim();
+      if (!waypointOfferText(evidence)) return undefined;
+      return Object.freeze({ kind, waypointId: input.waypointId, evidence });
+    }
+    if (!dataObject(input, ["kind", "waypointId", "title", "destination", "whyItMatters", "arrivalSignal"]) ||
+        typeof input.waypointId !== "string" || input.waypointId.length !== 36 || !UUID.test(input.waypointId) ||
+        !waypointOfferText(input.title) || !waypointOfferText(input.destination) ||
+        !waypointOfferText(input.whyItMatters) || !waypointOfferText(input.arrivalSignal)) return undefined;
+    return Object.freeze({ kind, waypointId: input.waypointId, title: input.title, destination: input.destination,
+      whyItMatters: input.whyItMatters, arrivalSignal: input.arrivalSignal });
+  } catch { return undefined; }
+}
+// What is reported for an offer that was present but did not parse. It never invalidates the reply.
+export function explorerSafetyWaypointOfferInvalid(input: unknown): ExplorerSafetyWaypointOfferInvalid {
+  let kind: ExplorerSafetyWaypointOfferKind | null = null;
+  try {
+    if (input !== null && typeof input === "object" && !Array.isArray(input)) kind = waypointOfferKind(input);
+  } catch { kind = null; }
+  return Object.freeze({ kind, reason: "invalid" as const });
+}
+export function parseExplorerSafetyWaypointOfferResponse(input: unknown): ExplorerSafetyWaypointOfferResponse | undefined {
+  try {
+    if (!dataObject(input, ["offerId", "response"]) || typeof input.offerId !== "string" ||
+        input.offerId.length !== 36 || !UUID.test(input.offerId) ||
+        (input.response !== "right" && input.response !== "close" && input.response !== "not_it")) return undefined;
+    return Object.freeze({ offerId: input.offerId, response: input.response });
+  } catch { return undefined; }
+}
 // The inner text of one whole reply wrapped in a Markdown code fence (```json or ```), else the text unchanged.
 function unwrappedCodeFence(rawText: string): string {
   const fenced = /^\s*```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]*```\s*$/u.exec(rawText);
@@ -374,7 +439,7 @@ function knownOuterKeys(value: unknown, keys: readonly string[]): Record<string,
 // case, underscores, dashes and spaces, or a level, minorIndicated or classification field at the top): such a reply
 // is rejected whole, as before the reply fix, so the classification is never chosen between two signals.
 const EXPLORER_SAFETY_REPLY_OUTER_KEYS = Object.freeze(["protocol", "classification", "candidateReply", "compass", "choices",
-  "waypointSuggestion", "waypointResponse"]);
+  "waypointSuggestion", "waypointResponse", "waypointOffer", "waypointOfferResponse"]);
 export function explorerSafetyReplyHasConflictingOuterKey(value: unknown): boolean {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const normal = (key: string) => key.replace(/[\s_-]/gu, "").toLowerCase();
@@ -397,11 +462,11 @@ export function parseExplorerSafetyReplyBody(rawText: unknown, mode: ExplorerSaf
     try { parsed = JSON.parse(parsedText) as unknown; } catch { fail("explorer_safety_invalid_response"); }
   }
   if (explorerSafetyReplyRepeatsName(parsedText)) fail("explorer_safety_invalid_response");
-  // The three required keys and any of the four optional keys are kept; any other outer key is dropped instead of
+  // The three required keys and any of the six optional keys are kept; any other outer key is dropped instead of
   // rejecting the whole reply (three replies were lost on 2026-11-10 to a failed outer check). Every kept value is
   // checked exactly as before, so the protocol, the classification and the reply text stay strict.
   const required = ["protocol", "classification", "candidateReply"];
-  const optional = ["compass", "choices", "waypointSuggestion", "waypointResponse"];
+  const optional = ["compass", "choices", "waypointSuggestion", "waypointResponse", "waypointOffer", "waypointOfferResponse"];
   const body = knownOuterKeys(parsed, [...required, ...optional]);
   if (body === null || !required.every(key => Object.hasOwn(body, key)) ||
     body.protocol !== EXPLORER_SAFETY_REPLY_PROTOCOL || explorerSafetyReplyHasConflictingOuterKey(parsed)) fail("explorer_safety_invalid_response");
@@ -412,10 +477,19 @@ export function parseExplorerSafetyReplyBody(rawText: unknown, mode: ExplorerSaf
   const parsedCompass = compass(body.compass); const parsedChoices = choices(body.choices);
   const waypointSuggestion = parseExplorerSafetyWaypointSuggestion(body.waypointSuggestion);
   const waypointResponse = parseExplorerSafetyWaypointResponse(body.waypointResponse);
+  // An offer that is present but not valid is reported instead of being silently discarded; null stands for no offer.
+  const offerPresent = Object.hasOwn(body, "waypointOffer") && body.waypointOffer !== null;
+  const waypointOffer = offerPresent ? parseExplorerSafetyWaypointOffer(body.waypointOffer) : undefined;
+  const waypointOfferInvalid = offerPresent && waypointOffer === undefined
+    ? explorerSafetyWaypointOfferInvalid(body.waypointOffer) : undefined;
+  const waypointOfferResponse = parseExplorerSafetyWaypointOfferResponse(body.waypointOfferResponse);
   return Object.freeze({ classification, candidate: candidate(body.candidateReply),
     ...(parsedCompass === undefined ? {} : { compass: parsedCompass }),
     ...(waypointSuggestion === undefined ? {} : { waypointSuggestion }),
     ...(waypointResponse === undefined ? {} : { waypointResponse }),
+    ...(waypointOffer === undefined ? {} : { waypointOffer }),
+    ...(waypointOfferInvalid === undefined ? {} : { waypointOfferInvalid }),
+    ...(waypointOfferResponse === undefined ? {} : { waypointOfferResponse }),
     ...(parsedChoices === undefined ? {} : { choices: parsedChoices }) });
 }
 

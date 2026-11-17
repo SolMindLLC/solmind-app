@@ -159,7 +159,7 @@ create function pg_temp.compass_context() returns jsonb language sql stable as $
     select 'set_attention',(value->>'recordedAt')::timestamptz,'attention_changed',(value->>'pointId')::uuid,
       (value->>'revision')::integer-1,null::uuid from forming_move where value is not null
   )
-  select jsonb_build_object('version','explorer-compass-context.v8','immediateMessageIsReplyChoice',false,
+  select jsonb_build_object('version','explorer-compass-context.v9','offers','[]'::jsonb,'reachedOfferedWaypointIds','[]'::jsonb,'immediateMessageIsReplyChoice',false,
     'mode',case when (select compass_mode from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005))='automatic'
       then 'automatic' else 'legacy_read_only' end,
     'capacity',case when (select compass_mode from ai.explorer_conversation_state where conversation_id=pg_temp.gid(6005))<>'automatic'
@@ -236,7 +236,7 @@ create function pg_temp.compass_source_ids() returns uuid[] language sql stable 
 $$;
 create function pg_temp.context_value(msg uuid,body text,classification_only boolean default false) returns jsonb language sql stable as $$
   select jsonb_build_object('contractVersion',case when classification_only then 'wi007-v0.1+onboarding-fields-v2'
-    else 'wi007-v0.1+onboarding-fields-v2+compass-v8' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
+    else 'wi007-v0.1+onboarding-fields-v2+compass-v9' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy',jsonb_build_object('version','synthetic-policy.v1','text','Synthetic policy.'),
     'roleBehavior',jsonb_build_object('version','synthetic-behavior.v1','text','Synthetic behavior.'),
     'crisisBehavior',jsonb_build_object('version','synthetic-crisis.v1','text','Synthetic crisis.'),
@@ -374,20 +374,20 @@ select ok(not has_table_privilege('anon','content.waypoint_draft','SELECT,INSERT
   and not exists(select 1 from pg_class c cross join lateral aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) acl
     where c.oid='content.waypoint_draft'::regclass and acl.grantee=0),
   'S7a: no direct API-role or public draft table access');
-select ok((select p.pronargs=28 and p.proargnames[25]='p_waypoint_suggestion' and p.prosecdef
+select ok((select p.pronargs=31 and p.proargnames[25]='p_waypoint_suggestion' and p.prosecdef
   and p.proowner='postgres'::regrole and p.proconfig @> array['search_path=""','lock_timeout=2000ms','statement_timeout=5000ms']
-  from pg_proc p where p.oid='public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,text,jsonb)'::regprocedure),
-  'S7a: settlement preserves its 25th argument with 28 arguments and unchanged security and finite limits');
+  from pg_proc p where p.oid='public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,text,jsonb,jsonb,jsonb,jsonb)'::regprocedure),
+  'S7a: settlement preserves its 25th argument with 31 arguments and unchanged security and finite limits');
 select ok(to_regprocedure('public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb)') is null,
   'S7a: the retired 24-argument overload is absent');
 select ok(to_regprocedure('public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,text)') is null,
   'REV391: the retired 27-argument settlement identity is absent');
 select ok(has_function_privilege('service_role',
-    'public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,text,jsonb)','EXECUTE')
+    'public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,text,jsonb,jsonb,jsonb,jsonb)','EXECUTE')
   and not has_function_privilege('anon',
-    'public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,text,jsonb)','EXECUTE')
+    'public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,text,jsonb,jsonb,jsonb,jsonb)','EXECUTE')
   and not has_function_privilege('authenticated',
-    'public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,text,jsonb)','EXECUTE'),
+    'public.solmind_settle_explorer_conversation_turn_v4(uuid,uuid,uuid,uuid,text,uuid,text,text,smallint,boolean,text,text,text,text,text,text,text,smallint,boolean,boolean,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,text,jsonb,jsonb,jsonb,jsonb)','EXECUTE'),
   'S7a: settlement remains service-role-only');
 select ok((select p.pronargs=8 and p.proargnames[7]='p_draft_id' and p.prosecdef and p.proowner='postgres'::regrole
   and p.proconfig @> array['search_path=""','lock_timeout=2000ms','statement_timeout=5000ms']
@@ -440,7 +440,7 @@ select is((select count(*)::integer from content.waypoint),0,'S7a: a draft is no
 select is(pg_temp.state()->'waypointDraft',jsonb_build_object('id',(select waypoint_draft_id from original_draft),
   'title','Find a calmer start to mornings','destination','Start my morning without rushing.',
   'whyItMatters','I want room to think before work.','arrivalSignal','I start two mornings with time for breakfast.',
-  'suggestionMessageId',pg_temp.gid(10015)),'S7a: owned state carries exactly the current draft fields');
+  'suggestionMessageId',pg_temp.gid(10015),'typedAnswerEligible',true),'S7a: owned state carries exactly the current draft fields');
 select ok(pg_temp.send_waypoint(2,pg_temp.suggestion('Make room for breakfast before work')),
   'S7a: the next ordinary reply refines the existing draft');
 select ok((select count(*)=1 and bool_and(d.waypoint_draft_id=o.waypoint_draft_id
@@ -928,7 +928,7 @@ select ok(pg_temp.guard_case('invalid_text'),'S7a: table constraints reject inva
 
 -- The TypeScript context test reads this one expected non-empty sample too.
 create function pg_temp.expected_draft_context() returns jsonb language sql immutable as $$
-  select $waypoint_context_golden${"version":"explorer-compass-context.v8","mode":"legacy_read_only","topics":[],"messageRefs":{"history":[{"ref":"h0","order":0}],"immediate":"now"},"capacity":{"originalsRemaining":0,"topicSlotsRemaining":0,"visibleSlotsRemaining":0},"points":[],"priorityId":null,"attentionId":null,"recentRoute":[],"waypoints":[],"drafts":[{"id":"f5120000-0000-4000-8000-000000000901","title":"A calmer morning","destination":"An unhurried breakfast","whyItMatters":"Family time","arrivalSignal":"Two calm mornings","suggestedInPreviousReply":true}],"immediateMessageIsReplyChoice":false}$waypoint_context_golden$::jsonb
+  select $waypoint_context_golden${"version":"explorer-compass-context.v9","offers":[],"reachedOfferedWaypointIds":[],"mode":"legacy_read_only","topics":[],"messageRefs":{"history":[{"ref":"h0","order":0}],"immediate":"now"},"capacity":{"originalsRemaining":0,"topicSlotsRemaining":0,"visibleSlotsRemaining":0},"points":[],"priorityId":null,"attentionId":null,"recentRoute":[],"waypoints":[],"drafts":[{"id":"f5120000-0000-4000-8000-000000000901","title":"A calmer morning","destination":"An unhurried breakfast","whyItMatters":"Family time","arrivalSignal":"Two calm mornings","suggestedInPreviousReply":true}],"immediateMessageIsReplyChoice":false}$waypoint_context_golden$::jsonb
 $$;
 select is((select value->'compassContext' from shared_golden),pg_temp.expected_draft_context(),
   'S7a: SQL and TypeScript share one exact non-empty draft context sample');

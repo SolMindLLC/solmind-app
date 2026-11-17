@@ -106,7 +106,7 @@ describe("provider-held pure Explorer exclusion matcher (synthetic data)", () =>
 
   it("S3: inspects the saved Compass and Waypoint section's strings and refuses unknown root keys", () => {
     const base = JSON.parse(fixture().serializedContext) as Record<string, unknown>;
-    const section = { version: "explorer-compass-context.v8", mode: "legacy_read_only", topics: [],
+    const section = { version: "explorer-compass-context.v9", mode: "legacy_read_only", topics: [],
       messageRefs: { history: (base.currentSessionMessages as { role: string; order: number }[]).filter(message => message.role === "explorer").map(message => ({ ref: `h${message.order}`, order: message.order })), immediate: "now" },
       capacity: { originalsRemaining: 0, topicSlotsRemaining: 0, visibleSlotsRemaining: 0 },
       points: [{ id: id(8), label: "A saved synthetic point", order: 0, formation: "saved", anchor: null, emphasis: null }],
@@ -116,7 +116,7 @@ describe("provider-held pure Explorer exclusion matcher (synthetic data)", () =>
     const withSection = (value: unknown) => {
       const ordered: Record<string, unknown> = {};
       for (const [key, part] of Object.entries(base)) { ordered[key] = part; if (key === "approvedContinuity") ordered.compassContext = value; }
-      return JSON.stringify({ ...ordered, contractVersion: "wi007-v0.1+onboarding-fields-v2+compass-v8" });
+      return JSON.stringify({ ...ordered, contractVersion: "wi007-v0.1+onboarding-fields-v2+compass-v9" });
     };
     const clean = fixture(); clean.serializedContext = withSection(section);
     expect(inspectExplorerContextExclusions(clean)).toEqual({ status: "clear" });
@@ -314,5 +314,33 @@ describe("provider-held pure Explorer exclusion matcher (synthetic data)", () =>
 
   it("exports only the held inspector and version, never a raw-content hashing/source capability", () => {
     expect(Object.keys(matcher).sort()).toEqual(["EXPLORER_CONTEXT_EXCLUSION_MATCHER_VERSION", "inspectExplorerContextExclusions"]);
+  });
+});
+
+describe("offers build step 2: the exclusion matcher reads a waiting offer's words", () => {
+  it("clears a clean offer and blocks private content in an offered part or in Reached evidence", () => {
+    const base = JSON.parse(fixture().serializedContext) as Record<string, unknown>;
+    const section = { version: "explorer-compass-context.v9", mode: "legacy_read_only", topics: [],
+      messageRefs: { history: (base.currentSessionMessages as { role: string; order: number }[]).filter(message => message.role === "explorer")
+        .map(message => ({ ref: `h${message.order}`, order: message.order })), immediate: "now" },
+      capacity: { originalsRemaining: 0, topicSlotsRemaining: 0, visibleSlotsRemaining: 0 },
+      points: [], priorityId: null, attentionId: null, recentRoute: [],
+      waypoints: [{ id: id(9), title: "Synthetic", destination: "Synthetic", meaning: "Synthetic meaning", arrivalSignal: "Synthetic signal",
+        stage: "formed", reachedEvidence: null }], drafts: [],
+      offers: [{ id: id(10), kind: "change", waypointId: id(9), stage: "formed", suggestedInPreviousReply: true, title: "Synthetic offer",
+        destination: "Synthetic", whyItMatters: "Synthetic meaning", arrivalSignal: "Synthetic signal" }],
+      reachedOfferedWaypointIds: [], immediateMessageIsReplyChoice: false };
+    const withSection = (value: unknown) => {
+      const ordered: Record<string, unknown> = {};
+      for (const [key, part] of Object.entries(base)) { ordered[key] = part; if (key === "approvedContinuity") ordered.compassContext = value; }
+      return JSON.stringify({ ...ordered, contractVersion: "wi007-v0.1+onboarding-fields-v2+compass-v9" });
+    };
+    const clean = fixture(); clean.serializedContext = withSection(section);
+    expect(inspectExplorerContextExclusions(clean)).toEqual({ status: "clear" });
+    const wording = fixture(); wording.serializedContext = withSection({ ...section, offers: [{ ...section.offers[0], whyItMatters: PRIVATE_CANARY }] });
+    expect(inspectExplorerContextExclusions(wording)).toEqual(blocked("excluded_content"));
+    const evidence = fixture(); evidence.serializedContext = withSection({ ...section, reachedOfferedWaypointIds: [id(9)],
+      offers: [{ id: id(10), kind: "reached", waypointId: id(9), stage: "formed", suggestedInPreviousReply: true, evidence: PRIVATE_CANARY }] });
+    expect(inspectExplorerContextExclusions(evidence)).toEqual(blocked("excluded_content"));
   });
 });

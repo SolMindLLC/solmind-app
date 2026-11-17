@@ -20,6 +20,11 @@ export const WAYPOINT_CONVERSATION_LIMIT_REASON =
 export const WAYPOINT_DRAFT_CONVERSATION_LIMIT_REASON =
   '"That\'s right" is unavailable because this conversation has reached its five-Waypoint limit, to help keep each conversation focused. Reached and Released Waypoints still count. This limit does not block the other replies or typing. To form another Waypoint, end this conversation when you choose, then open With your Virtual Guide and send a message to start another.';
 
+// Paul's approved wording (Clarify and Revisit sheet, revision 2, Part 2; approved 2026-11-16): the forming box's
+// active-limit sentence says "before adding another", which does not fit a Waypoint taken up again.
+export const WAYPOINT_OFFER_REVISIT_ACTIVE_LIMIT_REASON =
+  '"That\'s right" is unavailable because you have {activeCount} active Waypoints across your conversations. To help keep your focus manageable, your total must be below {activeLimit} before bringing back another. This limit does not block other replies or typing what you would change.';
+
 // Explanation order, for the first limit that applies: the 200-version guard, then (for a new Waypoint only) this
 // conversation's five, then (for a new Waypoint or a revisit) the 20 active Waypoints. The five come before the active
 // limit because releasing an active Waypoint never makes room in this conversation. A revision checks history only.
@@ -50,4 +55,23 @@ export function waypointCapacityMessage(
 export function waypointConversationLimitNotice(state: Pick<ExplorerConversationState, "waypointCapacity">): string | null {
   const capacity = parseExplorerWaypointCapacity(state.waypointCapacity);
   return capacity !== null && capacity.historyRoom && !capacity.conversationRoom ? WAYPOINT_CONVERSATION_LIMIT_REASON : null;
+}
+
+// The yes button of a saved offer (offers build, step 4): a change or a revisit saves a new version, so the 200-version
+// sentence comes first; a revisit also needs an active place. The five-Waypoint limit never applies to an offer, and
+// a Reached offer saves no version. Missing or malformed capacity reads as the settings hold, as for a forming Waypoint.
+export function waypointOfferCapacityMessage(
+  state: Pick<ExplorerConversationState, "waypointCapacity">,
+  kind: "reached" | "change" | "revisit",
+): string | null {
+  if (kind === "reached") return null;
+  const capacity = parseExplorerWaypointCapacity(state.waypointCapacity);
+  if (capacity === null) return COMPASS_SUGGESTION_REPLY_HOLDS.unavailable;
+  if (!capacity.historyRoom) return WAYPOINT_DRAFT_HISTORY_LIMIT_REASON;
+  if (kind === "revisit" && capacity.activeCount >= capacity.activeLimit) {
+    return WAYPOINT_OFFER_REVISIT_ACTIVE_LIMIT_REASON
+      .replace("{activeCount}", String(capacity.activeCount))
+      .replace("{activeLimit}", String(capacity.activeLimit));
+  }
+  return null;
 }

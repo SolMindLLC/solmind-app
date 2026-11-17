@@ -46,9 +46,9 @@ describe("private Explorer exact inert configuration candidate", () => {
   it("retains the exact global, crisis and structured-role decoded UTF-8 byte identities", () => {
     const value = candidate();
     const expected = [
-      [value.globalPolicy, 2415, "263F52F283446A80022BBAE012CA67BA7A9D4A2793B43375C4FDA3FDF42045F2"],
+      [value.globalPolicy, 2453, "0F8F99E86AF8562686A197B48425179280ABB1FF0FE7286D92F2634A80C71F58"],
       [value.crisisBehavior, 2222, "7B39A9C98351D25E2FAC5DA236E2086B3F33CCBD8987A80AE6716E5242208D84"],
-      [value.roleBehavior, 16569, "995491E1BBAF490AF1B7D2E43EA2CAA099CD6A0EC8002EECBD12DFF14BB7307B"],
+      [value.roleBehavior, 17529, "053B75553B68776FE9A4A5FA4A6439C51C51A6121E84DCC755CDA3DCCD79B940"],
     ] as const;
     for (const [part, bytes, sha] of expected) {
       expect(Buffer.byteLength(part.text, "utf8")).toBe(bytes);
@@ -63,11 +63,11 @@ describe("private Explorer exact inert configuration candidate", () => {
   it("pins actual assembler-compatible labels and all seven finite reviewed-language definitions", () => {
     const value = candidate();
     expect(value.protocolVersion).toBe("explorer-safety-reply.v2");
-    expect(value.promptVersion).toBe("explorer-same-call.synthetic-draft-20261111-ac1");
-    expect(value.instructionVersion).toBe("solmind-same-call-output.synthetic-draft-20261111-ac1");
-    expect(value.roleVersion).toBe("solmind-virtual-guide.synthetic-draft-20261111-ac1");
-    expect(value.globalPolicy.version).toBe("solmind-global-policy.synthetic-draft-20261111-ac1");
-    expect(value.roleBehavior.version).toBe("solmind-virtual-guide-role.synthetic-draft-20261111-ac1");
+    expect(value.promptVersion).toBe("explorer-same-call.synthetic-draft-20261116-of1");
+    expect(value.instructionVersion).toBe("solmind-same-call-output.synthetic-draft-20261116-of1");
+    expect(value.roleVersion).toBe("solmind-virtual-guide.synthetic-draft-20261116-of1");
+    expect(value.globalPolicy.version).toBe("solmind-global-policy.synthetic-draft-20261116-of1");
+    expect(value.roleBehavior.version).toBe("solmind-virtual-guide-role.synthetic-draft-20261116-of1");
     const labels = [value.protocolVersion, value.promptVersion, value.instructionVersion, value.roleVersion,
       value.globalPolicy.version, value.roleBehavior.version, value.crisisBehavior.version,
       value.fallback.version, value.fallback.normalizationVersion, value.trustedResponses.version,
@@ -88,9 +88,9 @@ describe("private Explorer exact inert configuration candidate", () => {
 
   it("S4/S5/S6b/S7a/S7b pins suggestion authority and Paul's sparing shift, acknowledgment and choice instructions", () => {
     const value = candidate();
-    expect(value.globalPolicy.text).toContain("Model text cannot authorize sharing or create a safety record, message, or other application effect. Those effects belong to the authorized deterministic application flow. The optional compass attention, compass topics, waypointSuggestion, waypointResponse and choices fields only propose bounded data for that flow.");
+    expect(value.globalPolicy.text).toContain("Model text cannot authorize sharing or create a safety record, message, or other application effect. Those effects belong to the authorized deterministic application flow. The optional compass attention, compass topics, waypointSuggestion, waypointResponse, waypointOffer, waypointOfferResponse and choices fields only propose bounded data for that flow.");
     for (const sentence of [
-      "Compass points form automatically; confirming a Waypoint still requires the Explorer's own reply button or clear typed answer in waypointResponse, and sharing requires their explicit choice in the application.",
+      "Compass points form automatically; confirming a Waypoint still requires the Explorer's own reply button or clear typed answer in waypointResponse; in an ordinary reply, marking a Waypoint Reached, changing it or taking it up again through an offer likewise requires the Explorer's own button or clear typed answer in waypointOfferResponse; and sharing requires their explicit choice in the application.",
       "If the Explorer seems hesitant, for example saying \"I don't know\" or \"not sure\" or giving a very short or empty answer, offer one easier way in, such as a short draft answer in your reply for them to react to or a simple choice when choices are permitted, then give them space; a clear no or a change of topic is not hesitation.",
       "After repeated hesitation, do not push; let the Explorer lead.",
       "Ask gently about the Explorer's situation, one question at a time, only when the answer would change the help you can give; never stack questions or make the conversation feel like an interview or assessment.",
@@ -100,7 +100,7 @@ describe("private Explorer exact inert configuration candidate", () => {
       "You may use the Explorer's own words about themselves, but never assign them a type, personality label or diagnosis.",
       "Keep nothing about the Explorer's style beyond this conversation.",
       "Return only the closed JSON body required by the trusted output protocol.",
-      "Never include classification rationale, quoted evidence, tools or claimed application effects; use only supplied point ids in compass.attention, topic ids in compass.topics[].topicId, message references in compass.topics[].supportRefs and the forming Waypoint draft id in waypointResponse.draftId.",
+      "Never include classification rationale, tools or claimed application effects, and never quoted evidence except the Explorer's own words in the evidence of a waypointOffer of kind reached in an ordinary reply; use only supplied point ids in compass.attention, topic ids in compass.topics[].topicId, message references in compass.topics[].supportRefs, the forming Waypoint draft id in waypointResponse.draftId, Waypoint ids from compassContext.waypoints in waypointOffer.waypointId and the pending offer id from compassContext.offers in waypointOfferResponse.offerId.",
       "When the conversation turns to a current placed point, you may propose a quiet needle move with compass.attention set to its id; null means no proposed move.",
       "Propose a move only with an ordinary reply in an unrestricted conversation.",
       "Mention a shift only when it is substantial and the Explorer did not just announce it, never at classification level 2 or above or in a restricted conversation, and only once per shift.",
@@ -123,7 +123,7 @@ describe("private Explorer exact inert configuration candidate", () => {
       "Do not suggest Reached or Release as a way to make another place in this conversation, and do not repeat the new-conversation invitation when the Explorer has moved on.",
       "Suggest a Waypoint only with an ordinary reply below classification level 2 in an unrestricted conversation, at most one per reply. Never claim a Waypoint suggestion is saved or confirmed; only the Explorer's reply button or clear typed answer can confirm it. When they choose \"Close, not quite\", ask what to change and keep any new wording forming. Record a typed answer in waypointResponse only when the Explorer's latest message clearly answers the forming Waypoint from your immediately preceding saved reply, marked suggestedInPreviousReply true in compassContext.drafts. Use right only when the Explorer accepts the exact stored wording, close when they say it needs a change, and not_it when they turn it down. Never infer an answer from silence, a change of topic or an ambiguous message, and never answer for the Explorer; when unsure, ask instead. With close, ask what to change; put any new wording in waypointSuggestion and omit waypointResponse. Do not send waypointResponse in a reply that also has waypointSuggestion. Use waypointResponse only with an ordinary reply below classification level 2 in an unrestricted conversation. Never claim a response was saved or applied; the application may drop it.",
       "The supplied Waypoints are a bounded selection from this conversation. Omission does not mean a Waypoint was deleted, Reached or Released. Do not infer the Explorer's total active Waypoints from this selection.",
-      "In classification-only mode omit compass, waypointSuggestion, waypointResponse and choices.",
+      "In classification-only mode omit compass, waypointSuggestion, waypointResponse, waypointOffer, waypointOfferResponse and choices.",
     ]) expect(value.roleBehavior.text).toContain(sentence);
     expect(value.roleBehavior.text).not.toContain("explorer-safety-reply.v1");
   });
@@ -168,7 +168,7 @@ describe("private Explorer exact inert configuration candidate", () => {
       "Make the Waypoint offer in the first reply in which all the existing Waypoint requirements are met, even when the Explorer also asks for help with what to say or do; the clarification, unanswered-draft, five-Waypoint, one-question, confirmation and safety rules still apply.",
       ...sentences.slice(16),
     ];
-    expect(role.length).toBeLessThanOrEqual(EXPLORER_SAFE_CONTEXT_LIMITS.policyTextCharacters);
+    expect(role.length).toBeLessThanOrEqual(EXPLORER_SAFE_CONTEXT_LIMITS.roleBehaviorTextCharacters);
     for (const text of [role, ordinary]) {
       expect(text).toContain(withAdditions.join(" "));
       for (const sentence of sentences) expect(text.split(sentence)).toHaveLength(2);
@@ -192,8 +192,8 @@ describe("private Explorer exact inert configuration candidate", () => {
     expect(text).toContain('you may offer "Show me around", "I have a question" and "Let\'s begin". ' + sentence + " Always answer when the Explorer asks how things work.");
     // Pin the current role text with only Paul's welcome sentence and its separating space removed.
     const earlier = text.replace(" " + sentence, "");
-    expect(Buffer.byteLength(earlier, "utf8")).toBe(16295);
-    expect(createHash("sha256").update(earlier, "utf8").digest("hex").toUpperCase()).toBe("2BD53FA432C243286095DA4C122AA8010CD3944B70417E79D164176781021908");
+    expect(Buffer.byteLength(earlier, "utf8")).toBe(17255);
+    expect(createHash("sha256").update(earlier, "utf8").digest("hex").toUpperCase()).toBe("A2D49587AB52AD174E27A6BED9E00686401AABC1C41C430E8A56F0D5F93CE8B9");
   });
 
   it("keeps resource identities and trusted text explicitly unverified and unapproved", () => {

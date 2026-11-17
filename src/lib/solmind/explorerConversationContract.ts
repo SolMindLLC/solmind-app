@@ -59,11 +59,19 @@ export const EXPLORER_WAYPOINT_QUESTION_KEYS = Object.freeze({
   meaning: "waypoint.meaning.v1",
   arrivalSignal: "waypoint.arrivalSignal.v1",
 } as const);
+// Virtual Guide wording that the Explorer confirmed in an offer (the .v1 keys stay a fixed application question
+// answered by typing).
+export const EXPLORER_WAYPOINT_OFFER_QUESTION_KEYS = Object.freeze({
+  destination: "waypoint.destination.offer.v1",
+  meaning: "waypoint.meaning.offer.v1",
+  arrivalSignal: "waypoint.arrivalSignal.offer.v1",
+} as const);
 export type ExplorerWaypointClarificationAnswer = Readonly<{
   component: ExplorerWaypointComponent; answer: string;
 }>;
 export type ExplorerWaypointClarification = ExplorerWaypointClarificationAnswer & Readonly<{
-  questionKey: typeof EXPLORER_WAYPOINT_QUESTION_KEYS[ExplorerWaypointComponent]; recordedAt: string;
+  questionKey: typeof EXPLORER_WAYPOINT_QUESTION_KEYS[ExplorerWaypointComponent]
+    | typeof EXPLORER_WAYPOINT_OFFER_QUESTION_KEYS[ExplorerWaypointComponent]; recordedAt: string;
 }>;
 export type ExplorerWaypointLifecycle = Readonly<{
   predecessorWaypointId: string;
@@ -94,6 +102,45 @@ export type ExplorerConversationWaypointDraft = Readonly<{
   whyItMatters: string | null;
   arrivalSignal: string | null;
   suggestionMessageId: string;
+  // Server-derived (REV473d): the next typed message could be applied to this forming Waypoint as its answer.
+  // The database always sends it; retained in-memory fixtures may omit it.
+  typedAnswerEligible?: boolean;
+}>;
+// Saved Waypoint offers (migration 20261116000000_explorer_waypoint_offers.sql). An offer is what the Virtual Guide
+// puts under its reply for the Explorer's yes or no: mark a Waypoint Reached, change its wording, or revisit it.
+export const EXPLORER_WAYPOINT_OFFER_KINDS = ["reached", "change", "revisit"] as const;
+export type ExplorerWaypointOfferKind = typeof EXPLORER_WAYPOINT_OFFER_KINDS[number];
+export const EXPLORER_WAYPOINT_OFFER_STATUSES = ["proposed", "confirmed", "declined", "superseded"] as const;
+export const EXPLORER_WAYPOINT_OFFER_DROP_REASONS = ["invalid", "target_not_available", "already_offered",
+  "evidence_not_found", "no_change", "not_allowed_now"] as const;
+export const EXPLORER_WAYPOINT_OFFER_REFUSAL_REASONS = ["history_limit", "active_limit", "target_changed"] as const;
+export type ExplorerConversationWaypointOffer = Readonly<{
+  id: string;
+  status: typeof EXPLORER_WAYPOINT_OFFER_STATUSES[number];
+  waypointId: string;
+  // The target as it was when the offer was saved; the state itself carries only current versions.
+  targetBefore: Readonly<{ title: string; destination: string; whyItMatters: string; arrivalSignal: string;
+    stage: "formed" | "reached" | "released" }>;
+  suggestionMessageId: string;
+  resultWaypointId: string | null;
+  // Server-derived facts: the target still equals the snapshot; the next typed message could answer this offer.
+  targetCurrent: boolean;
+  typedAnswerEligible: boolean;
+  // Only for the current presentation of an offer that is still waiting.
+  typedAnswerRefusal: typeof EXPLORER_WAYPOINT_OFFER_REFUSAL_REASONS[number] | null;
+}> & (
+  | Readonly<{ kind: "reached"; evidence: string }>
+  | Readonly<{ kind: "change" | "revisit"; title: string; destination: string; whyItMatters: string; arrivalSignal: string }>
+);
+export type ExplorerConversationWaypointOfferDrop = Readonly<{
+  kind: ExplorerWaypointOfferKind | null; reason: typeof EXPLORER_WAYPOINT_OFFER_DROP_REASONS[number];
+}>;
+// The whole, immutable result of one answer to an offer, taken from that answer's own receipt and never from the
+// offer's current row.
+export type ExplorerWaypointOfferOperationResult = Readonly<{
+  offerId: string; kind: ExplorerWaypointOfferKind; waypointId: string; suggestionMessageId: string;
+  response: ExplorerCompassSuggestionResponse; typed: boolean;
+  outcome: "confirmed" | "declined" | "kept_open"; resultWaypointId: string | null;
 }>;
 export type ExplorerConversationRouteEvent = Readonly<{
   operationId: string;
@@ -164,6 +211,11 @@ export type ExplorerConversationState = Readonly<{
   waypointCapacity: ExplorerWaypointCapacity;
   waypointProjection: ExplorerWaypointProjection;
   waypointDraft: ExplorerConversationWaypointDraft | null;
+  // The saved offer state. The database always sends the three together; retained in-memory fixtures may omit
+  // all three, which reads as no offer, no dropped offer and no Reached offer made.
+  waypointOffer?: ExplorerConversationWaypointOffer | null;
+  waypointOfferDrop?: ExplorerConversationWaypointOfferDrop | null;
+  reachedOfferedWaypointIds?: readonly string[];
   route?: readonly ExplorerConversationRouteEvent[];
   sessionStatus?: "active" | "ended" | null;
   ending?: ExplorerConversationEnding | null;
@@ -177,6 +229,7 @@ export type ExplorerConversationCommand = CommandBase & (
   | Readonly<{ kind: "set_attention"; itemId: string }>
   | Readonly<{ kind: "respond_compass_suggestion"; itemId: string; response: ExplorerCompassSuggestionResponse }>
   | Readonly<{ kind: "respond_waypoint_draft"; draftId: string; response: ExplorerCompassSuggestionResponse }>
+  | Readonly<{ kind: "respond_waypoint_offer"; offerId: string; response: ExplorerCompassSuggestionResponse }>
   | Readonly<{ kind: "confirm_compass_arrangement"; priorityId: string | null; items: readonly ExplorerCompassArrangementItem[] }>
   | Readonly<{ kind: "confirm_compass_category"; targetItemId: string; memberItemIds: readonly string[]; label: string }>
   | Readonly<{ kind: "confirm_waypoint"; sourceMessageId: string; destination: string;
@@ -221,12 +274,15 @@ export function isExplorerConversationText(value: unknown, maximum: number, mult
 }
 export function parseExplorerConversationWaypointDraft(value: unknown): ExplorerConversationWaypointDraft | null | undefined {
   if (value === null) return null;
-  if (!object(value) || !keys(value, ["id", "title", "destination", "whyItMatters", "arrivalSignal", "suggestionMessageId"]) ||
-      Reflect.ownKeys(value).length !== 6 || Object.keys(value).some(key => {
+  const hasEligible = object(value) && Object.hasOwn(value, "typedAnswerEligible");
+  if (!object(value) || !keys(value, ["id", "title", "destination", "whyItMatters", "arrivalSignal", "suggestionMessageId",
+      ...(hasEligible ? ["typedAnswerEligible"] : [])]) ||
+      Reflect.ownKeys(value).length !== (hasEligible ? 7 : 6) || Object.keys(value).some(key => {
         const descriptor = Object.getOwnPropertyDescriptor(value, key);
         return !descriptor?.enumerable || !("value" in descriptor);
       }) || !isExplorerConversationId(value.id) ||
-      !isExplorerConversationId(value.suggestionMessageId)) return undefined;
+      !isExplorerConversationId(value.suggestionMessageId) ||
+      (hasEligible && typeof value.typedAnswerEligible !== "boolean")) return undefined;
   for (const field of ["title", "destination", "whyItMatters", "arrivalSignal"] as const) {
     const part = value[field];
     if (part !== null && (!text(part, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) || part !== part.trim() ||
@@ -234,7 +290,87 @@ export function parseExplorerConversationWaypointDraft(value: unknown): Explorer
   }
   return Object.freeze({ id: value.id, title: value.title as string | null, destination: value.destination as string | null,
     whyItMatters: value.whyItMatters as string | null, arrivalSignal: value.arrivalSignal as string | null,
-    suggestionMessageId: value.suggestionMessageId });
+    suggestionMessageId: value.suggestionMessageId,
+    ...(hasEligible ? { typedAnswerEligible: value.typedAnswerEligible as boolean } : {}) });
+}
+function ownData(value: Record<string, unknown>, count: number): boolean {
+  return Reflect.ownKeys(value).length === count && Object.keys(value).every(key => {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return descriptor !== undefined && descriptor.enumerable === true && "value" in descriptor;
+  });
+}
+function offeredText(value: unknown): value is string {
+  return text(value, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true) && value === value.trim() &&
+    !/[\u0009\u200b-\u200d\u202a-\u202e\u2060\u2066-\u2069\ufeff]/u.test(value);
+}
+// The saved offer of the conversation state: null when there is none, undefined when the value is not a valid offer.
+export function parseExplorerConversationWaypointOffer(value: unknown): ExplorerConversationWaypointOffer | null | undefined {
+  if (value === null) return null;
+  const common = ["id", "kind", "status", "waypointId", "targetBefore", "suggestionMessageId", "resultWaypointId",
+    "targetCurrent", "typedAnswerEligible", "typedAnswerRefusal"];
+  if (!object(value) || !Object.hasOwn(value, "kind") || !("value" in (Object.getOwnPropertyDescriptor(value, "kind") ?? {}))) return undefined;
+  const reached = value.kind === "reached";
+  const own = [...common, ...(reached ? ["evidence"] : ["title", "destination", "whyItMatters", "arrivalSignal"])];
+  if (!keys(value, own) || !ownData(value, own.length) ||
+      !EXPLORER_WAYPOINT_OFFER_KINDS.includes(value.kind as ExplorerWaypointOfferKind) ||
+      !EXPLORER_WAYPOINT_OFFER_STATUSES.includes(value.status as ExplorerConversationWaypointOffer["status"]) ||
+      !isExplorerConversationId(value.id) || !isExplorerConversationId(value.waypointId) ||
+      !isExplorerConversationId(value.suggestionMessageId) ||
+      !(value.resultWaypointId === null || isExplorerConversationId(value.resultWaypointId)) ||
+      // A result Waypoint exists exactly when the offer was confirmed: the target itself for Reached, a new version otherwise.
+      (value.resultWaypointId !== null) !== (value.status === "confirmed") ||
+      (value.resultWaypointId !== null && reached !== (value.resultWaypointId === value.waypointId)) ||
+      typeof value.targetCurrent !== "boolean" || typeof value.typedAnswerEligible !== "boolean" ||
+      (value.typedAnswerEligible && value.status !== "proposed") ||
+      !(value.typedAnswerRefusal === null || (value.status === "proposed" &&
+        EXPLORER_WAYPOINT_OFFER_REFUSAL_REASONS.includes(value.typedAnswerRefusal as typeof EXPLORER_WAYPOINT_OFFER_REFUSAL_REASONS[number])))) return undefined;
+  const before = value.targetBefore;
+  if (!object(before) || !keys(before, ["title", "destination", "whyItMatters", "arrivalSignal", "stage"]) || !ownData(before, 5) ||
+      !["formed", "reached", "released"].includes(before.stage as string) ||
+      // Reached and change start from a Waypoint in progress; revisit from one that is Reached or Released.
+      (value.kind === "revisit") === (before.stage === "formed") ||
+      ![before.title, before.destination, before.whyItMatters, before.arrivalSignal]
+        .every(part => text(part, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true))) return undefined;
+  if (reached ? !text(value.evidence, EXPLORER_CONVERSATION_LIMITS.waypointCharacters, true)
+    : ![value.title, value.destination, value.whyItMatters, value.arrivalSignal].every(offeredText)) return undefined;
+  const shared = { id: value.id, status: value.status as ExplorerConversationWaypointOffer["status"], waypointId: value.waypointId,
+    targetBefore: Object.freeze({ title: before.title as string, destination: before.destination as string,
+      whyItMatters: before.whyItMatters as string, arrivalSignal: before.arrivalSignal as string,
+      stage: before.stage as "formed" | "reached" | "released" }),
+    suggestionMessageId: value.suggestionMessageId, resultWaypointId: value.resultWaypointId as string | null,
+    targetCurrent: value.targetCurrent, typedAnswerEligible: value.typedAnswerEligible,
+    typedAnswerRefusal: value.typedAnswerRefusal as ExplorerConversationWaypointOffer["typedAnswerRefusal"] };
+  return reached ? Object.freeze({ ...shared, kind: "reached" as const, evidence: value.evidence as string })
+    : Object.freeze({ ...shared, kind: value.kind as "change" | "revisit", title: value.title as string,
+      destination: value.destination as string, whyItMatters: value.whyItMatters as string,
+      arrivalSignal: value.arrivalSignal as string });
+}
+// The quiet fact that the latest reply's offer was not saved: null when there is none, undefined when invalid.
+export function parseExplorerConversationWaypointOfferDrop(value: unknown): ExplorerConversationWaypointOfferDrop | null | undefined {
+  if (value === null) return null;
+  if (!object(value) || !keys(value, ["kind", "reason"]) || !ownData(value, 2) ||
+      !(value.kind === null || EXPLORER_WAYPOINT_OFFER_KINDS.includes(value.kind as ExplorerWaypointOfferKind)) ||
+      !EXPLORER_WAYPOINT_OFFER_DROP_REASONS.includes(value.reason as ExplorerConversationWaypointOfferDrop["reason"])) return undefined;
+  return Object.freeze({ kind: value.kind as ExplorerWaypointOfferKind | null,
+    reason: value.reason as ExplorerConversationWaypointOfferDrop["reason"] });
+}
+// One answer's stored result: the outcome fits the answer, and a result Waypoint is named exactly when confirmed.
+export function parseExplorerWaypointOfferOperationResult(value: unknown): ExplorerWaypointOfferOperationResult | null {
+  if (!object(value) || !keys(value, ["offerId", "kind", "waypointId", "suggestionMessageId", "response", "typed",
+      "outcome", "resultWaypointId"]) || !ownData(value, 8) ||
+      !isExplorerConversationId(value.offerId) || !isExplorerConversationId(value.waypointId) ||
+      !isExplorerConversationId(value.suggestionMessageId) ||
+      !EXPLORER_WAYPOINT_OFFER_KINDS.includes(value.kind as ExplorerWaypointOfferKind) ||
+      !["right", "close", "not_it"].includes(value.response as string) || typeof value.typed !== "boolean" ||
+      value.outcome !== (value.response === "right" ? "confirmed" : value.response === "not_it" ? "declined" : "kept_open") ||
+      (value.kind === "reached" && value.response === "close") ||
+      !(value.resultWaypointId === null || isExplorerConversationId(value.resultWaypointId)) ||
+      (value.resultWaypointId !== null) !== (value.outcome === "confirmed") ||
+      (value.resultWaypointId !== null && (value.kind === "reached") !== (value.resultWaypointId === value.waypointId))) return null;
+  return Object.freeze({ offerId: value.offerId, kind: value.kind as ExplorerWaypointOfferKind, waypointId: value.waypointId,
+    suggestionMessageId: value.suggestionMessageId, response: value.response as ExplorerCompassSuggestionResponse,
+    typed: value.typed, outcome: value.outcome as ExplorerWaypointOfferOperationResult["outcome"],
+    resultWaypointId: value.resultWaypointId as string | null });
 }
 function revision(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 2_147_483_647;
@@ -424,6 +560,11 @@ export function parseExplorerConversationCommand(value: unknown): ExplorerConver
           !isExplorerConversationId(value.operationId) || !isExplorerConversationId(value.draftId) ||
           !["right", "close", "not_it"].includes(value.response as string)) return null;
       break;
+    case "respond_waypoint_offer":
+      if (!keys(value, [...base, "offerId", "response"]) || Reflect.ownKeys(value).length !== 5 ||
+          !isExplorerConversationId(value.operationId) || !isExplorerConversationId(value.offerId) ||
+          !["right", "close", "not_it"].includes(value.response as string)) return null;
+      break;
     case "confirm_compass_arrangement": {
       if (!keys(value, [...base, "priorityId", "items"]) || !(value.priorityId === null || id(value.priorityId)) ||
           !Array.isArray(value.items) || value.items.length > EXPLORER_CONVERSATION_LIMITS.compassItems) return null;
@@ -511,6 +652,8 @@ export function parseExplorerConversationWaypoint(item: unknown): ExplorerConver
         (item.status === "reached" && !hasReached)) return null;
     const clarifications: ExplorerWaypointClarification[] = [];
     let previousComponent = -1;
+    // Either the typed-answer keys or the offer keys, never both in one version.
+    let offerKeys = false;
     for (const answer of saved.clarifications) {
       if (!object(answer) || !keys(answer, ["component", "questionKey", "answer", "recordedAt"]) ||
           Reflect.ownKeys(answer).length !== 4 ||
@@ -519,10 +662,13 @@ export function parseExplorerConversationWaypoint(item: unknown): ExplorerConver
           !isExplorerConversationInstant(answer.recordedAt)) return null;
       const component = answer.component as ExplorerWaypointComponent;
       const position = EXPLORER_WAYPOINT_COMPONENTS.indexOf(component);
-      if (position <= previousComponent || answer.questionKey !== EXPLORER_WAYPOINT_QUESTION_KEYS[component] ||
+      const offerKey = answer.questionKey === EXPLORER_WAYPOINT_OFFER_QUESTION_KEYS[component];
+      if (position <= previousComponent || (clarifications.length > 0 && offerKey !== offerKeys) ||
+          (!offerKey && answer.questionKey !== EXPLORER_WAYPOINT_QUESTION_KEYS[component]) ||
           answer.answer !== item[component]) return null;
-      previousComponent = position;
-      clarifications.push(Object.freeze({ component, questionKey: EXPLORER_WAYPOINT_QUESTION_KEYS[component],
+      previousComponent = position; offerKeys = offerKey;
+      clarifications.push(Object.freeze({ component,
+        questionKey: offerKey ? EXPLORER_WAYPOINT_OFFER_QUESTION_KEYS[component] : EXPLORER_WAYPOINT_QUESTION_KEYS[component],
         answer: answer.answer, recordedAt: answer.recordedAt }));
     }
     lifecycle = Object.freeze({ predecessorWaypointId: saved.predecessorWaypointId,
@@ -550,7 +696,9 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
   const hasRoute = Object.hasOwn(state, "route");
   const hasLifecycle = Object.hasOwn(state, "sessionStatus") || Object.hasOwn(state, "ending");
   const hasSuggestionReplies = Object.hasOwn(state, "compassSuggestionReplies");
-  if (!keys(state, ["version", "conversationId", "revision", "pendingTurn", "turnedDownLimitReached", "providerState", "messages", "compassItems", "priorityId", "attentionId", "waypoints", "waypointDraft", "waypointCapacity", "waypointProjection", ...(hasRoute ? ["route"] : []), ...(hasLifecycle ? ["sessionStatus", "ending"] : []), ...(hasSuggestionReplies ? ["compassSuggestionReplies"] : []), ...(hasCompassMode ? ["compassMode", "compassChanges"] : [])]) ||
+  const hasOffers = Object.hasOwn(state, "waypointOffer") || Object.hasOwn(state, "waypointOfferDrop") ||
+    Object.hasOwn(state, "reachedOfferedWaypointIds");
+  if (!keys(state, ["version", "conversationId", "revision", "pendingTurn", "turnedDownLimitReached", "providerState", "messages", "compassItems", "priorityId", "attentionId", "waypoints", "waypointDraft", "waypointCapacity", "waypointProjection", ...(hasRoute ? ["route"] : []), ...(hasLifecycle ? ["sessionStatus", "ending"] : []), ...(hasSuggestionReplies ? ["compassSuggestionReplies"] : []), ...(hasCompassMode ? ["compassMode", "compassChanges"] : []), ...(hasOffers ? ["waypointOffer", "waypointOfferDrop", "reachedOfferedWaypointIds"] : [])]) ||
       state.version !== EXPLORER_CONVERSATION_VERSION || !revision(state.revision) ||
       typeof state.pendingTurn !== "boolean" ||
       typeof state.turnedDownLimitReached !== "boolean" ||
@@ -697,6 +845,26 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
   if (waypointDraft === undefined || (waypointDraft !== null &&
       (state.conversationId === null || waypointIds.has(waypointDraft.id) || compassIds.has(waypointDraft.id) ||
         !messages.some(message => message.id === waypointDraft.suggestionMessageId && message.role === "virtualGuide")))) return null;
+  let waypointOffer: ExplorerConversationWaypointOffer | null = null;
+  let waypointOfferDrop: ExplorerConversationWaypointOfferDrop | null = null;
+  const reachedOfferedWaypointIds: string[] = [];
+  if (hasOffers) {
+    const offer = parseExplorerConversationWaypointOffer(state.waypointOffer);
+    const drop = parseExplorerConversationWaypointOfferDrop(state.waypointOfferDrop);
+    if (offer === undefined || drop === undefined || !Array.isArray(state.reachedOfferedWaypointIds) ||
+        state.reachedOfferedWaypointIds.length > waypoints.length ||
+        ((offer !== null || drop !== null) && state.conversationId === null)) return null;
+    // An offer is its own record: never a point, topic, Waypoint, forming Waypoint or message, and always carried
+    // by a saved Virtual Guide reply.
+    if (offer !== null && (waypointIds.has(offer.id) || compassIds.has(offer.id) || topicIds.has(offer.id) ||
+        messageIds.has(offer.id) || waypointDraft?.id === offer.id ||
+        !messages.some(message => message.id === offer.suggestionMessageId && message.role === "virtualGuide"))) return null;
+    for (const reached of state.reachedOfferedWaypointIds) {
+      if (!isExplorerConversationId(reached) || !waypointIds.has(reached) || reachedOfferedWaypointIds.includes(reached)) return null;
+      reachedOfferedWaypointIds.push(reached);
+    }
+    waypointOffer = offer; waypointOfferDrop = drop;
+  }
   const route: ExplorerConversationRouteEvent[] = [];
   const routeIds = new Set<string>();
   if (hasRoute) {
@@ -781,6 +949,8 @@ export function parseExplorerConversationResult(value: unknown): ExplorerConvers
     compassItems: Object.freeze(compassItems), priorityId: state.priorityId as string | null,
     attentionId: state.attentionId as string | null, waypoints: Object.freeze(waypoints), waypointDraft,
     waypointCapacity, waypointProjection,
+    ...(hasOffers ? { waypointOffer, waypointOfferDrop,
+      reachedOfferedWaypointIds: Object.freeze(reachedOfferedWaypointIds) } : {}),
     ...(hasRoute ? { route: Object.freeze(route) } : {}),
     ...(hasSuggestionReplies ? { compassSuggestionReplies: state.compassSuggestionReplies as ExplorerCompassSuggestionReplies } : {}),
     ...(hasLifecycle ? { sessionStatus: state.sessionStatus as "active" | "ended" | null, ending } : {}) }) });

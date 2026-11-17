@@ -90,6 +90,11 @@ export function explorerConversationCommandFingerprint(command: ExplorerConversa
       EXPLORER_CONVERSATION_VERSION, command.kind, command.operationId, command.expectedRevision, command.draftId, command.response,
     ]), "utf8").digest("hex").toUpperCase();
   }
+  if (command.kind === "respond_waypoint_offer") {
+    return createHash("sha256").update(JSON.stringify([
+      EXPLORER_CONVERSATION_VERSION, command.kind, command.operationId, command.expectedRevision, command.offerId, command.response,
+    ]), "utf8").digest("hex").toUpperCase();
+  }
   if (command.kind === "respond_compass_suggestion") {
     return createHash("sha256").update(JSON.stringify([
       EXPLORER_CONVERSATION_VERSION, command.kind, command.operationId, command.expectedRevision,
@@ -155,7 +160,7 @@ export async function commandExplorerConversation(input: {
   const command = parseExplorerConversationCommand(input.command);
   if (!command) return failure("denied");
   // Ending is private-v3 only; the legacy generic mutation has no End authority.
-  if (["end_conversation", "release_waypoint", "revise_waypoint", "revisit_waypoint", "respond_compass_suggestion", "respond_waypoint_draft"].includes(command.kind)) return failure("denied");
+  if (["end_conversation", "release_waypoint", "revise_waypoint", "revisit_waypoint", "respond_compass_suggestion", "respond_waypoint_draft", "respond_waypoint_offer"].includes(command.kind)) return failure("denied");
   const { dependencies } = input;
   try {
     const actor = await dependencies.authenticate();

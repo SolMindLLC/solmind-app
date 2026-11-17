@@ -456,6 +456,9 @@ export const CONNECTED_WAYPOINT_WORDING = freeze({
   saving: YOUR_WAYPOINTS_WORDING.saving,
   savedReached: YOUR_WAYPOINTS_WORDING.savedReached,
   savedReleased: YOUR_WAYPOINTS_WORDING.savedReleased,
+  // Paul's approved wording (Reached sheet, revision 5, Part 1, "One gap"; offers decision sheet 2026-11-16,
+  // decision 5): shown in the Waypoint's row when the conversation changed while its review was open.
+  reviewChanged: "The conversation changed while this review was open. No change was sent from this review. Check this Waypoint's current status before trying again.",
 });
 
 // The compact Waypoint list (lane 8; Paul's decision, decision queue 2026-11-05

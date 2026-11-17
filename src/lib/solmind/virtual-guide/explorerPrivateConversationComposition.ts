@@ -8,6 +8,7 @@ import {
   parseExplorerConversationCommand, parseExplorerConversationResult, isExplorerConversationId,
   type ExplorerConversationCommand, type ExplorerConversationResult, type ExplorerConversationState, type ExplorerCompassArrangementItem, type ExplorerWaypointClarificationAnswer,
   type ExplorerCompassSuggestionResponse, type ExplorerCompassSuggestionReplies,
+  parseExplorerWaypointOfferOperationResult, type ExplorerWaypointOfferOperationResult,
 } from "../explorerConversationContract";
 import { parseExplorerConversationReviewResult } from "../explorerConversationReviewContract";
 import { explorerConversationCommandFingerprint, type ExplorerConversationActor, type ExplorerConversationTurnIds, type PrivateExplorerConversationContextBuilder } from "./explorerConversationComposition";
@@ -17,6 +18,7 @@ import {
   explorerSendDeadlineMilliseconds, explorerSafetyUnicodeValid, parseExplorerSafetyReplyRequest,
   type ExplorerSafetyReplyRequest, type ExplorerSafetyClassification, type ExplorerSafetyCompassSuggestion, type ExplorerSafetyCompassResponse,
   type ExplorerSafetyWaypointSuggestion, type ExplorerSafetyWaypointResponse, type ExplorerSafetyCompassTopic,
+  type ExplorerSafetyWaypointOffer, type ExplorerSafetyWaypointOfferResponse, type ExplorerSafetyWaypointOfferInvalid,
 } from "./explorerSafetyReplyContract";
 import { invokeExplorerSafetyReply, type ExplorerSafetyReplyTransport } from "./explorerSafetyReplyInvocation";
 import type { ExplorerPrivateAssistance } from "../explorerPrivateConversationResponse";
@@ -92,7 +94,12 @@ export type ExplorerPrivateSettleParameters = ActorParameters & Readonly<{
   p_waypoint_suggestion: ExplorerSafetyWaypointSuggestion | null;
   p_waypoint_response: ExplorerSafetyWaypointResponse | null;
   p_failure_reason: ExplorerPrivateReplyFailureReason | null;
-  p_compass_topics: readonly ExplorerPrivateCompassTopic[] | null }>;
+  p_compass_topics: readonly ExplorerPrivateCompassTopic[] | null;
+  // Saved offers (migration 20261116000000_explorer_waypoint_offers.sql). Each is supplied only when it carries a
+  // value: the database's defaults are null and a null argument leaves its fingerprint unchanged.
+  p_waypoint_offer?: ExplorerSafetyWaypointOffer | null;
+  p_waypoint_offer_response?: ExplorerSafetyWaypointOfferResponse | null;
+  p_waypoint_offer_drop?: ExplorerSafetyWaypointOfferInvalid | null }>;
 export type ExplorerPrivateMutateParameters = ActorParameters & Readonly<{
   p_conversation_id: string; p_operation_id: string; p_expected_revision: number; p_command_fingerprint: string;
   p_kind: string; p_source_message_id: string | null; p_item_id: string | null; p_waypoint_id: string | null;
@@ -109,6 +116,9 @@ export type ExplorerPrivateCompassSuggestionParameters = ActorParameters & Reado
 export type ExplorerPrivateWaypointDraftParameters = ActorParameters & Readonly<{
   p_conversation_id: string; p_operation_id: string; p_expected_revision: number; p_command_fingerprint: string;
   p_draft_id: string; p_response: ExplorerCompassSuggestionResponse }>;
+export type ExplorerPrivateWaypointOfferParameters = ActorParameters & Readonly<{
+  p_conversation_id: string; p_operation_id: string; p_expected_revision: number; p_command_fingerprint: string;
+  p_offer_id: string; p_response: ExplorerCompassSuggestionResponse }>;
 export type ExplorerPrivateWaypointRevisionParameters = ActorParameters & Readonly<{
   p_conversation_id: string; p_operation_id: string; p_expected_revision: number; p_command_fingerprint: string;
   p_kind: "revise_waypoint" | "revisit_waypoint"; p_waypoint_id: string; p_answers: readonly ExplorerWaypointClarificationAnswer[] }>;
@@ -125,7 +135,9 @@ export type ExplorerPrivateWaypointClosureParameters = ActorParameters & Readonl
   p_kind: "reach_waypoint" | "release_waypoint"; p_reached_evidence: string | null }>;
 export type ExplorerPrivateConversationReviewResult = NonNullable<ReturnType<typeof parseExplorerConversationReviewResult>>;
 export type ExplorerPrivateRpcRow = Readonly<{ outcome: string; ended_conversations?: unknown; conversation_state?: unknown; authority_context?: unknown;
-  policy_state?: unknown; dispatch_permitted?: boolean; saved_reply?: boolean; waypoint_page?: unknown }>;
+  policy_state?: unknown; dispatch_permitted?: boolean; saved_reply?: boolean; waypoint_page?: unknown;
+  // Only from the answer to a saved offer: that answer's own stored result.
+  operation_result?: unknown }>;
 export type ExplorerPrivateReadRow = ExplorerPrivateRpcRow & Readonly<{ conversation_state: unknown }>;
 export type ExplorerPrivatePauseNoticeKind = "individual" | "shared" | "individual_and_shared";
 // crisis and adults_only are private facts for the Explorer's own screen: never log them or pass them to signals.
@@ -146,6 +158,7 @@ export type ExplorerPrivateConversationRepository = Readonly<{
   category?: (parameters: ExplorerPrivateCategoryParameters) => Promise<ExplorerPrivateRpcRow>;
   respondCompassSuggestion?: (parameters: ExplorerPrivateCompassSuggestionParameters) => Promise<ExplorerPrivateRpcRow>;
   respondWaypointDraft?: (parameters: ExplorerPrivateWaypointDraftParameters) => Promise<ExplorerPrivateRpcRow>;
+  respondWaypointOffer?: (parameters: ExplorerPrivateWaypointOfferParameters) => Promise<ExplorerPrivateRpcRow>;
   waypointRevision?: (parameters: ExplorerPrivateWaypointRevisionParameters) => Promise<ExplorerPrivateRpcRow>;
   release?: (parameters: ExplorerPrivateReleaseParameters) => Promise<ExplorerPrivateRpcRow>;
   end?: (parameters: ExplorerPrivateEndParameters) => Promise<ExplorerPrivateRpcRow>;
@@ -154,7 +167,10 @@ export type ExplorerPrivateConversationRepository = Readonly<{
   readWaypointHistory?: (parameters: ExplorerPrivateWaypointHistoryParameters) => Promise<ExplorerPrivateRpcRow>;
   closeEndedWaypoint?: (parameters: ExplorerPrivateWaypointClosureParameters) => Promise<ExplorerPrivateRpcRow>;
 }>;
-export type ExplorerPrivateConversationResult = Readonly<{ result: ExplorerConversationResult; assistance: ExplorerPrivateAssistance | null }>;
+// waypointOfferResult: only on a verified answer to a saved offer (respond_waypoint_offer), that answer's own stored
+// result; the screen needs its carrying reply. No other command and no failure carries the key.
+export type ExplorerPrivateConversationResult = Readonly<{ result: ExplorerConversationResult; assistance: ExplorerPrivateAssistance | null;
+  waypointOfferResult?: ExplorerWaypointOfferOperationResult }>;
 export type ExplorerPrivateOperationalReadiness = Readonly<{
   configuration: ExplorerPrivateConfigurationCandidate; configurationFingerprint: string; modelPolicyVersion: string; modelName: string;
   resourcePolicyVersion: string; sourceVerificationReceiptSha256: string; resourceVerificationReceiptSha256: string;
@@ -558,6 +574,33 @@ export async function readEndedExplorerConversations(
   } catch { return reviewFailure(); }
 }
 
+// The button answer to a saved offer, on its first run and on a replay alike. The result is verified from the
+// operation's own stored result and never from the offer's current status: a newer offer, a refinement or a later
+// change of the Waypoint leaves an earlier answer's result as it was (REV442b finding 3).
+async function answerWaypointOffer(dependencies: ExplorerPrivateConversationDependencies, actor: ExplorerConversationActor,
+  command: Extract<ExplorerConversationCommand, { kind: "respond_waypoint_offer" }>, fingerprint: string,
+  conversationId: string | null, fallbackPolicy: unknown): Promise<ExplorerPrivateConversationResult> {
+  if (!conversationId || !dependencies.repository.respondWaypointOffer) return failed("denied");
+  const row = await dependencies.repository.respondWaypointOffer({ ...base(actor), p_conversation_id: conversationId,
+    p_operation_id: command.operationId, p_expected_revision: command.expectedRevision,
+    p_command_fingerprint: fingerprint, p_offer_id: command.offerId, p_response: command.response });
+  const saved = stateResult(row, false, fallbackPolicy);
+  if (!saved.ok) return Object.freeze({ result: saved, assistance: null });
+  // Same offer and answer as the command, given by a button; the parser has already checked that the outcome fits
+  // the answer and that a result Waypoint is named exactly when the offer was confirmed.
+  const stored = parseExplorerWaypointOfferOperationResult(row.operation_result);
+  if (stored === null || saved.state.conversationId !== conversationId || stored.typed ||
+      stored.offerId !== command.offerId || stored.response !== command.response) return failed();
+  if (stored.outcome === "confirmed") {
+    // While the result Waypoint is still a current version in the state it must show the confirmation: Reached, or
+    // the new version of the offer's target with the matching reason. When it no longer is, the receipt stands.
+    const waypoint = saved.state.waypoints.find(item => item.id === stored.resultWaypointId);
+    if (waypoint !== undefined && (stored.kind === "reached" ? waypoint.status !== "reached"
+      : waypoint.lifecycle?.predecessorWaypointId !== stored.waypointId ||
+        waypoint.lifecycle.creationReason !== (stored.kind === "change" ? "revision" : "revisit"))) return failed();
+  }
+  return Object.freeze({ result: saved, assistance: null, waypointOfferResult: stored });
+}
 export async function commandExplorerPrivateConversation(input: Readonly<{ command: unknown; dependencies: ExplorerPrivateConversationDependencies; signal?: AbortSignal;
   receivedAt?: number }>): Promise<ExplorerPrivateConversationResult> {
   // D-12: a Send's clock starts when the server receives the request (the route's performance.now() reading, taken
@@ -596,6 +639,13 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
     }
     const readRow = await dependencies.repository.read(actor, { operationId: command.operationId, fingerprint });
     const read = stateResult(readRow); if (!read.ok) return Object.freeze({ result: read, assistance: null });
+    // An answer to a saved offer is the one command whose replay does not return from the generic path below: that
+    // path gives the current state without the operation's result. Its replay calls the offer command again with
+    // the same operation, the same fingerprint and the conversation this read resolved, before the pending-Send
+    // check and the policy checks (the database replays before those checks itself), and uses the stored result.
+    if (command.kind === "respond_waypoint_offer" && readRow.outcome === "exact_replay") {
+      return await answerWaypointOffer(dependencies, actor, command, fingerprint, read.state.conversationId, readRow.policy_state);
+    }
     // Historical exact command replay precedes new configuration/source/model work.
     if (readRow.outcome === "exact_replay") return command.kind === "send"
       ? replayedSend(readRow, false, actor, command, dependencies, input.signal) : Object.freeze({ result: read, assistance: null });
@@ -632,6 +682,9 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
           p_operation_id: command.operationId, p_expected_revision: command.expectedRevision,
           p_command_fingerprint: fingerprint, p_draft_id: command.draftId, p_response: command.response });
         return Object.freeze({ result: stateResult(row, false, readRow.policy_state), assistance: null });
+      }
+      if (command.kind === "respond_waypoint_offer") {
+        return await answerWaypointOffer(dependencies, actor, command, fingerprint, read.state.conversationId, readRow.policy_state);
       }
       if (command.kind === "revise_waypoint" || command.kind === "revisit_waypoint") {
         if (!dependencies.repository.waypointRevision) return failed("denied");
@@ -974,6 +1027,36 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
         previousReply && proposedWaypointSuggestion === null && proposedWaypointResponse && waypointDraft &&
         waypointDraft.id === proposedWaypointResponse.draftId && waypointDraft.suggestionMessageId === previousReply.id
         ? proposedWaypointResponse : null;
+      // Saved offers: the one decision table, on the fields as received from the model. The gates are the Waypoint
+      // suggestion's (ordinary reply, delivery interested, level below 2, unrestricted); outside them nothing is sent.
+      // Answers first, at most one: a received suggestion excludes both typed answers (the rule above, unchanged for
+      // drafts); both typed answers together are both set aside; an offer answer is sent only for the waiting offer
+      // that the previous Virtual Guide reply carried and that is still eligible for a typed answer, as the database
+      // requires (a stale or unknown id is ignored, and Reached has no "close").
+      const offerExtras = ordinaryExtras && safety.currentLevel !== null && safety.currentLevel < 2;
+      const proposedWaypointOfferResponse = observedModel?.observation?.waypointOfferResponse;
+      const bothTypedAnswers = proposedWaypointResponse !== undefined && proposedWaypointOfferResponse !== undefined;
+      const savedWaypointOffer = builderState.state.waypointOffer ?? null;
+      const typedDraftAnswer = bothTypedAnswers ? null : waypointResponse;
+      const typedOfferAnswer = offerExtras && !bothTypedAnswers && previousReply && proposedWaypointSuggestion === null &&
+        proposedWaypointOfferResponse && savedWaypointOffer && savedWaypointOffer.status === "proposed" &&
+        savedWaypointOffer.typedAnswerEligible &&
+        savedWaypointOffer.id === proposedWaypointOfferResponse.offerId &&
+        savedWaypointOffer.suggestionMessageId === previousReply.id &&
+        !(savedWaypointOffer.kind === "reached" && proposedWaypointOfferResponse.response === "close")
+        ? proposedWaypointOfferResponse : null;
+      const typedAnswerSent = typedDraftAnswer !== null || typedOfferAnswer !== null;
+      // Offers, at most one, and none beside a typed answer. A change or revisit offer is sent and a same-reply
+      // suggestion set aside; a Reached offer gives way to a same-reply suggestion. Whatever is set aside is not sent
+      // to settlement and gets no receipt, so it is neither shown nor pending. The five-Waypoint drop above applies to
+      // the suggestion only. An offer that could not be read, with no competitor, is passed on as a dropped-offer fact.
+      const proposedWaypointOffer = offerExtras ? observedModel?.observation?.waypointOffer ?? null : null;
+      const unreadableWaypointOffer = offerExtras ? observedModel?.observation?.waypointOfferInvalid ?? null : null;
+      const waypointOffer = proposedWaypointOffer !== null && !typedAnswerSent &&
+        (proposedWaypointSuggestion === null || proposedWaypointOffer.kind !== "reached") ? proposedWaypointOffer : null;
+      const settledWaypointSuggestion = waypointOffer !== null ? null : waypointSuggestion;
+      const waypointOfferDrop = unreadableWaypointOffer !== null && !typedAnswerSent && proposedWaypointSuggestion === null
+        ? unreadableWaypointOffer : null;
       const settlement: ExplorerPrivateSettleParameters = { ...base(actor), p_conversation_id: ids.conversationId,
         p_operation_id: command.operationId, p_status: model !== null ? "completed" : terminalDeliveryInterested ? "failed" : "canceled",
         p_reply_message_id: replyKind === "none" ? null : ids.replyId, p_reply_kind: replyKind, p_reply_body: replyBody,
@@ -984,7 +1067,10 @@ export async function commandExplorerPrivateConversation(input: Readonly<{ comma
         p_fallback_level: fallback.classification.level, p_fallback_minor_indicated: fallback.classification.minorIndicated,
         p_delivery_interested: terminalDeliveryInterested, p_attention_item_id: attentionItemId, p_choices: choices,
         p_compass_suggestions: null, p_compass_responses: null, p_compass_topics: compassTopics,
-        p_waypoint_suggestion: waypointSuggestion, p_waypoint_response: waypointResponse,
+        p_waypoint_suggestion: settledWaypointSuggestion, p_waypoint_response: typedDraftAnswer,
+        ...(waypointOffer === null ? {} : { p_waypoint_offer: waypointOffer }),
+        ...(typedOfferAnswer === null ? {} : { p_waypoint_offer_response: typedOfferAnswer }),
+        ...(waypointOfferDrop === null ? {} : { p_waypoint_offer_drop: waypointOfferDrop }),
         p_failure_reason: replyKind !== "none" ? null : observedModel?.reason ?? (model === null
           ? dispatchAdmitted ? replyInTime ? "transport_failed" : "deadline" : "dispatch_not_admitted"
           : renderFailed ? "trusted_render_unavailable" : candidate.kind === "unusable" ? "invalid_response" : null) };

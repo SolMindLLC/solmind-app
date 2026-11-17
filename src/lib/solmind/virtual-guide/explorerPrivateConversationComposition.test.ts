@@ -33,7 +33,7 @@ function state(conversationId: string | null): ExplorerConversationState {
     messages: [], compassItems: [], priorityId: null, attentionId: null, waypoints: [] };
 }
 // Since chat step slice S3 (2026-11-03) the private context revision carries the saved Compass section.
-const PRIVATE_CONTEXT_VERSION = "wi007-v0.1+onboarding-fields-v2+compass-v8";
+const PRIVATE_CONTEXT_VERSION = "wi007-v0.1+onboarding-fields-v2+compass-v9";
 function fixture(contextVersion?: string) {
   const configuration = getExplorerPrivateConfigurationCandidate(); if (!configuration) throw new Error("synthetic_candidate_missing");
   const readiness: ExplorerPrivateOperationalReadiness = { configuration, configurationFingerprint: SHA, modelName: "gpt-5.6-luna", modelPolicyVersion: "synthetic-model.v1",
@@ -89,7 +89,7 @@ function fixture(contextVersion?: string) {
         globalPolicy: { version: configuration.globalPolicy.version, text: configuration.globalPolicy.text.replace(/\r\n?/g, "\n").trim() },
         roleBehavior: { version: configuration.roleBehavior.version, text: configuration.roleBehavior.text.replace(/\r\n?/g, "\n").trim() },
         crisisBehavior: { version: configuration.crisisBehavior.version, text: configuration.crisisBehavior.text.replace(/\r\n?/g, "\n").trim() },
-        ...(includeCompass ? { compassContext: { version: "explorer-compass-context.v8",
+        ...(includeCompass ? { compassContext: { version: "explorer-compass-context.v9",
           points: input.state.compassItems.map((point, order) => ({ id: point.id, label: point.label, order,
             formation: point.formation ?? "saved", anchor: point.anchor ?? null, emphasis: point.emphasis ?? null,
             ...(point.formation === "forming" ? { suggestedInPreviousReply: point.wordingMessageId !== undefined &&
@@ -2355,4 +2355,492 @@ describe("automatic Compass ordinary settlement", () => {
       expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
       expect(f.settle.mock.calls[0][0].p_compass_topics).toBeNull();
     });
+});
+
+// Offers build step 2: the one decision table for the reply's offer fields, the offer answer command, and its replay
+// through the real composition path. Synthetic ports and invented wording only.
+describe("offers build step 2: saved Waypoint offers in the private composition", () => {
+  const OFFER = "00000000-0000-4000-8000-0000000000a1"; const NEWER = "00000000-0000-4000-8000-0000000000a2";
+  const WAYPOINT = "00000000-0000-4000-8000-0000000000a3"; const SUCCESSOR = "00000000-0000-4000-8000-0000000000a4";
+  const LATER_REPLY = "00000000-0000-4000-8000-0000000000a5"; const DRAFT = "00000000-0000-4000-8000-0000000000a6";
+  type SavedOffer = NonNullable<ExplorerConversationState["waypointOffer"]>;
+  type OfferPort = NonNullable<ExplorerPrivateConversationDependencies["repository"]["respondWaypointOffer"]>;
+  const target = { id: WAYPOINT, isCurrent: true, createdAt: "2026-11-16T09:00:00Z", sourceMessageId: ID.intake, title: "A calm morning",
+    destination: "An unhurried breakfast", meaning: "Time with my family", arrivalSignal: "Two calm breakfasts", status: "chosen" as const };
+  const before = { title: target.title, destination: target.destination, whyItMatters: target.meaning, arrivalSignal: target.arrivalSignal };
+  const offered = { title: "A slower morning", destination: "A slow breakfast", whyItMatters: "Time with my family", arrivalSignal: "Two calm breakfasts" };
+  const suggestion = { title: "Calm evenings", destination: "An unhurried supper", whyItMatters: "Time to rest", arrivalSignal: "Two calm suppers" };
+  const savedOffer = (kind: "reached" | "change" | "revisit" = "change", overrides: Record<string, unknown> = {}): SavedOffer => ({
+    id: OFFER, status: "proposed", waypointId: WAYPOINT, targetBefore: { ...before, stage: kind === "revisit" ? "reached" : "formed" },
+    suggestionMessageId: ID.intake, resultWaypointId: null, targetCurrent: true, typedAnswerEligible: true, typedAnswerRefusal: null,
+    ...(kind === "reached" ? { kind, evidence: "We ate together twice." } : { kind, ...offered }), ...overrides }) as SavedOffer;
+  const conversation = (overrides: Partial<ExplorerConversationState> = {}): ExplorerConversationState => ({ ...state(ID.conversation),
+    sessionStatus: "active", ending: null,
+    messages: [{ id: ID.intake, role: "virtualGuide", body: "A saved synthetic reply.", createdAt: "2026-11-16T09:00:00Z" }],
+    waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true, conversationRoom: true },
+    waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: 1 }, waypoints: [target],
+    waypointOffer: null, waypointOfferDrop: null, reachedOfferedWaypointIds: [], ...overrides });
+  const reply = (fields: Record<string, unknown>, level = 0, minorIndicated = false) => JSON.stringify({ protocol: "explorer-safety-reply.v2",
+    classification: { level, minorIndicated }, candidateReply: { content: "We can explore that." }, ...fields });
+  const changeOffer = { kind: "change", waypointId: WAYPOINT, ...offered };
+  const revisitOffer = { kind: "revisit", waypointId: WAYPOINT, ...offered };
+  const reachedOffer = { kind: "reached", waypointId: WAYPOINT, evidence: "We ate together twice." };
+  const OFFER_KEYS = ["p_waypoint_offer", "p_waypoint_offer_response", "p_waypoint_offer_drop"] as const;
+  async function settled(saved: ExplorerConversationState, raw: string, prepare?: (f: ReturnType<typeof fixture>) => void, signal?: AbortSignal) {
+    const f = fixture(); f.setCurrent(saved);
+    f.ensure.mockImplementation(async () => ({ outcome: "reused", conversation_state: saved, policy_state: POLICY }));
+    f.generate.mockResolvedValue(raw); prepare?.(f);
+    const result = await commandExplorerPrivateConversation({ command: send("That fits."), dependencies: f.dependencies, ...(signal ? { signal } : {}) });
+    expect(f.generate).toHaveBeenCalledOnce(); expect(f.settle).toHaveBeenCalledOnce();
+    return { f, result, sent: f.settle.mock.calls[0][0] };
+  }
+  const fiveHere = (saved: ExplorerConversationState): ExplorerConversationState =>
+    ({ ...saved, waypointCapacity: { ...saved.waypointCapacity, conversationRoom: false } });
+  const withDraft = (saved: ExplorerConversationState): ExplorerConversationState =>
+    ({ ...saved, waypointDraft: { id: DRAFT, ...suggestion, suggestionMessageId: ID.intake } });
+
+  describe("the decision table at settlement", () => {
+    it("sends nothing about offers when the reply carries none (28 arguments, as before)", async () => {
+      const { sent, result } = await settled(conversation(), reply({}));
+      expect(result.result.ok).toBe(true);
+      expect(Object.keys(sent)).toHaveLength(28);
+      for (const key of OFFER_KEYS) expect(sent).not.toHaveProperty(key);
+    });
+    it.each([changeOffer, revisitOffer, reachedOffer])("sends one valid offer on its own in the single terminal intent: %j", async waypointOffer => {
+      const { sent, result } = await settled(conversation(), reply({ waypointOffer }));
+      expect(result.result.ok).toBe(true);
+      expect(sent).toMatchObject({ p_reply_kind: "ordinary", p_reply_body: "We can explore that.", p_waypoint_offer: waypointOffer,
+        p_waypoint_suggestion: null, p_waypoint_response: null, p_failure_reason: null });
+      expect(Object.keys(sent)).toHaveLength(29);
+      expect(sent).not.toHaveProperty("p_waypoint_offer_response"); expect(sent).not.toHaveProperty("p_waypoint_offer_drop");
+    });
+    it.each([changeOffer, revisitOffer])("sends a change or revisit offer and sets a same-reply suggestion aside: %j", async waypointOffer => {
+      const { sent } = await settled(conversation(), reply({ waypointOffer, waypointSuggestion: suggestion }));
+      expect(sent).toMatchObject({ p_waypoint_offer: waypointOffer, p_waypoint_suggestion: null });
+      expect(Object.keys(sent)).toHaveLength(29);
+    });
+    it("sends a same-reply suggestion and sets a Reached offer aside, with no receipt", async () => {
+      const { sent } = await settled(conversation(), reply({ waypointOffer: reachedOffer, waypointSuggestion: suggestion }));
+      expect(sent.p_waypoint_suggestion).toEqual(suggestion);
+      expect(Object.keys(sent)).toHaveLength(28);
+      for (const key of OFFER_KEYS) expect(sent).not.toHaveProperty(key);
+    });
+    it("applies the five-Waypoint drop to the suggestion only", async () => {
+      const full = fiveHere(conversation());
+      const reachedBeside = await settled(full, reply({ waypointOffer: reachedOffer, waypointSuggestion: suggestion }));
+      expect(reachedBeside.sent.p_waypoint_suggestion).toBeNull();
+      expect(Object.keys(reachedBeside.sent)).toHaveLength(28);
+      for (const key of OFFER_KEYS) expect(reachedBeside.sent).not.toHaveProperty(key);
+      const changeBeside = await settled(full, reply({ waypointOffer: changeOffer, waypointSuggestion: suggestion }));
+      expect(changeBeside.sent).toMatchObject({ p_waypoint_offer: changeOffer, p_waypoint_suggestion: null });
+      for (const waypointOffer of [changeOffer, revisitOffer, reachedOffer]) {
+        const alone = await settled(full, reply({ waypointOffer }));
+        expect(alone.sent.p_waypoint_offer).toEqual(waypointOffer);
+      }
+    });
+    it.each([["change", "right"], ["change", "close"], ["change", "not_it"], ["revisit", "right"], ["revisit", "close"],
+      ["revisit", "not_it"], ["reached", "right"], ["reached", "not_it"]] as const)(
+      "sends a typed answer to the waiting %s offer of the previous reply: %s", async (kind, response) => {
+        const waypointOfferResponse = { offerId: OFFER, response };
+        const { sent, result } = await settled(conversation({ waypointOffer: savedOffer(kind) }), reply({ waypointOfferResponse }));
+        expect(result.result.ok).toBe(true);
+        expect(sent).toMatchObject({ p_waypoint_offer_response: waypointOfferResponse, p_waypoint_response: null, p_waypoint_suggestion: null });
+        expect(Object.keys(sent)).toHaveLength(29);
+        expect(sent).not.toHaveProperty("p_waypoint_offer"); expect(sent).not.toHaveProperty("p_waypoint_offer_drop");
+      });
+    it.each(["stale", "absent", "confirmed", "declined", "superseded", "older", "reached_close"] as const)(
+      "ignores a typed offer answer when %s, without a receipt", async reason => {
+        const base = conversation({ waypointOffer: savedOffer(reason === "reached_close" ? "reached" : "change",
+          reason === "confirmed" ? { status: "confirmed", resultWaypointId: SUCCESSOR, typedAnswerEligible: false }
+            : reason === "declined" || reason === "superseded" ? { status: reason, typedAnswerEligible: false } : {}) });
+        const saved = reason === "absent" ? { ...base, waypointOffer: null }
+          : reason === "older" ? { ...base, messages: [...base.messages,
+            { id: LATER_REPLY, role: "virtualGuide" as const, body: "A later saved reply.", createdAt: "2026-11-16T09:01:00Z" }] } : base;
+        const { sent, result } = await settled(saved, reply({ waypointOfferResponse: { offerId: reason === "stale" ? NEWER : OFFER,
+          response: reason === "reached_close" ? "close" : "right" } }));
+        expect(result.result.ok).toBe(true);
+        expect(Object.keys(sent)).toHaveLength(28);
+        for (const key of OFFER_KEYS) expect(sent).not.toHaveProperty(key);
+      });
+    it("sends a new offer beside an ignored stale answer, because no typed answer was sent", async () => {
+      const { sent } = await settled(conversation({ waypointOffer: savedOffer("change") }),
+        reply({ waypointOfferResponse: { offerId: NEWER, response: "right" }, waypointOffer: revisitOffer }));
+      expect(sent.p_waypoint_offer).toEqual(revisitOffer);
+      expect(sent).not.toHaveProperty("p_waypoint_offer_response");
+    });
+    it("sends neither answer when the reply carries both a draft answer and an offer answer", async () => {
+      const saved = withDraft(conversation({ waypointOffer: savedOffer("change") }));
+      const both = { waypointResponse: { draftId: DRAFT, response: "right" }, waypointOfferResponse: { offerId: OFFER, response: "right" } };
+      const { sent } = await settled(saved, reply(both));
+      expect(sent.p_waypoint_response).toBeNull();
+      expect(Object.keys(sent)).toHaveLength(28);
+      for (const key of OFFER_KEYS) expect(sent).not.toHaveProperty(key);
+      // Each alone is still sent, so the rule is about the pair.
+      expect((await settled(saved, reply({ waypointResponse: both.waypointResponse }))).sent.p_waypoint_response).toEqual(both.waypointResponse);
+      expect((await settled(saved, reply({ waypointOfferResponse: both.waypointOfferResponse }))).sent.p_waypoint_offer_response)
+        .toEqual(both.waypointOfferResponse);
+      // Both set aside, so a new offer in the same reply is no longer beside a sent answer.
+      expect((await settled(saved, reply({ ...both, waypointOffer: revisitOffer }))).sent.p_waypoint_offer).toEqual(revisitOffer);
+    });
+    it("sends no offer answer beside a new suggestion, even when five Waypoints then drop that suggestion", async () => {
+      const saved = conversation({ waypointOffer: savedOffer("change") });
+      const fields = { waypointOfferResponse: { offerId: OFFER, response: "right" }, waypointSuggestion: suggestion };
+      const roomy = await settled(saved, reply(fields));
+      expect(roomy.sent.p_waypoint_suggestion).toEqual(suggestion);
+      expect(roomy.sent).not.toHaveProperty("p_waypoint_offer_response");
+      const full = await settled(fiveHere(saved), reply(fields));
+      expect(full.sent.p_waypoint_suggestion).toBeNull();
+      expect(Object.keys(full.sent)).toHaveLength(28);
+      for (const key of OFFER_KEYS) expect(full.sent).not.toHaveProperty(key);
+    });
+    it.each(["offer", "draft"] as const)("sets a new or unreadable offer aside when a typed %s answer is sent", async answered => {
+      const saved = answered === "draft" ? withDraft(conversation()) : conversation({ waypointOffer: savedOffer("change") });
+      const answer = answered === "draft" ? { waypointResponse: { draftId: DRAFT, response: "right" } }
+        : { waypointOfferResponse: { offerId: OFFER, response: "close" } };
+      for (const waypointOffer of [reachedOffer, revisitOffer, { kind: "change", waypointId: WAYPOINT }, { kind: "unknown" }]) {
+        const { sent } = await settled(saved, reply({ ...answer, waypointOffer }));
+        if (answered === "draft") expect(sent.p_waypoint_response).toEqual(answer.waypointResponse);
+        else expect(sent.p_waypoint_offer_response).toEqual(answer.waypointOfferResponse);
+        expect(sent).not.toHaveProperty("p_waypoint_offer"); expect(sent).not.toHaveProperty("p_waypoint_offer_drop");
+        expect(Object.keys(sent)).toHaveLength(answered === "draft" ? 28 : 29);
+      }
+    });
+    it("keeps the five-Waypoint typed draft answer and sets a same-reply Reached offer aside", async () => {
+      const saved = fiveHere(withDraft(conversation()));
+      const proposal = { draftId: DRAFT, response: "right" };
+      const { sent } = await settled(saved, reply({ waypointResponse: proposal, waypointOffer: reachedOffer }));
+      expect(sent).toMatchObject({ p_waypoint_suggestion: null, p_waypoint_response: proposal });
+      expect(Object.keys(sent)).toHaveLength(28);
+    });
+    it.each([[{ kind: "change", waypointId: WAYPOINT, title: " padded " }, "change"], [{ kind: "revisit", ...offered }, "revisit"],
+      [{ kind: "reached", waypointId: WAYPOINT, evidence: "" }, "reached"], [{ kind: "release", waypointId: WAYPOINT }, null], [["change"], null]] as const)(
+      "passes an unreadable offer with no competitor to settlement as a dropped-offer fact and keeps the reply: %j", async (waypointOffer, kind) => {
+        const { sent, result } = await settled(conversation(), reply({ waypointOffer }));
+        expect(result.result.ok).toBe(true);
+        if (!result.result.ok) throw new Error("synthetic_result_missing");
+        expect(result.result.state.messages.at(-1)).toMatchObject({ role: "virtualGuide", body: "We can explore that." });
+        expect(sent).toMatchObject({ p_reply_kind: "ordinary", p_reply_body: "We can explore that.", p_failure_reason: null,
+          p_waypoint_offer_drop: { kind, reason: "invalid" }, p_waypoint_suggestion: null, p_waypoint_response: null });
+        expect(Object.keys(sent)).toHaveLength(29);
+        expect(sent).not.toHaveProperty("p_waypoint_offer");
+      });
+    it("sends no dropped-offer fact for an unreadable offer beside a suggestion, and none for a null offer", async () => {
+      const beside = await settled(conversation(), reply({ waypointOffer: { kind: "change" }, waypointSuggestion: suggestion }));
+      expect(beside.sent.p_waypoint_suggestion).toEqual(suggestion);
+      for (const key of OFFER_KEYS) expect(beside.sent).not.toHaveProperty(key);
+      const absent = await settled(conversation(), reply({ waypointOffer: null }));
+      expect(Object.keys(absent.sent)).toHaveLength(28);
+    });
+    it.each(["level2", "level3", "minor", "restricted", "adult", "canceled"] as const)(
+      "sends and records nothing about offers outside the gates: %s", async reason => {
+        for (const fields of [{ waypointOffer: changeOffer }, { waypointOffer: reachedOffer }, { waypointOffer: { kind: "change" } },
+          { waypointOfferResponse: { offerId: OFFER, response: "right" } }]) {
+          const abort = new AbortController();
+          const f = fixture(); const saved = conversation({ waypointOffer: savedOffer("change") }); f.setCurrent(saved);
+          f.ensure.mockImplementation(async () => ({ outcome: "reused", conversation_state: saved, policy_state: POLICY }));
+          if (reason === "restricted") f.setPolicy({ ...POLICY, restrictedLevel: 3 });
+          if (reason === "adult") f.setPolicy({ ...POLICY, adultReflectionStopped: true });
+          f.generate.mockImplementation(async () => {
+            if (reason === "canceled") abort.abort();
+            return reply(fields, reason === "level2" ? 2 : reason === "level3" ? 3 : 0, reason === "minor");
+          });
+          await commandExplorerPrivateConversation({ command: send(), dependencies: f.dependencies, signal: abort.signal });
+          expect(f.settle).toHaveBeenCalledOnce();
+          const sent = f.settle.mock.calls[0][0];
+          expect(Object.keys(sent)).toHaveLength(28);
+          for (const key of OFFER_KEYS) expect(sent).not.toHaveProperty(key);
+        }
+      });
+  });
+
+  it("sends no typed answer to a presentation that is no longer eligible, and keeps a new offer in the same reply", async () => {
+    // After a "Close, not quite" button answer the offer still waits under the same reply, and the server reports
+    // that the next typed message can no longer answer it.
+    const closed = conversation({ waypointOffer: savedOffer("change", { typedAnswerEligible: false }) });
+    const answer = { waypointOfferResponse: { offerId: OFFER, response: "right" } };
+    const alone = await settled(closed, reply(answer));
+    expect(Object.keys(alone.sent)).toHaveLength(28);
+    for (const key of OFFER_KEYS) expect(alone.sent).not.toHaveProperty(key);
+    const beside = await settled(closed, reply({ ...answer, waypointOffer: revisitOffer }));
+    expect(beside.sent.p_waypoint_offer).toEqual(revisitOffer);
+    expect(beside.sent).not.toHaveProperty("p_waypoint_offer_response");
+    expect(Object.keys(beside.sent)).toHaveLength(29);
+    // The same presentation while still eligible is answered, and the new offer is set aside.
+    const eligible = await settled(conversation({ waypointOffer: savedOffer("change") }), reply({ ...answer, waypointOffer: revisitOffer }));
+    expect(eligible.sent.p_waypoint_offer_response).toEqual(answer.waypointOfferResponse);
+    expect(eligible.sent).not.toHaveProperty("p_waypoint_offer");
+    // Drafts are unchanged by this rule: a forming Waypoint marked not eligible still has its typed answer passed on.
+    const draft = { ...withDraft(conversation()).waypointDraft!, typedAnswerEligible: false };
+    const typedDraft = await settled({ ...conversation(), waypointDraft: draft }, reply({ waypointResponse: { draftId: DRAFT, response: "right" } }));
+    expect(typedDraft.sent.p_waypoint_response).toEqual({ draftId: DRAFT, response: "right" });
+  });
+  it("never puts a stored offer result on a Send, a read, another command or a refused offer answer", async () => {
+    const waiting = conversation({ waypointOffer: savedOffer("change") });
+    const sent = await settled(waiting, reply({ waypointOfferResponse: { offerId: OFFER, response: "right" } }));
+    expect(sent.result.result.ok).toBe(true);
+    expect(sent.result).not.toHaveProperty("waypointOfferResult");
+    const reading = fixture(); reading.setCurrent(waiting);
+    expect(await readExplorerPrivateConversation(reading.dependencies)).not.toHaveProperty("waypointOfferResult");
+    const drafted = withDraft(conversation());
+    const other = fixture(); other.setCurrent(drafted);
+    const draftAnswer = await commandExplorerPrivateConversation({ command: { kind: "respond_waypoint_draft", draftId: DRAFT, response: "close",
+      operationId: ID.operation, expectedRevision: 0 }, dependencies: { ...other.dependencies, repository: { ...other.dependencies.repository,
+      respondWaypointDraft: async () => ({ outcome: "ok", conversation_state: drafted }) } } });
+    expect(draftAnswer.result.ok).toBe(true);
+    expect(draftAnswer).not.toHaveProperty("waypointOfferResult");
+    for (const outcome of ["stale_revision", "operation_conflict", "unavailable"]) {
+      const refused = fixture(); refused.setCurrent(waiting);
+      const result = await commandExplorerPrivateConversation({ command: { kind: "respond_waypoint_offer", offerId: OFFER, response: "right",
+        operationId: ID.operation, expectedRevision: 0 }, dependencies: { ...refused.dependencies, repository: { ...refused.dependencies.repository,
+        respondWaypointOffer: async () => ({ outcome, conversation_state: null, operation_result: null }) } } });
+      expect(result.result.ok).toBe(false);
+      expect(result).not.toHaveProperty("waypointOfferResult");
+    }
+  });
+  describe("the respond_waypoint_offer command", () => {
+    const command = (response: "right" | "close" | "not_it" = "right") =>
+      ({ kind: "respond_waypoint_offer" as const, offerId: OFFER, response, operationId: ID.operation, expectedRevision: 0 });
+    const stored = (kind: "reached" | "change" | "revisit", response: "right" | "close" | "not_it", overrides: Record<string, unknown> = {}) => ({
+      offerId: OFFER, kind, waypointId: WAYPOINT, suggestionMessageId: ID.intake, response, typed: false,
+      outcome: response === "right" ? "confirmed" : response === "not_it" ? "declined" : "kept_open",
+      resultWaypointId: response === "right" ? (kind === "reached" ? WAYPOINT : SUCCESSOR) : null, ...overrides });
+    const reachedTarget = { ...target, status: "reached" as const, reachedEvidence: "We ate together twice.", reachedAt: "2026-11-16T09:10:00Z" };
+    const successor = (reason: "revision" | "revisit" = "revision", predecessorWaypointId = WAYPOINT) => ({ ...target, id: SUCCESSOR,
+      createdAt: "2026-11-16T09:10:00Z", title: offered.title, destination: offered.destination,
+      lifecycle: { predecessorWaypointId, creationReason: reason, clarifications: [{ component: "destination" as const,
+        questionKey: "waypoint.destination.offer.v1" as const, answer: offered.destination, recordedAt: "2026-11-16T09:10:00Z" }] } });
+    // The state the database returns after the answer, by kind and answer.
+    const after = (kind: "reached" | "change" | "revisit", response: "right" | "close" | "not_it"): ExplorerConversationState => conversation({ revision: 1,
+      waypoints: response !== "right" ? [target] : kind === "reached" ? [reachedTarget] : [successor(kind === "change" ? "revision" : "revisit")],
+      waypointOffer: savedOffer(kind, response === "right" ? { status: "confirmed", typedAnswerEligible: false, targetCurrent: false,
+        resultWaypointId: kind === "reached" ? WAYPOINT : SUCCESSOR } : response === "not_it" ? { status: "declined", typedAnswerEligible: false }
+        : { typedAnswerEligible: false }) });
+    function run(f: ReturnType<typeof fixture>, port: OfferPort | undefined, input: unknown = command()) {
+      return commandExplorerPrivateConversation({ command: input, dependencies: { ...f.dependencies,
+        repository: { ...f.dependencies.repository, ...(port === undefined ? {} : { respondWaypointOffer: port }) } } });
+    }
+    const noSendWork = (f: ReturnType<typeof fixture>) => {
+      for (const port of [f.generate, f.ensure, f.observe, f.prepare, f.settle, f.resolve, f.mutate, f.pause]) expect(port).not.toHaveBeenCalled();
+    };
+
+    it.each([["change", "right"], ["change", "close"], ["change", "not_it"], ["revisit", "right"], ["revisit", "close"],
+      ["revisit", "not_it"], ["reached", "right"], ["reached", "not_it"]] as const)(
+      "routes a %s offer's %s only to the eight-argument offer port and verifies its stored result", async (kind, response) => {
+        const f = fixture(); f.setCurrent(conversation({ waypointOffer: savedOffer(kind) }));
+        const port = vi.fn<OfferPort>(async () => ({ outcome: "ok", conversation_state: after(kind, response), operation_result: stored(kind, response) }));
+        const result = await run(f, port, command(response));
+        // The verified stored result leaves the composition with the state, for this command only.
+        expect(result).toEqual({ result: expect.objectContaining({ ok: true }), assistance: null,
+          waypointOfferResult: stored(kind, response) });
+        expect(Object.keys(result).sort()).toEqual(["assistance", "result", "waypointOfferResult"]);
+        expect(result.waypointOfferResult?.suggestionMessageId).toBe(ID.intake);
+        expect(Object.isFrozen(result.waypointOfferResult)).toBe(true);
+        if (!result.result.ok) throw new Error("synthetic_result_missing");
+        expect(result.result.state.revision).toBe(1);
+        expect(result.result.state.waypointOffer?.status).toBe(response === "right" ? "confirmed" : response === "not_it" ? "declined" : "proposed");
+        expect(result.result.state.compassSuggestionReplies).toBe("available");
+        expect(port).toHaveBeenCalledExactlyOnceWith({ p_actor_user_account_id: ID.actor, p_user_session_id: ID.app,
+          p_conversation_id: ID.conversation, p_operation_id: ID.operation, p_expected_revision: 0,
+          p_command_fingerprint: explorerConversationCommandFingerprint(command(response)), p_offer_id: OFFER, p_response: response });
+        expect(f.read).toHaveBeenCalledExactlyOnceWith(ACTOR, { operationId: ID.operation,
+          fingerprint: explorerConversationCommandFingerprint(command(response)) });
+        noSendWork(f);
+      });
+    it("refuses a command that is not exactly the closed shape before any port", async () => {
+      for (const input of [{ ...command(), response: "confirm" }, { ...command(), title: "Browser wording" }, { ...command(), offerId: "not-an-id" },
+        { kind: "respond_waypoint_offer", draftId: OFFER, response: "right", operationId: ID.operation, expectedRevision: 0 }]) {
+        const f = fixture(); const port = vi.fn<OfferPort>();
+        expect((await run(f, port, input)).result).toEqual({ ok: false, state: null, error: "denied" });
+        expect(port).not.toHaveBeenCalled(); expect(f.read).not.toHaveBeenCalled();
+      }
+    });
+    it.each(["unknown", "restricted", "adult", "pending", "absent", "no_conversation"] as const)(
+      "retains the %s gate before a first answer", async reason => {
+        const f = fixture(); f.setCurrent(reason === "no_conversation" ? state(null) : { ...conversation({ waypointOffer: savedOffer() }), pendingTurn: reason === "pending" });
+        if (reason === "unknown") f.setPolicy({ known: false });
+        if (reason === "restricted") f.setPolicy({ ...POLICY, restrictedLevel: 3 });
+        if (reason === "adult") f.setPolicy({ ...POLICY, adultReflectionStopped: true });
+        const port = vi.fn<OfferPort>();
+        const result = await run(f, reason === "absent" ? undefined : port);
+        expect(result.result).toEqual({ ok: false, state: null, error: reason === "pending" ? "refresh_required" : "denied" });
+        expect(port).not.toHaveBeenCalled(); noSendWork(f);
+      });
+    it.each([["stale_revision", "refresh_required"], ["operation_conflict", "refresh_required"], ["unavailable", "unavailable"],
+      ["denied", "denied"]] as const)("maps %s as the draft command does", async (outcome, error) => {
+      const f = fixture(); f.setCurrent(conversation({ waypointOffer: savedOffer() }));
+      const result = await run(f, async () => ({ outcome, conversation_state: null, operation_result: null }));
+      expect(result.result).toEqual({ ok: false, state: null, error });
+      noSendWork(f);
+    });
+    it("fails closed when the port throws, without a second attempt", async () => {
+      const f = fixture(); f.setCurrent(conversation({ waypointOffer: savedOffer() }));
+      const port = vi.fn<OfferPort>(async () => { throw new Error("synthetic_port_failure"); });
+      expect((await run(f, port)).result).toEqual({ ok: false, state: null, error: "unavailable" });
+      expect(port).toHaveBeenCalledOnce();
+    });
+    it.each([
+      ["no stored result", "change", "right", undefined],
+      ["a result for another offer", "change", "right", { offerId: NEWER }],
+      ["a result for another answer", "change", "right", { response: "not_it", outcome: "declined", resultWaypointId: null }],
+      ["a typed answer's result", "change", "right", { typed: true }],
+      ["an outcome that does not fit the answer", "change", "right", { outcome: "declined" }],
+      ["a confirmed result without a Waypoint", "change", "right", { resultWaypointId: null }],
+      ["a declined result naming a Waypoint", "change", "not_it", { resultWaypointId: SUCCESSOR }],
+      ["a Reached result naming another Waypoint", "reached", "right", { resultWaypointId: SUCCESSOR }],
+      ["a malformed result", "change", "close", { extra: true }],
+    ] as const)("does not claim an answer from %s", async (_name, kind, response, damage) => {
+      const f = fixture(); f.setCurrent(conversation({ waypointOffer: savedOffer(kind) }));
+      const port = vi.fn<OfferPort>(async () => ({ outcome: "ok", conversation_state: after(kind, response),
+        operation_result: damage === undefined ? null : stored(kind, response, damage) }));
+      expect((await run(f, port, command(response))).result).toEqual({ ok: false, state: null, error: "unavailable" });
+      expect(port).toHaveBeenCalledOnce(); noSendWork(f);
+    });
+    it("carries no stored result when verification fails", async () => {
+      const f = fixture(); f.setCurrent(conversation({ waypointOffer: savedOffer("change") }));
+      const result = await run(f, async () => ({ outcome: "ok", conversation_state: after("change", "right"),
+        operation_result: stored("change", "right", { offerId: NEWER }) }));
+      expect(result).toEqual({ result: { ok: false, state: null, error: "unavailable" }, assistance: null });
+      expect(result).not.toHaveProperty("waypointOfferResult");
+    });
+    it("does not claim a confirmation that the returned state contradicts, or a state of another conversation", async () => {
+      const contradictions: readonly [("reached" | "change" | "revisit"), ExplorerConversationState][] = [
+        ["reached", { ...after("reached", "right"), waypoints: [target] }],
+        ["change", { ...after("change", "right"), waypoints: [successor("revisit")] }],
+        ["revisit", { ...after("revisit", "right"), waypoints: [successor("revision")] }],
+        ["change", { ...after("change", "right"), waypoints: [successor("revision", NEWER)] }],
+        ["change", { ...after("change", "right"), waypoints: [{ ...target, id: SUCCESSOR }] }],
+        ["change", { ...after("change", "right"), conversationId: ID.version }],
+      ];
+      for (const [kind, returned] of contradictions) {
+        const f = fixture(); f.setCurrent(conversation({ waypointOffer: savedOffer(kind) }));
+        const port = vi.fn<OfferPort>(async () => ({ outcome: "ok", conversation_state: returned, operation_result: stored(kind, "right") }));
+        expect((await run(f, port)).result).toEqual({ ok: false, state: null, error: "unavailable" });
+        expect(port).toHaveBeenCalledOnce();
+      }
+    });
+    it("binds the operation, revision and kind into the command fingerprint that the read and the port both receive", async () => {
+      const first = explorerConversationCommandFingerprint(command("right"));
+      expect(first).toBe(createHash("sha256").update(JSON.stringify([
+        "explorer-conversation.v1", "respond_waypoint_offer", ID.operation, 0, OFFER, "right"])).digest("hex").toUpperCase());
+      expect(first).not.toBe(explorerConversationCommandFingerprint(command("close")));
+      expect(first).not.toBe(explorerConversationCommandFingerprint(command("not_it")));
+      expect(first).not.toBe(explorerConversationCommandFingerprint({ ...command("right"), offerId: NEWER }));
+      expect(first).not.toBe(explorerConversationCommandFingerprint({ ...command("right"), expectedRevision: 1 }));
+      expect(first).not.toBe(explorerConversationCommandFingerprint({ ...command("right"), operationId: ID.version }));
+      expect(first).not.toBe(explorerConversationCommandFingerprint({ kind: "respond_waypoint_draft", draftId: OFFER, response: "right",
+        operationId: ID.operation, expectedRevision: 0 }));
+    });
+
+    describe("exact replay through the real composition path", () => {
+      const replayRead = (f: ReturnType<typeof fixture>, current: ExplorerConversationState, policy: Record<string, unknown> = POLICY) =>
+        f.read.mockResolvedValue({ outcome: "exact_replay", conversation_state: current,
+          authority_context: { explorerId: ID.explorer, authorizationVersion: "AV3:" + SHA }, policy_state: policy });
+      const expectReplayCall = (port: OfferPort, response: "right" | "close" | "not_it") =>
+        expect(port).toHaveBeenCalledExactlyOnceWith({ p_actor_user_account_id: ID.actor, p_user_session_id: ID.app,
+          p_conversation_id: ID.conversation, p_operation_id: ID.operation, p_expected_revision: 0,
+          p_command_fingerprint: explorerConversationCommandFingerprint(command(response)), p_offer_id: OFFER, p_response: response });
+
+      it("returns the original result after a newer offer replaced the answered one", async () => {
+        // The answered offer was turned down; a newer offer of another kind now waits under a later reply.
+        const current = conversation({ revision: 5, messages: [...conversation().messages,
+          { id: LATER_REPLY, role: "virtualGuide", body: "A later saved reply.", createdAt: "2026-11-16T09:20:00Z" }],
+          waypointOffer: savedOffer("revisit", { id: NEWER, suggestionMessageId: LATER_REPLY }) });
+        const f = fixture(); replayRead(f, current);
+        const port = vi.fn<OfferPort>(async () => ({ outcome: "exact_replay", conversation_state: current, operation_result: stored("change", "not_it") }));
+        const result = await run(f, port, command("not_it"));
+        expect(result.result.ok).toBe(true);
+        if (!result.result.ok) throw new Error("synthetic_result_missing");
+        expect(result.result.state.waypointOffer).toMatchObject({ id: NEWER, status: "proposed", kind: "revisit" });
+        expect(result.result.state.revision).toBe(5);
+        expect(result.waypointOfferResult).toEqual(stored("change", "not_it"));
+        expectReplayCall(port, "not_it"); expect(f.read).toHaveBeenCalledOnce(); noSendWork(f);
+      });
+      it("returns kept_open for a replayed close after refinement and confirmation of the same offer", async () => {
+        // Close, then the Virtual Guide refined the offer under a later reply, then the Explorer confirmed it.
+        const current = conversation({ revision: 6, messages: [...conversation().messages,
+          { id: LATER_REPLY, role: "virtualGuide", body: "A later saved reply.", createdAt: "2026-11-16T09:20:00Z" }],
+          waypoints: [successor("revision")],
+          waypointOffer: savedOffer("change", { status: "confirmed", resultWaypointId: SUCCESSOR, suggestionMessageId: LATER_REPLY,
+            typedAnswerEligible: false, targetCurrent: false }) });
+        const f = fixture(); replayRead(f, current);
+        const kept = stored("change", "close");
+        expect(kept).toMatchObject({ outcome: "kept_open", resultWaypointId: null, suggestionMessageId: ID.intake });
+        const port = vi.fn<OfferPort>(async () => ({ outcome: "exact_replay", conversation_state: current, operation_result: kept }));
+        const result = await run(f, port, command("close"));
+        expect(result.result.ok).toBe(true);
+        if (!result.result.ok) throw new Error("synthetic_result_missing");
+        // Verification used the stored result, not the offer's current status (confirmed).
+        expect(result.result.state.waypointOffer?.status).toBe("confirmed");
+        expect(result.waypointOfferResult).toEqual(kept);
+        expectReplayCall(port, "close"); noSendWork(f);
+      });
+      it.each(["right", "close", "not_it"] as const)("returns the stored result of a replayed %s while a Send is pending", async response => {
+        const current = { ...after("change", response), pendingTurn: true };
+        const f = fixture(); replayRead(f, current);
+        const port = vi.fn<OfferPort>(async () => ({ outcome: "exact_replay", conversation_state: current, operation_result: stored("change", response) }));
+        const result = await run(f, port, command(response));
+        expect(result.result.ok).toBe(true);
+        if (!result.result.ok) throw new Error("synthetic_result_missing");
+        expect(result.result.state.pendingTurn).toBe(true);
+        expectReplayCall(port, response); noSendWork(f);
+      });
+      it.each(["restricted", "adult", "unknown"] as const)("replays before the policy checks: %s", async reason => {
+        const policy = reason === "restricted" ? { ...POLICY, restrictedLevel: 3 } : reason === "adult" ? { ...POLICY, adultReflectionStopped: true } : { known: false };
+        const current = after("reached", "right");
+        const f = fixture(); replayRead(f, current, policy);
+        const port = vi.fn<OfferPort>(async () => ({ outcome: "exact_replay", conversation_state: current, operation_result: stored("reached", "right") }));
+        const result = await run(f, port);
+        expect(result.result.ok).toBe(true);
+        if (!result.result.ok) throw new Error("synthetic_result_missing");
+        expect(result.result.state.compassSuggestionReplies).toBe(reason === "restricted" ? "support" : reason === "adult" ? "adult_policy" : "unavailable");
+        expectReplayCall(port, "right");
+      });
+      it("lets a confirmed receipt stand when its result Waypoint is no longer a current version in the state", async () => {
+        const later = { ...successor("revision", SUCCESSOR), id: NEWER };
+        const current = conversation({ revision: 9, waypoints: [later],
+          waypointOffer: savedOffer("change", { status: "confirmed", resultWaypointId: SUCCESSOR, typedAnswerEligible: false, targetCurrent: false }) });
+        const f = fixture(); replayRead(f, current);
+        const port = vi.fn<OfferPort>(async () => ({ outcome: "exact_replay", conversation_state: current, operation_result: stored("change", "right") }));
+        expect((await run(f, port)).result.ok).toBe(true);
+      });
+      it("still verifies a replayed result and never falls back to the generic replay return", async () => {
+        const current = after("change", "right");
+        for (const operation_result of [null, stored("change", "right", { offerId: NEWER }), stored("change", "not_it"), stored("change", "right", { typed: true })]) {
+          const f = fixture(); replayRead(f, current);
+          const port = vi.fn<OfferPort>(async () => ({ outcome: "exact_replay", conversation_state: current, operation_result }));
+          expect((await run(f, port)).result).toEqual({ ok: false, state: null, error: "unavailable" });
+          expect(port).toHaveBeenCalledOnce();
+        }
+        const contradicted = fixture(); replayRead(contradicted, current);
+        expect((await run(contradicted, async () => ({ outcome: "exact_replay", conversation_state: { ...current, waypoints: [successor("revisit")] },
+          operation_result: stored("change", "right") }))).result).toEqual({ ok: false, state: null, error: "unavailable" });
+        const conflict = fixture(); replayRead(conflict, current);
+        expect((await run(conflict, async () => ({ outcome: "operation_conflict" }))).result).toEqual({ ok: false, state: null, error: "refresh_required" });
+        const absent = fixture(); replayRead(absent, current);
+        expect((await run(absent, undefined)).result).toEqual({ ok: false, state: null, error: "denied" });
+        const unresolved = fixture(); replayRead(unresolved, state(null)); const never = vi.fn<OfferPort>();
+        expect((await run(unresolved, never)).result).toEqual({ ok: false, state: null, error: "denied" });
+        expect(never).not.toHaveBeenCalled();
+      });
+      it("leaves every other command's replay on the generic path, without the offer port", async () => {
+        const current = withDraft(conversation({ waypointOffer: savedOffer() }));
+        const others: readonly unknown[] = [
+          { kind: "respond_waypoint_draft", draftId: DRAFT, response: "close", operationId: ID.operation, expectedRevision: 0 },
+          { kind: "set_attention", itemId: ID.pack, operationId: ID.operation, expectedRevision: 0 },
+          { kind: "release_waypoint", waypointId: WAYPOINT, operationId: ID.operation, expectedRevision: 0 },
+          { kind: "revise_waypoint", waypointId: WAYPOINT, answers: [{ component: "destination", answer: "A slow breakfast" }], operationId: ID.operation, expectedRevision: 0 },
+          { kind: "confirm_reached", waypointId: WAYPOINT, evidence: "We ate together twice.", operationId: ID.operation, expectedRevision: 0 },
+        ];
+        for (const input of others) {
+          const f = fixture(); replayRead(f, current);
+          const port = vi.fn<OfferPort>(); const respondWaypointDraft = vi.fn(); const waypointRevision = vi.fn(); const release = vi.fn();
+          const result = await commandExplorerPrivateConversation({ command: input, dependencies: { ...f.dependencies,
+            repository: { ...f.dependencies.repository, respondWaypointOffer: port, respondWaypointDraft, waypointRevision, release } } });
+          expect(result).toEqual({ result: expect.objectContaining({ ok: true }), assistance: null });
+          for (const unused of [port, respondWaypointDraft, waypointRevision, release, f.mutate]) expect(unused).not.toHaveBeenCalled();
+          expect(f.read).toHaveBeenCalledOnce(); noSendWork(f);
+        }
+      });
+    });
+  });
 });

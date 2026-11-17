@@ -50,5 +50,8 @@ export function latestReplyChoices(state: ExplorerConversationState): LatestRepl
   const last = state.messages[state.messages.length - 1];
   if (last === undefined || last.role !== "virtualGuide" || last.choices === undefined || last.choices.length === 0) return null;
   if (formingWaypointForMessage(state, last.id) !== null) return null;
+  // The same rule for a saved offer that is still waiting on the latest reply: its box's buttons are the one group.
+  if (state.waypointOffer != null && state.waypointOffer.status === "proposed" &&
+      state.waypointOffer.suggestionMessageId === last.id) return null;
   return Object.freeze({ messageId: last.id, labels: Object.freeze(last.choices.map(choice => choice.label)) });
 }

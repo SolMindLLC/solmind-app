@@ -8,6 +8,8 @@ import {
   createPrivateGovernedExplorerConversationContextBuilder,
   EXPLORER_CONVERSATION_CONTEXT_SELECTION_VERSION,
   EXPLORER_PRIVATE_CONVERSATION_CONTEXT_SELECTION_VERSION,
+  EXPLORER_CONTEXT_SOURCE_ID_LIMIT,
+  explorerContextSourceIds,
   type ExplorerConversationContextConfiguration,
 } from "./explorerConversationContext";
 import { commandExplorerConversation } from "./explorerConversationComposition";
@@ -696,10 +698,11 @@ describe("Explicit held private AV3 context entry points", () => {
     const result = await build({ ...f.input, mode: "classification_and_reply" });
     expect(result.evidence.p_authorization_version).toBe(privateVersion);
     expect(assembled(result.request.authorizedContext).contractVersion).toBe(EXPLORER_PRIVATE_CONVERSATION_CONTEXT_SELECTION_VERSION);
-    expect(assembled(result.request.authorizedContext).compassContext).toEqual({ version: "explorer-compass-context.v8",
+    expect(assembled(result.request.authorizedContext).compassContext).toEqual({ version: "explorer-compass-context.v9",
       mode: "legacy_read_only", topics: [], messageRefs: { history: [{ ref: "h0", order: 0 }], immediate: "now" },
       capacity: { originalsRemaining: 0, topicSlotsRemaining: 0, visibleSlotsRemaining: 0 },
-      points: [], priorityId: null, attentionId: null, recentRoute: [], waypoints: [], drafts: [], immediateMessageIsReplyChoice: false });
+      points: [], priorityId: null, attentionId: null, recentRoute: [], waypoints: [], drafts: [], offers: [],
+      reachedOfferedWaypointIds: [], immediateMessageIsReplyChoice: false });
     expect(f.read).toHaveBeenCalledOnce();
     expect(f.prepare).not.toHaveBeenCalled(); expect(f.complete).not.toHaveBeenCalled();
   });
@@ -743,13 +746,15 @@ describe("Explicit held private AV3 context entry points", () => {
 // context, must inspect clear.
 const sx = (n: number) => `f5120000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 function v8LegacyGolden(serialized: string): string {
-  const old = JSON.parse(serialized);
-  return JSON.stringify({ version: "explorer-compass-context.v8", mode: "legacy_read_only",
+  // v9: the two offer entries follow the drafts in the application's order, wherever the sample lists them.
+  const { offers, reachedOfferedWaypointIds, immediateMessageIsReplyChoice, ...old } = JSON.parse(serialized);
+  return JSON.stringify({ version: "explorer-compass-context.v9", mode: "legacy_read_only",
     topics: [], messageRefs: { history: [{ ref: "h0", order: 0 }], immediate: "now" },
     capacity: { originalsRemaining: 0, topicSlotsRemaining: 0, visibleSlotsRemaining: 0 },
-    ...Object.fromEntries(Object.entries(old).filter(([key]) => key !== "version")), priorityId: null });
+    ...Object.fromEntries(Object.entries(old).filter(([key]) => key !== "version")), priorityId: null,
+    offers, reachedOfferedWaypointIds, immediateMessageIsReplyChoice });
 }
-const GOLDEN = v8LegacyGolden('{"version":"explorer-compass-context.v8","points":[{"id":"f5120000-0000-4000-8000-000000000401","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},{"id":"f5120000-0000-4000-8000-000000000402","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},{"id":"f5120000-0000-4000-8000-000000000404","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],"priorityId":"f5120000-0000-4000-8000-000000000401","attentionId":"f5120000-0000-4000-8000-000000000402","recentRoute":[{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000401","label":"Money worries","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":true}],"waypoints":[{"id":"f5120000-0000-4000-8000-000000000425","title":"Read before bed","destination":"Read before bed","meaning":"Screens keep me awake","arrivalSignal":"I read on three nights","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000421","title":"Find a calmer morning","destination":"Find a calmer morning","meaning":"Mornings set\\nmy whole day","arrivalSignal":"I start two mornings a week without rushing","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000423","title":"Call my sister","destination":"Call my sister","meaning":"We have drifted apart","arrivalSignal":"We talk once a week for a month","stage":"released","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000422","title":"Walk after dinner","destination":"Walk after dinner","meaning":"It clears my head","arrivalSignal":"I walk three evenings in one week","stage":"reached","reachedEvidence":"I walked four evenings last week"}],"drafts":[],"immediateMessageIsReplyChoice":false}');
+const GOLDEN = v8LegacyGolden('{"version":"explorer-compass-context.v9","points":[{"id":"f5120000-0000-4000-8000-000000000401","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},{"id":"f5120000-0000-4000-8000-000000000402","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},{"id":"f5120000-0000-4000-8000-000000000404","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],"priorityId":"f5120000-0000-4000-8000-000000000401","attentionId":"f5120000-0000-4000-8000-000000000402","recentRoute":[{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000401","label":"Money worries","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":true}],"waypoints":[{"id":"f5120000-0000-4000-8000-000000000425","title":"Read before bed","destination":"Read before bed","meaning":"Screens keep me awake","arrivalSignal":"I read on three nights","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000421","title":"Find a calmer morning","destination":"Find a calmer morning","meaning":"Mornings set\\nmy whole day","arrivalSignal":"I start two mornings a week without rushing","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000423","title":"Call my sister","destination":"Call my sister","meaning":"We have drifted apart","arrivalSignal":"We talk once a week for a month","stage":"released","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000422","title":"Walk after dinner","destination":"Walk after dinner","meaning":"It clears my head","arrivalSignal":"I walk three evenings in one week","stage":"reached","reachedEvidence":"I walked four evenings last week"}],"drafts":[],"offers":[],"reachedOfferedWaypointIds":[],"immediateMessageIsReplyChoice":false}');
 function s3State(): ExplorerConversationState {
   const base = state(); const source = base.messages[0].id;
   const at = (minute: number) => `2026-11-03T09:${String(minute).padStart(2, "0")}:00.000Z`;
@@ -824,7 +829,7 @@ describe("Choice voice verified marker in the actual private context builder", (
     const marked = await f.build(tapped(f));
     const typed = await f.build({ ...f.input, command: { ...f.input.command, body: label } });
     const context = assembled(marked.request.authorizedContext);
-    expect(context.compassContext!.version).toBe("explorer-compass-context.v8");
+    expect(context.compassContext!.version).toBe("explorer-compass-context.v9");
     expect(context.compassContext!.immediateMessageIsReplyChoice).toBe(true);
     expect(Object.keys(context.compassContext!).at(-1)).toBe("immediateMessageIsReplyChoice");
     expect(context.immediateExplorerMessage.content).toBe(label);
@@ -1101,7 +1106,7 @@ describe("Chat step slice S3 saved Compass and Waypoint section (private AV3 ent
     const f = privateFixture(s3State()); const result = await f.build(f.input);
     const serialized = result.request.authorizedContext;
     const context = assembled(serialized);
-    expect(context.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2+compass-v8");
+    expect(context.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2+compass-v9");
     expect(JSON.stringify(context.compassContext)).toBe(GOLDEN);
     expect(serialized).toContain(`,"compassContext":${GOLDEN},"currentSessionMessages":`);
     expect(Object.keys(context)).toEqual(["contractVersion", "aiRole", "actorRoleContext", "globalPolicy", "roleBehavior",
@@ -1651,5 +1656,194 @@ describe("v8 private automatic evidence", () => {
     if (defect === "renamed") f.read.mockResolvedValue({ ...f.row, authority_context: {
       ...(f.row.authority_context as object), compassEvidence: [{ ...f.evidence[0], label: "Other wording" }] } });
     await expect(f.build(f.input)).rejects.toThrow();
+  });
+});
+
+// Offers build step 2. The three literal compassContext texts live in supabase/tests/explorer_waypoint_offers_test.sql
+// (lines 441 to 447), where the database's own context is proven byte-equal to them and its inspector accepts them.
+// The same texts are read here, so the application's context and the database's are tied to one fixture.
+function sortedKeyJson(value: unknown): string {
+  if (Array.isArray(value)) return "[" + value.map(sortedKeyJson).join(",") + "]";
+  if (value !== null && typeof value === "object") {
+    return "{" + Object.keys(value).sort().map(key =>
+      JSON.stringify(key) + ":" + sortedKeyJson((value as Record<string, unknown>)[key])).join(",") + "}";
+  }
+  return JSON.stringify(value);
+}
+describe("offers build step 2: saved offers in the private v9 context", () => {
+  const WAYPOINT = "f47f0000-0000-4000-8000-000000080001";
+  const OFFER = "7291b0c8-3ff0-5279-b7e1-c955943ce37c";
+  function sqlGolden(name: string): string {
+    const sql = readFileSync("supabase/tests/explorer_waypoint_offers_test.sql", "utf8");
+    const found = sql.match(new RegExp("\\$" + name + "\\$([\\s\\S]*?)\\$" + name + "\\$"));
+    expect(found).not.toBeNull();
+    return found![1];
+  }
+  const before = { title: "Synthetic original", destination: "Synthetic destination", whyItMatters: "Synthetic meaning",
+    arrivalSignal: "Synthetic signal", stage: "formed" as const };
+  const shared = (reply: string) => ({ id: OFFER, status: "proposed" as const, waypointId: WAYPOINT, targetBefore: before,
+    suggestionMessageId: reply, resultWaypointId: null, targetCurrent: true, typedAnswerEligible: true, typedAnswerRefusal: null });
+  const changeOffer = (reply: string) => ({ ...shared(reply), kind: "change" as const, title: "A synthetic offer",
+    destination: "A clearer synthetic destination", whyItMatters: "Synthetic meaning", arrivalSignal: "Synthetic signal" });
+  const reachedOffer = (reply: string) => ({ ...shared(reply), kind: "reached" as const, evidence: "Synthetic arrival." });
+  function offerState(offer: ExplorerConversationState["waypointOffer"], reachedOffered: readonly string[]): ExplorerConversationState {
+    const base = state(4);
+    return { ...base, compassMode: "automatic", compassChanges: [],
+      waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true, conversationRoom: true },
+      waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: 1 },
+      waypoints: [{ id: WAYPOINT, isCurrent: true, createdAt: "2026-11-16T09:00:00.000Z", sourceMessageId: base.messages[0].id,
+        title: "Synthetic original", destination: "Synthetic destination", meaning: "Synthetic meaning",
+        arrivalSignal: "Synthetic signal", status: "chosen", reachedEvidence: null, reachedAt: null }],
+      waypointOffer: offer, waypointOfferDrop: null, reachedOfferedWaypointIds: reachedOffered };
+  }
+  const latestReply = () => state(4).messages[3].id;
+
+  it.each([["change_offer", "change"], ["reached_offer", "reached"], ["reached_offered", "declined"]] as const)(
+    "equals the database's literal %s golden, as parsed JSON and as sorted-key UTF-8 bytes", async (name, scenario) => {
+      const golden = sqlGolden(name);
+      const history = scenario === "change" ? offerState(changeOffer(latestReply()), [])
+        : scenario === "reached" ? offerState(reachedOffer(latestReply()), [WAYPOINT])
+          : offerState({ ...reachedOffer(latestReply()), status: "declined", typedAnswerEligible: false }, [WAYPOINT]);
+      // The fixture is a state the application's own strict parser accepts.
+      expect(parseExplorerConversationState(history)).not.toBeNull();
+      const f = privateFixture(history); const result = await f.build(f.input);
+      const context = assembled(result.request.authorizedContext);
+      expect(context.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2+compass-v9");
+      // 1. The same JSON value (the database compares the section as JSON, where key order carries no meaning).
+      expect(context.compassContext).toEqual(JSON.parse(golden));
+      // 2. The same bytes once keys are sorted the way the golden text lists them.
+      expect(sortedKeyJson(context.compassContext)).toBe(golden);
+      expect(Buffer.from(sortedKeyJson(context.compassContext), "utf8").equals(Buffer.from(golden, "utf8"))).toBe(true);
+      // The golden text is itself in sorted-key form, so the comparison above is exact and not a reformatting.
+      expect(sortedKeyJson(JSON.parse(golden))).toBe(golden);
+      // A waiting offer is a listed source; a declined one is not. The Waypoint always is.
+      const sources: unknown = result.evidence.p_context_source_ids;
+      if (!Array.isArray(sources) || !sources.every((id): id is string => typeof id === "string")) throw new Error("synthetic_sources_missing");
+      expect(sources.includes(OFFER)).toBe(scenario !== "declined");
+      expect(sources).toContain(WAYPOINT);
+      expect([...sources]).toEqual([...sources].sort());
+    });
+
+  it("serializes the two entries after the drafts, in the database builder's argument order", async () => {
+    const f = privateFixture(offerState(changeOffer(latestReply()), [])); const result = await f.build(f.input);
+    const section = assembled(result.request.authorizedContext).compassContext!;
+    expect(Object.keys(section)).toEqual(["version", "mode", "topics", "messageRefs", "capacity", "points", "priorityId",
+      "attentionId", "recentRoute", "waypoints", "drafts", "offers", "reachedOfferedWaypointIds", "immediateMessageIsReplyChoice"]);
+    expect(Object.keys(section.offers[0])).toEqual(["id", "kind", "waypointId", "stage", "suggestedInPreviousReply",
+      "title", "destination", "whyItMatters", "arrivalSignal"]);
+    for (const hidden of ["targetBefore", "typedAnswerRefusal", "typedAnswerEligible", "targetCurrent", "suggestionMessageId",
+      "resultWaypointId", "proposed"]) expect(result.request.authorizedContext).not.toContain(hidden);
+  });
+
+  it.each(["confirmed", "declined", "superseded"] as const)("gives no %s offer and does not list it as a source", async status => {
+    const offer = { ...reachedOffer(latestReply()), status, typedAnswerEligible: false,
+      resultWaypointId: status === "confirmed" ? WAYPOINT : null };
+    const history = offerState(offer, [WAYPOINT]);
+    const f = privateFixture(history); const result = await f.build(f.input);
+    const section = assembled(result.request.authorizedContext).compassContext!;
+    expect(section.offers).toEqual([]);
+    expect(section.reachedOfferedWaypointIds).toEqual([WAYPOINT]);
+    expect(result.evidence.p_context_source_ids).not.toContain(OFFER);
+    expect(result.request.authorizedContext).not.toContain(OFFER);
+  });
+
+  it("signals the previous reply only for the offer the latest saved Virtual Guide reply carried", async () => {
+    const earlier = state(4).messages[1].id;
+    const f = privateFixture(offerState(changeOffer(earlier), [])); const result = await f.build(f.input);
+    expect(assembled(result.request.authorizedContext).compassContext!.offers[0].suggestedInPreviousReply).toBe(false);
+    const g = privateFixture(offerState(changeOffer(latestReply()), [])); const latest = await g.build(g.input);
+    expect(assembled(latest.request.authorizedContext).compassContext!.offers[0].suggestedInPreviousReply).toBe(true);
+  });
+
+  it("takes a revisit offer's stage from the saved snapshot and lists Reached-offered Waypoints in the heads' order", async () => {
+    const history = s3State();
+    const reply = history.messages.find(message => message.role === "virtualGuide")!.id;
+    const revisit = { id: OFFER, status: "proposed" as const, waypointId: sx(422), kind: "revisit" as const,
+      targetBefore: { title: "Walk after dinner", destination: "Walk after dinner", whyItMatters: "It clears my head",
+        arrivalSignal: "I walk three evenings in one week", stage: "reached" as const },
+      suggestionMessageId: reply, resultWaypointId: null, targetCurrent: true, typedAnswerEligible: true, typedAnswerRefusal: null,
+      title: "Walk after dinner again", destination: "Walk after dinner", whyItMatters: "It clears my head",
+      arrivalSignal: "I walk three evenings in one week" };
+    const saved: ExplorerConversationState = { ...history, waypointOffer: revisit, waypointOfferDrop: null,
+      reachedOfferedWaypointIds: [sx(422), sx(425)] };
+    const f = privateFixture(saved); const result = await f.build(f.input);
+    const section = assembled(result.request.authorizedContext).compassContext!;
+    expect(section.offers).toEqual([{ id: OFFER, kind: "revisit", waypointId: sx(422), stage: "reached",
+      suggestedInPreviousReply: true, title: "Walk after dinner again", destination: "Walk after dinner",
+      whyItMatters: "It clears my head", arrivalSignal: "I walk three evenings in one week" }]);
+    // Heads order: active newest first (425, 421), then closed newest first (423, 422).
+    expect(section.waypoints.map(waypoint => waypoint.id)).toEqual([sx(425), sx(421), sx(423), sx(422)]);
+    expect(section.reachedOfferedWaypointIds).toEqual([sx(425), sx(422)]);
+    expect(result.evidence.p_context_source_ids).toContain(OFFER);
+  });
+
+  it("reads a state without the three offer keys as no offer and none Reached-offered", async () => {
+    const f = privateFixture(s3State()); const result = await f.build(f.input);
+    const section = assembled(result.request.authorizedContext).compassContext!;
+    expect(section.offers).toEqual([]); expect(section.reachedOfferedWaypointIds).toEqual([]);
+  });
+
+  it("keeps the offer and its source out of classification-only context", async () => {
+    const f = privateFixture(offerState(changeOffer(latestReply()), []));
+    const result = await f.build({ ...f.input, mode: "classification_only" });
+    expect(assembled(result.request.authorizedContext)).not.toHaveProperty("compassContext");
+    expect(result.evidence.p_context_source_ids).not.toContain(OFFER);
+    expect(result.request.authorizedContext).not.toContain(OFFER);
+    expect(result.request.authorizedContext).not.toContain("A clearer synthetic destination");
+  });
+
+  it("refuses an offer whose id is also a saved message, through the schema", async () => {
+    const base = state(4);
+    const f = privateFixture(offerState({ ...changeOffer(latestReply()), id: base.messages[0].id }, []));
+    await expect(f.build(f.input)).rejects.toThrow();
+  });
+
+  it("rejects an offer that changes during final revalidation even when the saved revision stays equal", async () => {
+    const history = offerState(changeOffer(latestReply()), []);
+    const f = privateFixture(history);
+    f.read.mockResolvedValue({ ...f.row, conversation_state: { ...history,
+      waypointOffer: { ...changeOffer(latestReply()), title: "Another synthetic offer" } } });
+    await expect(f.build(f.input)).rejects.toThrow();
+  });
+});
+
+describe("offers build step 2: text limits through the real private builder and assembler, in both modes", () => {
+  type Sized = "globalPolicy" | "roleBehavior" | "crisisBehavior";
+  function build(field: Sized, length: number, mode: "classification_and_reply" | "classification_only") {
+    const base = configuration();
+    const config: ExplorerConversationContextConfiguration = { ...base,
+      [field]: { version: base[field].version, text: "x".repeat(length) } };
+    const f = fixture({ facts: { ...authority(), compassEvidence: [], authorizationVersion: `AV3:${"B".repeat(64)}` }, config });
+    return createPrivateExplorerConversationContextBuilder({ repository: { read: f.read }, configuration: f.config })({ ...f.input, mode });
+  }
+  it.each(["classification_and_reply", "classification_only"] as const)(
+    "admits a role text of exactly 25000 characters and refuses 25001 in %s", async mode => {
+      const admitted = await build("roleBehavior", 25000, mode);
+      expect(assembled(admitted.request.authorizedContext).roleBehavior.text).toBe("x".repeat(25000));
+      await expect(build("roleBehavior", 25001, mode)).rejects.toThrow();
+    });
+  it.each(["classification_and_reply", "classification_only"] as const)(
+    "still admits 20000 and refuses 20001 characters for the policy and crisis texts in %s", async mode => {
+      for (const field of ["globalPolicy", "crisisBehavior"] as const) {
+        const admitted = await build(field, 20000, mode);
+        expect(assembled(admitted.request.authorizedContext)[field].text).toBe("x".repeat(20000));
+        await expect(build(field, 20001, mode)).rejects.toThrow();
+      }
+    });
+});
+
+describe("offers build step 2: the bound on listed context sources", () => {
+  const source = (n: number) => `f5130000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+  it("admits 169 distinct sources, sorted on a copy, and refuses 170 and any duplicate", () => {
+    expect(EXPLORER_CONTEXT_SOURCE_ID_LIMIT).toBe(169);
+    const full = Array.from({ length: 169 }, (_, index) => source(169 - index));
+    const listed = explorerContextSourceIds(full);
+    expect(listed).toHaveLength(169);
+    expect(listed).toEqual(Array.from({ length: 169 }, (_, index) => source(index + 1)));
+    expect(full[0]).toBe(source(169));
+    expect(() => explorerContextSourceIds([...full, source(170)])).toThrow("explorer_conversation_context_unavailable");
+    expect(() => explorerContextSourceIds([...full.slice(1), full[1]])).toThrow("explorer_conversation_context_unavailable");
+    expect(explorerContextSourceIds(full.slice(0, 168))).toHaveLength(168);
+    expect(explorerContextSourceIds([])).toEqual([]);
   });
 });

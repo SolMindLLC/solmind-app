@@ -351,3 +351,39 @@ it("propagates the successor port under the same10second unknownack boundary",as
  expect(waypointRevision).toHaveBeenCalledExactlyOnceWith(input);waypointRevision.mockImplementation(()=>new Promise(()=>undefined));const p=wrapped.repository.waypointRevision!(input);const rejected=expect(p).rejects.toThrowError(FAILURE);await vi.advanceTimersByTimeAsync(10_000);await rejected;expect(waypointRevision).toHaveBeenCalledTimes(2);expect(vi.getTimerCount()).toBe(0);
  }finally{vi.useRealTimers();}
 });
+
+describe("offers build step 2: the offer answer port's time bound", () => {
+  const WAYPOINT_OFFER = Object.freeze({ ...ACTOR_PARAMETERS, p_conversation_id: ID,
+    p_operation_id: ID, p_expected_revision: 1, p_command_fingerprint: SHA, p_offer_id: ID, p_response: "close" as const });
+  type OfferPort = NonNullable<ExplorerPrivateConversationRepository["respondWaypointOffer"]>;
+  it("keeps the capability absent when it is not supplied and adds it, frozen, when it is", async () => {
+    const f = fixture();
+    expect(withExplorerPrivateRequestBudgets(f.dependencies).repository).not.toHaveProperty("respondWaypointOffer");
+    const respondWaypointOffer = vi.fn<OfferPort>(async () => ROW);
+    const wrapped = withExplorerPrivateRequestBudgets({ ...f.dependencies, repository: { ...f.repository, respondWaypointOffer } });
+    expect(Object.keys(wrapped.repository).sort()).toEqual([...Object.keys(f.repository), "respondWaypointOffer"].sort());
+    expect(Object.isFrozen(wrapped.repository)).toBe(true);
+    expect(await wrapped.repository.respondWaypointOffer!(WAYPOINT_OFFER)).toBe(ROW);
+    expect(respondWaypointOffer).toHaveBeenCalledExactlyOnceWith(WAYPOINT_OFFER);
+    expect(respondWaypointOffer.mock.calls[0][0]).toBe(WAYPOINT_OFFER);
+    for (const port of Object.values(f.repository)) expect(port).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("bounds a stalled answer at ten seconds once, with exact arguments, and ignores a late success", async () => {
+    const f = fixture(); const held = deferred<ExplorerPrivateReadRow>();
+    const respondWaypointOffer = vi.fn<OfferPort>(() => held.promise);
+    const wrapped = withExplorerPrivateRequestBudgets({ ...f.dependencies, repository: { ...f.repository, respondWaypointOffer } });
+    let settled = false;
+    const observed = wrapped.repository.respondWaypointOffer!(WAYPOINT_OFFER)
+      .then(value => { settled = true; return value as unknown; }, error => { settled = true; return error as unknown; });
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const error = await observed;
+    expect(error).toBeInstanceOf(Error); expect((error as Error).message).toBe(FAILURE);
+    expect(respondWaypointOffer).toHaveBeenCalledExactlyOnceWith(WAYPOINT_OFFER);
+    held.resolve(ROW); await Promise.resolve();
+    expect(await observed).toBe(error); expect(respondWaypointOffer).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});

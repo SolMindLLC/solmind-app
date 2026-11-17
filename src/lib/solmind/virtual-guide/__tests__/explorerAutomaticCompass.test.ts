@@ -56,7 +56,7 @@ describe("automatic Compass optional protocol", () => {
 
 describe("automatic topics mapped from the invocation", () => {
   function current() {
-    return { contractVersion: "wi007-v0.1+onboarding-fields-v2+compass-v8",
+    return { contractVersion: "wi007-v0.1+onboarding-fields-v2+compass-v9",
       immediateExplorerMessage: { messageId: "22222222-2222-5222-8222-222222222222" },
       currentSessionMessages: [
         { order: 0, messageId: "33333333-3333-5333-8333-333333333333", role: "explorer" },

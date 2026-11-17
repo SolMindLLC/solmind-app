@@ -145,7 +145,7 @@ end $$;
 -- priorityId, no forming points, attention only when it names a supplied point (explorer_source_exclusion_test.sql).
 -- This fixture records no needle moves, so the Route is empty.
 create function pg_temp.compass_context() returns jsonb language sql stable as $$
-  select jsonb_build_object('version','explorer-compass-context.v8','immediateMessageIsReplyChoice',false,
+  select jsonb_build_object('version','explorer-compass-context.v9','offers','[]'::jsonb,'reachedOfferedWaypointIds','[]'::jsonb,'immediateMessageIsReplyChoice',false,
     'mode','legacy_read_only','topics','[]'::jsonb,
     'capacity',jsonb_build_object('originalsRemaining',0,'topicSlotsRemaining',0,'visibleSlotsRemaining',0),
     'messageRefs',jsonb_build_object('history',(select coalesce(jsonb_agg(jsonb_build_object('ref','h'||h.ord::text,
@@ -187,7 +187,7 @@ create function pg_temp.compass_source_ids() returns uuid[] language sql stable 
 $$;
 create function pg_temp.context_value(msg uuid,body text,classification_only boolean default false) returns jsonb language sql stable as $$
   select jsonb_build_object('contractVersion',case when classification_only then 'wi007-v0.1+onboarding-fields-v2'
-    else 'wi007-v0.1+onboarding-fields-v2+compass-v8' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
+    else 'wi007-v0.1+onboarding-fields-v2+compass-v9' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy',jsonb_build_object('version','synthetic-policy.v1','text','Synthetic policy.'),
     'roleBehavior',jsonb_build_object('version','synthetic-behavior.v1','text','Synthetic behavior.'),
     'crisisBehavior',jsonb_build_object('version','synthetic-crisis.v1','text','Synthetic crisis.'),
@@ -396,7 +396,7 @@ select ok(not has_function_privilege('anon','ai.solmind_conversation_state_json(
 -- these comparisons leave out only those two fields, so every field this file owns stays pinned exactly.
 -- REV391 (2026-11-11) adds compassMode and compassChanges (contract B5); each comparison pins their exact values.
 select is(ai.solmind_conversation_state_json(null)-'waypointCapacity'-'waypointProjection',
-  pg_temp.previous_state(null)||jsonb_build_object('turnedDownLimitReached',false,'compassMode','automatic','compassChanges','[]'::jsonb),
+  pg_temp.previous_state(null)||jsonb_build_object('waypointOffer',null,'waypointOfferDrop',null,'reachedOfferedWaypointIds','[]'::jsonb,'turnedDownLimitReached',false,'compassMode','automatic','compassChanges','[]'::jsonb),
   'TDL03: blank Discovery adds exactly a false boolean, automatic mode and no Compass changes');
 
 -- REV391: button rejections are retired, so each rejected row is a privileged historical row whose source and
@@ -413,7 +413,7 @@ select is((select count(*)::integer from ai.explorer_conversation_compass_item
 select is(pg_temp.state()->'turnedDownLimitReached','false'::jsonb,
   'TDL05: 23 rejected rows do not reach the limit');
 select is(pg_temp.state()-'turnedDownLimitReached'-'waypointCapacity'-'waypointProjection',
-  pg_temp.previous_state(pg_temp.gid(6005))||jsonb_build_object('compassMode','legacy','compassChanges','[]'::jsonb),
+  pg_temp.previous_state(pg_temp.gid(6005))||jsonb_build_object('waypointOffer',null,'waypointOfferDrop',null,'reachedOfferedWaypointIds','[]'::jsonb,'compassMode','legacy','compassChanges','[]'::jsonb),
   'TDL06: at 23 every prior state field is unchanged, with legacy mode and no Compass changes');
 select is((select conversation_state from public.solmind_read_explorer_conversation_v3(
     pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005))),pg_temp.state(),
@@ -432,7 +432,7 @@ select is((select count(*)::integer from ai.explorer_conversation_compass_item
 select is(pg_temp.state()->'turnedDownLimitReached','true'::jsonb,
   'TDL10: 24 rejected rows reach the limit');
 select is(pg_temp.state()-'turnedDownLimitReached'-'waypointCapacity'-'waypointProjection',
-  pg_temp.previous_state(pg_temp.gid(6005))||jsonb_build_object('compassMode','legacy','compassChanges','[]'::jsonb),
+  pg_temp.previous_state(pg_temp.gid(6005))||jsonb_build_object('waypointOffer',null,'waypointOfferDrop',null,'reachedOfferedWaypointIds','[]'::jsonb,'compassMode','legacy','compassChanges','[]'::jsonb),
   'TDL11: at 24 every prior state field is unchanged and no extra count appears');
 select ok(not exists(select 1 from ai.explorer_conversation_compass_item c
     where c.conversation_id=pg_temp.gid(6005) and c.formation_status='rejected'
@@ -442,7 +442,7 @@ select is((select conversation_state from public.solmind_read_explorer_conversat
     pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005))),pg_temp.state(),
   'TDL13: the authorized read carries the true flag and unchanged remaining fields');
 select is((select conversation_state from public.solmind_read_explorer_conversation_v3(pg_temp.gid(4),pg_temp.gid(54)))-'waypointCapacity'-'waypointProjection',
-  pg_temp.previous_state(null)||jsonb_build_object('turnedDownLimitReached',false,'compassMode','automatic','compassChanges','[]'::jsonb),
+  pg_temp.previous_state(null)||jsonb_build_object('waypointOffer',null,'waypointOfferDrop',null,'reachedOfferedWaypointIds','[]'::jsonb,'turnedDownLimitReached',false,'compassMode','automatic','compassChanges','[]'::jsonb),
   'TDL14: another Explorer empty Discovery does not inherit the limit');
 select throws_ok($$select * from public.solmind_read_explorer_conversation_v3(
     pg_temp.gid(4),pg_temp.gid(54),pg_temp.gid(6005))$$,
@@ -452,7 +452,7 @@ do $$ begin
 end $$;
 select is((select conversation_state from public.solmind_read_explorer_conversation_v3(
     pg_temp.gid(4),pg_temp.gid(54),pg_temp.gid(6006)))-'waypointCapacity'-'waypointProjection',
-  pg_temp.previous_state(pg_temp.gid(6006))||jsonb_build_object('turnedDownLimitReached',false,'compassMode','automatic','compassChanges','[]'::jsonb),
+  pg_temp.previous_state(pg_temp.gid(6006))||jsonb_build_object('waypointOffer',null,'waypointOfferDrop',null,'reachedOfferedWaypointIds','[]'::jsonb,'turnedDownLimitReached',false,'compassMode','automatic','compassChanges','[]'::jsonb),
   'TDL16: another owned conversation counts only its own rejected rows');
 select is(pg_temp.state()->'turnedDownLimitReached','true'::jsonb,
   'TDL17: another conversation leaves the first conversation limit unchanged');
@@ -474,7 +474,7 @@ select ok(pg_temp.state()=(select state from before_refusal)
       where c.conversation_id=pg_temp.gid(6005))=(select items from before_refusal),
   'TDL19: the refusal changes no state, no stored point (rejected rows included) and records no operation');
 select is(pg_temp.state()-'turnedDownLimitReached'-'waypointCapacity'-'waypointProjection',
-  pg_temp.previous_state(pg_temp.gid(6005))||jsonb_build_object('compassMode','legacy','compassChanges','[]'::jsonb),
+  pg_temp.previous_state(pg_temp.gid(6005))||jsonb_build_object('waypointOffer',null,'waypointOfferDrop',null,'reachedOfferedWaypointIds','[]'::jsonb,'compassMode','legacy','compassChanges','[]'::jsonb),
   'TDL20: the nonempty forming-point projection retains every previous field');
 
 select is((select outcome from public.solmind_end_explorer_conversation_v1(pg_temp.gid(1),pg_temp.gid(50),
@@ -482,7 +482,7 @@ select is((select outcome from public.solmind_end_explorer_conversation_v1(pg_te
   'ok','TDL21: ending the at-limit conversation retains its normal command contract');
 select is((select conversation_state from public.solmind_read_ended_explorer_conversations_v1(
     pg_temp.gid(1),pg_temp.gid(50),pg_temp.gid(6005)))-'waypointCapacity'-'waypointProjection',
-  pg_temp.previous_state(pg_temp.gid(6005))||jsonb_build_object('turnedDownLimitReached',true,'compassMode','legacy','compassChanges','[]'::jsonb),
+  pg_temp.previous_state(pg_temp.gid(6005))||jsonb_build_object('waypointOffer',null,'waypointOfferDrop',null,'reachedOfferedWaypointIds','[]'::jsonb,'turnedDownLimitReached',true,'compassMode','legacy','compassChanges','[]'::jsonb),
   'TDL22: owned ended review adds only the same limit boolean, legacy mode and no Compass changes');
 select throws_ok($$select * from public.solmind_read_ended_explorer_conversations_v1(
     pg_temp.gid(4),pg_temp.gid(54),pg_temp.gid(6005))$$,

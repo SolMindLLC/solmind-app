@@ -54,3 +54,49 @@ describe("private conversation browser response", () => {
     expect(parseExplorerPrivateConversationResponse(input)).toBeNull();
   });
 });
+
+describe("offers build step 2: the stored result of an offer answer in the browser response", () => {
+  const CONVERSATION = "00000000-0000-4000-8000-000000000011"; const REPLY = "00000000-0000-4000-8000-000000000012";
+  const OFFER = "00000000-0000-4000-8000-000000000013"; const WAYPOINT = "00000000-0000-4000-8000-000000000014";
+  const RESULT = "00000000-0000-4000-8000-000000000015";
+  const saved = { ...result, state: { ...result.state, conversationId: CONVERSATION, revision: 2,
+    messages: [{ id: REPLY, role: "virtualGuide", body: "A saved synthetic reply.", createdAt: "2026-11-16T09:00:00Z" }] } };
+  const stored = { offerId: OFFER, kind: "change", waypointId: WAYPOINT, suggestionMessageId: REPLY, response: "right", typed: false,
+    outcome: "confirmed", resultWaypointId: RESULT };
+  const answered = (waypointOfferResult: unknown = stored) => ({ version: EXPLORER_PRIVATE_RESPONSE_VERSION, result: saved, assistance: null, waypointOfferResult });
+  it("admits the verified result beside a saved state, exactly and frozen, with its carrying reply", () => {
+    for (const value of [stored, { ...stored, response: "close", outcome: "kept_open", resultWaypointId: null },
+      { ...stored, response: "not_it", outcome: "declined", resultWaypointId: null },
+      { ...stored, kind: "reached", resultWaypointId: WAYPOINT }, { ...stored, kind: "revisit" }]) {
+      const parsed = parseExplorerPrivateConversationResponse(answered(value));
+      expect(parsed).toEqual(answered(value));
+      expect(Object.keys(parsed!).sort()).toEqual(["assistance", "result", "version", "waypointOfferResult"]);
+      expect(parsed?.waypointOfferResult?.suggestionMessageId).toBe(REPLY);
+      expect(Object.isFrozen(parsed)).toBe(true); expect(Object.isFrozen(parsed?.waypointOfferResult)).toBe(true);
+      expect(parsed?.waypointOfferResult).not.toBe(value);
+    }
+  });
+  it("keeps every response without the key exactly as before", () => {
+    for (const value of [response(), { ...response(), assistance: null }, { version: EXPLORER_PRIVATE_RESPONSE_VERSION, result: saved, assistance: null }]) {
+      const parsed = parseExplorerPrivateConversationResponse(value);
+      expect(parsed).toEqual(value);
+      expect(parsed).not.toHaveProperty("waypointOfferResult");
+      expect(Object.keys(parsed!).sort()).toEqual(["assistance", "result", "version"]);
+    }
+  });
+  it("refuses a malformed result, a typed answer's result, and a result beside a failure, assistance or no conversation", () => {
+    for (const value of [null, {}, [], "confirmed", { ...stored, extra: true }, { ...stored, outcome: "declined" },
+      { ...stored, resultWaypointId: null }, { ...stored, resultWaypointId: WAYPOINT }, { ...stored, offerId: "not-an-id" },
+      { ...stored, suggestionMessageId: null }, { ...stored, typed: true }, { ...stored, typed: "false" },
+      { ...stored, kind: "reached", response: "close", outcome: "kept_open", resultWaypointId: null }]) {
+      expect(parseExplorerPrivateConversationResponse(answered(value))).toBeNull();
+    }
+    expect(parseExplorerPrivateConversationResponse({ ...answered(), waypointOfferResult: undefined })).toBeNull();
+    expect(parseExplorerPrivateConversationResponse({ ...answered(), result })).toBeNull();
+    expect(parseExplorerPrivateConversationResponse({ ...answered(), result: { ok: false, state: null, error: "unavailable" } })).toBeNull();
+    expect(parseExplorerPrivateConversationResponse({ ...answered(), assistance })).toBeNull();
+    expect(parseExplorerPrivateConversationResponse({ ...answered(), offerResult: stored })).toBeNull();
+    expect(parseExplorerPrivateConversationResponse({ ...answered(), policy_state: {} })).toBeNull();
+    expect(parseExplorerPrivateConversationResponse({ version: EXPLORER_PRIVATE_RESPONSE_VERSION, result: saved, waypointOfferResult: stored })).toBeNull();
+  });
+});

@@ -267,3 +267,26 @@ describe("debug conversation log (SOLMIND-DEBUG)", () => {
     } finally { spy.mockRestore(); }
   });
 });
+
+describe("offers build step 2: debug conversation log (SOLMIND-DEBUG)", () => {
+  it("DL18 treats the two offer fields as known outer keys of a reply", () => {
+    const raw = JSON.stringify({ protocol: PROTOCOL, classification: { level: 0, minorIndicated: false },
+      candidateReply: { content: "A synthetic reply." }, waypointOffer: { kind: "reached" }, waypointOfferResponse: null, waypointReached: {} });
+    expect(describeExplorerSafetyReplyShape(raw, PROTOCOL)).toMatchObject({ rule: "shape_ok",
+      outerKeys: ["protocol", "classification", "candidateReply", "waypointOffer", "waypointOfferResponse", "waypointReached"],
+      droppedKeys: ["waypointReached"] });
+  });
+  it("DL19 summarizes a settlement's offer arguments by presence only", async () => {
+    const folder = await logFolder();
+    const wrapped = withExplorerConversationDebugLog(dependencies(async () => GOOD));
+    await wrapped.repository.settle({ p_status: "completed", p_reply_kind: "ordinary", p_reply_body: "words of the reply",
+      p_failure_reason: null, p_model_level: 0, p_choices: null, p_compass_topics: null, p_compass_suggestions: null,
+      p_compass_responses: null, p_waypoint_suggestion: null, p_waypoint_response: null, p_attention_item_id: null,
+      p_waypoint_offer: { kind: "reached", waypointId: "00000000-0000-4000-8000-000000000001", evidence: "words of the evidence" } } as never);
+    const all = await rows(folder);
+    expect(all.find(row => row.event === "send_settlement")).toMatchObject({ status: "completed", replyKind: "ordinary",
+      waypointSuggestion: false, waypointResponse: false, waypointOffer: true, waypointOfferResponse: false, waypointOfferDrop: false });
+    expect(JSON.stringify(all)).not.toContain("words of the evidence");
+    expect(JSON.stringify(all)).not.toContain("words of the reply");
+  });
+});

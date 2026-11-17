@@ -1,7 +1,9 @@
 import "server-only";
 import { types } from "node:util";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { EXPLORER_COMPASS_ANCHORS, EXPLORER_CONVERSATION_LIMITS, parseExplorerConversationWaypointDraft, parseExplorerWaypointClarificationAnswers, parseExplorerWaypointCapacity } from "../explorerConversationContract";
+import { EXPLORER_COMPASS_ANCHORS, EXPLORER_CONVERSATION_LIMITS, parseExplorerConversationWaypointDraft, parseExplorerWaypointClarificationAnswers, parseExplorerWaypointCapacity,
+  parseExplorerConversationWaypointOffer, parseExplorerConversationWaypointOfferDrop, parseExplorerWaypointOfferOperationResult,
+  type ExplorerWaypointOfferOperationResult } from "../explorerConversationContract";
 import type { ExplorerPrivateConversationRepository, ExplorerPrivatePauseRow, ExplorerPrivateRpcRow } from "../virtual-guide/explorerPrivateConversationComposition";
 import { parseExplorerWaypointPage } from "../explorerWaypointPortfolioContract";
 
@@ -9,6 +11,10 @@ const ACTOR = ["p_actor_user_account_id", "p_user_session_id"] as const;
 const METHODOLOGY = ["p_methodology_context_pack_id", "p_methodology_context_pack_version_id", "p_methodology_content_sha256", "p_methodology_authorization_version"] as const;
 const OBSERVATION = ["p_conversation_id", "p_operation_id", "p_logical_operation_id", "p_expected_revision", "p_command_fingerprint",
   "p_protocol_version", "p_fallback_policy_version", "p_model_policy_version", "p_configuration_fingerprint", "p_fallback_level", "p_fallback_minor_indicated"] as const;
+// Settlement's three offer arguments have null defaults in the database and enter its fingerprint only when not
+// null, so a settlement without them is sent exactly as before (28 arguments).
+const SETTLE_OPTIONAL: readonly string[] = Object.freeze(["p_waypoint_offer", "p_waypoint_offer_response", "p_waypoint_offer_drop"]);
+const OFFER_KINDS: readonly unknown[] = Object.freeze(["reached", "change", "revisit"]);
 const PORTS = Object.freeze({
   read: Object.freeze({ name: "solmind_read_explorer_conversation_v3", parameters: [...ACTOR, "p_conversation_id", "p_operation_id", "p_command_fingerprint"],
     columns: ["outcome", "conversation_state", "authority_context", "policy_state"] }),
@@ -36,6 +42,10 @@ const PORTS = Object.freeze({
   respondWaypointDraft: Object.freeze({ name: "solmind_respond_explorer_waypoint_draft_v1", parameters: [...ACTOR,
     "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint", "p_draft_id", "p_response"],
     columns: ["outcome", "conversation_state"] }),
+  // The button answer to a saved offer; it also returns that answer's own stored result.
+  respondWaypointOffer: Object.freeze({ name: "solmind_respond_explorer_waypoint_offer_v1", parameters: [...ACTOR,
+    "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint", "p_offer_id", "p_response"],
+    columns: ["outcome", "conversation_state", "operation_result"] }),
   waypointRevision: Object.freeze({ name: "solmind_confirm_explorer_waypoint_revision_v1", parameters: [...ACTOR,
     "p_conversation_id", "p_operation_id", "p_expected_revision", "p_command_fingerprint", "p_kind", "p_waypoint_id", "p_answers"],
     columns: ["outcome", "conversation_state"] }),
@@ -67,6 +77,7 @@ const OUTCOMES: Readonly<Record<keyof typeof PORTS, readonly string[]>> = Object
   category: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   respondCompassSuggestion: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   respondWaypointDraft: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
+  respondWaypointOffer: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   waypointRevision: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   release: ["ok", "exact_replay", "stale_revision", "operation_conflict", "unavailable"],
   end: ["ok", "exact_replay", "already_ended", "stale_revision", "unavailable"], review: ["ok"], pause: ["ok"],
@@ -140,10 +151,23 @@ function mappedTopics(value: unknown) {
     return Object.freeze({ topicId: topic.topicId, label: topic.label, ready: topic.ready, supports: Object.freeze(supports) });
   }));
 }
-function parameters(input: object, expected: readonly string[]): Readonly<Record<string, unknown>> {
-  if (!object(input) || Reflect.ownKeys(input).length !== expected.length) throw new Error(FAILURE);
+// Every database state row carries the three offer keys and, inside a forming Waypoint, its typed-answer eligibility
+// (migration 20261116000000_explorer_waypoint_offers.sql), as it carries compassMode and turnedDownLimitReached. The
+// contract parser stays lenient for in-memory fixtures; this boundary is not.
+function offerStateComplete(state: object): boolean {
+  const value = (name: string): unknown => Object.getOwnPropertyDescriptor(state, name)?.value;
+  const draft = parseExplorerConversationWaypointDraft(value("waypointDraft"));
+  return draft !== undefined && (draft === null || typeof draft.typedAnswerEligible === "boolean") &&
+    Object.hasOwn(state, "waypointOffer") && parseExplorerConversationWaypointOffer(value("waypointOffer")) !== undefined &&
+    Object.hasOwn(state, "waypointOfferDrop") && parseExplorerConversationWaypointOfferDrop(value("waypointOfferDrop")) !== undefined &&
+    Array.isArray(value("reachedOfferedWaypointIds"));
+}
+function parameters(input: object, expected: readonly string[], optional: readonly string[] = []): Readonly<Record<string, unknown>> {
+  if (!object(input)) throw new Error(FAILURE);
+  const supplied = optional.filter(key => Object.hasOwn(input, key));
+  if (Reflect.ownKeys(input).length !== expected.length + supplied.length) throw new Error(FAILURE);
   const copied: Record<string, unknown> = {};
-  for (const key of expected) {
+  for (const key of [...expected, ...supplied]) {
     const property = Object.getOwnPropertyDescriptor(input, key);
     if (!property?.enumerable || !("value" in property)) throw new Error(FAILURE);
     const value: unknown = property.value;
@@ -160,6 +184,43 @@ function parameters(input: object, expected: readonly string[]): Readonly<Record
           !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(draft.value) ||
           !response?.enumerable || !("value" in response) || !["right", "close", "not_it"].includes(response.value)) throw new Error(FAILURE);
       copied[key] = Object.freeze({ draftId: draft.value, response: response.value }); continue;
+    }
+    if (key === "p_offer_id" && !uuid(value)) throw new Error(FAILURE);
+    if (key === "p_waypoint_offer_response" && value !== null) {
+      if (!object(value) || Reflect.ownKeys(value).length !== 2) throw new Error(FAILURE);
+      const offer = Object.getOwnPropertyDescriptor(value, "offerId");
+      const response = Object.getOwnPropertyDescriptor(value, "response");
+      if (!offer?.enumerable || !("value" in offer) || !uuid(offer.value) ||
+          !response?.enumerable || !("value" in response) || !["right", "close", "not_it"].includes(response.value)) throw new Error(FAILURE);
+      copied[key] = Object.freeze({ offerId: offer.value, response: response.value }); continue;
+    }
+    if (key === "p_waypoint_offer_drop" && value !== null) {
+      // The application can report only that an offer could not be read; every other refusal is the database's.
+      if (!object(value) || Reflect.ownKeys(value).length !== 2) throw new Error(FAILURE);
+      const kind = Object.getOwnPropertyDescriptor(value, "kind");
+      const reason = Object.getOwnPropertyDescriptor(value, "reason");
+      if (!kind?.enumerable || !("value" in kind) || !(kind.value === null || OFFER_KINDS.includes(kind.value)) ||
+          !reason?.enumerable || !("value" in reason) || reason.value !== "invalid") throw new Error(FAILURE);
+      copied[key] = Object.freeze({ kind: kind.value, reason: "invalid" }); continue;
+    }
+    if (key === "p_waypoint_offer" && value !== null) {
+      if (!object(value)) throw new Error(FAILURE);
+      const kind = Object.getOwnPropertyDescriptor(value, "kind");
+      if (!kind?.enumerable || !("value" in kind) || !OFFER_KINDS.includes(kind.value)) throw new Error(FAILURE);
+      const names = kind.value === "reached" ? ["waypointId", "evidence"]
+        : ["waypointId", "title", "destination", "whyItMatters", "arrivalSignal"];
+      if (Reflect.ownKeys(value).length !== names.length + 1) throw new Error(FAILURE);
+      const offer: Record<string, string> = { kind: kind.value };
+      for (const name of names) {
+        const field = Object.getOwnPropertyDescriptor(value, name);
+        if (!field?.enumerable || !("value" in field) || typeof field.value !== "string") throw new Error(FAILURE);
+        if (name === "waypointId" ? !uuid(field.value) : (!field.value.trim() || field.value !== field.value.trim() ||
+            field.value.length > 1_000 ||
+            /[\u0000-\u0009\u000b\u000c\u000e-\u001f\u007f-\u009f\u200b-\u200d\u202a-\u202e\u2060\u2066-\u2069\ufeff]/u.test(field.value) ||
+            /[\uD800-\uDFFF]/u.test(field.value))) throw new Error(FAILURE);
+        offer[name] = field.value;
+      }
+      copied[key] = Object.freeze(offer); continue;
     }
     if (key === "p_waypoint_suggestion" && value !== null) {
       if (!object(value) || Reflect.ownKeys(value).length !== 4) throw new Error(FAILURE);
@@ -307,7 +368,17 @@ function parameters(input: object, expected: readonly string[]): Readonly<Record
 export function createExplorerPrivateConversationRepository(client: SupabaseClient): ExplorerPrivateConversationRepository {
   async function call(port: keyof typeof PORTS, input: object): Promise<ExplorerPrivateRpcRow> {
     try {
-      const spec = PORTS[port]; const copied = parameters(input, spec.parameters);
+      const spec = PORTS[port]; const copied = parameters(input, spec.parameters, port === "settle" ? SETTLE_OPTIONAL : []);
+      // One decision table upstream (the composition): at most one typed answer, no new offer beside a typed answer,
+      // and at most one of a forming Waypoint suggestion, an offer and a dropped-offer fact.
+      if (port === "settle") {
+        const offer = copied.p_waypoint_offer ?? null, answer = copied.p_waypoint_offer_response ?? null;
+        const drop = copied.p_waypoint_offer_drop ?? null;
+        if ((offer !== null && (drop !== null || copied.p_waypoint_suggestion !== null)) ||
+            (drop !== null && copied.p_waypoint_suggestion !== null) ||
+            ((offer !== null || drop !== null) && (answer !== null || copied.p_waypoint_response !== null)) ||
+            (answer !== null && (copied.p_waypoint_response !== null || copied.p_waypoint_suggestion !== null))) throw new Error(FAILURE);
+      }
       if (port === "settle" && copied.p_failure_reason !== null &&
           (copied.p_reply_kind !== "none" || (copied.p_model_level !== null &&
             copied.p_failure_reason !== "invalid_response" && copied.p_failure_reason !== "trusted_render_unavailable"))) throw new Error(FAILURE);
@@ -344,7 +415,7 @@ export function createExplorerPrivateConversationRepository(client: SupabaseClie
           !Array.isArray(Object.getOwnPropertyDescriptor(row.conversation_state, "compassChanges")?.value) ||
           typeof Object.getOwnPropertyDescriptor(row.conversation_state, "turnedDownLimitReached")?.value !== "boolean" ||
           parseExplorerWaypointCapacity(Object.getOwnPropertyDescriptor(row.conversation_state, "waypointCapacity")?.value) === null ||
-          parseExplorerConversationWaypointDraft(Object.getOwnPropertyDescriptor(row.conversation_state, "waypointDraft")?.value) === undefined)) throw new Error(FAILURE);
+          !offerStateComplete(row.conversation_state))) throw new Error(FAILURE);
       if (Object.keys(row).length !== spec.columns.length || !spec.columns.every((column) => Object.hasOwn(row, column)) ||
         typeof row.outcome !== "string" || !OUTCOMES[port].includes(row.outcome) ||
         (Object.hasOwn(row, "dispatch_permitted") && typeof row.dispatch_permitted !== "boolean") ||
@@ -352,6 +423,16 @@ export function createExplorerPrivateConversationRepository(client: SupabaseClie
         // A pause row names a closed kind, and its two flags are booleans that can be true only with a pause.
         (port === "pause" && (!NOTICE_KINDS.includes(row.notice_kind) || typeof row.crisis !== "boolean" ||
           typeof row.adults_only !== "boolean" || (row.notice_kind === null && (row.crisis || row.adults_only))))) throw new Error(FAILURE);
+      let operationResult: ExplorerWaypointOfferOperationResult | null = null;
+      if (Object.hasOwn(row, "operation_result")) {
+        // The answer's own stored result, present exactly when the command was applied or replayed, and for this
+        // offer and this answer.
+        if (row.outcome === "ok" || row.outcome === "exact_replay") {
+          const stored = parseExplorerWaypointOfferOperationResult(row.operation_result);
+          if (stored === null || stored.offerId !== copied.p_offer_id || stored.response !== copied.p_response) throw new Error(FAILURE);
+          operationResult = stored;
+        } else if (row.operation_result !== null) throw new Error(FAILURE);
+      }
       if (Object.hasOwn(row, "waypoint_page")) {
         if (row.waypoint_page === null) {
           if (row.outcome === "ok" || row.outcome === "exact_replay") throw new Error(FAILURE);
@@ -371,7 +452,8 @@ export function createExplorerPrivateConversationRepository(client: SupabaseClie
           return Object.freeze({ ...row, waypoint_page: page }) as ExplorerPrivateRpcRow;
         }
       }
-      return Object.freeze({ ...row, ...(Object.hasOwn(row, "authority_context") ? { authority_context: authority } : {}), ...(row.conversation_state == null ? {} : {
+      return Object.freeze({ ...row, ...(Object.hasOwn(row, "operation_result") ? { operation_result: operationResult } : {}),
+        ...(Object.hasOwn(row, "authority_context") ? { authority_context: authority } : {}), ...(row.conversation_state == null ? {} : {
         conversation_state: Object.freeze({ ...row.conversation_state as object,
           waypointCapacity: parseExplorerWaypointCapacity((row.conversation_state as Record<string, unknown>).waypointCapacity) }),
       }) }) as ExplorerPrivateRpcRow;
@@ -387,6 +469,7 @@ export function createExplorerPrivateConversationRepository(client: SupabaseClie
     settle: (input) => call("settle", input), mutate: (input) => call("mutate", input),
     respondCompassSuggestion: (input) => call("respondCompassSuggestion", input),
     respondWaypointDraft: (input) => call("respondWaypointDraft", input),
+    respondWaypointOffer: (input) => call("respondWaypointOffer", input),
     readWaypointHeads: (input) => call("readWaypointHeads", input),
     readWaypointHistory: (input) => call("readWaypointHistory", input),
     closeEndedWaypoint: (input) => call("closeEndedWaypoint", input),

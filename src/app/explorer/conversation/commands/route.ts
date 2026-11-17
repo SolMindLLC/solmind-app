@@ -18,12 +18,19 @@ export async function POST(request: NextRequest): Promise<Response> {
   if (request.nextUrl.search) return denied();
   try {
     const guarded = await readSameOriginJsonWriteRequest({ request, trustedOrigin: loadTrustedApplicationOrigin() });
-    if (!guarded.ok || !parseExplorerConversationCommand(guarded.value)) return denied();
+    const requested = guarded.ok ? parseExplorerConversationCommand(guarded.value) : null;
+    if (!guarded.ok || !requested) return denied();
     const dependencies = createExplorerPrivateLocalRequestDependencies(request.headers.get("cookie"));
     const output = await commandExplorerPrivateConversation({
       command: guarded.value, dependencies, signal: request.signal, receivedAt,
     });
+    // A stored offer-answer result is passed on unchanged, and only for the command that answers an offer.
+    if (Object.hasOwn(output, "waypointOfferResult") && requested.kind !== "respond_waypoint_offer") return failure("unavailable");
     const response = parseExplorerPrivateConversationResponse({ version: EXPLORER_PRIVATE_RESPONSE_VERSION, ...output });
+    // And only for the very answer that was asked for: the stored result names this request's offer and response.
+    if (response?.waypointOfferResult !== undefined && (requested.kind !== "respond_waypoint_offer" ||
+        response.waypointOfferResult.offerId !== requested.offerId ||
+        response.waypointOfferResult.response !== requested.response)) return failure("unavailable");
     return response === null ? failure("unavailable") : NextResponse.json(response, { headers });
   } catch { return failure("unavailable"); }
 }

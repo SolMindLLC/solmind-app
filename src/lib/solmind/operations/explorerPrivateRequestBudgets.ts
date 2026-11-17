@@ -46,6 +46,7 @@ export function withExplorerPrivateRequestBudgets(dependencies: ExplorerPrivateC
     ...(source.category === undefined ? {} : { category: (input: Parameters<NonNullable<typeof source.category>>[0]) => bounded(() => source.category!(input), 10_000) }),
     ...(source.respondCompassSuggestion === undefined ? {} : { respondCompassSuggestion: (input: Parameters<NonNullable<typeof source.respondCompassSuggestion>>[0]) => bounded(() => source.respondCompassSuggestion!(input), 10_000) }),
     ...(source.respondWaypointDraft === undefined ? {} : { respondWaypointDraft: (input: Parameters<NonNullable<typeof source.respondWaypointDraft>>[0]) => bounded(() => source.respondWaypointDraft!(input), 10_000) }),
+    ...(source.respondWaypointOffer === undefined ? {} : { respondWaypointOffer: (input: Parameters<NonNullable<typeof source.respondWaypointOffer>>[0]) => bounded(() => source.respondWaypointOffer!(input), 10_000) }),
     ...(source.waypointRevision === undefined ? {} : { waypointRevision: (input: Parameters<NonNullable<typeof source.waypointRevision>>[0]) => bounded(() => source.waypointRevision!(input), 10_000) }),
     ...(source.release === undefined ? {} : { release: (input: Parameters<NonNullable<typeof source.release>>[0]) => bounded(() => source.release!(input), 10_000) }),
     ...(source.end === undefined ? {} : { end: (input: Parameters<NonNullable<typeof source.end>>[0]) => bounded(() => source.end!(input), 10_000) }),

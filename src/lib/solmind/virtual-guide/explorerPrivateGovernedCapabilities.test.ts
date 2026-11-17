@@ -168,7 +168,7 @@ describe("explicit private governed capability composition with synthetic proven
     const ordinary = await f.capabilities.buildContext({ actor: ACTOR, row: f.row, state: populated, command, ids, readiness,
       mode: "classification_and_reply", signal: new AbortController().signal });
     const full = JSON.parse(ordinary.request.authorizedContext) as { contractVersion: string };
-    expect(full.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2+compass-v8");
+    expect(full.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2+compass-v9");
     expect(Object.hasOwn(full, "compassContext")).toBe(true);
     expect(ordinary.evidence.p_context_source_ids).toContain(point);
     expect(f.provider.generate).not.toHaveBeenCalled(); expect(f.write).not.toHaveBeenCalled();
@@ -199,6 +199,68 @@ describe("explicit private governed capability composition with synthetic proven
     expect(third?.configurationFingerprint).toMatch(/^[A-F0-9]{64}$/);
     expect(third?.configurationFingerprint).not.toBe(first?.configurationFingerprint);
     // A changed synthetic label is a changed binding, never proof of real acceptance.
+    expect(f.provider.generate).not.toHaveBeenCalled(); expect(f.write).not.toHaveBeenCalled();
+  });
+});
+
+// Offers build step 2: the complete context, with the real candidate texts and a waiting offer, through the shipped
+// wiring (the actual governed builder, the actual assembler and the adapter's pinned-text check) in both modes.
+describe("offers build step 2: admission of the complete context with the real candidate texts", () => {
+  it("admits the context in classification_and_reply and in classification_only", async () => {
+    const f = fixture(); const readiness = await f.capabilities.resolveOperationalReadiness(ACTOR, f.row);
+    if (!readiness) throw new Error("synthetic_readiness_missing");
+    const source = uuid(50); const reply = uuid(53); const waypoint = uuid(52); const offer = uuid(54);
+    const populated = { ...STATE,
+      waypointCapacity: { activeCount: 1, activeLimit: 20, historyRoom: true, conversationRoom: true },
+      waypointProjection: { kind: "current_heads" as const, limit: 20 as const, hasMore: false, totalHeads: 1 },
+      messages: [{ id: source, role: "explorer" as const, body: "Synthetic saved message.", createdAt: "2026-11-16T09:00:00.000Z" },
+        { id: reply, role: "virtualGuide" as const, body: "Synthetic saved reply.", createdAt: "2026-11-16T09:00:01.000Z" }],
+      waypoints: [{ id: waypoint, isCurrent: true, createdAt: "2026-11-16T09:00:00.000Z", sourceMessageId: source, title: "Synthetic title",
+        destination: "Synthetic destination", meaning: "Synthetic meaning", arrivalSignal: "Synthetic arrival", status: "chosen" as const,
+        reachedEvidence: null, reachedAt: null }],
+      waypointOffer: { id: offer, kind: "change" as const, status: "proposed" as const, waypointId: waypoint,
+        targetBefore: { title: "Synthetic title", destination: "Synthetic destination", whyItMatters: "Synthetic meaning",
+          arrivalSignal: "Synthetic arrival", stage: "formed" as const },
+        suggestionMessageId: reply, resultWaypointId: null, targetCurrent: true, typedAnswerEligible: true, typedAnswerRefusal: null,
+        title: "Synthetic offered title", destination: "Synthetic offered destination", whyItMatters: "Synthetic meaning",
+        arrivalSignal: "Synthetic arrival" },
+      waypointOfferDrop: null, reachedOfferedWaypointIds: [] };
+    const ids = { conversationId: STATE.conversationId, logicalOperationId: uuid(40), messageId: uuid(41),
+      snapshotId: uuid(42), invocationId: uuid(43), replyId: uuid(44) };
+    const command = { kind: "send" as const, operationId: uuid(45), expectedRevision: 0, body: "One synthetic reflective question." };
+    const normal = (text: string) => text.replace(/\r\n?/g, "\n").trim();
+    for (const mode of ["classification_and_reply", "classification_only"] as const) {
+      const built = await f.capabilities.buildContext({ actor: ACTOR, row: f.row, state: populated, command, ids, readiness,
+        mode, signal: new AbortController().signal });
+      expect(built.request.mode).toBe(mode);
+      type Layer = { version: string; text: string };
+      const context = JSON.parse(built.request.authorizedContext) as { contractVersion: string; globalPolicy: Layer;
+        roleBehavior: Layer; crisisBehavior: Layer; methodologyContext: Layer;
+        compassContext?: { version: string; offers: unknown[]; reachedOfferedWaypointIds: unknown[] } };
+      // The exact pinned candidate texts, not stand-in text, each within its own limit.
+      for (const key of ["globalPolicy", "roleBehavior", "crisisBehavior"] as const) {
+        expect(context[key]).toEqual({ version: f.configuration[key].version, text: normal(f.configuration[key].text) });
+      }
+      expect(context.roleBehavior.text.length).toBeLessThanOrEqual(25000);
+      expect(context.globalPolicy.text.length).toBeLessThanOrEqual(20000);
+      expect(context.crisisBehavior.text.length).toBeLessThanOrEqual(20000);
+      expect(context.methodologyContext.text).toBe(METHODOLOGY);
+      if (mode === "classification_and_reply") {
+        expect(context.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2+compass-v9");
+        expect(context.compassContext?.version).toBe("explorer-compass-context.v9");
+        expect(context.compassContext?.offers).toEqual([{ id: offer, kind: "change", waypointId: waypoint, stage: "formed",
+          suggestedInPreviousReply: true, title: "Synthetic offered title", destination: "Synthetic offered destination",
+          whyItMatters: "Synthetic meaning", arrivalSignal: "Synthetic arrival" }]);
+        expect(context.compassContext?.reachedOfferedWaypointIds).toEqual([]);
+        expect(built.evidence.p_context_source_ids).toContain(offer);
+      } else {
+        expect(context.contractVersion).toBe("wi007-v0.1+onboarding-fields-v2");
+        expect(Object.hasOwn(context, "compassContext")).toBe(false);
+        expect(built.request.authorizedContext).not.toContain(offer);
+        expect(built.request.authorizedContext).not.toContain("Synthetic offered title");
+        expect(built.evidence.p_context_source_ids).not.toContain(offer);
+      }
+    }
     expect(f.provider.generate).not.toHaveBeenCalled(); expect(f.write).not.toHaveBeenCalled();
   });
 });

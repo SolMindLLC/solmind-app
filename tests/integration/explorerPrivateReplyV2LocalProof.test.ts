@@ -24,7 +24,7 @@ const ACTOR = { accountId: id(1), applicationSessionId: id(2) };
 const POLICY = { known: true, contractVersion: "explorer-conversation-safety.v1", restrictedLevel: null, adultReflectionStopped: false, version: 0 };
 const CHOICES = [{ label: "Explore this topic" }, { label: "I have a question" }];
 const COMMAND = { kind: "send", operationId: id(8), expectedRevision: 1, body: "Synthetic message about money worries." } as const;
-const COMPASS = { version: "explorer-compass-context.v8", mode: "legacy_read_only", topics: [],
+const COMPASS = { version: "explorer-compass-context.v9", mode: "legacy_read_only", topics: [],
   messageRefs: { history: [{ ref: "h0", order: 0 }], immediate: "now" }, capacity: { originalsRemaining: 0, topicSlotsRemaining: 0, visibleSlotsRemaining: 0 }, points: [{ id: id(9), label: "Money worries", order: 0,
   formation: "saved", anchor: "apex", emphasis: 1 }], priorityId: null, attentionId: null, recentRoute: [],
   waypoints: [{ id: id(12), title: "Review my spending", destination: "Review my spending", meaning: "Find room for rest",
@@ -40,6 +40,7 @@ function fixture(proposals: Record<string, unknown>, options: { restrictedLevel?
     methodology: { packId: id(6), versionId: id(7), contentSha256: SHA, authorizationVersion: "MV1:" + SHA } };
   let current: ExplorerConversationState = { compassMode: "legacy", compassChanges: [], waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true }, waypointProjection: { kind: "current_heads" as const, limit: 20 as const, totalHeads: 1, hasMore: false }, version: "explorer-conversation.v1", conversationId: id(3),
     revision: 1, pendingTurn: false, turnedDownLimitReached: false, waypointDraft: null, providerState: "unavailable",
+    waypointOffer: null, waypointOfferDrop: null, reachedOfferedWaypointIds: [],
     messages: [{ id: id(10), role: "explorer", body: "Synthetic source about money worries.", createdAt: "2026-11-04T12:00:00Z" },
       ...(options.pacingReady ? [{ id: id(14), role: "explorer" as const, body: "Synthetic concern in my own words.", createdAt: "2026-11-04T12:00:00.250Z" }] : []),
       ...(options.forming ? [{ id: id(13), role: "virtualGuide" as const, body: "Does Money worries fit?", createdAt: "2026-11-04T12:00:00.500Z" }] : [])],
@@ -112,7 +113,7 @@ function fixture(proposals: Record<string, unknown>, options: { restrictedLevel?
   });
   const buildContext = vi.fn<NonNullable<ExplorerPrivateConversationDependencies["buildContext"]>>(async input => {
     const authorizedContext = JSON.stringify({ contractVersion: input.mode === "classification_only"
-      ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v8",
+      ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v9",
       globalPolicy: { version: configuration.globalPolicy.version, text: configuration.globalPolicy.text },
       roleBehavior: { version: configuration.roleBehavior.version, text: configuration.roleBehavior.text },
       crisisBehavior: { version: configuration.crisisBehavior.version, text: configuration.crisisBehavior.text },
@@ -168,7 +169,7 @@ async function expectPreparedHttpInput(f: ReturnType<typeof fixture>, mode: "cla
   expect(prepared.p_context_source_ids).toEqual(built.evidence.p_context_source_ids);
   const context = JSON.parse(sent.input);
   expect(context.contractVersion).toBe(mode === "classification_only"
-    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v8");
+    ? "wi007-v0.1+onboarding-fields-v2" : "wi007-v0.1+onboarding-fields-v2+compass-v9");
   if (mode === "classification_only") {
     expect(context).not.toHaveProperty("compassContext");
     for (const value of [id(9), id(12), "Money worries", "Review my spending", "Find room for rest", "One review completed"]) {

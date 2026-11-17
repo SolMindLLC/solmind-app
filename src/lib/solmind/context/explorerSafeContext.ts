@@ -29,6 +29,9 @@ export const EXPLORER_SAFE_CONTEXT_LIMITS = Object.freeze({
   explorerDisplayNameCharacters: 120,
   explorerSafeGuardrailCharacters: 2_000,
   policyTextCharacters: 20_000,
+  // Paul's approved figure (2026-11-16): the Virtual Guide's own role rules only. The policy and crisis texts keep
+  // policyTextCharacters. The database holds the same figure (ai.solmind_inspect_explorer_context_v3).
+  roleBehaviorTextCharacters: 25_000,
   methodologyTextCharacters: 24_000,
   onboardingAnswerCharacters: 2_000,
   focusItemCount: 8,
@@ -54,9 +57,9 @@ export const EXPLORER_SAFE_CONTEXT_LIMITS = Object.freeze({
 // other version forbids it, so the older twelve-layer envelope keeps its exact bytes.
 // Migration 20261106010000_explorer_reply_choice_voice.sql rebuilds the same
 // section from the saved rows and compares it exactly before a Send is prepared.
-export const EXPLORER_COMPASS_CONTEXT_VERSION = "explorer-compass-context.v8" as const;
+export const EXPLORER_COMPASS_CONTEXT_VERSION = "explorer-compass-context.v9" as const;
 export const EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION =
-  "wi007-v0.1+onboarding-fields-v2+compass-v8" as const;
+  "wi007-v0.1+onboarding-fields-v2+compass-v9" as const;
 // The eight saved anchors (kept here so this module adds no import edge).
 const COMPASS_ANCHORS = Object.freeze([
   "apex", "upper_left", "upper_right", "side_left", "side_right",
@@ -276,6 +279,16 @@ type CompassWaypointDraft = {
   suggestedInPreviousReply: boolean;
 };
 
+// A saved offer that is still waiting (migration 20261116000000_explorer_waypoint_offers.sql): the stage is the
+// target's stage when the offer was saved.
+type CompassWaypointOffer = {
+  id: string;
+  kind: "reached" | "change" | "revisit";
+  waypointId: string;
+  stage: "formed" | "reached" | "released";
+  suggestedInPreviousReply: boolean;
+} & ({ evidence: string } | { title: string; destination: string; whyItMatters: string; arrivalSignal: string });
+
 export type ExplorerCompassContext = {
   version: typeof EXPLORER_COMPASS_CONTEXT_VERSION;
   mode: "automatic" | "legacy_read_only";
@@ -290,6 +303,8 @@ export type ExplorerCompassContext = {
   recentRoute: ReadonlyArray<CompassRouteEvent>;
   waypoints: ReadonlyArray<CompassWaypoint>;
   drafts: ReadonlyArray<CompassWaypointDraft>;
+  offers: ReadonlyArray<CompassWaypointOffer>;
+  reachedOfferedWaypointIds: ReadonlyArray<string>;
   immediateMessageIsReplyChoice: boolean;
 };
 
@@ -916,6 +931,7 @@ function parseCompassContext(value: unknown, history: ReadonlyArray<CurrentSessi
     "waypoints",
     "drafts",
     "immediateMessageIsReplyChoice", "mode", "topics", "messageRefs", "capacity",
+    "offers", "reachedOfferedWaypointIds",
   ]);
   if (object.version !== EXPLORER_COMPASS_CONTEXT_VERSION || typeof object.immediateMessageIsReplyChoice !== "boolean" ||
       (object.mode !== "automatic" && object.mode !== "legacy_read_only") || object.priorityId !== null) {
@@ -1044,6 +1060,40 @@ function parseCompassContext(value: unknown, history: ReadonlyArray<CurrentSessi
       whyItMatters: field(draft.whyItMatters), arrivalSignal: field(draft.arrivalSignal),
       suggestedInPreviousReply: draft.suggestedInPreviousReply };
   });
+  if (!Array.isArray(object.offers) || !Array.isArray(object.reachedOfferedWaypointIds) || object.offers.length > 1) {
+    fail("explorer_context_invalid_envelope");
+  }
+  // One waiting offer at most. Its id is its own record: never a point, a Waypoint, a forming Waypoint or a message.
+  const draftIds = new Set(drafts.map(draft => draft.id));
+  const historyIds = new Set(history.map(message => message.messageId));
+  const offers = object.offers.map((candidate): CompassWaypointOffer => {
+    const offer = parsePlainObject(candidate);
+    const reached = offer.kind === "reached";
+    if (!reached && offer.kind !== "change" && offer.kind !== "revisit") fail("explorer_context_invalid_envelope");
+    assertExactKeys(offer, ["id", "kind", "waypointId", "stage", "suggestedInPreviousReply",
+      ...(reached ? ["evidence"] : ["title", "destination", "whyItMatters", "arrivalSignal"])]);
+    // Reached and change start from a Waypoint in progress; revisit from one that is Reached or Released.
+    if (typeof offer.suggestedInPreviousReply !== "boolean" ||
+        !(["formed", "reached", "released"] as const).includes(offer.stage as never) ||
+        (offer.kind === "revisit") === (offer.stage === "formed")) fail("explorer_context_invalid_envelope");
+    const id = parseUuid(offer.id);
+    if (pointIds.has(id) || waypointIds.has(id) || draftIds.has(id) || historyIds.has(id)) fail("explorer_context_duplicate_source");
+    const maximum = EXPLORER_SAFE_CONTEXT_LIMITS.compassWaypointCharacters;
+    const shared = { id, kind: offer.kind as CompassWaypointOffer["kind"], waypointId: parseUuid(offer.waypointId),
+      stage: offer.stage as CompassWaypointOffer["stage"], suggestedInPreviousReply: offer.suggestedInPreviousReply };
+    return reached ? { ...shared, evidence: parseText(offer.evidence, maximum) }
+      : { ...shared, title: parseText(offer.title, maximum), destination: parseText(offer.destination, maximum),
+        whyItMatters: parseText(offer.whyItMatters, maximum), arrivalSignal: parseText(offer.arrivalSignal, maximum) };
+  });
+  // Current Waypoints for which Reached was already offered once: distinct, known, in the Waypoints' own order.
+  const waypointOrder = [...waypointIds];
+  let previousReachedOffered = -1;
+  const reachedOfferedWaypointIds = object.reachedOfferedWaypointIds.map((value): string => {
+    const position = waypointOrder.indexOf(parseUuid(value));
+    if (position <= previousReachedOffered) fail("explorer_context_invalid_envelope");
+    previousReachedOffered = position;
+    return waypointOrder[position];
+  });
   const refs = parsePlainObject(object.messageRefs);
   assertExactKeys(refs, ["history", "immediate"]);
   const expectedRefs = history.filter(message => message.role === "explorer")
@@ -1066,7 +1116,7 @@ function parseCompassContext(value: unknown, history: ReadonlyArray<CurrentSessi
   if (!Array.isArray(object.topics) || object.topics.length > 24 ||
       (object.mode === "legacy_read_only" && object.topics.length !== 0)) fail("explorer_context_invalid_envelope");
   const topicIds = new Set<string>(), topicLabels = new Set<string>(), linkedPoints = new Set<string>();
-  const otherIds = new Set([...pointIds, ...waypointIds, ...drafts.map(draft => draft.id), ...history.map(message => message.messageId)]);
+  const otherIds = new Set([...pointIds, ...waypointIds, ...draftIds, ...offers.map(offer => offer.id), ...historyIds]);
   const topics = object.topics.map(value => {
     const topic = parsePlainObject(value);
     assertExactKeys(topic, ["id", "label", "pointId", "supportCount", "countedRefs"]);
@@ -1102,6 +1152,8 @@ function parseCompassContext(value: unknown, history: ReadonlyArray<CurrentSessi
     recentRoute,
     waypoints,
     drafts,
+    offers,
+    reachedOfferedWaypointIds,
     immediateMessageIsReplyChoice: object.immediateMessageIsReplyChoice,
   };
 }
@@ -1150,7 +1202,7 @@ export function assembleExplorerSafeContext(
   );
   const roleBehavior = parseVersionedText(
     envelope.roleBehavior,
-    EXPLORER_SAFE_CONTEXT_LIMITS.policyTextCharacters,
+    EXPLORER_SAFE_CONTEXT_LIMITS.roleBehaviorTextCharacters,
   );
   const crisisBehavior = parseVersionedText(
     envelope.crisisBehavior,
@@ -1175,7 +1227,8 @@ export function assembleExplorerSafeContext(
     binding,
     currentSessionMessages,
   );
-  if (compassContext?.topics.some(topic => topic.id === immediateExplorerMessage.messageId)) fail("explorer_context_duplicate_source");
+  if (compassContext?.topics.some(topic => topic.id === immediateExplorerMessage.messageId) ||
+      compassContext?.offers.some(offer => offer.id === immediateExplorerMessage.messageId)) fail("explorer_context_duplicate_source");
   const outputRequirements = parseOutputRequirements(envelope.outputRequirements);
 
   const context: ExplorerSafeContext = {

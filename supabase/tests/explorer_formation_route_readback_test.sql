@@ -144,7 +144,7 @@ end $$;
 -- priorityId, no forming points, attention only when it names a supplied point (explorer_source_exclusion_test.sql).
 -- This fixture records no needle moves, so the Route is empty.
 create function pg_temp.compass_context() returns jsonb language sql stable as $$
-  select jsonb_build_object('version','explorer-compass-context.v8','immediateMessageIsReplyChoice',false,
+  select jsonb_build_object('version','explorer-compass-context.v9','offers','[]'::jsonb,'reachedOfferedWaypointIds','[]'::jsonb,'immediateMessageIsReplyChoice',false,
     'mode','legacy_read_only','topics','[]'::jsonb,
     'capacity',jsonb_build_object('originalsRemaining',0,'topicSlotsRemaining',0,'visibleSlotsRemaining',0),
     'messageRefs',jsonb_build_object('history',(select coalesce(jsonb_agg(jsonb_build_object('ref','h'||h.ord::text,
@@ -185,7 +185,7 @@ create function pg_temp.compass_source_ids() returns uuid[] language sql stable 
       order by case when h.lifecycle_status='chosen' and h.released_at is null then 0 else 1 end,h.created_at desc,h.waypoint_id limit 20) w) x
 $$;
 create function pg_temp.context_value(msg uuid,body text) returns jsonb language sql stable as $$
-  select jsonb_build_object('contractVersion','wi007-v0.1+onboarding-fields-v2+compass-v8','aiRole','solmind_virtual_guide','actorRoleContext','explorer',
+  select jsonb_build_object('contractVersion','wi007-v0.1+onboarding-fields-v2+compass-v9','aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy',jsonb_build_object('version','synthetic-policy.v1','text','Synthetic policy.'),
     'roleBehavior',jsonb_build_object('version','synthetic-behavior.v1','text','Synthetic behavior.'),
     'crisisBehavior',jsonb_build_object('version','synthetic-crisis.v1','text','Synthetic crisis.'),

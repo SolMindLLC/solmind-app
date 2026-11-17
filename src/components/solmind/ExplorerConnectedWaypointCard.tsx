@@ -160,15 +160,30 @@ export function useConnectedWaypointActions({ state, onCommand, held, busy, pend
   const [review, setReview] = useState<WaypointReview | null>(null);
   const [submission, setSubmission] = useState<WaypointSubmission | null>(null);
   const [saved, setSaved] = useState<WaypointSaved | null>(null);
+  // The review that closed because the conversation changed before it was confirmed (nothing was sent).
+  const [changed, setChanged] = useState<Readonly<{ conversationId: string; waypointId: string }> | null>(null);
   const blocked = held || busy || pendingTurn || uncertain || state === null ||
     state.conversationId === null || state.sessionStatus !== "active" || state.pendingTurn;
 
   // Adjust local display before children render, as for the screen's other
-  // prop-following state. A stale review silently closes; the page owns notices.
+  // prop-following state. A stale review closes; the page owns notices. When the same open conversation
+  // changed under a review that was not yet confirmed, the Waypoint's row says so.
   if (review !== null && (state === null || review.conversationId !== state.conversationId ||
       (submission === null && (review.revision !== state.revision || state.sessionStatus !== "active")))) {
+    if (submission === null && state !== null && review.conversationId === state.conversationId &&
+        review.revision !== state.revision && state.sessionStatus === "active") {
+      setChanged({ conversationId: review.conversationId, waypointId: review.waypointId });
+    }
     setReview(null);
   }
+  if (changed !== null && (state === null || changed.conversationId !== state.conversationId ||
+      state.sessionStatus !== "active")) {
+    setChanged(null);
+  }
+  // The row to show it in: the same Waypoint, or its next version when a change replaced it meanwhile.
+  const changedReviewId = changed === null || state === null ? null
+    : state.waypoints.find(item => item.isCurrent &&
+      (item.id === changed.waypointId || item.lifecycle?.predecessorWaypointId === changed.waypointId))?.id ?? null;
   if (saved !== null && (state === null || saved.conversationId !== state.conversationId ||
       !state.waypoints.some(item => item.id === saved.waypointId && item.isCurrent && waypointStage(item) === saved.stage))) {
     setSaved(null);
@@ -203,6 +218,7 @@ export function useConnectedWaypointActions({ state, onCommand, held, busy, pend
   return {
     review,
     saved,
+    changedReviewId,
     blocked,
     savingId: busy && submission !== null ? submission.waypointId : null,
     canSubmit: !blocked && submission === null && result?.ok === true,
@@ -210,6 +226,7 @@ export function useConnectedWaypointActions({ state, onCommand, held, busy, pend
       if (blocked || submission !== null || state?.conversationId == null ||
           !state.waypoints.some(item => item.id === waypointId && item.isCurrent && waypointStage(item) === "formed")) return;
       setSaved(null);
+      setChanged(null);
       setReview({ conversationId: state.conversationId, revision: state.revision, waypointId, kind, evidence: "", confirmed: false });
     },
     closeReview() { if (submission === null) setReview(null); },
@@ -222,6 +239,7 @@ export function useConnectedWaypointActions({ state, onCommand, held, busy, pend
     submit() {
       if (blocked || submission !== null || review === null || !result?.ok) return;
       setSaved(null);
+      setChanged(null);
       setSubmission({ ...review, phase: "submitted" });
       onCommand(result.command);
     },
@@ -352,6 +370,15 @@ export function ConnectedWaypointCard({ scope, state, actions }: Readonly<{
       setHistoryOpen(true);
     }
   }
+  const [shownChanged, setShownChanged] = useState<string | null>(null);
+  if (actions.changedReviewId !== shownChanged) {
+    setShownChanged(actions.changedReviewId);
+    if (actions.changedReviewId !== null) {
+      setOpenKey(actions.changedReviewId);
+      const moved = state?.waypoints.find(item => item.id === actions.changedReviewId);
+      if (moved !== undefined && waypointStage(moved) !== "formed") setHistoryOpen(true);
+    }
+  }
   // The id of the control to focus after the next render (a layout concern only).
   const pendingFocus = useRef<string | null>(null);
   useEffect(() => {
@@ -426,7 +453,8 @@ export function ConnectedWaypointCard({ scope, state, actions }: Readonly<{
         ) : null}
         <p aria-atomic="true" className="mt-2 text-sm text-stone-200" role="status">
           {actions.savingId === current.id ? W.saving
-            : actions.saved?.waypointId === current.id ? (actions.saved.stage === "reached" ? W.savedReached : W.savedReleased) : ""}
+            : actions.saved?.waypointId === current.id ? (actions.saved.stage === "reached" ? W.savedReached : W.savedReleased)
+              : actions.changedReviewId === current.id ? W.reviewChanged : ""}
         </p>
       </Row>
     );

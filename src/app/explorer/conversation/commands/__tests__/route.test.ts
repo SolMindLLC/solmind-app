@@ -168,3 +168,88 @@ it("projects a server-written hard-stop pause notice intact and still rejects le
   mocks.command.mockResolvedValue({ result, assistance: { ...assistance, crisis: true } });
   expect(await invoke()).toEqual(unavailable);
 });
+
+describe("offers build step 2: the stored result of an offer answer at the route", () => {
+  const CONVERSATION = "40000000-0000-4000-8000-000000000001"; const REPLY = "50000000-0000-4000-8000-000000000001";
+  const OFFER = "60000000-0000-4000-8000-000000000001"; const WAYPOINT = "70000000-0000-4000-8000-000000000001";
+  const state = { version: "explorer-conversation.v1", conversationId: CONVERSATION, revision: 2, providerState: "available", pendingTurn: false,
+    turnedDownLimitReached: false, waypointDraft: null, compassMode: "legacy", compassChanges: [],
+    waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true },
+    waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: 0 },
+    messages: [{ id: REPLY, role: "virtualGuide", body: "A saved synthetic reply.", createdAt: "2026-11-16T09:00:00Z" }],
+    compassItems: [], priorityId: null, attentionId: null, waypoints: [] };
+  const result = { ok: true, state, error: null };
+  const stored = { offerId: OFFER, kind: "change", waypointId: WAYPOINT, suggestionMessageId: REPLY, response: "close", typed: false,
+    outcome: "kept_open", resultWaypointId: null };
+  const answer = Object.freeze({ kind: "respond_waypoint_offer", operationId: command.operationId, expectedRevision: 1, offerId: OFFER, response: "close" });
+  it("passes the verified result on unchanged for respond_waypoint_offer", async () => {
+    mocks.command.mockResolvedValue({ result, assistance: null, waypointOfferResult: stored });
+    const response = await POST(request({ body: answer }));
+    expect(await response.json()).toEqual({ version: "explorer-private-conversation-response.v1", result, assistance: null, waypointOfferResult: stored });
+    expect(mocks.command).toHaveBeenCalledExactlyOnceWith({ command: answer, dependencies, signal: expect.anything(), receivedAt: expect.any(Number) });
+  });
+  it("answers without the key when the composition gives none, for this command and for every other", async () => {
+    mocks.command.mockResolvedValue({ result, assistance: null });
+    for (const body of [answer, command, { kind: "respond_waypoint_draft", operationId: command.operationId, expectedRevision: 1, draftId: OFFER, response: "close" }]) {
+      const response = await POST(request({ body }));
+      const output = await response.json();
+      expect(output).toEqual({ version: "explorer-private-conversation-response.v1", result, assistance: null });
+      expect(output).not.toHaveProperty("waypointOfferResult");
+    }
+  });
+  it("fails closed when any other command would carry a stored offer result, or when the result is malformed", async () => {
+    mocks.command.mockResolvedValue({ result, assistance: null, waypointOfferResult: stored });
+    for (const body of [command, { kind: "respond_waypoint_draft", operationId: command.operationId, expectedRevision: 1, draftId: OFFER, response: "close" },
+      { kind: "release_waypoint", operationId: command.operationId, expectedRevision: 1, waypointId: WAYPOINT }]) {
+      expect(await invoke(request({ body }))).toEqual(unavailable);
+    }
+    for (const waypointOfferResult of [null, { ...stored, typed: true }, { ...stored, outcome: "confirmed" }, { ...stored, extra: true }]) {
+      mocks.command.mockResolvedValue({ result, assistance: null, waypointOfferResult });
+      expect(await invoke(request({ body: answer }))).toEqual(unavailable);
+    }
+    mocks.command.mockResolvedValue({ result: { ok: false, state: null, error: "refresh_required" }, assistance: null, waypointOfferResult: stored });
+    expect(await invoke(request({ body: answer }))).toEqual(unavailable);
+  });
+});
+
+describe("offers build step 4: the stored result must be this request's own answer", () => {
+  const CONVERSATION = "40000000-0000-4000-8000-000000000001"; const REPLY = "50000000-0000-4000-8000-000000000001";
+  const OFFER = "60000000-0000-4000-8000-000000000001"; const OTHER_OFFER = "60000000-0000-4000-8000-000000000002";
+  const WAYPOINT = "70000000-0000-4000-8000-000000000001"; const NEXT_WAYPOINT = "70000000-0000-4000-8000-000000000002";
+  const state = { version: "explorer-conversation.v1", conversationId: CONVERSATION, revision: 2, providerState: "available", pendingTurn: false,
+    turnedDownLimitReached: false, waypointDraft: null, compassMode: "legacy", compassChanges: [],
+    waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true },
+    waypointProjection: { kind: "current_heads", limit: 20, hasMore: false, totalHeads: 0 },
+    messages: [{ id: REPLY, role: "virtualGuide", body: "A saved synthetic reply.", createdAt: "2026-11-16T09:00:00Z" }],
+    compassItems: [], priorityId: null, attentionId: null, waypoints: [] };
+  const result = { ok: true, state, error: null };
+  const closed = { offerId: OFFER, kind: "change", waypointId: WAYPOINT, suggestionMessageId: REPLY, response: "close", typed: false,
+    outcome: "kept_open", resultWaypointId: null };
+  const confirmed = { ...closed, response: "right", outcome: "confirmed", resultWaypointId: NEXT_WAYPOINT };
+  const declined = { ...closed, response: "not_it", outcome: "declined" };
+  const answer = (response: string, offerId = OFFER) => ({ kind: "respond_waypoint_offer", operationId: command.operationId, expectedRevision: 1, offerId, response });
+
+  it.each([["right", confirmed], ["close", closed], ["not_it", declined]] as const)("passes a %s result on when it names the request's offer and response", async (response, stored) => {
+    mocks.command.mockResolvedValue({ result, assistance: null, waypointOfferResult: stored });
+    const output = await (await POST(request({ body: answer(response) }))).json();
+    expect(output).toEqual({ version: "explorer-private-conversation-response.v1", result, assistance: null, waypointOfferResult: stored });
+  });
+  it.each([["right", closed], ["right", declined], ["close", confirmed], ["close", declined], ["not_it", confirmed], ["not_it", closed]] as const)(
+    "fails closed when a %s request would carry another response's valid result", async (response, stored) => {
+      mocks.command.mockResolvedValue({ result, assistance: null, waypointOfferResult: stored });
+      expect(await invoke(request({ body: answer(response) }))).toEqual(unavailable);
+    });
+  it.each([["right", confirmed], ["close", closed], ["not_it", declined]] as const)("fails closed when a valid %s result names another offer than the request's", async (response, stored) => {
+    mocks.command.mockResolvedValue({ result, assistance: null, waypointOfferResult: { ...stored, offerId: OTHER_OFFER } });
+    expect(await invoke(request({ body: answer(response) }))).toEqual(unavailable);
+    mocks.command.mockResolvedValue({ result, assistance: null, waypointOfferResult: stored });
+    expect(await invoke(request({ body: answer(response, OTHER_OFFER) }))).toEqual(unavailable);
+  });
+  it("gives no part of a mismatched result or of its state to the browser", async () => {
+    mocks.command.mockResolvedValue({ result, assistance: null, waypointOfferResult: { ...confirmed, offerId: OTHER_OFFER } });
+    const response = await POST(request({ body: answer("right") }));
+    const text = await response.text();
+    expect(JSON.parse(text)).toEqual({ version: "explorer-private-conversation-response.v1", result: unavailable, assistance: null });
+    for (const leaked of [OTHER_OFFER, NEXT_WAYPOINT, REPLY, "waypointOfferResult"]) expect(text).not.toContain(leaked);
+  });
+});

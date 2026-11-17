@@ -72,6 +72,12 @@ function exact(value: Record<string, unknown>, names: readonly string[]): boolea
   return Object.keys(value).length === names.length && names.every((name) => Object.hasOwn(value, name));
 }
 function invalid(): never { throw new Error("explorer_conversation_context_unavailable"); }
+// The database's bound on listed sources (169 since a waiting offer became a source): distinct, bounded, sorted.
+export const EXPLORER_CONTEXT_SOURCE_ID_LIMIT = 169;
+export function explorerContextSourceIds(sources: readonly string[]): string[] {
+  if (new Set(sources).size !== sources.length || sources.length > EXPLORER_CONTEXT_SOURCE_ID_LIMIT) invalid();
+  return [...sources].sort();
+}
 function authority(value: unknown, expectedContract: "AV2" | "AV3" = "AV2"): Authority {
   const ids = ["accountId", "explorerId", "relationshipId", "guideId", "practiceId", "organizationId", "applicationSessionId"];
   const hasFormingMove = record(value) && Object.hasOwn(value, "formingAttentionMove");
@@ -207,6 +213,10 @@ function compassContext(state: ConversationState, formingMove: Authority["formin
       if (leftAt !== rightAt) return leftAt > rightAt ? -1 : 1;
       return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
     }).slice(0, EXPLORER_SAFE_CONTEXT_LIMITS.compassWaypointCount);
+  // v9 (migration 20261116000000_explorer_waypoint_offers.sql rebuilds the same two entries): only an offer that is
+  // still waiting is model context, and the current Waypoints for which Reached was already offered once.
+  const offer = state.waypointOffer?.status === "proposed" ? state.waypointOffer : null;
+  const reachedOffered = new Set(state.reachedOfferedWaypointIds ?? []);
   return {
     section: {
       version: EXPLORER_COMPASS_CONTEXT_VERSION,
@@ -230,11 +240,17 @@ function compassContext(state: ConversationState, formingMove: Authority["formin
         destination: state.waypointDraft.destination, whyItMatters: state.waypointDraft.whyItMatters,
         arrivalSignal: state.waypointDraft.arrivalSignal, suggestedInPreviousReply:
           previousReplyId !== undefined && state.waypointDraft.suggestionMessageId === previousReplyId }],
+      offers: offer === null ? [] : [{ id: offer.id, kind: offer.kind, waypointId: offer.waypointId,
+        stage: offer.targetBefore.stage,
+        suggestedInPreviousReply: previousReplyId !== undefined && offer.suggestionMessageId === previousReplyId,
+        ...(offer.kind === "reached" ? { evidence: offer.evidence } : { title: offer.title,
+          destination: offer.destination, whyItMatters: offer.whyItMatters, arrivalSignal: offer.arrivalSignal }) }],
+      reachedOfferedWaypointIds: heads.filter(waypoint => reachedOffered.has(waypoint.id)).map(waypoint => waypoint.id),
       immediateMessageIsReplyChoice,
     },
     messageSourceIds: [...new Set(evidence.flatMap(topic => topic.supportingMessageIds))],
     sourceIds: [...evidence.map(topic => topic.id), ...points.map((item) => item.id), ...heads.map((waypoint) => waypoint.id),
-      ...(state.waypointDraft === null ? [] : [state.waypointDraft.id])],
+      ...(state.waypointDraft === null ? [] : [state.waypointDraft.id]), ...(offer === null ? [] : [offer.id])],
   };
 }
 
@@ -312,8 +328,7 @@ function createConversationContextBuilder(input: ConversationContextBuilderInput
       ...(compass?.messageSourceIds ?? [])])];
     const allSources = [facts.onboarding.responseId, config.methodologyContextPackVersionId,
       ...messageSources, ...(compass?.sourceIds ?? [])];
-    if (new Set(allSources).size !== allSources.length || allSources.length > 168) invalid();
-    const sourceIds = allSources.sort();
+    const sourceIds = explorerContextSourceIds(allSources);
     return Object.freeze({ request: composed.conversationRequest, evidence: Object.freeze({
       p_context_source_ids: Object.freeze(sourceIds), p_authorization_version: facts.authorizationVersion,
       p_intake_response_set_id: facts.onboarding.responseId,

@@ -59,7 +59,7 @@ insert into ai.ai_interaction_session(ai_interaction_session_id,session_type,act
 -- on a current point (oldest first, each with the point's current label), the current Waypoint heads, no drafts.
 -- S4 adds the actor and whether the latest Explorer move still awaits its first saved reply.
 create function pg_temp.compass() returns jsonb language sql stable as $$
-  select jsonb_build_object('version','explorer-compass-context.v8','immediateMessageIsReplyChoice',false,
+  select jsonb_build_object('version','explorer-compass-context.v9','offers','[]'::jsonb,'reachedOfferedWaypointIds','[]'::jsonb,'immediateMessageIsReplyChoice',false,
     'mode','legacy_read_only','topics','[]'::jsonb,
     'capacity',jsonb_build_object('originalsRemaining',0,'topicSlotsRemaining',0,'visibleSlotsRemaining',0),
     'messageRefs',jsonb_build_object('history',(select coalesce(jsonb_agg(jsonb_build_object('ref','h'||h.ord::text,
@@ -102,7 +102,7 @@ $$;
 create function pg_temp.context(body text default 'Synthetic ordinary immediate text',classification_only boolean default false)
 returns jsonb language sql stable as $$
   select jsonb_build_object('contractVersion',case when classification_only then 'wi007-v0.1+onboarding-fields-v2'
-    else 'wi007-v0.1+onboarding-fields-v2+compass-v8' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
+    else 'wi007-v0.1+onboarding-fields-v2+compass-v9' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy',jsonb_build_object('version','synthetic-global.v1','text','Synthetic global behavior rules.'),
     'roleBehavior',jsonb_build_object('version','synthetic-role.v1','text','Synthetic role behavior rules.'),
     'crisisBehavior',jsonb_build_object('version','synthetic-crisis.v1','text','Synthetic crisis behavior rules.'),
@@ -454,7 +454,7 @@ insert into content.waypoint(waypoint_id,guide_explorer_relationship_id,source_a
       'Screens keep me awake','I read on three nights','chosen',pg_temp.xid(1),timestamptz '2026-11-03 10:04:00+00',
       null,null,null,null,null,null,pg_temp.xid(424),'revision',timestamptz '2026-11-03 10:04:00+00');
 create temp table s3_golden(section jsonb) on commit drop;
-insert into s3_golden values('{"version":"explorer-compass-context.v8","mode":"legacy_read_only","topics":[],"messageRefs":{"history":[{"ref":"h0","order":0}],"immediate":"now"},"capacity":{"originalsRemaining":0,"topicSlotsRemaining":0,"visibleSlotsRemaining":0},"points":[{"id":"f5120000-0000-4000-8000-000000000401","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},{"id":"f5120000-0000-4000-8000-000000000402","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},{"id":"f5120000-0000-4000-8000-000000000404","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],"priorityId":null,"attentionId":"f5120000-0000-4000-8000-000000000402","recentRoute":[{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000401","label":"Money worries","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":true}],"waypoints":[{"id":"f5120000-0000-4000-8000-000000000425","title":"Read before bed","destination":"Read before bed","meaning":"Screens keep me awake","arrivalSignal":"I read on three nights","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000421","title":"Find a calmer morning","destination":"Find a calmer morning","meaning":"Mornings set\nmy whole day","arrivalSignal":"I start two mornings a week without rushing","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000423","title":"Call my sister","destination":"Call my sister","meaning":"We have drifted apart","arrivalSignal":"We talk once a week for a month","stage":"released","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000422","title":"Walk after dinner","destination":"Walk after dinner","meaning":"It clears my head","arrivalSignal":"I walk three evenings in one week","stage":"reached","reachedEvidence":"I walked four evenings last week"}],"drafts":[],"immediateMessageIsReplyChoice":false}');
+insert into s3_golden values('{"version":"explorer-compass-context.v9","offers":[],"reachedOfferedWaypointIds":[],"mode":"legacy_read_only","topics":[],"messageRefs":{"history":[{"ref":"h0","order":0}],"immediate":"now"},"capacity":{"originalsRemaining":0,"topicSlotsRemaining":0,"visibleSlotsRemaining":0},"points":[{"id":"f5120000-0000-4000-8000-000000000401","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},{"id":"f5120000-0000-4000-8000-000000000402","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},{"id":"f5120000-0000-4000-8000-000000000404","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],"priorityId":null,"attentionId":"f5120000-0000-4000-8000-000000000402","recentRoute":[{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000401","label":"Money worries","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000404","label":"Family","actor":"explorer","awaitingReply":false},{"kind":"attention_changed","pointId":"f5120000-0000-4000-8000-000000000402","label":"Sleep","actor":"explorer","awaitingReply":true}],"waypoints":[{"id":"f5120000-0000-4000-8000-000000000425","title":"Read before bed","destination":"Read before bed","meaning":"Screens keep me awake","arrivalSignal":"I read on three nights","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000421","title":"Find a calmer morning","destination":"Find a calmer morning","meaning":"Mornings set\nmy whole day","arrivalSignal":"I start two mornings a week without rushing","stage":"formed","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000423","title":"Call my sister","destination":"Call my sister","meaning":"We have drifted apart","arrivalSignal":"We talk once a week for a month","stage":"released","reachedEvidence":null},{"id":"f5120000-0000-4000-8000-000000000422","title":"Walk after dinner","destination":"Walk after dinner","meaning":"It clears my head","arrivalSignal":"I walk three evenings in one week","stage":"reached","reachedEvidence":"I walked four evenings last week"}],"drafts":[],"immediateMessageIsReplyChoice":false}');
 create function pg_temp.with_compass(section jsonb) returns jsonb language sql stable as $$
   select jsonb_set(pg_temp.context(),'{compassContext}',section)
 $$;
@@ -484,7 +484,7 @@ begin
       then raise exception 'classification_reduced_refused'; end if;
     if (select outcome from pg_temp.inspect_json(full_context)) is distinct from 'unavailable'
       or (select outcome from pg_temp.inspect_json(reduced||jsonb_build_object(
-        'contractVersion','wi007-v0.1+onboarding-fields-v2+compass-v8'),true)) is distinct from 'unavailable'
+        'contractVersion','wi007-v0.1+onboarding-fields-v2+compass-v9'),true)) is distinct from 'unavailable'
       or (select outcome from pg_temp.inspect_json(full_context||jsonb_build_object(
         'contractVersion','wi007-v0.1+onboarding-fields-v2'))) is distinct from 'unavailable'
       or (select outcome from pg_temp.inspect_json(reduced||'{"compassContext":null}'::jsonb,true)) is distinct from 'unavailable'
@@ -675,8 +675,8 @@ select is((select outcome from pg_temp.inspect()),'clear','S3: the empty saved C
 -- conversation); it inspects clear, and the deployed inspector's bound is exactly 3 to 103, as prepare's.
 select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid=p.pronamespace
     where n.nspname='ai' and p.proname='solmind_inspect_explorer_context_v3'
-      and strpos(p.prosrc,'pg_catalog.cardinality(p_context_source_ids) not between 3 and 168')>0),1,
-  'REV391: the deployed inspector bounds its source ids between 3 and 168');
+      and strpos(p.prosrc,'pg_catalog.cardinality(p_context_source_ids) not between 3 and 169')>0),1,
+  'Offers: the deployed inspector bounds its source ids between 3 and 169');
 select is((select count(*)::integer from pg_proc p join pg_namespace n on n.oid=p.pronamespace
     where n.nspname='ai' and p.proname='solmind_inspect_explorer_context_v3'
       and strpos(p.prosrc,'between 3 and 103')>0),0,

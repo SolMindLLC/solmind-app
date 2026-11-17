@@ -1,6 +1,6 @@
 -- REV391 automatic Compass: synthetic rollback-only SQL tests, authored only.
 -- Execute only in the Executor's isolated migration-proof database. No provider call.
--- Fixture uses existing governance and current v8 context; no real human approval is claimed.
+-- Fixture uses existing governance and current v9 context; no real human approval is claimed.
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path=public,extensions,pg_catalog,pg_temp;
@@ -149,7 +149,7 @@ create function pg_temp.compass_context() returns jsonb language sql stable as $
     select 'set_attention',(value->>'recordedAt')::timestamptz,'attention_changed',(value->>'pointId')::uuid,
       (value->>'revision')::integer-1,null::uuid from forming_move where value is not null
   )
-  select jsonb_build_object('version','explorer-compass-context.v8','immediateMessageIsReplyChoice',false,
+  select jsonb_build_object('version','explorer-compass-context.v9','offers','[]'::jsonb,'reachedOfferedWaypointIds','[]'::jsonb,'immediateMessageIsReplyChoice',false,
     'mode','automatic',
     'capacity',jsonb_build_object('originalsRemaining',greatest(0,24-(select count(*) from ai.explorer_conversation_compass_item
       where conversation_id=pg_temp.gid(6005) and formation_status is distinct from 'rejected')),
@@ -223,7 +223,7 @@ create function pg_temp.compass_source_ids() returns uuid[] language sql stable 
 $$;
 create function pg_temp.context_value(msg uuid,body text,classification_only boolean default false) returns jsonb language sql stable as $$
   select jsonb_build_object('contractVersion',case when classification_only then 'wi007-v0.1+onboarding-fields-v2'
-    else 'wi007-v0.1+onboarding-fields-v2+compass-v8' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
+    else 'wi007-v0.1+onboarding-fields-v2+compass-v9' end,'aiRole','solmind_virtual_guide','actorRoleContext','explorer',
     'globalPolicy',jsonb_build_object('version','synthetic-policy.v1','text','Synthetic policy.'),
     'roleBehavior',jsonb_build_object('version','synthetic-behavior.v1','text','Synthetic behavior.'),
     'crisisBehavior',jsonb_build_object('version','synthetic-crisis.v1','text','Synthetic crisis.'),
@@ -520,21 +520,51 @@ select ok(not exists(select 1 from ai.explorer_conversation_compass_item where i
   and exists(select 1 from pg_trigger where tgname='explorer_compass_formation_guard' and tgenabled='O'),
   'aborted proof leaves no row and the formation guard enabled');
 
--- Policy boundary uses the real inspector, with a new unsaved immediate identity.
+-- Role-only boundary uses the real inspector, with a new unsaved immediate identity.
 select is((select outcome from ai.solmind_inspect_explorer_context_v3(pg_temp.gid(1),pg_temp.gid(50),
   pg_temp.gid(24),pg_temp.gid(25),pg_temp.gid(6005),pg_temp.compact(jsonb_set(
-    pg_temp.context_value(pg_temp.gid(99001),'Time to read'),'{roleBehavior,text}',to_jsonb(repeat('x',20000)))),
+    pg_temp.context_value(pg_temp.gid(99001),'Time to read'),'{roleBehavior,text}',to_jsonb(repeat('x',25000)))),
   (select array_agg(distinct id order by id) from (
     select unnest(array[pg_temp.gid(52),pg_temp.gid(1001),pg_temp.gid(99001)]||pg_temp.compass_source_ids()) id
     union all select m.ai_interaction_message_id from (select * from ai.ai_interaction_message where ai_interaction_session_id=pg_temp.gid(6005)
-      order by sequence_number desc limit 24) m) ids))),'clear','20000 policy characters pass SQL');
+      order by sequence_number desc limit 24) m) ids))),'clear','25000 role characters pass SQL');
 select is((select outcome from ai.solmind_inspect_explorer_context_v3(pg_temp.gid(1),pg_temp.gid(50),
   pg_temp.gid(24),pg_temp.gid(25),pg_temp.gid(6005),pg_temp.compact(jsonb_set(
-    pg_temp.context_value(pg_temp.gid(99001),'Time to read'),'{roleBehavior,text}',to_jsonb(repeat('x',20001)))),
+    pg_temp.context_value(pg_temp.gid(99001),'Time to read'),'{roleBehavior,text}',to_jsonb(repeat('x',25001)))),
   (select array_agg(distinct id order by id) from (
     select unnest(array[pg_temp.gid(52),pg_temp.gid(1001),pg_temp.gid(99001)]||pg_temp.compass_source_ids()) id
     union all select m.ai_interaction_message_id from (select * from ai.ai_interaction_message where ai_interaction_session_id=pg_temp.gid(6005)
-      order by sequence_number desc limit 24) m) ids))),'unavailable','20001 policy characters fail SQL');
+      order by sequence_number desc limit 24) m) ids))),'unavailable','25001 role characters fail SQL');
+
+select is((select outcome from ai.solmind_inspect_explorer_context_v3(pg_temp.gid(1),pg_temp.gid(50),
+  pg_temp.gid(24),pg_temp.gid(25),pg_temp.gid(6005),pg_temp.compact(jsonb_set(
+    pg_temp.context_value(pg_temp.gid(99001),'Time to read'),'{globalPolicy,text}',to_jsonb(repeat('x',20000)))),
+  (select array_agg(distinct id order by id) from (
+    select unnest(array[pg_temp.gid(52),pg_temp.gid(1001),pg_temp.gid(99001)]||pg_temp.compass_source_ids()) id
+    union all select m.ai_interaction_message_id from (select * from ai.ai_interaction_message where ai_interaction_session_id=pg_temp.gid(6005)
+      order by sequence_number desc limit 24) m) ids))),'clear','20000 globalPolicy characters pass SQL');
+select is((select outcome from ai.solmind_inspect_explorer_context_v3(pg_temp.gid(1),pg_temp.gid(50),
+  pg_temp.gid(24),pg_temp.gid(25),pg_temp.gid(6005),pg_temp.compact(jsonb_set(
+    pg_temp.context_value(pg_temp.gid(99001),'Time to read'),'{globalPolicy,text}',to_jsonb(repeat('x',20001)))),
+  (select array_agg(distinct id order by id) from (
+    select unnest(array[pg_temp.gid(52),pg_temp.gid(1001),pg_temp.gid(99001)]||pg_temp.compass_source_ids()) id
+    union all select m.ai_interaction_message_id from (select * from ai.ai_interaction_message where ai_interaction_session_id=pg_temp.gid(6005)
+      order by sequence_number desc limit 24) m) ids))),'unavailable','20001 globalPolicy characters fail SQL');
+
+select is((select outcome from ai.solmind_inspect_explorer_context_v3(pg_temp.gid(1),pg_temp.gid(50),
+  pg_temp.gid(24),pg_temp.gid(25),pg_temp.gid(6005),pg_temp.compact(jsonb_set(
+    pg_temp.context_value(pg_temp.gid(99001),'Time to read'),'{crisisBehavior,text}',to_jsonb(repeat('x',20000)))),
+  (select array_agg(distinct id order by id) from (
+    select unnest(array[pg_temp.gid(52),pg_temp.gid(1001),pg_temp.gid(99001)]||pg_temp.compass_source_ids()) id
+    union all select m.ai_interaction_message_id from (select * from ai.ai_interaction_message where ai_interaction_session_id=pg_temp.gid(6005)
+      order by sequence_number desc limit 24) m) ids))),'clear','20000 crisisBehavior characters pass SQL');
+select is((select outcome from ai.solmind_inspect_explorer_context_v3(pg_temp.gid(1),pg_temp.gid(50),
+  pg_temp.gid(24),pg_temp.gid(25),pg_temp.gid(6005),pg_temp.compact(jsonb_set(
+    pg_temp.context_value(pg_temp.gid(99001),'Time to read'),'{crisisBehavior,text}',to_jsonb(repeat('x',20001)))),
+  (select array_agg(distinct id order by id) from (
+    select unnest(array[pg_temp.gid(52),pg_temp.gid(1001),pg_temp.gid(99001)]||pg_temp.compass_source_ids()) id
+    union all select m.ai_interaction_message_id from (select * from ai.ai_interaction_message where ai_interaction_session_id=pg_temp.gid(6005)
+      order by sequence_number desc limit 24) m) ids))),'unavailable','20001 crisisBehavior characters fail SQL');
 
 -- A pending Explorer move wins over a different model proposal in the next reply.
 select is((select outcome from public.solmind_mutate_explorer_conversation_v3(
@@ -594,9 +624,9 @@ select ok(not has_function_privilege('service_role',p.oid,'EXECUTE')
   where n.nspname='ai' and p.proname in ('solmind_compass_evidence_v1','solmind_plan_automatic_compass_v1',
     'solmind_apply_automatic_compass_v1','solmind_compass_additions_valid_v1','solmind_compass_mode_guard_v1',
     'solmind_automatic_compass_rows_guard_v1','solmind_automatic_compass_proof_guard_v1');
-select ok(p.pronargs=28 and p.prosecdef and has_function_privilege('service_role',p.oid,'EXECUTE')
+select ok(p.pronargs=31 and p.prosecdef and has_function_privilege('service_role',p.oid,'EXECUTE')
   and not has_function_privilege('authenticated',p.oid,'EXECUTE') and not has_function_privilege('anon',p.oid,'EXECUTE'),
-  'sole settlement identity has 28 arguments and only service-role API execution')
+  'sole settlement identity has 31 arguments and only service-role API execution')
   from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='solmind_settle_explorer_conversation_turn_v4';
 
 -- Seed historical storage as it existed before this migration. Only the formation

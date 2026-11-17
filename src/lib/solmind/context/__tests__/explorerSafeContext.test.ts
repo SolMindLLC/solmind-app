@@ -744,6 +744,7 @@ describe("PRJ01_R-WS09-WI021-S03A Explorer-safe context kernel", () => {
     }> = [
       { path: ["contractVersion"], maximum: EXPLORER_SAFE_CONTEXT_LIMITS.versionLabelCharacters },
       { path: ["globalPolicy", "text"], maximum: EXPLORER_SAFE_CONTEXT_LIMITS.policyTextCharacters },
+      { path: ["roleBehavior", "text"], maximum: EXPLORER_SAFE_CONTEXT_LIMITS.roleBehaviorTextCharacters },
       { path: ["methodologyContext", "text"], maximum: EXPLORER_SAFE_CONTEXT_LIMITS.methodologyTextCharacters },
       { path: ["sessionContext", "explorerDisplayName"], maximum: EXPLORER_SAFE_CONTEXT_LIMITS.explorerDisplayNameCharacters },
       { path: ["sessionContext", "explorerSafeGuardrail"], maximum: EXPLORER_SAFE_CONTEXT_LIMITS.explorerSafeGuardrailCharacters },
@@ -895,7 +896,7 @@ function compassSection(): Record<string, unknown> {
       { id: COMPASS_IDS.reached, title: "Walk after dinner", destination: "Walk after dinner",
         meaning: "It clears my head", arrivalSignal: "Three walks in a week", stage: "reached", reachedEvidence: " Four walks " },
     ],
-    drafts: [], immediateMessageIsReplyChoice: false,
+    drafts: [], offers: [], reachedOfferedWaypointIds: [], immediateMessageIsReplyChoice: false,
   };
 }
 function compassInput(): Record<string, unknown> {
@@ -962,7 +963,7 @@ describe("Chat step slice S3 saved Compass and Waypoint section", () => {
     ]);
     const section = JSON.stringify(result.context.compassContext);
     expect(section).toBe(
-      '{"version":"explorer-compass-context.v8","mode":"legacy_read_only","topics":[],"messageRefs":{"history":[],"immediate":"now"},"capacity":{"originalsRemaining":0,"topicSlotsRemaining":0,"visibleSlotsRemaining":0},"points":[' +
+      '{"version":"explorer-compass-context.v9","mode":"legacy_read_only","topics":[],"messageRefs":{"history":[],"immediate":"now"},"capacity":{"originalsRemaining":0,"topicSlotsRemaining":0,"visibleSlotsRemaining":0},"points":[' +
       '{"id":"c0000000-0000-4000-8000-000000000001","label":"Money worries","order":0,"formation":"saved","anchor":"apex","emphasis":3},' +
       '{"id":"c0000000-0000-4000-8000-000000000002","label":"Sleep","order":1,"formation":"saved","anchor":null,"emphasis":null},' +
       '{"id":"c0000000-0000-4000-8000-000000000003","label":"Family","order":2,"formation":"saved","anchor":null,"emphasis":1}],' +
@@ -973,7 +974,7 @@ describe("Chat step slice S3 saved Compass and Waypoint section", () => {
       '"meaning":"Mornings set\\nmy whole day","arrivalSignal":"Two calm mornings a week","stage":"formed","reachedEvidence":null},' +
       '{"id":"d0000000-0000-4000-8000-000000000002","title":"Walk after dinner","destination":"Walk after dinner",' +
       '"meaning":"It clears my head","arrivalSignal":"Three walks in a week","stage":"reached","reachedEvidence":"Four walks"}],' +
-      '"drafts":[],"immediateMessageIsReplyChoice":false}',
+      '"drafts":[],"offers":[],"reachedOfferedWaypointIds":[],"immediateMessageIsReplyChoice":false}',
     );
     expect(result.serialized).toContain(`"approvedContinuity":${JSON.stringify(result.context.approvedContinuity)},"compassContext":${section},"currentSessionMessages":`);
     expect(Object.isFrozen(result.context.compassContext?.points[0])).toBe(true);
@@ -999,7 +1000,8 @@ describe("Chat step slice S3 saved Compass and Waypoint section", () => {
     expect(assembleExplorerSafeContext(empty).context.compassContext).toEqual({ version: EXPLORER_COMPASS_CONTEXT_VERSION, mode: "legacy_read_only",
       topics: [], messageRefs: { history: [], immediate: "now" },
       capacity: { originalsRemaining: 0, topicSlotsRemaining: 0, visibleSlotsRemaining: 0 },
-      points: [], priorityId: null, attentionId: null, recentRoute: [], waypoints: [], drafts: [], immediateMessageIsReplyChoice: false });
+      points: [], priorityId: null, attentionId: null, recentRoute: [], waypoints: [], drafts: [], offers: [],
+      reachedOfferedWaypointIds: [], immediateMessageIsReplyChoice: false });
     const unplaced = assembleExplorerSafeContext(compassInput()).context.compassContext;
     expect(unplaced?.attentionId).toBe(COMPASS_IDS.unplaced);
     expect(unplaced?.points.find(point => point.id === unplaced.attentionId)?.anchor).toBeNull();
@@ -1098,7 +1100,7 @@ describe("S5 forming Compass context", () => {
     expectCode(withCompass(section => { at(section, "points", 0).suggestedInPreviousReply = signal; }), "explorer_context_unknown_key");
   });
 
-  it.each(["compass-v1", "compass-v2", "compass-v3", "compass-v4", "compass-v5", "compass-v6", "compass-v7", "compass-v9"])("Lane 7 refuses the retired or unknown %s with or without a section", revision => {
+  it.each(["compass-v1", "compass-v2", "compass-v3", "compass-v4", "compass-v5", "compass-v6", "compass-v7", "compass-v8", "compass-v10"])("Lane 7 refuses the retired or unknown %s with or without a section", revision => {
     const input: Record<string, unknown> = { ...compassInput(), contractVersion: "wi007-v0.1+onboarding-fields-v2+" + revision };
     expectCode(input, "explorer_context_invalid_envelope");
     delete input.compassContext;
@@ -1139,11 +1141,125 @@ describe("S5 forming Compass context", () => {
   });
 });
 describe("automatic Compass policy boundaries", () => {
-  it.each(["globalPolicy", "roleBehavior", "crisisBehavior"])("accepts 20000 and refuses 20001 characters for %s", field => {
+  it.each(["globalPolicy", "crisisBehavior"])("accepts 20000 and refuses 20001 characters for %s", field => {
     const input = validInput();
     input[field] = { version: "test.v1", text: "x".repeat(20000) };
     expect(assembleExplorerSafeContext(input).serialized).toContain("x".repeat(20000));
     input[field] = { version: "test.v1", text: "x".repeat(20001) };
     expectCode(input, "explorer_context_text_limit_exceeded");
+  });
+});
+describe("offers build step 2: the role text's own limit", () => {
+  it("accepts 25000 and refuses 25001 characters for roleBehavior, by the constant and by the figure", () => {
+    expect(EXPLORER_SAFE_CONTEXT_LIMITS.roleBehaviorTextCharacters).toBe(25000);
+    expect(EXPLORER_SAFE_CONTEXT_LIMITS.policyTextCharacters).toBe(20000);
+    expect(EXPLORER_SAFE_CONTEXT_LIMITS.methodologyTextCharacters).toBe(24000);
+    const input = validInput();
+    input.roleBehavior = { version: "test.v1", text: "x".repeat(25000) };
+    expect(assembleExplorerSafeContext(input).serialized).toContain("x".repeat(25000));
+    input.roleBehavior = { version: "test.v1", text: "x".repeat(25001) };
+    expectCode(input, "explorer_context_text_limit_exceeded");
+  });
+  it("keeps the role figure out of the policy and crisis texts in the ordinary (section) envelope too", () => {
+    for (const field of ["globalPolicy", "crisisBehavior"]) {
+      const input = compassInput();
+      input[field] = { version: "test.v1", text: "x".repeat(20001) };
+      expectCode(input, "explorer_context_text_limit_exceeded");
+    }
+    const role = compassInput();
+    role.roleBehavior = { version: "test.v1", text: "x".repeat(25000) };
+    expect(() => assembleExplorerSafeContext(role)).not.toThrow();
+  });
+});
+describe("offers build step 2: saved offers in the v9 section", () => {
+  const OFFER = "e1000000-0000-4000-8000-000000000001";
+  const change = () => ({ id: OFFER, kind: "change", waypointId: COMPASS_IDS.formed, stage: "formed",
+    suggestedInPreviousReply: true, title: "  A synthetic title ", destination: "One\r\nTwo",
+    whyItMatters: "Synthetic meaning", arrivalSignal: "Synthetic signal" });
+  const reached = () => ({ id: OFFER, kind: "reached", waypointId: COMPASS_IDS.formed, stage: "formed",
+    suggestedInPreviousReply: false, evidence: " Synthetic arrival. " });
+  const revisit = () => ({ ...change(), kind: "revisit", waypointId: COMPASS_IDS.reached, stage: "reached" });
+  it("pins both version names", () => {
+    expect(EXPLORER_COMPASS_CONTEXT_VERSION).toBe("explorer-compass-context.v9");
+    expect(EXPLORER_COMPASS_CONTEXT_CONTRACT_VERSION).toBe("wi007-v0.1+onboarding-fields-v2+compass-v9");
+  });
+  it("carries one waiting offer of each kind with normalized text, in the fixed key order, frozen", () => {
+    const changed = assembleExplorerSafeContext(withCompass(section => { section.offers = [change()]; })).context.compassContext!;
+    expect(JSON.stringify(changed.offers)).toBe('[{"id":"' + OFFER + '","kind":"change","waypointId":"' + COMPASS_IDS.formed +
+      '","stage":"formed","suggestedInPreviousReply":true,"title":"A synthetic title","destination":"One\\nTwo",' +
+      '"whyItMatters":"Synthetic meaning","arrivalSignal":"Synthetic signal"}]');
+    expect(Object.isFrozen(changed.offers[0])).toBe(true);
+    const marked = assembleExplorerSafeContext(withCompass(section => { section.offers = [reached()];
+      section.reachedOfferedWaypointIds = [COMPASS_IDS.formed]; })).context.compassContext!;
+    expect(JSON.stringify(marked.offers)).toBe('[{"id":"' + OFFER + '","kind":"reached","waypointId":"' + COMPASS_IDS.formed +
+      '","stage":"formed","suggestedInPreviousReply":false,"evidence":"Synthetic arrival."}]');
+    expect(marked.reachedOfferedWaypointIds).toEqual([COMPASS_IDS.formed]);
+    const again = assembleExplorerSafeContext(withCompass(section => { section.offers = [revisit()]; })).context.compassContext!;
+    expect(again.offers[0]).toMatchObject({ kind: "revisit", stage: "reached" });
+    for (const stage of ["reached", "released"]) {
+      expect(() => assembleExplorerSafeContext(withCompass(section => { section.offers = [{ ...revisit(), stage }]; }))).not.toThrow();
+    }
+    expect(Object.keys(changed)).toEqual(["version", "mode", "topics", "messageRefs", "capacity", "points", "priorityId",
+      "attentionId", "recentRoute", "waypoints", "drafts", "offers", "reachedOfferedWaypointIds", "immediateMessageIsReplyChoice"]);
+  });
+  it("requires both entries and refuses a second offer", () => {
+    expectCode(withCompass(section => { delete section.offers; }), "explorer_context_missing_required_layer");
+    expectCode(withCompass(section => { delete section.reachedOfferedWaypointIds; }), "explorer_context_missing_required_layer");
+    expectCode(withCompass(section => { section.offers = null; }), "explorer_context_invalid_envelope");
+    expectCode(withCompass(section => { section.reachedOfferedWaypointIds = {}; }), "explorer_context_invalid_envelope");
+    expectCode(withCompass(section => { section.offers = [change(), { ...change(), id: "e1000000-0000-4000-8000-000000000002" }]; }),
+      "explorer_context_invalid_envelope");
+  });
+  it("refuses an offer id that is also a point, a Waypoint, a forming Waypoint, a history message, the immediate message or a topic", () => {
+    const draft = { id: "e0000000-0000-4000-8000-000000000001", title: null, destination: null, whyItMatters: null,
+      arrivalSignal: null, suggestedInPreviousReply: false };
+    for (const id of [COMPASS_IDS.priority, COMPASS_IDS.formed, draft.id, IDS.history, IDS.immediate]) {
+      expectCode(withCompass(section => { section.drafts = [draft]; section.offers = [{ ...change(), id }]; }),
+        "explorer_context_duplicate_source");
+    }
+    expectCode(withCompass(section => { section.mode = "automatic"; section.points = []; section.attentionId = null;
+      section.recentRoute = []; section.capacity = { originalsRemaining: 24, topicSlotsRemaining: 23, visibleSlotsRemaining: 8 };
+      section.topics = [{ id: OFFER, label: "Synthetic topic", pointId: null, supportCount: 1, countedRefs: [] }];
+      section.offers = [change()]; }), "explorer_context_invalid_envelope");
+  });
+  it.each([
+    ["an unknown kind", { kind: "release" }, "explorer_context_invalid_envelope"],
+    ["a missing kind", { kind: undefined }, "explorer_context_invalid_envelope"],
+    ["a hidden status", { status: "proposed" }, "explorer_context_unknown_key"],
+    ["a carrying reply id", { suggestionMessageId: IDS.history }, "explorer_context_unknown_key"],
+    ["evidence on a change", { evidence: "Synthetic words" }, "explorer_context_unknown_key"],
+    ["a non-boolean signal", { suggestedInPreviousReply: "true" }, "explorer_context_invalid_envelope"],
+    ["an unknown stage", { stage: "chosen" }, "explorer_context_invalid_envelope"],
+    ["a change of a Reached Waypoint", { stage: "reached" }, "explorer_context_invalid_envelope"],
+    ["a malformed target id", { waypointId: "not-an-id" }, "explorer_context_invalid_envelope"],
+    ["a malformed id", { id: "not-an-id" }, "explorer_context_invalid_envelope"],
+    ["a blank title", { title: "   " }, "explorer_context_invalid_text"],
+    ["an oversized part", { arrivalSignal: "x".repeat(1001) }, "explorer_context_text_limit_exceeded"],
+    ["a null part", { destination: null }, "explorer_context_invalid_text"],
+  ] as const)("refuses %s", (_name, change_, code) => {
+    expectCode(withCompass(section => { section.offers = [{ ...change(), ...change_ }]; }), code);
+  });
+  it("refuses a missing part, a Reached offer with wording, a revisit of a Waypoint in progress and oversized evidence", () => {
+    expectCode(withCompass(section => { const offer: Record<string, unknown> = change(); delete offer.title; section.offers = [offer]; }),
+      "explorer_context_missing_required_layer");
+    expectCode(withCompass(section => { section.offers = [{ ...reached(), title: "Synthetic" }]; }), "explorer_context_unknown_key");
+    expectCode(withCompass(section => { section.offers = [{ ...reached(), stage: "released" }]; }), "explorer_context_invalid_envelope");
+    expectCode(withCompass(section => { section.offers = [{ ...revisit(), stage: "formed" }]; }), "explorer_context_invalid_envelope");
+    expectCode(withCompass(section => { section.offers = [{ ...reached(), evidence: "x".repeat(1001) }]; }), "explorer_context_text_limit_exceeded");
+    expect(() => assembleExplorerSafeContext(withCompass(section => { section.offers = [{ ...reached(), evidence: "x".repeat(1000) }]; }))).not.toThrow();
+  });
+  it("accepts only known, distinct Waypoint ids in the Waypoints' own order for the Reached-offered list", () => {
+    const both = assembleExplorerSafeContext(withCompass(section => {
+      section.reachedOfferedWaypointIds = [COMPASS_IDS.formed, COMPASS_IDS.reached]; })).context.compassContext!;
+    expect(both.reachedOfferedWaypointIds).toEqual([COMPASS_IDS.formed, COMPASS_IDS.reached]);
+    for (const ids of [[COMPASS_IDS.reached, COMPASS_IDS.formed], [COMPASS_IDS.formed, COMPASS_IDS.formed],
+      [COMPASS_IDS.priority], [OFFER], ["not-an-id"], [null]]) {
+      expectCode(withCompass(section => { section.reachedOfferedWaypointIds = ids; }), "explorer_context_invalid_envelope");
+    }
+  });
+  it("keeps the classification-only envelope free of offers", () => {
+    const result = assembleExplorerSafeContext({ ...validInput(), contractVersion: "wi007-v0.1+onboarding-fields-v2" });
+    expect(result.serialized).not.toContain("offers");
+    expect(result.serialized).not.toContain("reachedOfferedWaypointIds");
   });
 });

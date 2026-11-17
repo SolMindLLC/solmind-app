@@ -108,7 +108,8 @@ export async function explorerConversationDebugStep<T>(sendId: string, step: str
   return value;
 }
 
-const ALLOWED_OUTER_KEYS = Object.freeze(["protocol", "classification", "candidateReply", "compass", "choices", "waypointSuggestion", "waypointResponse"]);
+const ALLOWED_OUTER_KEYS = Object.freeze(["protocol", "classification", "candidateReply", "compass", "choices", "waypointSuggestion", "waypointResponse",
+  "waypointOffer", "waypointOfferResponse"]);
 const REQUIRED_OUTER_KEYS = Object.freeze(["protocol", "classification", "candidateReply"]);
 
 // SOLMIND-DEBUG: names the first shape rule a raw Virtual Guide reply breaks, to sit beside the parser's own verdict
@@ -189,7 +190,10 @@ function settlementSummary(value: unknown): Readonly<Record<string, unknown>> {
       modelLevel: typeof settlement.p_model_level === "number" ? settlement.p_model_level : null,
       attentionProposed: settlement.p_attention_item_id != null, choices: count("p_choices"),
       compassTopics: count("p_compass_topics"), // SOLMIND-DEBUG: counts only; never evidence identities or wording.
-      waypointSuggestion: settlement.p_waypoint_suggestion != null, waypointResponse: settlement.p_waypoint_response != null };
+      waypointSuggestion: settlement.p_waypoint_suggestion != null, waypointResponse: settlement.p_waypoint_response != null,
+      // SOLMIND-DEBUG: presence only; never an offer's wording, evidence or identities.
+      waypointOffer: settlement.p_waypoint_offer != null, waypointOfferResponse: settlement.p_waypoint_offer_response != null,
+      waypointOfferDrop: settlement.p_waypoint_offer_drop != null };
   } catch { return {}; }
 }
 

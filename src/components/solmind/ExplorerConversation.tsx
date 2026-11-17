@@ -7,6 +7,7 @@ import {
   type ExplorerConversationCommand,
   type ExplorerConversationError,
   type ExplorerConversationState,
+  type ExplorerWaypointOfferKind,
 } from "@/lib/solmind/explorerConversationContract";
 import { EXPLORER_FAILED_REPLY_BUTTON_NOTE, parseExplorerPrivateConversationResponse,
   type ExplorerPrivateConversationResponse, type ExplorerPrivateAssistance } from "@/lib/solmind/explorerPrivateConversationResponse";
@@ -15,6 +16,8 @@ import type { ExplorerConversationFormationIntent } from "./ExplorerConversation
 import { COMPASS_SUGGESTION_REPLY_LABELS } from "@/lib/solmind/explorerCompassSuggestionReplies";
 import { latestReplyChoices } from "@/lib/solmind/explorerReplyChoices";
 import { completeWaypointDraft, waypointLimitReached } from "@/lib/solmind/explorerWaypointDraft";
+import { latestVirtualGuideReplyId, waypointDraftFollowUpAllowed, waypointOfferAnswerAllowed,
+  waypointOfferEarlierSavedLine, waypointOfferFollowUpAllowed, type WaypointAnswerPins } from "@/lib/solmind/explorerWaypointOffer";
 import { EXPLORER_TOUR_CHOICE } from "@/lib/solmind/explorerConversationTour";
 import { useExplorerEarlyTestNoticeRecheck } from "@/lib/solmind/explorerEarlyTestNoticeRecheck";
 import { EXPLORER_SEND_SCREEN_LIMIT_MILLISECONDS } from "@/lib/solmind/explorerSendScreenLimit";
@@ -31,10 +34,18 @@ type CommandIntent = ExplorerConversationFormationIntent | Readonly<{ kind: "sen
   Readonly<{ kind: "end_conversation"; conversationId: string }> |
   Readonly<{ kind: "suggestion_follow_up"; response: "right" | "close" | "not_it"; wording: string }> |
   Readonly<{ kind: "reply_choice"; label: string }>;
+// For a button "That's right" on an offer: the kind and the title its box showed at the press (decision 5 of the
+// 2026-11-16 21:52:56 sheet), kept with the pending command through every Retry. earlierAnswer rides on the
+// automatic follow-up of an answer that was confirmed on a Retry (REV488 finding 1), with that offer's id.
+type AnsweredOffer = Readonly<{ kind: ExplorerWaypointOfferKind; title: string }>;
+type EarlierAnswer = Readonly<{ offerId: string; kind: ExplorerWaypointOfferKind; title: string }>;
 type PendingCommand = Readonly<{ command: ExplorerConversationCommand; body: string; intent: CommandIntent;
-  suggestionWording: string | null }>;
+  suggestionWording: string | null; pins: WaypointAnswerPins | null; answeredOffer: AnsweredOffer | null;
+  earlierAnswer: EarlierAnswer | null }>;
 
-function prepareCommand(intent: CommandIntent, expectedRevision: number, suggestionWording: string | null = null): PendingCommand | null {
+function prepareCommand(intent: CommandIntent, expectedRevision: number, suggestionWording: string | null = null,
+  pins: WaypointAnswerPins | null = null, answeredOffer: AnsweredOffer | null = null,
+  earlierAnswer: EarlierAnswer | null = null): PendingCommand | null {
   const wireIntent = intent.kind === "suggestion_follow_up"
     ? { kind: "send" as const, body: `${COMPASS_SUGGESTION_REPLY_LABELS[intent.response]}: "${intent.wording}"` }
     : intent.kind === "reply_choice" ? { kind: "send" as const, body: intent.label, replyChoice: true as const } : intent;
@@ -43,7 +54,7 @@ function prepareCommand(intent: CommandIntent, expectedRevision: number, suggest
   });
   const body = JSON.stringify(command);
   return new TextEncoder().encode(body).byteLength > REQUEST_BYTE_LIMIT ? null
-    : Object.freeze({ command, body, intent, suggestionWording });
+    : Object.freeze({ command, body, intent, suggestionWording, pins, answeredOffer, earlierAnswer });
 }
 
 /** Decode before rendering; a malformed or non-success HTTP success is uncertain. */
@@ -84,6 +95,8 @@ export function ExplorerConversation() {
   const [assistance, setAssistance] = useState<ExplorerPrivateAssistance | null>(null);
   const [endReview, setEndReview] = useState<Readonly<{ conversationId: string; revision: number }> | null>(null);
   const [sendSequence, setSendSequence] = useState(0);
+  // Display only: the saved offer whose button answer is in flight, for its box's "Saving..." line.
+  const [savingOfferId, setSavingOfferId] = useState<string | null>(null);
   const stateRef = useRef<ExplorerConversationState | null>(null);
   const busyRef = useRef(true);
   const pendingRef = useRef<PendingCommand | null>(null);
@@ -182,8 +195,13 @@ export function ExplorerConversation() {
     };
   }, [replaceState]);
 
+  // Every pending command dispatched at least once, to tell its exact Retry from the first send (decision 5).
+  const dispatchedRef = useRef(new WeakSet<PendingCommand>());
   const dispatch = useCallback(async function dispatchPending(pending: PendingCommand) {
     if (busyRef.current || pendingRef.current !== pending) return;
+    // A second dispatch of the same pending command is its exact Retry (decision 5 of 2026-11-16 21:52:56).
+    const retried = dispatchedRef.current.has(pending);
+    dispatchedRef.current.add(pending);
     // Display signal only: clear local reply prompts for every ordinary Send,
     // including a Waypoint follow-up or an exact uncertain retry.
     if (pending.command.kind === "send") setSendSequence(sequence => sequence + 1);
@@ -191,6 +209,7 @@ export function ExplorerConversation() {
     setBusy(true);
     setSendingMessage(pending.command.kind === "send" ? pending.command.body : null);
     setSendingFromComposer(pending.intent.kind === "send");
+    setSavingOfferId(pending.command.kind === "respond_waypoint_offer" ? pending.command.offerId : null);
     setUncertain(false);
     setNotice("");
     setAssistance(null);
@@ -252,18 +271,44 @@ export function ExplorerConversation() {
           : Object.freeze({ ...result.state, providerState: previous.providerState }));
         setError(null);
         setNotice(output?.assistance === null ? "Your saved conversation is up to date." : "");
+        // Decision 5 of the 21:52:56 sheet, as approved: after a Retry that confirms an earlier button "That's right"
+        // was saved, the status line says so whenever that offer's own confirmed box is not shown (a newer offer took
+        // its place), naming the Waypoint by the title its box showed. A typed answer is not covered. When the Retry
+        // shows the box but its automatic follow-up's reply replaces it, the follow-up carries the line (REV488).
+        const offerResult = output?.waypointOfferResult ?? null;
+        const confirmedOnRetry = retried && pending.answeredOffer !== null && pending.command.kind === "respond_waypoint_offer" &&
+          offerResult !== null && offerResult.offerId === pending.command.offerId && offerResult.outcome === "confirmed" &&
+          !offerResult.typed;
+        const earlier: EarlierAnswer | null = confirmedOnRetry && pending.answeredOffer !== null && offerResult !== null
+          ? Object.freeze({ offerId: offerResult.offerId, ...pending.answeredOffer }) : pending.earlierAnswer;
+        if (earlier !== null && !(result.state.waypointOffer?.id === earlier.offerId && result.state.waypointOffer.status === "confirmed")) {
+          setNotice(waypointOfferEarlierSavedLine(earlier.kind, earlier.title));
+        }
         // A button's ordinary Send has its own intent. It never consumes the
         // Explorer's composer draft, including after an exact uncertain retry.
         if (pending.intent.kind === "send" && output?.assistance === null) setDraft("");
-        if (pending.command.kind === "respond_waypoint_draft" &&
-            pending.suggestionWording !== null) {
+        // The automatic follow-up after a button answer (to a forming Waypoint, or to a change or revisit offer;
+        // never to a Reached offer) is bound to the presentation that was answered. It is skipped without a notice
+        // when the returned state shows the conversation advanced after the press (REV473 to REV473d): the saved
+        // answer and its Saved line stand either way. The pins were taken at the press and survive every Retry.
+        const answered = pending.command;
+        const followUpResponse = pending.suggestionWording === null || pending.pins === null ? null
+          : answered.kind === "respond_waypoint_draft"
+            ? (waypointDraftFollowUpAllowed({ state: result.state, expectedRevision: answered.expectedRevision,
+              draftId: answered.draftId, response: answered.response, pins: pending.pins }) ? answered.response : null)
+            : answered.kind === "respond_waypoint_offer"
+              ? (waypointOfferFollowUpAllowed({ state: result.state, expectedRevision: answered.expectedRevision,
+                offerId: answered.offerId, response: answered.response, pins: pending.pins,
+                result: output?.waypointOfferResult ?? null }) ? answered.response : null)
+              : null;
+        if (followUpResponse !== null && pending.suggestionWording !== null) {
           const current = stateRef.current;
           if (current !== null && !current.pendingTurn && current.sessionStatus !== "ended" &&
               current.providerState === "available" && current.compassSuggestionReplies === "available" &&
               current.messages.length <= EXPLORER_CONVERSATION_LIMITS.messages - 2) {
             try {
-              followUp = prepareCommand({ kind: "suggestion_follow_up", response: pending.command.response,
-                wording: pending.suggestionWording }, current.revision);
+              followUp = prepareCommand({ kind: "suggestion_follow_up", response: followUpResponse,
+                wording: pending.suggestionWording }, current.revision, null, null, null, confirmedOnRetry ? earlier : null);
               if (followUp === null) setDraftError("This change is too long to send. Please shorten the text.");
             } catch {
               setDraftError("This change could not be prepared. Please reload and try again.");
@@ -294,6 +339,7 @@ export function ExplorerConversation() {
         setBusy(false);
         setSendingMessage(null);
         setSendingFromComposer(false);
+        setSavingOfferId(null);
         // This is the next, separately counted ordinary Send only after a
         // confirmed response command. Uncertain outcomes keep their exact bytes.
         if (followUp !== null) void dispatchPending(followUp);
@@ -328,10 +374,25 @@ export function ExplorerConversation() {
          (intent.response === "right" && (waypointLimitReached(current) || !completeWaypointDraft(waypointDraft))) ||
          (intent.response !== "right" && (waypointDraft.title === null || current.providerState !== "available" ||
           current.messages.length > EXPLORER_CONVERSATION_LIMITS.messages - 2)))) return;
+    // A button answer to a saved offer: only for the waiting offer in the saved state, under its own gate.
+    const waypointOffer = intent.kind === "respond_waypoint_offer" && current.waypointOffer?.id === intent.offerId
+      ? current.waypointOffer : null;
+    if (intent.kind === "respond_waypoint_offer" &&
+        (waypointOffer === null || !waypointOfferAnswerAllowed(current, intent.offerId, intent.response))) return;
+    // Pinned with the pending command at the button press and kept through every Retry (REV473c): the latest
+    // Virtual Guide reply now, and the reply carrying the presentation being answered.
+    const carryingReplyId = waypointDraft?.suggestionMessageId ?? waypointOffer?.suggestionMessageId ?? null;
+    const pins = carryingReplyId === null ? null
+      : Object.freeze({ latestGuideReplyId: latestVirtualGuideReplyId(current), carryingReplyId });
+    // A Reached offer sends no message in the Explorer's name, so it carries no wording for one.
+    const followUpWording = waypointDraft !== null ? waypointDraft.title
+      : waypointOffer !== null && waypointOffer.kind !== "reached" ? waypointOffer.title : null;
     try {
       // Keep the displayed wording pinned to this reply's revision, even when
       // rejection removes the point or the exact response needs a later retry.
-      const pending = prepareCommand(intent, current.revision, waypointDraft?.title ?? null);
+      const answeredOffer = waypointOffer !== null && intent.kind === "respond_waypoint_offer" && intent.response === "right"
+        ? Object.freeze({ kind: waypointOffer.kind, title: waypointOffer.targetBefore.title }) : null;
+      const pending = prepareCommand(intent, current.revision, followUpWording, pins, answeredOffer);
       if (pending === null) {
         setDraftError("This change is too long to send. Please shorten the text.");
         return;
@@ -400,6 +461,7 @@ export function ExplorerConversation() {
         sendingMessage,
         sendingFromComposer,
         sendSequence,
+        savingOfferId: busy ? savingOfferId : null,
         statusText: awaitingReply ? "" : busy ? (state === null ? "Loading your saved conversation..." : "Checking your change...") : notice,
         assistance,
         errorMessage: error !== null && !uncertain ? errorCopy(error) : null,

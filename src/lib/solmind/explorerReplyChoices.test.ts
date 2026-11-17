@@ -157,3 +157,31 @@ describe("Something else calm wording", () => {
     }
   });
 });
+
+describe("offers build step 2: a waiting offer's box is the one group of buttons", () => {
+  const LATER_GUIDE_MESSAGE = "30000000-0000-4000-8000-000000000002";
+  const offer = (overrides: Record<string, unknown> = {}) => ({ id: "40000000-0000-4000-8000-000000000001", kind: "reached", status: "proposed",
+    waypointId: "50000000-0000-4000-8000-000000000001",
+    targetBefore: { title: "A synthetic title", destination: "A synthetic destination", whyItMatters: "A synthetic meaning",
+      arrivalSignal: "A synthetic signal", stage: "formed" },
+    suggestionMessageId: GUIDE_MESSAGE, resultWaypointId: null, targetCurrent: true, typedAnswerEligible: true, typedAnswerRefusal: null,
+    evidence: "Synthetic words", ...overrides }) as NonNullable<ExplorerConversationState["waypointOffer"]>;
+  it("holds the reply choices back while a proposed offer waits on the latest reply", () => {
+    expect(latestReplyChoices(state())).not.toBeNull();
+    expect(latestReplyChoices(state({ waypointOffer: offer() }))).toBeNull();
+    expect(latestReplyChoices(state({ waypointOffer: offer({ targetCurrent: false, typedAnswerEligible: false, typedAnswerRefusal: "target_changed" }) }))).toBeNull();
+  });
+  it.each(["confirmed", "declined", "superseded"])("offers the choices once the offer is %s", status => {
+    expect(latestReplyChoices(state({ waypointOffer: offer({ status, typedAnswerEligible: false }) })))
+      .toEqual({ messageId: GUIDE_MESSAGE, labels: CHOICES.map(choice => choice.label) });
+  });
+  it("offers the latest reply's choices when the offer waits on an earlier reply, and when there is no offer", () => {
+    const base = state();
+    const later = state({ waypointOffer: offer(), messages: [...base.messages,
+      { id: "20000000-0000-4000-8000-000000000002", role: "explorer", body: "A synthetic second message", createdAt: "2026-11-05T08:01:00.000Z" },
+      { id: LATER_GUIDE_MESSAGE, role: "virtualGuide", body: "A later synthetic reply", createdAt: "2026-11-05T08:01:01.000Z", choices: CHOICES }] });
+    expect(latestReplyChoices(later)?.messageId).toBe(LATER_GUIDE_MESSAGE);
+    expect(latestReplyChoices(state({ waypointOffer: null }))?.messageId).toBe(GUIDE_MESSAGE);
+    expect(latestReplyChoices(state({ waypointOffer: null, waypointOfferDrop: { kind: "reached", reason: "evidence_not_found" } }))?.messageId).toBe(GUIDE_MESSAGE);
+  });
+});

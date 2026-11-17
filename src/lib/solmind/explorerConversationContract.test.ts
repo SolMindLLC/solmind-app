@@ -8,6 +8,13 @@ import {
   parseExplorerConversationState,
   isExplorerConversationId,
   isExplorerConversationInstant,
+  parseExplorerConversationWaypoint,
+  parseExplorerConversationWaypointDraft,
+  parseExplorerConversationWaypointOffer,
+  parseExplorerConversationWaypointOfferDrop,
+  parseExplorerWaypointOfferOperationResult,
+  waypointLineageValid,
+  EXPLORER_WAYPOINT_OFFER_QUESTION_KEYS,
 } from "./explorerConversationContract";
 
 const uuid = (number: number) => `00000000-0000-4000-8000-${number.toString(16).padStart(12, "0")}`;
@@ -963,4 +970,267 @@ describe("automatic Compass committed browser state", () => {
       if (defect === "mode") input.compassMode = "legacy";
       expect(parseExplorerConversationState(input)).toBeNull();
     });
+});
+
+describe("offers build step 2: saved offer state, command and stored result", () => {
+  const REPLY = uuid(3);
+  const OFFER = uuid(0x51);
+  const RESULT = uuid(0x52);
+  const before = { title: "An unhurried morning", destination: "An unhurried morning", whyItMatters: "Connecting with my family",
+    arrivalSignal: "A calm breakfast together", stage: "formed" };
+  const shared = { id: OFFER, status: "proposed", waypointId, targetBefore: before, suggestionMessageId: REPLY,
+    resultWaypointId: null, targetCurrent: true, typedAnswerEligible: true, typedAnswerRefusal: null };
+  const change = (): Record<string, unknown> => ({ ...shared, kind: "change", title: "A slower morning",
+    destination: "A slow breakfast", whyItMatters: "Connecting with my family", arrivalSignal: "A calm breakfast together" });
+  const reached = (): Record<string, unknown> => ({ ...shared, kind: "reached", evidence: "We had an unhurried\nbreakfast together." });
+  const revisit = (): Record<string, unknown> => ({ ...change(), kind: "revisit", targetBefore: { ...before, stage: "reached" } });
+  const withOffers = (waypointOffer: unknown, extra: Record<string, unknown> = {}) => ({ ...populatedState(),
+    waypointOffer, waypointOfferDrop: null, reachedOfferedWaypointIds: [], ...extra });
+
+  it("parses a waiting offer of each kind exactly, frozen, with and without a typed-answer refusal", () => {
+    for (const offer of [change(), reached(), revisit(), { ...revisit(), targetBefore: { ...before, stage: "released" } }]) {
+      const state = withOffers(offer);
+      const parsed = parseExplorerConversationState(state);
+      expect(parsed).toEqual(state);
+      expect(Object.isFrozen(parsed?.waypointOffer)).toBe(true);
+      expect(Object.isFrozen(parsed?.waypointOffer?.targetBefore)).toBe(true);
+      expect(Object.isFrozen(parsed?.reachedOfferedWaypointIds)).toBe(true);
+      for (const typedAnswerRefusal of ["history_limit", "active_limit", "target_changed"]) {
+        expect(parseExplorerConversationState(withOffers({ ...offer, typedAnswerRefusal, typedAnswerEligible: false }))?.waypointOffer
+          ?.typedAnswerRefusal).toBe(typedAnswerRefusal);
+      }
+      expect(parseExplorerConversationState(withOffers({ ...offer, targetCurrent: false, typedAnswerEligible: false }))?.waypointOffer
+        ?.targetCurrent).toBe(false);
+    }
+  });
+  it("parses each offer status with the result Waypoint named exactly when confirmed", () => {
+    const answered = { typedAnswerEligible: false, targetCurrent: false };
+    for (const offer of [
+      { ...change(), ...answered, status: "confirmed", resultWaypointId: RESULT },
+      { ...revisit(), ...answered, status: "confirmed", resultWaypointId: RESULT },
+      { ...reached(), ...answered, status: "confirmed", resultWaypointId: waypointId },
+      { ...change(), ...answered, status: "declined" }, { ...reached(), ...answered, status: "declined" },
+      { ...change(), ...answered, status: "superseded" }, { ...reached(), ...answered, status: "superseded" },
+    ]) expect(parseExplorerConversationState(withOffers(offer))).toEqual(withOffers(offer));
+    for (const offer of [
+      { ...change(), status: "confirmed", typedAnswerEligible: false },
+      { ...change(), resultWaypointId: RESULT },
+      { ...change(), status: "declined", typedAnswerEligible: false, resultWaypointId: RESULT },
+      { ...change(), status: "confirmed", typedAnswerEligible: false, resultWaypointId: waypointId },
+      { ...reached(), status: "confirmed", typedAnswerEligible: false, resultWaypointId: RESULT },
+      { ...change(), status: "declined" },
+      { ...change(), status: "superseded", typedAnswerEligible: false, typedAnswerRefusal: "active_limit" },
+      { ...change(), status: "pending" }, { ...change(), status: null },
+    ]) expect(parseExplorerConversationState(withOffers(offer))).toBeNull();
+  });
+  it("takes the three offer keys together or not at all", () => {
+    const full = withOffers(null);
+    expect(parseExplorerConversationState(full)).toEqual(full);
+    for (const key of ["waypointOffer", "waypointOfferDrop", "reachedOfferedWaypointIds"]) {
+      expect(parseExplorerConversationState(without(full, key))).toBeNull();
+    }
+    const none = parseExplorerConversationState(populatedState());
+    expect(none).not.toBeNull();
+    for (const key of ["waypointOffer", "waypointOfferDrop", "reachedOfferedWaypointIds"]) expect(none).not.toHaveProperty(key);
+    const empty = { ...emptyState(), waypointOffer: null, waypointOfferDrop: null, reachedOfferedWaypointIds: [] };
+    expect(parseExplorerConversationState(empty)).toEqual(empty);
+    expect(parseExplorerConversationState({ ...empty, waypointOffer: change() })).toBeNull();
+    expect(parseExplorerConversationState({ ...empty, waypointOfferDrop: { kind: "change", reason: "invalid" } })).toBeNull();
+  });
+  it.each([
+    ["an extra field", (offer: Record<string, unknown>) => { offer.offerStatus = "proposed"; }],
+    ["evidence on a change", (offer: Record<string, unknown>) => { offer.evidence = "Synthetic words"; }],
+    ["an unknown kind", (offer: Record<string, unknown>) => { offer.kind = "release"; }],
+    ["a missing kind", (offer: Record<string, unknown>) => { delete offer.kind; }],
+    ["a malformed id", (offer: Record<string, unknown>) => { offer.id = "not-an-id"; }],
+    ["a malformed target", (offer: Record<string, unknown>) => { offer.waypointId = OFFER + "\n"; }],
+    ["an eligible answered offer", (offer: Record<string, unknown>) => { offer.status = "declined"; }],
+    ["a non-boolean currentness", (offer: Record<string, unknown>) => { offer.targetCurrent = "true"; }],
+    ["a non-boolean eligibility", (offer: Record<string, unknown>) => { offer.typedAnswerEligible = 1; }],
+    ["an unknown refusal", (offer: Record<string, unknown>) => { offer.typedAnswerRefusal = "offer_not_pending"; }],
+    ["a missing snapshot", (offer: Record<string, unknown>) => { offer.targetBefore = null; }],
+    ["a snapshot with an extra field", (offer: Record<string, unknown>) => { offer.targetBefore = { ...before, id: waypointId }; }],
+    ["an unknown snapshot stage", (offer: Record<string, unknown>) => { offer.targetBefore = { ...before, stage: "chosen" }; }],
+    ["a change of a Reached Waypoint", (offer: Record<string, unknown>) => { offer.targetBefore = { ...before, stage: "reached" }; }],
+    ["a blank snapshot part", (offer: Record<string, unknown>) => { offer.targetBefore = { ...before, title: "  " }; }],
+    ["an oversized snapshot part", (offer: Record<string, unknown>) => { offer.targetBefore = { ...before, destination: "x".repeat(1001) }; }],
+    ["a padded offered part", (offer: Record<string, unknown>) => { offer.title = " padded "; }],
+    ["a tab in an offered part", (offer: Record<string, unknown>) => { offer.destination = "bad\ttext"; }],
+    ["a hidden character in an offered part", (offer: Record<string, unknown>) => { offer.whyItMatters = "bad\u200btext"; }],
+    ["a lone surrogate in an offered part", (offer: Record<string, unknown>) => { offer.arrivalSignal = "\ud800"; }],
+    ["an oversized offered part", (offer: Record<string, unknown>) => { offer.arrivalSignal = "x".repeat(1001); }],
+    ["a null offered part", (offer: Record<string, unknown>) => { offer.title = null; }],
+    ["a missing offered part", (offer: Record<string, unknown>) => { delete offer.title; }],
+  ])("refuses a change offer with %s", (_name, damage) => {
+    const offer = change(); damage(offer);
+    expect(parseExplorerConversationWaypointOffer(offer)).toBeUndefined();
+    expect(parseExplorerConversationState(withOffers(offer))).toBeNull();
+  });
+  it("refuses a Reached offer with wording, blank or oversized evidence, and a revisit of a Waypoint in progress", () => {
+    for (const offer of [{ ...reached(), title: "Synthetic" }, { ...reached(), evidence: "  " }, { ...reached(), evidence: "x".repeat(1001) },
+      { ...reached(), evidence: "bad\u0000text" }, { ...reached(), targetBefore: { ...before, stage: "released" } },
+      { ...revisit(), targetBefore: before }, without(reached(), "evidence"), [], "offer", 7]) {
+      expect(parseExplorerConversationWaypointOffer(offer)).toBeUndefined();
+      expect(parseExplorerConversationState(withOffers(offer))).toBeNull();
+    }
+    expect(parseExplorerConversationWaypointOffer({ ...reached(), evidence: "x".repeat(1000) })).not.toBeUndefined();
+    expect(parseExplorerConversationWaypointOffer(null)).toBeNull();
+  });
+  it("never runs an accessor while refusing it", () => {
+    let read = false;
+    const hostile = reached();
+    Object.defineProperty(hostile, "evidence", { enumerable: true, get() { read = true; return "Synthetic words"; } });
+    expect(parseExplorerConversationWaypointOffer(hostile)).toBeUndefined();
+    const hostileKind = reached();
+    Object.defineProperty(hostileKind, "kind", { enumerable: true, get() { read = true; return "reached"; } });
+    expect(parseExplorerConversationWaypointOffer(hostileKind)).toBeUndefined();
+    expect(read).toBe(false);
+  });
+  it("keeps an offer distinct from every other record and bound to a saved Virtual Guide reply", () => {
+    const draft = { id: uuid(9), title: null, destination: null, whyItMatters: null, arrivalSignal: null, suggestionMessageId: REPLY };
+    for (const id of [pointId, waypointId, sourceId, REPLY]) expect(parseExplorerConversationState(withOffers({ ...change(), id }))).toBeNull();
+    expect(parseExplorerConversationState(withOffers({ ...change(), id: draft.id }, { waypointDraft: draft }))).toBeNull();
+    expect(parseExplorerConversationState(withOffers(change(), { waypointDraft: draft }))).not.toBeNull();
+    for (const suggestionMessageId of [sourceId, uuid(99)]) {
+      expect(parseExplorerConversationState(withOffers({ ...change(), suggestionMessageId }))).toBeNull();
+    }
+  });
+  it("parses the dropped-offer fact for every kind and reason and refuses anything else", () => {
+    for (const kind of ["reached", "change", "revisit", null]) {
+      for (const reason of ["invalid", "target_not_available", "already_offered", "evidence_not_found", "no_change", "not_allowed_now"]) {
+        const state = withOffers(null, { waypointOfferDrop: { kind, reason } });
+        const parsed = parseExplorerConversationState(state);
+        expect(parsed).toEqual(state);
+        expect(Object.isFrozen(parsed?.waypointOfferDrop)).toBe(true);
+      }
+    }
+    for (const drop of [undefined, {}, [], { kind: "change" }, { reason: "invalid" }, { kind: "release", reason: "invalid" },
+      { kind: "change", reason: "offer_not_pending" }, { kind: "change", reason: "invalid", offerId: OFFER }, { kind: undefined, reason: "invalid" }]) {
+      expect(parseExplorerConversationWaypointOfferDrop(drop)).toBeUndefined();
+      expect(parseExplorerConversationState(withOffers(null, { waypointOfferDrop: drop }))).toBeNull();
+    }
+    expect(parseExplorerConversationWaypointOfferDrop(null)).toBeNull();
+  });
+  it("accepts only distinct current Waypoints of this state as Reached-offered", () => {
+    expect(parseExplorerConversationState(withOffers(null, { reachedOfferedWaypointIds: [waypointId] }))?.reachedOfferedWaypointIds)
+      .toEqual([waypointId]);
+    for (const reachedOfferedWaypointIds of [[uuid(98)], [waypointId, waypointId], [pointId], ["not-an-id"], [null], null, {}, "none"]) {
+      expect(parseExplorerConversationState(withOffers(null, { reachedOfferedWaypointIds }))).toBeNull();
+    }
+  });
+  it("accepts the server's typed-answer eligibility inside the forming Waypoint and keeps it", () => {
+    const draft = { id: uuid(9), title: "Calm mornings", destination: null, whyItMatters: null, arrivalSignal: null, suggestionMessageId: REPLY };
+    for (const typedAnswerEligible of [true, false]) {
+      const state = { ...populatedState(), waypointDraft: { ...draft, typedAnswerEligible } };
+      const parsed = parseExplorerConversationState(state);
+      expect(parsed).toEqual(state);
+      expect(parsed?.waypointDraft?.typedAnswerEligible).toBe(typedAnswerEligible);
+      expect(parseExplorerConversationWaypointDraft({ ...draft, typedAnswerEligible })).toEqual({ ...draft, typedAnswerEligible });
+    }
+    expect(parseExplorerConversationWaypointDraft(draft)).toEqual(draft);
+    expect(parseExplorerConversationWaypointDraft(draft)).not.toHaveProperty("typedAnswerEligible");
+    for (const typedAnswerEligible of [null, "true", 1, undefined]) {
+      expect(parseExplorerConversationWaypointDraft({ ...draft, typedAnswerEligible })).toBeUndefined();
+    }
+    expect(parseExplorerConversationWaypointDraft({ ...draft, typedAnswerEligible: true, extra: true })).toBeUndefined();
+  });
+  it.each(["right", "close", "not_it"] as const)("parses the closed respond_waypoint_offer command for %s", response => {
+    const command = { ...base, kind: "respond_waypoint_offer", offerId: OFFER, response };
+    expect(parseExplorerConversationCommand(command)).toEqual(command);
+    expect(Object.isFrozen(parseExplorerConversationCommand(command))).toBe(true);
+  });
+  it("refuses any other shape of respond_waypoint_offer", () => {
+    const command = { ...base, kind: "respond_waypoint_offer", offerId: OFFER, response: "right" };
+    for (const response of [null, "confirm", "RIGHT", "right ", 1, undefined]) {
+      expect(parseExplorerConversationCommand({ ...command, response })).toBeNull();
+    }
+    for (const extra of [{ title: "Browser wording" }, { draftId: uuid(9) }, { waypointId }, { evidence: "Browser words" }, { kindOfOffer: "change" }]) {
+      expect(parseExplorerConversationCommand({ ...command, ...extra })).toBeNull();
+    }
+    expect(parseExplorerConversationCommand(without(command, "offerId"))).toBeNull();
+    expect(parseExplorerConversationCommand({ ...command, offerId: OFFER + "\n" })).toBeNull();
+    expect(parseExplorerConversationCommand({ ...command, offerId: "not-an-id" })).toBeNull();
+    expect(parseExplorerConversationCommand({ ...base, kind: "respond_waypoint_offer", draftId: OFFER, response: "right" })).toBeNull();
+    expect(parseExplorerConversationCommand({ ...command, expectedRevision: -1 })).toBeNull();
+  });
+  it("parses a stored answer result only when the outcome fits the answer and the kind", () => {
+    const result = { offerId: OFFER, kind: "change", waypointId, suggestionMessageId: REPLY, response: "right", typed: false,
+      outcome: "confirmed", resultWaypointId: RESULT };
+    const valid = [result, { ...result, typed: true }, { ...result, kind: "revisit" },
+      { ...result, kind: "reached", resultWaypointId: waypointId },
+      { ...result, response: "not_it", outcome: "declined", resultWaypointId: null },
+      { ...result, kind: "reached", response: "not_it", outcome: "declined", resultWaypointId: null },
+      { ...result, response: "close", outcome: "kept_open", resultWaypointId: null },
+      { ...result, kind: "revisit", response: "close", outcome: "kept_open", resultWaypointId: null }];
+    for (const value of valid) {
+      expect(parseExplorerWaypointOfferOperationResult(value)).toEqual(value);
+      expect(Object.isFrozen(parseExplorerWaypointOfferOperationResult(value))).toBe(true);
+    }
+    for (const value of [null, undefined, [], "confirmed", without(result, "typed"), { ...result, extra: true },
+      { ...result, outcome: "declined" }, { ...result, outcome: "kept_open" }, { ...result, resultWaypointId: null },
+      { ...result, response: "not_it", outcome: "confirmed" }, { ...result, response: "not_it", outcome: "declined" },
+      { ...result, response: "close", outcome: "kept_open" }, { ...result, response: "close", outcome: "confirmed" },
+      { ...result, kind: "reached", response: "close", outcome: "kept_open", resultWaypointId: null },
+      { ...result, kind: "reached" }, { ...result, resultWaypointId: waypointId }, { ...result, kind: "release" },
+      { ...result, typed: "false" }, { ...result, offerId: "not-an-id" }, { ...result, waypointId: null },
+      { ...result, suggestionMessageId: REPLY + "\n" }, { ...result, response: "yes" }, { ...result, resultWaypointId: "not-an-id" }]) {
+      expect(parseExplorerWaypointOfferOperationResult(value)).toBeNull();
+    }
+  });
+});
+describe("offers build step 2: lineage with the offer question keys", () => {
+  const at = "2026-11-16T09:05:00Z";
+  const parent = { id: uuid(0x61), isCurrent: false, createdAt: "2026-11-16T09:00:00Z", sourceMessageId: uuid(3), title: "A calm morning",
+    destination: "An unhurried breakfast", meaning: "Time with my family", arrivalSignal: "Two calm breakfasts", status: "chosen" };
+  const row = (component: "destination" | "meaning" | "arrivalSignal", answer: string, questionKey: string = EXPLORER_WAYPOINT_OFFER_QUESTION_KEYS[component]) =>
+    ({ component, questionKey, answer, recordedAt: at });
+  const successor = (changes: Record<string, unknown>, clarifications: unknown[], creationReason = "revision") => ({ ...parent,
+    id: uuid(0x62), isCurrent: true, createdAt: at, ...changes,
+    lifecycle: { predecessorWaypointId: parent.id, creationReason, clarifications } });
+  it("names the three offer keys beside the typed-answer keys", () => {
+    expect(EXPLORER_WAYPOINT_OFFER_QUESTION_KEYS).toEqual({ destination: "waypoint.destination.offer.v1",
+      meaning: "waypoint.meaning.offer.v1", arrivalSignal: "waypoint.arrivalSignal.offer.v1" });
+    expect(Object.isFrozen(EXPLORER_WAYPOINT_OFFER_QUESTION_KEYS)).toBe(true);
+  });
+  it("accepts a version confirmed from an offer, keeps its keys and passes the lineage check with a new title", () => {
+    const changed = successor({ title: "A slower morning", destination: "A slow breakfast", arrivalSignal: "Three calm breakfasts" },
+      [row("destination", "A slow breakfast"), row("arrivalSignal", "Three calm breakfasts")]);
+    const parsed = parseExplorerConversationWaypoint(changed);
+    expect(parsed?.lifecycle?.clarifications.map(answer => answer.questionKey))
+      .toEqual(["waypoint.destination.offer.v1", "waypoint.arrivalSignal.offer.v1"]);
+    expect(waypointLineageValid([parseExplorerConversationWaypoint(parent)!, parsed!])).toBe(true);
+    expect(waypointLineageValid([parsed!])).toBe(true);
+  });
+  it("still requires a clarification row for every changed part", () => {
+    const missing = parseExplorerConversationWaypoint(successor({ destination: "A slow breakfast", meaning: "Time for myself" },
+      [row("destination", "A slow breakfast")]));
+    expect(missing).not.toBeNull();
+    expect(waypointLineageValid([parseExplorerConversationWaypoint(parent)!, missing!])).toBe(false);
+    expect(parseExplorerConversationWaypoint(successor({ destination: "A slow breakfast" }, []))).toBeNull();
+    const unchanged = parseExplorerConversationWaypoint(successor({}, [row("destination", "An unhurried breakfast")]));
+    expect(waypointLineageValid([parseExplorerConversationWaypoint(parent)!, unchanged!])).toBe(false);
+  });
+  it("accepts a revisit confirmed from an offer with unchanged wording and no rows, or with offer rows", () => {
+    const closed = { ...parent, status: "reached", reachedEvidence: "We ate together twice.", reachedAt: "2026-11-16T09:02:00Z" };
+    const same = parseExplorerConversationWaypoint(successor({}, [], "revisit"));
+    const reworded = parseExplorerConversationWaypoint(successor({ meaning: "Time for myself" }, [row("meaning", "Time for myself")], "revisit"));
+    expect(waypointLineageValid([parseExplorerConversationWaypoint(closed)!, same!])).toBe(true);
+    expect(waypointLineageValid([parseExplorerConversationWaypoint(closed)!, reworded!])).toBe(true);
+    expect(waypointLineageValid([parseExplorerConversationWaypoint(parent)!, same!])).toBe(false);
+  });
+  it("refuses mixed key families, another part's key and unknown keys", () => {
+    for (const clarifications of [
+      [row("destination", "A slow breakfast"), row("arrivalSignal", "Three calm breakfasts", "waypoint.arrivalSignal.v1")],
+      [row("destination", "A slow breakfast", "waypoint.destination.v1"), row("arrivalSignal", "Three calm breakfasts")],
+      [row("destination", "A slow breakfast", "waypoint.meaning.offer.v1")],
+      [row("destination", "A slow breakfast", "waypoint.destination.offer.v2")],
+      [row("destination", "A slow breakfast", "waypoint.destination.offer")],
+    ]) {
+      expect(parseExplorerConversationWaypoint(successor({ destination: "A slow breakfast", arrivalSignal: "Three calm breakfasts" },
+        clarifications))).toBeNull();
+    }
+    const typed = parseExplorerConversationWaypoint(successor({ destination: "A slow breakfast" },
+      [row("destination", "A slow breakfast", "waypoint.destination.v1")]));
+    expect(typed?.lifecycle?.clarifications[0].questionKey).toBe("waypoint.destination.v1");
+  });
 });

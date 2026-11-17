@@ -40,6 +40,7 @@ import { ExplorerReplyChoices } from "./ExplorerReplyChoices";
 import { ExplorerConversationTour } from "./ExplorerConversationTour";
 import { ExplorerWaitingIndicator } from "./ExplorerWaitingIndicator";
 import { ExplorerWaypointDraft } from "./ExplorerWaypointDraft";
+import { ExplorerWaypointOffer } from "./ExplorerWaypointOffer";
 import { ConnectedWaypointCard, useConnectedWaypointActions } from "./ExplorerConnectedWaypointCard";
 import type { ExplorerConversationFormationIntent } from "./ExplorerConversationFormation";
 import {
@@ -116,6 +117,8 @@ export type ConnectedConversationView = Readonly<{
   sendingFromComposer: boolean;
   // Local display signal for every actual ordinary Send, including a follow-up.
   sendSequence: number;
+  // The saved offer whose button answer is in flight (its box shows "Saving..."); absent reads as none.
+  savingOfferId?: string | null;
   statusText: string;
   assistance: ExplorerPrivateAssistance | null;
   // The error sentence, shown only while the last change is not uncertain.
@@ -478,6 +481,14 @@ function SavedTranscript({ state, view, actions, choicesDismissed, onShowTour, o
                   held={view.held}
                   messageId={message.id}
                   onCommand={actions.onCommand}
+                  state={state}
+                />
+                <ExplorerWaypointOffer
+                  followUpHeld={view.sendUnavailable || view.atMessageCapacity}
+                  held={view.held}
+                  messageId={message.id}
+                  onCommand={actions.onCommand}
+                  savingOfferId={view.savingOfferId ?? null}
                   state={state}
                 />
                 {choicesDismissed ? null : (

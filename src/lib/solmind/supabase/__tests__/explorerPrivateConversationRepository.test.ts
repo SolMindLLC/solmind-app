@@ -138,9 +138,11 @@ describe("Closed private Explorer RPC repository (synthetic client)", () => {
   });
   it("S7a refuses absent or malformed draft state on read and ended review", async () => {
     const valid = { turnedDownLimitReached: false, waypointDraft: null,
+      waypointOffer: null, waypointOfferDrop: null, reachedOfferedWaypointIds: [],
       compassMode: "legacy", compassChanges: [],
       waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true } };
-    const draft = { id: UUID, title: "Name", destination: null, whyItMatters: "Meaning", arrivalSignal: null, suggestionMessageId: UUID };
+    const draft = { id: UUID, title: "Name", destination: null, whyItMatters: "Meaning", arrivalSignal: null, suggestionMessageId: UUID,
+      typedAnswerEligible: true };
     for (const waypointDraft of [null, draft]) {
       const conversation_state = { ...valid, waypointDraft };
       const row = { outcome: "ok", conversation_state, authority_context: null, policy_state: null };
@@ -160,6 +162,7 @@ describe("Closed private Explorer RPC repository (synthetic client)", () => {
       compassMode: "legacy", compassChanges: [],
       waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true },
       pendingTurn: false, waypointDraft: null, providerState: "unavailable", messages: [], compassItems: [],
+      waypointOffer: null, waypointOfferDrop: null, reachedOfferedWaypointIds: [],
       priorityId: null, attentionId: null, waypoints: [] };
     for (const turnedDownLimitReached of [false, true]) {
       const conversation_state = { ...state, turnedDownLimitReached };
@@ -180,9 +183,9 @@ describe("Closed private Explorer RPC repository (synthetic client)", () => {
       expect(ended.rpc).toHaveBeenCalledOnce();
     }
   });
-  it("exposes eighteen closed ports including private Waypoint pages and post-End closure, without generic access", () => {
+  it("exposes nineteen closed ports including private Waypoint pages, post-End closure and the offer answer, without generic access", () => {
     const f = fixture(null);
-    expect(Object.keys(f.repository).sort()).toEqual(["arrange", "category", "closeEndedWaypoint", "end", "ensure", "mutate", "observe", "pause", "prepare", "read", "readWaypointHeads", "readWaypointHistory", "release", "respondCompassSuggestion", "respondWaypointDraft", "review", "settle", "waypointRevision"]);
+    expect(Object.keys(f.repository).sort()).toEqual(["arrange", "category", "closeEndedWaypoint", "end", "ensure", "mutate", "observe", "pause", "prepare", "read", "readWaypointHeads", "readWaypointHistory", "release", "respondCompassSuggestion", "respondWaypointDraft", "respondWaypointOffer", "review", "settle", "waypointRevision"]);
     expect(Object.isFrozen(f.repository)).toBe(true);
   });
   it("read derives exact actor fields and paired operation selectors", async () => {
@@ -786,5 +789,227 @@ describe("S5 forming suggestion repository boundary", () => {
       expect(f.rpc).not.toHaveBeenCalled();
     }
     expect(getter).not.toHaveBeenCalled();
+  });
+});
+
+describe("offers build step 2: the closed offer answer port and settlement's three offer arguments", () => {
+  const OFFER = "00000000-0000-4000-8000-000000000071"; const WAYPOINT = "00000000-0000-4000-8000-000000000072";
+  const RESULT = "00000000-0000-4000-8000-000000000073";
+  const input = (p_response: "right" | "close" | "not_it" = "right") => ({ ...ACTOR, p_conversation_id: UUID, p_operation_id: UUID,
+    p_expected_revision: 0, p_command_fingerprint: SHA, p_offer_id: OFFER, p_response });
+  const stored = (response = "right", kind = "change") => ({ offerId: OFFER, kind, waypointId: WAYPOINT, suggestionMessageId: UUID,
+    response, typed: false, outcome: response === "right" ? "confirmed" : response === "not_it" ? "declined" : "kept_open",
+    resultWaypointId: response === "right" ? (kind === "reached" ? WAYPOINT : RESULT) : null });
+  const wording = { title: "A slower morning", destination: "A slow breakfast", whyItMatters: "Time with my family", arrivalSignal: "Three calm breakfasts" };
+  const change = { kind: "change" as const, waypointId: WAYPOINT, ...wording };
+  const reached = { kind: "reached" as const, waypointId: WAYPOINT, evidence: "We ate together\ntwice this week." };
+
+  it.each([["ok", "right"], ["exact_replay", "right"], ["ok", "close"], ["exact_replay", "not_it"]] as const)(
+    "uses the exact eight-argument answer RPC and returns the stored result for %s %s", async (outcome, response) => {
+      const row = { outcome, conversation_state: null, operation_result: stored(response) };
+      const f = fixture(row);
+      const result = await f.repository.respondWaypointOffer!(input(response));
+      expect(result).toEqual(row);
+      expect(Object.isFrozen(result.operation_result)).toBe(true);
+      expect(result.operation_result).not.toBe(row.operation_result);
+      expect(f.rpc).toHaveBeenCalledExactlyOnceWith("solmind_respond_explorer_waypoint_offer_v1", input(response));
+      expect(Object.keys(f.rpc.mock.calls[0][1] as object)).toHaveLength(8);
+    });
+  it.each(["stale_revision", "operation_conflict", "unavailable"])("returns %s with no result and refuses one that carries a result", async outcome => {
+    const row = { outcome, conversation_state: null, operation_result: null };
+    expect(await fixture(row).repository.respondWaypointOffer!(input())).toEqual(row);
+    await expect(fixture({ ...row, operation_result: stored() }).repository.respondWaypointOffer!(input())).rejects.toThrow();
+  });
+  it("refuses a missing, malformed or mismatched stored result and never retries", async () => {
+    for (const operation_result of [null, undefined, {}, "confirmed", { ...stored(), extra: true }, { ...stored(), outcome: "declined" },
+      { ...stored(), resultWaypointId: null }, { ...stored(), offerId: UUID }, stored("not_it"), stored("close")]) {
+      const f = fixture({ outcome: "ok", conversation_state: null, operation_result });
+      await expect(f.repository.respondWaypointOffer!(input())).rejects.toThrowError("explorer_private_repository_unavailable");
+      expect(f.rpc).toHaveBeenCalledOnce();
+    }
+    for (const row of [{ outcome: "ok", conversation_state: null }, { outcome: "ok", conversation_state: null, operation_result: stored(), policy_state: null },
+      { outcome: "paused", conversation_state: null, operation_result: null }, { outcome: "already_ended", conversation_state: null, operation_result: null }]) {
+      const f = fixture(row);
+      await expect(f.repository.respondWaypointOffer!(input())).rejects.toThrow();
+      expect(f.rpc).toHaveBeenCalledOnce();
+    }
+  });
+  it("refuses widened, missing or invalid answer parameters and accessors without calling RPC", async () => {
+    let read = false;
+    const accessor = { ...input() };
+    Object.defineProperty(accessor, "p_offer_id", { enumerable: true, get() { read = true; return OFFER; } });
+    for (const changed of [{ ...input(), p_title: "Client wording" }, { ...input(), p_response: "confirm" }, { ...input(), p_offer_id: undefined },
+      { ...input(), p_offer_id: "not-an-id" }, { ...input(), p_offer_id: OFFER + "\n" }, { ...input(), p_offer_id: null },
+      { ...input(), p_draft_id: OFFER }, accessor]) {
+      const f = fixture(null);
+      await expect(f.repository.respondWaypointOffer!(changed as ReturnType<typeof input>)).rejects.toThrow();
+      expect(f.rpc).not.toHaveBeenCalled();
+    }
+    expect(read).toBe(false);
+  });
+  it("maps the closed denial and conflict errors of the answer RPC without detail", async () => {
+    for (const [message, outcome] of [["solmind_explorer_private_denied", "denied"], ["solmind_explorer_private_invalid_input", "denied"],
+      ["solmind_explorer_private_operation_conflict", "operation_conflict"]] as const) {
+      const f = fixture(null);
+      f.abortSignal.mockResolvedValue({ data: [null], error: { code: "P0001", message } });
+      expect(await f.repository.respondWaypointOffer!(input())).toEqual({ outcome });
+    }
+  });
+
+  it("sends a settlement without offer arguments exactly as before, with 28 arguments", async () => {
+    const f = fixture({ outcome: "ok", conversation_state: null, policy_state: null, saved_reply: false });
+    await f.repository.settle(settle());
+    const sent = f.rpc.mock.calls[0][1] as Record<string, unknown>;
+    expect(Object.keys(sent)).toHaveLength(28);
+    for (const key of ["p_waypoint_offer", "p_waypoint_offer_response", "p_waypoint_offer_drop"]) expect(sent).not.toHaveProperty(key);
+  });
+  it.each([change, { ...change, kind: "revisit" as const }, reached])("copies and freezes one offer as the 29th settlement argument: %j", async p_waypoint_offer => {
+    const f = fixture({ outcome: "ok", conversation_state: null, policy_state: null, saved_reply: true });
+    await f.repository.settle({ ...settle(), p_waypoint_offer });
+    const sent = f.rpc.mock.calls[0][1] as ExplorerPrivateSettleParameters;
+    expect(f.rpc.mock.calls[0][0]).toBe("solmind_settle_explorer_conversation_turn_v4");
+    expect(Object.keys(sent)).toHaveLength(29);
+    expect(sent.p_waypoint_offer).toEqual(p_waypoint_offer); expect(sent.p_waypoint_offer).not.toBe(p_waypoint_offer);
+    expect(Object.isFrozen(sent.p_waypoint_offer)).toBe(true);
+  });
+  it.each(["right", "close", "not_it"] as const)("copies and freezes a typed %s offer answer", async response => {
+    const p_waypoint_offer_response = { offerId: OFFER, response };
+    const f = fixture({ outcome: "ok", conversation_state: null, policy_state: null, saved_reply: true });
+    await f.repository.settle({ ...settle(), p_waypoint_offer_response });
+    const sent = f.rpc.mock.calls[0][1] as ExplorerPrivateSettleParameters;
+    expect(Object.keys(sent)).toHaveLength(29);
+    expect(sent.p_waypoint_offer_response).toEqual(p_waypoint_offer_response);
+    expect(sent.p_waypoint_offer_response).not.toBe(p_waypoint_offer_response);
+    expect(Object.isFrozen(sent.p_waypoint_offer_response)).toBe(true);
+  });
+  it.each(["reached", "change", "revisit", null] as const)("copies and freezes the dropped-offer fact for kind %s", async kind => {
+    const p_waypoint_offer_drop = { kind, reason: "invalid" as const };
+    const f = fixture({ outcome: "ok", conversation_state: null, policy_state: null, saved_reply: true });
+    await f.repository.settle({ ...settle(), p_waypoint_offer_drop });
+    const sent = f.rpc.mock.calls[0][1] as ExplorerPrivateSettleParameters;
+    expect(Object.keys(sent)).toHaveLength(29);
+    expect(sent.p_waypoint_offer_drop).toEqual(p_waypoint_offer_drop); expect(Object.isFrozen(sent.p_waypoint_offer_drop)).toBe(true);
+  });
+  it("passes explicit nulls through as nulls", async () => {
+    const f = fixture({ outcome: "ok", conversation_state: null, policy_state: null, saved_reply: false });
+    await f.repository.settle({ ...settle(), p_waypoint_offer: null, p_waypoint_offer_response: null, p_waypoint_offer_drop: null });
+    const sent = f.rpc.mock.calls[0][1] as Record<string, unknown>;
+    expect(Object.keys(sent)).toHaveLength(31);
+    expect([sent.p_waypoint_offer, sent.p_waypoint_offer_response, sent.p_waypoint_offer_drop]).toEqual([null, null, null]);
+  });
+  it("rejects malformed, accessor and proxy offer arguments without reading them or calling RPC", async () => {
+    let read = false;
+    const accessor = { kind: "reached", waypointId: WAYPOINT };
+    Object.defineProperty(accessor, "evidence", { enumerable: true, get() { read = true; return "Synthetic words"; } });
+    const proxy = new Proxy(change, { get() { read = true; return "x"; }, ownKeys() { read = true; return []; } });
+    const offers = [undefined, [], [change], {}, "change", { ...change, extra: true }, { ...change, kind: "release" }, { ...change, evidence: "Synthetic" },
+      { ...change, waypointId: "not-an-id" }, { ...change, title: " padded " }, { ...change, title: "" }, { ...change, destination: "x".repeat(1001) },
+      { ...change, whyItMatters: "bad\u200btext" }, { ...change, arrivalSignal: "\ud800" }, { ...change, title: null },
+      { ...reached, evidence: "  " }, { ...reached, evidence: " padded " }, { ...reached, evidence: "x".repeat(1001) }, { ...reached, title: "Synthetic" },
+      { kind: "reached", waypointId: WAYPOINT }, accessor, proxy];
+    for (const p_waypoint_offer of offers) {
+      const f = fixture(null);
+      await expect(f.repository.settle({ ...settle(), p_waypoint_offer } as unknown as ExplorerPrivateSettleParameters)).rejects.toThrow();
+      expect(f.rpc).not.toHaveBeenCalled();
+    }
+    for (const p_waypoint_offer_response of [undefined, [], {}, { offerId: OFFER }, { offerId: "bad", response: "right" },
+      { offerId: OFFER, response: "confirm" }, { offerId: OFFER, response: "right", extra: true }, { draftId: OFFER, response: "right" }]) {
+      const f = fixture(null);
+      await expect(f.repository.settle({ ...settle(), p_waypoint_offer_response } as unknown as ExplorerPrivateSettleParameters)).rejects.toThrow();
+      expect(f.rpc).not.toHaveBeenCalled();
+    }
+    for (const p_waypoint_offer_drop of [undefined, [], {}, { kind: "change" }, { kind: "release", reason: "invalid" },
+      { kind: "change", reason: "target_not_available" }, { kind: "change", reason: "already_offered" }, { kind: "change", reason: "invalid", extra: true },
+      { kind: undefined, reason: "invalid" }]) {
+      const f = fixture(null);
+      await expect(f.repository.settle({ ...settle(), p_waypoint_offer_drop } as unknown as ExplorerPrivateSettleParameters)).rejects.toThrow();
+      expect(f.rpc).not.toHaveBeenCalled();
+    }
+    expect(read).toBe(false);
+  });
+  it("refuses combinations the one decision table never sends", async () => {
+    const suggestion = { title: "Calm mornings", destination: "An unhurried breakfast", whyItMatters: "Time with my family", arrivalSignal: "Two calm breakfasts" };
+    const answer = { offerId: OFFER, response: "right" as const }; const draftAnswer = { draftId: UUID, response: "right" as const };
+    const drop = { kind: "change" as const, reason: "invalid" as const };
+    for (const extra of [
+      { p_waypoint_offer: change, p_waypoint_offer_drop: drop }, { p_waypoint_offer: change, p_waypoint_suggestion: suggestion },
+      { p_waypoint_offer_drop: drop, p_waypoint_suggestion: suggestion },
+      { p_waypoint_offer: change, p_waypoint_offer_response: answer }, { p_waypoint_offer: reached, p_waypoint_response: draftAnswer },
+      { p_waypoint_offer_drop: drop, p_waypoint_offer_response: answer }, { p_waypoint_offer_drop: drop, p_waypoint_response: draftAnswer },
+      { p_waypoint_offer_response: answer, p_waypoint_response: draftAnswer }, { p_waypoint_offer_response: answer, p_waypoint_suggestion: suggestion },
+    ]) {
+      const f = fixture(null);
+      await expect(f.repository.settle({ ...settle(), ...extra })).rejects.toThrowError("explorer_private_repository_unavailable");
+      expect(f.rpc).not.toHaveBeenCalled();
+    }
+  });
+  it("gives the three offer arguments to settlement only", async () => {
+    const f = fixture(null);
+    await expect(f.repository.mutate!({ ...mutate(), p_waypoint_offer: null } as unknown as ExplorerPrivateMutateParameters)).rejects.toThrow();
+    await expect(f.repository.respondWaypointOffer!({ ...input(), p_waypoint_offer_response: null } as unknown as ReturnType<typeof input>)).rejects.toThrow();
+    expect(f.rpc).not.toHaveBeenCalled();
+  });
+
+  it("accepts the saved offer state and the forming Waypoint's eligibility on read, and refuses a malformed offer or drop", async () => {
+    const valid = { turnedDownLimitReached: false, waypointDraft: null, compassMode: "legacy", compassChanges: [],
+      waypointOffer: null, waypointOfferDrop: null, reachedOfferedWaypointIds: [],
+      waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true } };
+    const offer = { id: OFFER, kind: "reached", status: "proposed", waypointId: WAYPOINT,
+      targetBefore: { title: "A calm morning", destination: "An unhurried breakfast", whyItMatters: "Time with my family",
+        arrivalSignal: "Two calm breakfasts", stage: "formed" }, suggestionMessageId: UUID, resultWaypointId: null,
+      targetCurrent: true, typedAnswerEligible: true, typedAnswerRefusal: null, evidence: "We ate together twice." };
+    const draft = { id: UUID, title: "Name", destination: null, whyItMatters: null, arrivalSignal: null, suggestionMessageId: UUID,
+      typedAnswerEligible: false };
+    for (const extra of [{ waypointOffer: null, waypointOfferDrop: null, reachedOfferedWaypointIds: [] },
+      { waypointOffer: offer, waypointOfferDrop: { kind: null, reason: "invalid" }, reachedOfferedWaypointIds: [WAYPOINT] },
+      { waypointDraft: draft, waypointOffer: null, waypointOfferDrop: { kind: "revisit", reason: "not_allowed_now" }, reachedOfferedWaypointIds: [] }]) {
+      const row = { outcome: "ok", conversation_state: { ...valid, ...extra }, authority_context: null, policy_state: null };
+      expect(await fixture(row).repository.read({ accountId: UUID, applicationSessionId: UUID })).toEqual(row);
+    }
+    for (const extra of [{ waypointOffer: {} }, { waypointOffer: { ...offer, status: "pending" } }, { waypointOffer: { ...offer, title: "Synthetic" } },
+      { waypointOffer: undefined }, { waypointOfferDrop: { kind: "change", reason: "offer_not_pending" } }, { waypointOfferDrop: [] },
+      { waypointDraft: { ...draft, typedAnswerEligible: "no" } }]) {
+      const row = { outcome: "ok", conversation_state: { ...valid, ...extra }, authority_context: null, policy_state: null };
+      await expect(fixture(row).repository.read({ accountId: UUID, applicationSessionId: UUID })).rejects.toThrow();
+    }
+  });
+});
+
+describe("offers build step 2 fix round: every database state row carries the offer keys", () => {
+  const complete = { turnedDownLimitReached: false, waypointDraft: null, compassMode: "legacy", compassChanges: [],
+    waypointCapacity: { activeCount: 0, activeLimit: 20, historyRoom: true, conversationRoom: true },
+    waypointOffer: null, waypointOfferDrop: null, reachedOfferedWaypointIds: [] as unknown };
+  const draft = { id: UUID, title: "Name", destination: null, whyItMatters: null, arrivalSignal: null, suggestionMessageId: UUID };
+  const actor = { accountId: UUID, applicationSessionId: UUID };
+  it("accepts a complete row on read, ended review and a command port", async () => {
+    for (const conversation_state of [complete, { ...complete, waypointDraft: { ...draft, typedAnswerEligible: false } }]) {
+      const row = { outcome: "ok", conversation_state, authority_context: null, policy_state: null };
+      expect(await fixture(row).repository.read(actor)).toEqual(row);
+      const ended = { outcome: "ok", conversation_state, ended_conversations: [] };
+      expect(await fixture(ended).repository.review!(review())).toEqual(ended);
+      const mutated = { outcome: "ok", conversation_state };
+      expect(await fixture(mutated).repository.mutate!(mutate())).toEqual(mutated);
+    }
+  });
+  it.each(["waypointOffer", "waypointOfferDrop", "reachedOfferedWaypointIds"])("refuses a state row without %s on every port that returns state", async key => {
+    const conversation_state = Object.fromEntries(Object.entries(complete).filter(([name]) => name !== key));
+    const read = fixture({ outcome: "ok", conversation_state, authority_context: null, policy_state: null });
+    await expect(read.repository.read(actor)).rejects.toThrowError("explorer_private_repository_unavailable");
+    expect(read.rpc).toHaveBeenCalledOnce();
+    await expect(fixture({ outcome: "ok", conversation_state, ended_conversations: [] }).repository.review!(review())).rejects.toThrow();
+    await expect(fixture({ outcome: "ok", conversation_state }).repository.mutate!(mutate())).rejects.toThrow();
+    await expect(fixture({ outcome: "ok", conversation_state, policy_state: null, saved_reply: true }).repository.settle(settle())).rejects.toThrow();
+  });
+  it("refuses a forming Waypoint without its typed-answer eligibility and a Reached-offered value that is not a list", async () => {
+    for (const extra of [{ waypointDraft: draft }, { waypointDraft: { ...draft, typedAnswerEligible: null } },
+      { reachedOfferedWaypointIds: null }, { reachedOfferedWaypointIds: {} }, { reachedOfferedWaypointIds: "none" }]) {
+      const f = fixture({ outcome: "ok", conversation_state: { ...complete, ...extra }, authority_context: null, policy_state: null });
+      await expect(f.repository.read(actor)).rejects.toThrowError("explorer_private_repository_unavailable");
+      expect(f.rpc).toHaveBeenCalledOnce();
+    }
+  });
+  it("still accepts a row with no state at all", async () => {
+    const row = { outcome: "ok", conversation_state: null, authority_context: null, policy_state: null };
+    expect(await fixture(row).repository.read(actor)).toEqual(row);
   });
 });

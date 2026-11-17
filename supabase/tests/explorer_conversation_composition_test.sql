@@ -146,7 +146,7 @@ select ok(not has_function_privilege('service_role','ai.solmind_conversation_aut
 -- Lane 7 (2026-11-06) adds waypointCapacity and waypointProjection, pinned by explorer_waypoint_active_limits_test.sql;
 -- these comparisons leave out only those two fields, so every field this file owns stays pinned exactly.
 select is((select conversation_state from public.solmind_read_explorer_conversation(pg_temp.cid(1),pg_temp.cid(50)))-'waypointCapacity'-'waypointProjection',
-  '{"version":"explorer-conversation.v1","conversationId":null,"revision":0,"pendingTurn":false,"turnedDownLimitReached":false,"providerState":"unavailable","sessionStatus":null,"ending":null,"messages":[],"compassItems":[],"priorityId":null,"attentionId":null,"route":[],"waypoints":[],"waypointDraft":null,"compassMode":"automatic","compassChanges":[]}'::jsonb,
+  '{"version":"explorer-conversation.v1","conversationId":null,"revision":0,"pendingTurn":false,"turnedDownLimitReached":false,"providerState":"unavailable","sessionStatus":null,"ending":null,"messages":[],"compassItems":[],"priorityId":null,"attentionId":null,"route":[],"waypoints":[],"waypointDraft":null,"waypointOffer":null,"waypointOfferDrop":null,"reachedOfferedWaypointIds":[],"compassMode":"automatic","compassChanges":[]}'::jsonb,
   'authorized empty Discovery has the exact closed browser shape');
 select ok((select authority_context->>'authorizationVersion' ~ '^AV2:[0-9A-F]{64}$'
   and authority_context->>'relationshipStatus'='active' and authority_context->>'adultAffirmation'='true'

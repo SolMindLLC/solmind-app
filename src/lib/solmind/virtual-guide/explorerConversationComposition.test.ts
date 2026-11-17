@@ -557,3 +557,30 @@ describe("conversation-confirmed Waypoint successor identity",()=>{
   for(const kind of ["revise_waypoint","revisit_waypoint"] as const){const f=fixture();expect(await commandExplorerConversation({command:{...command,kind},dependencies:f.dependencies})).toEqual(denied);expect(f.mutate).not.toHaveBeenCalled();expect(f.buildContext).not.toHaveBeenCalled();}
  });
 });
+
+describe("offers build step 2: the offer answer's command identity and the legacy entry", () => {
+  const command: Extract<ExplorerConversationCommand, { kind: "respond_waypoint_offer" }> = {
+    kind: "respond_waypoint_offer", operationId: ID.operation, expectedRevision: 4, offerId: ID.item, response: "right",
+  };
+  it("binds exact operation, revision, offer and answer without browser wording", () => {
+    const fingerprint = explorerConversationCommandFingerprint(command);
+    expect(fingerprint).toBe(createHash("sha256").update(JSON.stringify([
+      EXPLORER_CONVERSATION_VERSION, command.kind, command.operationId, 4, ID.item, "right",
+    ]), "utf8").digest("hex").toUpperCase());
+    for (const changed of [{ ...command, operationId: ID.otherAccount }, { ...command, expectedRevision: 5 },
+      { ...command, offerId: ID.otherAccount }, { ...command, response: "close" as const }, { ...command, response: "not_it" as const }]) {
+      expect(explorerConversationCommandFingerprint(changed)).not.toBe(fingerprint);
+    }
+    expect(explorerConversationCommandFingerprint({ ...command })).toBe(fingerprint);
+    // Never the same identity as a draft answer or a suggestion answer with the same selection.
+    expect(explorerConversationCommandFingerprint({ kind: "respond_waypoint_draft", operationId: ID.operation, expectedRevision: 4,
+      draftId: ID.item, response: "right" })).not.toBe(fingerprint);
+    expect(explorerConversationCommandFingerprint({ kind: "respond_compass_suggestion", operationId: ID.operation, expectedRevision: 4,
+      itemId: ID.item, response: "right" })).not.toBe(fingerprint);
+  });
+  it.each(["right", "close", "not_it"] as const)("denies a %s offer answer on the legacy controller before any repository or provider effect", async response => {
+    const f = fixture();
+    expect(await commandExplorerConversation({ command: { ...command, response }, dependencies: f.dependencies })).toEqual({ ok: false, state: null, error: "denied" });
+    for (const port of [f.authenticate, f.read, f.prepare, f.complete, f.mutate, f.generate, f.buildContext]) expect(port).not.toHaveBeenCalled();
+  });
+});
