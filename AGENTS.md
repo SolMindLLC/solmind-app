@@ -8,6 +8,112 @@ This version has breaking changes - APIs, conventions, and file structure may al
 
 # SolMind App Agent Instructions
 
+## 2026-11-17 - Memory, step 1: the private records (database only)
+
+Paul, 2026-11-17 13:31:58 CST: "You can build memory first, then compass,
+because of the dependency." (PRJ01-SPR002
+`Validation_Workspaces/Decision_Record_2026-11-17.md`, entry of 13:33:08 CST.)
+The Executor reads this as starting the memory build plan at step 1, before the
+automatic Compass's step 3. This step adds storage only. Nothing saves during a
+reply, no AI is called, no tokens are counted and nothing shows on a screen; no
+TypeScript calls these records yet.
+
+The sole forward migration is
+supabase/migrations/20261117000000_explorer_memory_records.sql. It changes no
+existing table, function, trigger or row. It adds eleven private tables under
+ai.explorer_memory_* (row security on, no policy, no API-role grant, TRUNCATE
+refused) and 40 internal functions ai.solmind_memory_*_v1 that no API role may
+execute:
+
+- memory points, every version of their wording, the supporting messages with
+  the exact place where pinned, "built from" dependencies between versions of
+  points, and dated history ("no longer applies" and dated notes);
+- lasting topic identities for one Explorer across conversations, every
+  wording a topic has had, broad-to-narrow links read in both directions with
+  circles refused, and the binding from a conversation's Compass topic to its
+  lasting topic;
+- the conversations that take part in memory: new conversations only, enrolled
+  while they have no message.
+
+Rules to preserve:
+
+- Every row belongs to one Explorer account and the foreign keys carry that
+  owner, so no row can reference another Explorer's records. Guide and Admin
+  accounts are refused by ai.solmind_memory_actor_check_v1.
+- Rows are never deleted or rewritten; a correction adds a version, and
+  removing a link or attachment only stamps it. A saved version is sealed: its
+  sources and its "built from" rows are written by the save step and cannot be
+  added to afterwards.
+- Every wording, link, dated event and version names a supporting message: the
+  owner's own answered message, or its reply, from an enrolled conversation.
+  A crisis-check-only message is never a source.
+- A pinned place is a zero-based offset and a length in the saved message
+  text, counted in Unicode code points, not in the UTF-16 units JavaScript
+  counts. The words are never copied.
+- Nothing is written from a restricted, adults-only-stopped, ended or
+  unenrolled conversation, and no message of an adults-only-stopped
+  conversation can be newly cited from any conversation
+  (ai.solmind_memory_message_citable_v1).
+- Whether a record may be used is read each time from its conversations
+  (ai.solmind_memory_conversation_usable_v1 and
+  ai.solmind_memory_message_usable_v1): a later restriction excludes every
+  record that conversation wrote or supports, without deleting anything. A
+  later hidden-or-deleted message mark belongs in
+  ai.solmind_memory_message_usable_v1.
+- A point whose current wording was built from a point that has since been
+  corrected or retired is out of date (ai.solmind_memory_point_stale_v1).
+  No read gives it out until it is corrected again: the point and topic-point
+  lists leave it out, and ai.solmind_memory_point_history_v1 returns null for
+  it. The one exception is a caller that asks that history read for it by
+  name (p_include_stale true), as the rebuild must; the answer then carries
+  'stale': true, and that caller must never pass its wording on as current.
+- A "built from" list names, for each point, the version and the
+  retired-or-not state the new wording was composed from. A save or correction
+  whose list no longer matches is refused ('changed_dependency'). A correction
+  must always give the list, even when it is empty.
+- The topic walk (ai.solmind_memory_related_topics_v1) goes level by level and
+  link by link. It stops the moment it has looked at the caller's
+  p_max_topics topics (from 1 to 500; 500 unless the caller asks for fewer)
+  or p_max_links links (from 1 to 5000; 2000 by default), and it does not
+  start another level once a level has filled a budget exactly. It returns
+  one object: 'topics', 'moreExist', 'topicsExamined' and 'linksExamined'.
+  'moreExist' is true whenever the walk was cut short, even when no topic was
+  found; a caller must not treat a cut-short answer as complete.
+- Each later ai.solmind_memory_* function must be revoked from PUBLIC and the
+  API roles in its own migration: a new function is open to PUBLIC by default,
+  and this migration's loop covers only its own functions.
+
+Awaiting Paul (built the cautious way; each is a one-function change):
+
+- An older point that a restricted conversation corrected or retired is not
+  given out at all, so memory never falls back to wording the Explorer
+  corrected or retired. A dated note from a restricted conversation is left
+  out by itself, and points built from the noted point are left out with it.
+- An adults-only stop blocks writing and new citing, but memory saved before
+  the stop is still given out, because the decided exclusion names restricted
+  conversations only. So a later conversation can still build a point from,
+  link to, attach to or bind a Compass topic to memory saved in the stopped
+  conversation. One change in ai.solmind_memory_conversation_usable_v1 would
+  close all of that at once.
+
+Paul's option B for crisis in memory (2026-11-17 13:54:20 CST, as relayed by
+the Executor): crisis content stays out of memory; a private dated record of
+each distinct safety event, with no words, comes later, after its uses are
+defined and approved. No such table is built here. When it is, it must never
+be joined into the memory read functions, which return points and topics only.
+
+For later steps. Step 2 must call the write functions from the ordinary
+reply's settlement after its own login and ownership checks, after the reply
+is saved and its Send is completed, inside an exception block so a memory
+refusal never loses the reply; it must grant them to no API role. The time
+zone and offset belong with the message or the Send and must be recorded
+before memory goes live, since memory rows cannot be changed afterwards. Step
+3 must refuse added memory for restricted, adults-only-stopped and
+crisis-check-only requests: the read functions take no conversation argument
+and cannot do that themselves. The Virtual Guide's memory instructions, the
+token-counting component and the agreement wording keep their own approvals.
+The pgTAP proof is supabase/tests/explorer_memory_records_test.sql.
+
 ## 2026-11-14 - The three sentences from the test of 2026-11-13 in the Virtual Guide's instructions (REV432)
 
 Paul approved the direction during his test (PRJ01-SPR002 decision record 2026-11-13, entry of 14:46:22 CST) and the
