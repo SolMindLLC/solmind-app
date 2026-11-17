@@ -151,6 +151,25 @@ export function IconArrowUp(props: IconProps) {
 }
 
 // The three-line Menu icon, copied from the S01R2 design.
+// A small down arrow for a button that opens an explanation; the caller turns it when open.
+export function IconChevronDown({ className }: IconProps) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={["h-3 w-3 shrink-0", className].filter(Boolean).join(" ")}
+      fill="none"
+      focusable="false"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      viewBox="0 0 24 24"
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
 export function IconMenu(props: IconProps) {
   return <Svg {...props}><path d="M4 7h16M4 12h16M4 17h16" /></Svg>;
 }

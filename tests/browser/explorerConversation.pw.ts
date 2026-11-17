@@ -341,7 +341,11 @@ test("C13 transient first-Send assistance preserves the unsaved draft and stays 
   await expect(page.getByLabel("Continue the conversation", { exact: true })).toHaveValue("Keep this unaccepted first-Send draft");
   await expect(page.getByText("There are no saved messages yet.", { exact: true })).toBeVisible();
   await expect(page.getByRole("list", { name: "Saved conversation", exact: true })).toHaveCount(0);
-  await expect(page.getByText("Your saved conversation is up to date.", { exact: true })).toHaveCount(0);
+  // Compact header (Paul, 2026-11-16): a change that came back with a notice shows no light and no status
+  // words, so nothing reassuring stands beside the notice.
+  await expect(page.locator("#conversation-saved-status")).toHaveText("");
+  await expect(page.locator("#conversation-saved-status [data-saved-light]")).toHaveCount(0);
+  await expect(page.getByText("Up to date at last check", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Reload saved conversation", exact: true }).click();
   await expect.poll(() => reads).toBe(2);
   await expect(page.getByText(assistance.body, { exact: true })).toHaveCount(0);
@@ -400,7 +404,11 @@ test("P01 a hard-stop pause notice shows when the screen opens and on a refused 
   await expect(page.getByRole("main").getByRole("alert")).toContainText("The message in the box has not been sent or saved.");
   await expect(field).toHaveValue("Keep this refused synthetic message");
   await expect(page.getByText("There are no saved messages yet.", { exact: true })).toBeVisible();
-  await expect(page.getByText("Your saved conversation is up to date.", { exact: true })).toHaveCount(0);
+  // Compact header (Paul, 2026-11-16): a change that came back with a notice shows no light and no status
+  // words, so nothing reassuring stands beside the notice.
+  await expect(page.locator("#conversation-saved-status")).toHaveText("");
+  await expect(page.locator("#conversation-saved-status [data-saved-light]")).toHaveCount(0);
+  await expect(page.getByText("Up to date at last check", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
   await expect(page.getByText("The SolMind Virtual Guide is unavailable.", { exact: false })).toHaveCount(0);
   expect(reads).toBe(1);

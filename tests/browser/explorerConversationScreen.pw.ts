@@ -167,8 +167,25 @@ test("wide: the designed layout shows the saved conversation without preview ext
   await expectExplains(page, body, notConnected(page, "Rename"), withoutReviewPrefix(NOT_YET_IMPLEMENTED.rename));
   await expectExplains(page, body, notConnected(page, "Pause"), withoutReviewPrefix(NOT_YET_IMPLEMENTED.pause));
   await expectExplains(page, body, notConnected(page, "Finish & Review"), withoutReviewPrefix(NOT_YET_IMPLEMENTED.finishReview));
-  await expectExplains(page, body, notConnected(page, "Share whole conversation"),
-    withoutReviewPrefix(guideNotes(UNNAMED_GUIDE).shareConversation));
+  // Compact header (Paul, 2026-11-16): "Share whole conversation" and "What the Virtual Guide can see" are titled
+  // lines inside the "Privacy and sharing" explanation, which also holds the privacy assurance sentence.
+  await expect(notConnected(page, "Share whole conversation")).toHaveCount(0);
+  const privacy = page.getByRole("button", { name: "Privacy and sharing", exact: true });
+  const privacyText = page.locator("#conversation-privacy-explanation");
+  await expect(privacy).toHaveAttribute("aria-expanded", "false");
+  await expect(privacyText).toBeHidden();
+  await privacy.click();
+  await expect(privacy).toHaveAttribute("aria-expanded", "true");
+  await expect(privacyText).toBeVisible();
+  await expect(privacyText).toContainText("Explore with the SolMind Virtual Guide. Your conversation, Compass and Waypoints stay private; nothing is shared from this screen.");
+  await expect(privacyText).toContainText("What the Virtual Guide can see");
+  await expect(privacyText).toContainText(withoutReviewPrefix(NOT_YET_IMPLEMENTED.virtualGuideCanSee));
+  await expect(privacyText).toContainText("Share whole conversation");
+  await expect(privacyText).toContainText(withoutReviewPrefix(guideNotes(UNNAMED_GUIDE).shareConversation));
+  await expect(privacyText.getByText("Not connected yet", { exact: true })).toHaveCount(2);
+  await privacy.click();
+  await expect(privacy).toHaveAttribute("aria-expanded", "false");
+  await expect(privacyText).toBeHidden();
   await expectBellShowsLine(page, true);
   await expectExplains(page, body, notConnected(page, "Notifications"), withoutReviewPrefix(NOT_YET_IMPLEMENTED.notifications));
   // As on September 23, the profile chip's name is its visible role and label, with "profile" for screen readers.

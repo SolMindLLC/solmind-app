@@ -406,11 +406,13 @@ describe("offers build: the earlier answer's status line after a Retry", () => {
     revisit: 'Your earlier answer to take up "Walk each morning" again was saved.',
     reached: 'Your earlier answer to mark "Walk each morning" Reached was saved.' } as const;
   const notices = () => captured.updates.filter((value): value is string => typeof value === "string" && value.startsWith("Your earlier answer"));
-  // The line must be the settled status: no later "up to date" notice replaces it.
+  // The line must be the settled status. Since the compact header no "up to date" sentence exists to replace it
+  // (the strip's light says that), so the line is the last notice written and the old sentence is never written.
   const settledOn = (line: string) => {
     const at = captured.updates.lastIndexOf(line);
     expect(at).toBeGreaterThan(-1);
-    expect(at).toBeGreaterThan(captured.updates.lastIndexOf("Your saved conversation is up to date."));
+    expect(captured.updates.filter(value => typeof value === "string" && value.includes("is up to date"))).toEqual([]);
+    expect(captured.updates.slice(at + 1).filter(value => typeof value === "string" && value.startsWith("Your "))).toEqual([]);
   };
   it.each(["change", "revisit", "reached"] as const)("%s offer, That's right lost then retried while a newer offer waits: the line shows", async kind => {
     const newer = offer(kind, { id: OTHER_OFFER, suggestionMessageId: LATER_REPLY });
@@ -478,7 +480,9 @@ describe("offers build, REV488: the earlier answer's line only after a Retry, an
     const line = kind === "change" ? 'Your earlier answer to change "Walk each morning" was saved.'
       : 'Your earlier answer to take up "Walk each morning" again was saved.';
     expect(notices()).toEqual([line]);
-    expect(captured.updates.lastIndexOf(line)).toBeGreaterThan(captured.updates.lastIndexOf("Your saved conversation is up to date."));
+    // Since the compact header no "up to date" sentence is written at all; the line is the last notice written.
+    expect(captured.updates.filter(value => typeof value === "string" && value.includes("is up to date"))).toEqual([]);
+    expect(captured.updates.slice(captured.updates.lastIndexOf(line) + 1).filter(value => typeof value === "string" && value.startsWith("Your "))).toEqual([]);
   });
   it("a first result whose follow-up's reply brings a newer offer shows no line (no Retry happened)", async () => {
     const f = await loaded(state({ waypointOffer: offer("change") }));

@@ -403,7 +403,9 @@ test("after the needle moves, Send stays usable: the screen keeps the Virtual Gu
   await point(group, CARD_LABELS.detour).click();
   await expect(point(group, CARD_LABELS.detour)).toHaveAttribute("aria-pressed", "true");
   await closeDrawer(page);
-  await expect(page.getByRole("status").first()).toHaveText("Your saved conversation is up to date.");
+  // Compact header (Paul, 2026-11-16): the strip's green words replace the old sentence. The confirmed result
+  // itself is proven just above by what the accepted saved state shows.
+  await expect(page.getByRole("status").first()).toHaveText("Up to date at last check");
   await expect(composer(page)).toBeEnabled();
   await expect(sendButton(page)).toBeEnabled();
   await expect(unavailableNotice(page)).toHaveCount(0);
@@ -444,7 +446,9 @@ test("after a Waypoint draft response, the follow-up Send and composer stay usab
   await page.getByRole("group", { name: "Reply to Waypoint suggestion: Take a quiet walk", exact: true })
     .getByRole("button", { name: "That's right", exact: true }).click();
   await expect(page.getByRole("list", { name: "Saved conversation", exact: true })).toContainText("Synthetic saved Waypoint acknowledgment.");
-  await expect(page.getByRole("status").first()).toHaveText("Your saved conversation is up to date.");
+  // Compact header (Paul, 2026-11-16): the strip's green words replace the old sentence. The confirmed result
+  // itself is proven just above by what the accepted saved state shows.
+  await expect(page.getByRole("status").first()).toHaveText("Up to date at last check");
   await expect(composer(page)).toBeEnabled();
   await expect(sendButton(page)).toBeEnabled();
   await expect(unavailableNotice(page)).toHaveCount(0);
@@ -483,7 +487,9 @@ test("after a Send refused as unavailable, a needle move keeps Send disabled wit
   await point(group, CARD_LABELS.detour).click();
   await expect(point(group, CARD_LABELS.detour)).toHaveAttribute("aria-pressed", "true");
   await closeDrawer(page);
-  await expect(page.getByRole("status").first()).toHaveText("Your saved conversation is up to date.");
+  // Compact header (Paul, 2026-11-16): the strip's green words replace the old sentence. The confirmed result
+  // itself is proven just above by what the accepted saved state shows.
+  await expect(page.getByRole("status").first()).toHaveText("Up to date at last check");
   // The refusal's alert is cleared by the confirmed move, so only the kept Virtual Guide state now
   // holds Send: it stays disabled, the composer keeps the typed message, and the notice stays.
   await expect(refused).toHaveCount(0);

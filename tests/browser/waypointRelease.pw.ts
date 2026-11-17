@@ -1,6 +1,7 @@
 // Mounted UI with mocked endpoints only: no actual sign-in, SQL, provider, Send or human acceptance.
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import type { ExplorerConversationCommand, ExplorerConversationState } from "../../src/lib/solmind/explorerConversationContract";
+import { RELOAD_NEEDED, UP_TO_DATE, reloadAndExpect } from "./compactHeaderHelpers";
 
 test.use({ trace: "off", screenshot: "off", video: "off" });
 const CONVERSATION = "a1010000-0000-4000-8000-000000000001";
@@ -177,16 +178,15 @@ test("pending or stale card release review cannot dispatch a release", async ({ 
   await expect(card.getByRole("button", { name: "Mark Reached", exact: true })).toBeDisabled();
   await closeDrawer(page);
   current = { ...currentState(), pendingTurn: false };
-  await page.getByRole("button", { name: "Reload saved conversation", exact: true }).click();
-  await expect(page.getByText("The saved conversation is up to date.", { exact: true })).toBeVisible();
+  // Compact header (Paul, 2026-11-16): the read is held to see the Reload being checked, then the green words.
+  await reloadAndExpect(page, UP_TO_DATE);
   card = isWide(page) ? card : await openCard(page);
   await openRow(card);
   await card.getByRole("button", { name: "Release", exact: true }).click();
   await card.getByLabel(RELEASE_CONFIRM, { exact: true }).check();
   await closeDrawer(page);
   current = { ...current, revision: 6 };
-  await page.getByRole("button", { name: "Reload saved conversation", exact: true }).click();
-  await expect(page.getByText("The saved conversation is up to date.", { exact: true })).toBeVisible();
+  await reloadAndExpect(page, UP_TO_DATE);
   card = isWide(page) ? card : await openCard(page);
   await expect(card.getByRole("group", { name: RELEASE_REVIEW, exact: true })).toHaveCount(0);
   expect(writes).toBe(0);
@@ -195,8 +195,8 @@ test("pending or stale card release review cannot dispatch a release", async ({ 
   await card.getByLabel(RELEASE_CONFIRM, { exact: true }).check();
   await closeDrawer(page);
   current = { ...current, pendingTurn: true };
-  await page.getByRole("button", { name: "Reload saved conversation", exact: true }).click();
-  await expect(page.getByText("The saved conversation is up to date.", { exact: true })).toBeVisible();
+  // This Reload returns a pending result: the light is yellow, never green beside the pending notice.
+  await reloadAndExpect(page, RELOAD_NEEDED);
   card = isWide(page) ? card : await openCard(page);
   const confirm = card.getByRole("button", { name: "Release this Waypoint", exact: true });
   if (await confirm.count()) await expect(confirm).toBeDisabled();

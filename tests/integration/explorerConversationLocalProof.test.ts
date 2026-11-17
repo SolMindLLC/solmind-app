@@ -294,8 +294,21 @@ localDescribe("REAL isolated Auth/cookies/SQL; SYNTHETIC Virtual Guide transport
         const parsed = browserContract.parseExplorerConversationResult(await answer.json());
         required(parsed, "explorer_local_proof_browser_command_malformed");
         saved = state(parsed);
-        await page.getByRole("button", { name: "Reload saved conversation", exact: true }).click();
-        await browserExpect(page.getByRole("status").first()).toHaveText("The saved conversation is up to date.");
+        // Compact header (Paul, 2026-11-16): the strip is already green before this Reload, so the read is held to
+        // see the Reload being checked (busy sentence, disabled button) before its confirmed result.
+        let release: () => void = () => {};
+        const gate = new Promise<void>(resolve => { release = resolve; });
+        let arrive: () => void = () => {};
+        const arrived = new Promise<void>(resolve => { arrive = resolve; });
+        await page.route("**/explorer/conversation/state", async route => { arrive(); await gate; await route.continue(); }, { times: 1 });
+        const reload = page.getByRole("button", { name: "Reload saved conversation", exact: true });
+        await reload.click();
+        await arrived;
+        await browserExpect(page.getByRole("status").first()).toHaveText("Checking your saved conversation...");
+        await browserExpect(reload).toBeDisabled();
+        release();
+        await browserExpect(page.getByRole("status").first()).toHaveText("Up to date at last check");
+        await browserExpect(reload).toBeEnabled();
       };
       const panel = page.locator("#conversation-preview-panel");
       const compass = panel.getByRole("region", { name: "Compass", exact: true });

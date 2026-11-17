@@ -76,7 +76,9 @@ test("conversation screen: the toggle hides every note; an X hides only its box 
   await expect(toggle).toBeVisible();
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
   await expect(toggle).toHaveAttribute("data-build-note", "toggle");
-  // The 13 controls not built yet each carry a blue label (the rail's copies are drawn on wide screens only).
+  // The parts not built yet each carry a blue label (the rail's copies are drawn on wide screens only). Since the
+  // compact header two of them are titled lines inside the closed "Privacy and sharing" explanation: still 12
+  // labels in the page, two of them not drawn until it is opened.
   await expect(labels(page)).toHaveCount(12);
   await expectVisibleLabelsBlue(page);
   const bell = page.getByRole("button", { name: /^Notifications\s*Not connected yet$/ });

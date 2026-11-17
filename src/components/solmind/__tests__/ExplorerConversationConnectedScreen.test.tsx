@@ -184,6 +184,8 @@ function view(overrides: Partial<ConnectedConversationView> = {}): ConnectedConv
     sendingMessage: null,
     sendingFromComposer: false,
     statusText: "",
+    errorCode: null,
+    lastCheckConfirmed: false,
     assistance: null,
     errorMessage: null,
     signInRequired: false,
@@ -719,12 +721,18 @@ describe("connected Explorer conversation screen", () => {
     expect(busy).not.toContain("Checking your change...");
     expect(busy).not.toContain("Reload saved conversation");
     expect(html.indexOf("Checking your change...")).toBeLessThan(html.indexOf('<div aria-busy="true">'));
+    // Compact header: the title and its band stand in the chat panel but outside the busy mark.
+    expect(busy).not.toContain("<h1");
+    expect(busy).not.toContain("data-chat-panel-band");
+    expect(html.indexOf("data-chat-panel-band")).toBeLessThan(html.indexOf('<div aria-busy="true">'));
     expect(/<h2[^>]*id="conversation-end-heading"[^>]*>End Session<\/h2>/.test(html)).toBe(true);
   });
 
   it("CC14 a loaded conversation with no messages is labelled new", () => {
     const html = render(view({ state: savedState({ conversationId: null, revision: 0, messages: [], sessionStatus: null }) }));
-    expect(html).toContain(`New conversation ${MIDDLE_DOT} with your Virtual Guide`);
+    // Compact header (Paul, 2026-11-16): the small amber line above the title is no longer shown; the status says it.
+    expect(html).not.toContain(`New conversation ${MIDDLE_DOT} with your Virtual Guide`);
+    expect(html).not.toContain("New conversation");
     expect(html).toContain("Not started yet. Private to you");
     expect(html).not.toContain("Open conversation");
   });
@@ -773,6 +781,14 @@ describe("connected Explorer conversation screen", () => {
       "Explore with the SolMind Virtual Guide. Your conversation, Compass and Waypoints stay private; nothing is shared from this screen.",
     );
     expect(html).toContain(CONNECTED_INTRO);
+    // Compact header (Paul, 2026-11-16): the assurance sentence is the first line inside the closed
+    // "Privacy and sharing" explanation, once, and no longer stands in the strip itself.
+    expect(html.split(CONNECTED_INTRO).length - 1).toBe(1);
+    const privacy = /<div aria-labelledby="conversation-privacy-button" class="[^"]*" hidden="" id="conversation-privacy-explanation" role="group">([\s\S]*?)<\/div><p class/.exec(html)?.[1] ?? "";
+    expect(privacy.startsWith(`<p class="text-sm leading-6 text-stone-200">${CONNECTED_INTRO}</p>`)).toBe(true);
+    // Exactly one h1, the title, in the chat panel's band.
+    expect(html.split("<h1").length - 1).toBe(1);
+    expect(/<div class="[^"]*" data-chat-panel-band=""><h1[^>]*tabindex="-1"[^>]*>Your conversation<\/h1><\/div>/.test(html)).toBe(true);
     const rail = /<nav aria-label="Explorer workspace"[^>]*>([\s\S]*?)<\/nav>/.exec(html)?.[1] ?? "";
     expect(/<a\b[^>]*href="\/explorer\/home"[^>]*>[\s\S]*?Overview[\s\S]*?<\/a>/.test(rail)).toBe(true);
     // Paul's 2026-11-02 option A: no separate "Explorer home" link in the top bar.
@@ -801,9 +817,10 @@ describe("connected Explorer conversation screen", () => {
       ([, attrs, body]) => body.includes(WORKSPACE_NOT_CONNECTED_LABEL) || (attribute(attrs, "aria-label") ?? "").endsWith("(not connected yet)"),
     );
     // Menu: Settings, With your Guide, Start a new conversation. Top bar: Notifications, profile.
-    // Guide banner. Header: Rename, Share whole conversation, What the Virtual Guide can see.
-    // Composer: Pause, Finish & Review, Slow down. After the conversation ends: Continue.
-    expect(buttons.length).toBe(13);
+    // Guide banner. Header: Rename. Composer: Pause, Finish & Review, Slow down. After the conversation ends: Continue.
+    // Since the compact header (Paul, 2026-11-16) "Share whole conversation" and "What the Virtual Guide can see" are
+    // titled lines inside the "Privacy and sharing" explanation, not buttons: 11 controls instead of 13.
+    expect(buttons.length).toBe(11);
     const controlled = new Set<string>();
     for (const [tag, attrs, body] of buttons) {
       // Never disabled: each control stays usable to show its sentence.
@@ -818,10 +835,15 @@ describe("connected Explorer conversation screen", () => {
       expect(sentences).toContain(unescapeHtml(explanation?.[2] ?? ""));
       controlled.add(target);
     }
-    expect(controlled.size).toBe(13);
-    // Every hidden sentence belongs to one of those controls.
+    expect(controlled.size).toBe(11);
+    // Every hidden sentence belongs to one of those controls, or is the Reload explanation behind the strip's "?".
     const hidden = [...screen.matchAll(/<p\b[^>]*\shidden=""[^>]*\sid="([^"]+)"/g)].map((match) => match[1]);
-    expect(hidden.sort()).toEqual([...controlled].sort());
+    expect(hidden.sort()).toEqual([...controlled, "conversation-reload-help"].sort());
+    // The two titled lines keep their unchanged sentences, each after its title and blue label.
+    for (const [title, key] of [["What the Virtual Guide can see", "virtualGuideCanSee"], ["Share whole conversation", "shareConversation"]] as const) {
+      const sentence = notYetImplementedNotes(UNNAMED_GUIDE)[key].slice(NOT_YET_IMPLEMENTED_PREFIX.length + 1);
+      expect(screen).toContain(`<span class="font-semibold text-stone-100">${title}</span>${BLUE_LABEL}</p><p>${escapeHtml(sentence)}</p>`);
+    }
     // A sentence describing an area rather than a control is shown, without the prefix, in a blue
     // build-note box (Paul's build-note rule, decision queue 2026-11-03 17:59:20 CST) that starts with
     // the "Not connected yet" words, so it does not read as a working feature. The box's only control
@@ -864,7 +886,8 @@ describe("connected Explorer conversation screen", () => {
   it("CC18 each control's sentence comes directly after it; the top bar's sit in the row under it", () => {
     const html = render();
     const controls = [...html.matchAll(/<button\b[^>]*\saria-controls="((?:nyi|not-connected)-[\w-]+)"[^>]*>[\s\S]*?<\/button>/g)];
-    expect(controls.length).toBe(13);
+    // 11 since the compact header (see CC04): the two header buttons became titled lines.
+    expect(controls.length).toBe(11);
     for (const match of controls) {
       const id = match[1];
       const after = html.slice((match.index ?? 0) + match[0].length);
@@ -1030,7 +1053,12 @@ describe("connected Explorer conversation screen", () => {
     expect(html).not.toContain("Not started yet");
     expect(html).not.toContain("Active and private");
     expect(html).not.toContain("Open conversation");
-    expect(html).toContain(`Conversation ${MIDDLE_DOT} with your Virtual Guide`);
+    // Compact header (Paul, 2026-11-16): no amber line above the title; with no saved conversation there is no
+    // chat panel, so the one h1 stands in the strip.
+    expect(html).not.toContain(`Conversation ${MIDDLE_DOT} with your Virtual Guide`);
+    expect(html).not.toContain("data-chat-panel");
+    expect(html.split("<h1").length - 1).toBe(1);
+    expect(/<header class="[^"]*" data-conversation-strip=""><div class="[^"]*"><h1[^>]*tabindex="-1"[^>]*>Your conversation<\/h1>/.test(html)).toBe(true);
     expect(html).not.toContain("<textarea");
     expect(html).not.toContain('aria-label="Saved conversation"');
     expect(html).not.toContain(REMOVED_TOOLS_HEADING);
@@ -1041,7 +1069,7 @@ describe("connected Explorer conversation screen", () => {
   });
 
   it("CC07 a denied read shows only the sign-in alert, with no history or command controls", () => {
-    const html = render(view({ state: null, errorMessage: "This conversation is not available in your current session. Sign in again to continue.", signInRequired: true, reloadAvailable: false }));
+    const html = render(view({ state: null, errorMessage: "This conversation is not available in your current session. Sign in again to continue.", signInRequired: true, reloadAvailable: false, errorCode: "denied" }));
     expect(html.split('role="alert"').length - 1).toBe(1);
     expect(html).toContain('href="/login/explorer"');
     expect(html).not.toContain("Not started yet");
@@ -1636,7 +1664,8 @@ describe("connected Explorer conversation screen", () => {
     const html = render();
     const markers = (markup: string) => [...markup.matchAll(/data-(build-note|removal-marker)="(\w+)"/g)].map(([, kind, value]) => `${kind}:${value}`);
     const count = (markup: string, marker: string) => markers(markup).filter((found) => found === marker).length;
-    // 13 controls not built yet (CC04), one blue label each; the Key Insights box; the toggle.
+    // 11 controls not built yet (CC04) and the two titled lines inside "Privacy and sharing", one blue label each;
+    // the Key Insights box; the toggle.
     expect(count(html, "build-note:label")).toBe(13);
     expect(count(html, "build-note:box")).toBe(1);
     expect(count(html, "build-note:toggle")).toBe(1);

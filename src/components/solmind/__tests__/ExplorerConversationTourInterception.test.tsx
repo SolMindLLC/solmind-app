@@ -38,7 +38,7 @@ describe("Fixed tour choice interception", () => {
     const state = { ...saved, messages: [...saved.messages.slice(0, -1), {
       ...saved.messages.at(-1)!, choices: [{ label: "Show me around" }, { label: "I have a question" }],
     }], ...stateOverrides };
-    const view: ConnectedConversationView = { state, sendSequence: 0, busy: false, statusText: "", assistance: null,
+    const view: ConnectedConversationView = { state, sendSequence: 0, busy: false, statusText: "", errorCode: null, lastCheckConfirmed: false, assistance: null,
       awaitingReply: false,
       sendingMessage: null,
       sendingFromComposer: false,

@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type FocusEvent, type FormEvent, type ReactNode, type RefObject } from "react";
 
-import { CONVERSATION_FOOTER, VIRTUAL_GUIDE_SHORT } from "@/lib/solmind/explorerConversationScreen";
+import { CONVERSATION_FOOTER, notYetImplementedText } from "@/lib/solmind/explorerConversationScreen";
 import {
   COMPOSER_KEY_HINT,
   COMPOSER_LABEL,
@@ -11,11 +11,25 @@ import {
   CONNECTED_SPEAKER_LABELS,
   CONNECTED_TITLE,
   CONNECTED_WAITING_REPLY_TEXT,
+  CONVERSATION_START_MARKER,
   OPENING_GREETING_LABEL,
   OPENING_GREETING_TEXT,
-  connectedHeaderLabel,
+  PRIVACY_CAN_SEE_TITLE,
+  PRIVACY_SHARE_TITLE,
+  PRIVACY_SHARING_BUTTON,
+  RELOAD_BUTTON,
+  RELOAD_HELP_BUTTON_NAME,
+  RELOAD_HELP_TEXT,
+  RELOAD_REASON_TEXT,
+  connectedSavedStatus,
   connectedStatusText,
+  connectedStripFocusTarget,
+  connectedWaitingFocusTarget,
+  nextStripExplanation,
   type ConnectedConversationStatus,
+  type ConnectedSavedStatus,
+  type ConnectedStripExplanation,
+  type ConnectedStripFocusTarget,
 } from "@/lib/solmind/explorerConversationConnectedScreen";
 import {
   CONNECTED_KEY_INSIGHT_HEADING,
@@ -25,6 +39,7 @@ import {
 } from "@/lib/solmind/explorerConnectedCard";
 import {
   EXPLORER_CONVERSATION_LIMITS,
+  type ExplorerConversationError,
   type ExplorerConversationMessage,
   type ExplorerConversationState,
 } from "@/lib/solmind/explorerConversationContract";
@@ -33,6 +48,7 @@ import { latestReplyChoices, nextCalmReplyPrompt } from "@/lib/solmind/explorerR
 import { EXPLORER_TOUR_CHOICE } from "@/lib/solmind/explorerConversationTour";
 import { SPEAKER_LABEL_STYLE, speakerLabelClass } from "@/lib/solmind/explorerSpeakerStyle";
 import { SOLMIND_TERMS } from "@/lib/solmind/terms";
+import { withoutReviewPrefix } from "@/lib/solmind/workspaceNavigation";
 
 import { ConnectedCompassCard } from "./ExplorerConnectedCompassCard";
 import { CompassChangeLines, useCompassChangeVisit } from "./ExplorerCompassChangeLines";
@@ -48,9 +64,10 @@ import {
   useBuildNotesState,
 } from "./ExplorerConversationScreenBuildNotes";
 import { CONVERSATION_HEADING_ID, DRAWER_OPENER_ID, PANEL_TOGGLE_ID } from "./ExplorerConversationScreenHeader";
-import { IconArrowUp, IconClipboard, IconEye, IconEyeOff, IconPanelRight, IconPause } from "./ExplorerConversationScreenIcons";
+import { IconArrowUp, IconChevronDown, IconClipboard, IconEyeOff, IconPanelRight, IconPause } from "./ExplorerConversationScreenIcons";
 import {
   FOCUS_RING,
+  NotConnectedLine,
   NotConnectedProvider,
   NotYetImplementedNote,
   PRIMARY_BUTTON,
@@ -86,7 +103,8 @@ import {
 // when a change made from it leaves no saved state), which Compass view (Full
 // or Compact) shows in the panel and in the drawer, whether the narrow-screen Menu is open, which
 // "Not connected yet" sentence is shown, which build notes show, and the local
-// reply-choice dismissal and calm prompt (including its last line), and the
+// reply-choice dismissal and calm prompt (including its last line), which of the
+// strip's two explanations is open, which strip control last held keyboard focus, and the
 // Waypoint review/outcome display shared with the narrow drawer. Parts that are not connected yet show
 // a blue "Not connected yet" build-note label and, when activated, one sentence directly
 // under them saying what they will do (NotConnectedProvider). A note that
@@ -119,7 +137,12 @@ export type ConnectedConversationView = Readonly<{
   sendSequence: number;
   // The saved offer whose button answer is in flight (its box shows "Saving..."); absent reads as none.
   savingOfferId?: string | null;
+  // The busy sentence while a request runs; otherwise the earlier answer's line (offers build), or "".
   statusText: string;
+  // The error code the logic holds, also while the last change is uncertain; the strip's order of precedence reads it.
+  errorCode: ExplorerConversationError | null;
+  // The last accepted answer confirmed the saved conversation. Required, so no view turns the light green by omission.
+  lastCheckConfirmed: boolean;
   assistance: ExplorerPrivateAssistance | null;
   // The error sentence, shown only while the last change is not uncertain.
   errorMessage: string | null;
@@ -222,78 +245,257 @@ function ConnectedVirtualGuideRow({ panelVisible, drawerOpen, onTogglePanel, onO
   );
 }
 
-type HeaderProps = Readonly<{ status: ConnectedConversationStatus; headingRef: RefObject<HTMLHeadingElement | null> }>;
+// The compact header strip (Paul's decisions, PRJ01-SPR002 decision record 2026-11-16 17:53:42 and 21:27:10 CST).
+const STRIP_BUTTON = joinClasses(
+  "inline-flex min-h-8 items-center justify-center gap-2 rounded-full border border-amber-200/25 bg-white/[0.03] px-3 py-[5px] text-xs font-semibold leading-4 text-stone-100 transition-colors hover:border-amber-300/60 hover:bg-amber-300/10",
+  FOCUS_RING,
+);
+const HELP_BUTTON = joinClasses(
+  "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-amber-200/25 bg-white/[0.03] text-sm font-bold text-amber-200 transition-colors hover:border-amber-300/60 hover:bg-amber-300/10",
+  FOCUS_RING,
+);
+// The light is decoration beside its words: the words carry the meaning.
+const LIGHT_CLASS = {
+  green: "bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.7)]",
+  yellow: "bg-yellow-400 shadow-[0_0_6px_rgba(250,204,21,0.7)]",
+} as const;
+const TITLE_CLASS = joinClasses("rounded-md font-serif text-xl leading-7 text-stone-50 focus:outline-none", FOCUS_RING);
+const PRIVACY_BUTTON_ID = "conversation-privacy-button";
+const PRIVACY_EXPLANATION_ID = "conversation-privacy-explanation";
+const SAVED_STATUS_ID = "conversation-saved-status";
+const RELOAD_BUTTON_ID = "conversation-reload-button";
+const RELOAD_HELP_BUTTON_ID = "conversation-reload-help-button";
+const RELOAD_HELP_ID = "conversation-reload-help";
 
-// Label, title, privacy line and status, and the sharing controls (not built).
-function ConnectedConversationHeader({ status, headingRef }: HeaderProps) {
+type FocusHandlers = Readonly<{
+  onFocus: (event: FocusEvent<HTMLElement>) => void;
+  onBlur: (event: FocusEvent<HTMLElement>) => void;
+}>;
+
+// The page's only h1. It stands in the chat panel's band, or in the strip while no saved conversation
+// is on screen (there is no chat panel then). It takes focus by script, never by Tab.
+function ConversationTitle({ headingRef, focus }: Readonly<{ headingRef: RefObject<HTMLHeadingElement | null>; focus: FocusHandlers }>) {
   return (
-    <header className="border-b border-amber-200/10 px-4 py-3 sm:px-5">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-300">{connectedHeaderLabel(status)}</p>
-      <h1
-        className={joinClasses("mt-1 rounded-md font-serif text-2xl leading-tight text-stone-50 focus:outline-none sm:text-3xl", FOCUS_RING)}
-        id={CONVERSATION_HEADING_ID}
-        ref={headingRef}
-        tabIndex={-1}
-      >
-        {CONNECTED_TITLE}
-      </h1>
-      <p className="mt-1 text-sm text-stone-400">{CONNECTED_INTRO}</p>
-      <div className="mt-2 flex flex-wrap items-center gap-3">
+    <h1 className={TITLE_CLASS} id={CONVERSATION_HEADING_ID} onBlur={focus.onBlur} onFocus={focus.onFocus} ref={headingRef} tabIndex={-1}>
+      {CONNECTED_TITLE}
+    </h1>
+  );
+}
+
+// One titled line inside the "Privacy and sharing" explanation: a part that is not built yet, with
+// its blue "Not connected yet" label and its unchanged sentence. It is text, not a control.
+function PrivacyLine({ title, text }: Readonly<{ title: string; text: string }>) {
+  return (
+    <div data-privacy-line="">
+      <p className="flex flex-wrap items-center gap-x-2">
+        <span className="font-semibold text-stone-100">{title}</span>
+        <NotConnectedLine />
+      </p>
+      <p>{text}</p>
+    </div>
+  );
+}
+
+type StripProps = Readonly<{
+  view: ConnectedConversationView;
+  actions: ConnectedConversationActions;
+  status: ConnectedConversationStatus;
+  saved: ConnectedSavedStatus;
+  reloadDrawn: boolean;
+  helpDrawn: boolean;
+  open: ConnectedStripExplanation;
+  onToggle: (chosen: "privacy" | "help") => void;
+  // The h1, only while no saved conversation is on screen.
+  title: ReactNode;
+  reloadRef: RefObject<HTMLButtonElement | null>;
+  controlFocus: FocusHandlers;
+}>;
+
+// The strip: status words and the "Private conversation" pill, then the controls ("Privacy and
+// sharing", the one polite status region with the light, Reload and its "?"), then the opened
+// explanation and Reload's help or reason line. The order here is the tab order.
+function ConversationStrip({ view, actions, status, saved, reloadDrawn, helpDrawn, open, onToggle, title, reloadRef, controlFocus }: StripProps) {
+  // The earlier answer's line (offers build) shares the status region when nothing is in flight.
+  const savedLine = view.busy ? "" : view.statusText;
+  return (
+    <header className="grid gap-2 border-b border-amber-200/10 px-4 py-2.5 sm:px-5" data-conversation-strip="">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        {title}
+        {status === "unknown" ? null : <span className="text-xs leading-4 text-stone-300">{connectedStatusText(status)}</span>}
         <span className="inline-flex items-center gap-1.5 rounded-full border border-stone-600 bg-black/30 px-3 py-1 text-xs font-semibold text-stone-200">
           <IconEyeOff className="h-3.5 w-3.5" />
           Private conversation
         </span>
-        {status === "unknown" ? null : (
-          <span className="inline-flex items-center gap-1.5 text-xs text-stone-300">
-            <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-amber-300" />
-            {connectedStatusText(status)}
-          </span>
-        )}
-      </div>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <UnwiredControl
-          className={joinClasses(QUIET_BUTTON, "border border-amber-300/25")}
-          guideName={CONNECTED_GUIDE_NAME}
-          noteKey="shareConversation"
-          scope="header"
+        <button
+          aria-controls={PRIVACY_EXPLANATION_ID}
+          aria-expanded={open === "privacy"}
+          className={STRIP_BUTTON}
+          id={PRIVACY_BUTTON_ID}
+          onClick={() => onToggle("privacy")}
+          type="button"
         >
-          <IconEye />
-          Share whole conversation
-        </UnwiredControl>
-        <UnwiredControl
-          className={joinClasses(QUIET_BUTTON, "border border-amber-300/25")}
-          noteKey="virtualGuideCanSee"
-          scope="header"
-        >
-          <IconEye />
-          What the {VIRTUAL_GUIDE_SHORT} can see
-        </UnwiredControl>
+          {PRIVACY_SHARING_BUTTON}
+          <IconChevronDown className={open === "privacy" ? "rotate-180" : undefined} />
+        </button>
+        {/* The status region, Reload and "?" stay together at the right. On a narrow card the group
+            takes its own line and wraps inside itself, so nothing runs past the card's edge. */}
+        <div className="ml-auto flex max-w-full flex-wrap items-center gap-x-3 gap-y-2">
+          <p
+            aria-atomic="true"
+            aria-live="polite"
+            className="inline-flex min-h-5 max-w-full flex-wrap items-center gap-x-1.5 text-xs leading-4 text-stone-200"
+            id={SAVED_STATUS_ID}
+            role="status"
+          >
+            {saved.light === null ? null : (
+              <span aria-hidden="true" className={joinClasses("h-2.5 w-2.5 shrink-0 rounded-full", LIGHT_CLASS[saved.light])} data-saved-light={saved.light} />
+            )}
+            {saved.words === "" ? null : <span>{saved.words}</span>}
+            {saved.words !== "" && savedLine !== "" ? " " : null}
+            {savedLine === "" ? null : <span>{savedLine}</span>}
+          </p>
+          {reloadDrawn ? (
+            <button
+              aria-describedby={RELOAD_HELP_ID}
+              className={joinClasses(STRIP_BUTTON, "disabled:cursor-not-allowed disabled:opacity-50")}
+              disabled={view.busy}
+              id={RELOAD_BUTTON_ID}
+              onBlur={controlFocus.onBlur}
+              onClick={actions.onReload}
+              onFocus={controlFocus.onFocus}
+              ref={reloadRef}
+              type="button"
+            >
+              {RELOAD_BUTTON}
+            </button>
+          ) : null}
+          {helpDrawn ? (
+            <button
+              aria-controls={RELOAD_HELP_ID}
+              aria-expanded={open === "help"}
+              aria-label={RELOAD_HELP_BUTTON_NAME}
+              className={HELP_BUTTON}
+              id={RELOAD_HELP_BUTTON_ID}
+              onBlur={controlFocus.onBlur}
+              onClick={() => onToggle("help")}
+              onFocus={controlFocus.onFocus}
+              type="button"
+            >
+              <span aria-hidden="true">?</span>
+            </button>
+          ) : null}
+        </div>
       </div>
+      <div
+        aria-labelledby={PRIVACY_BUTTON_ID}
+        className="grid gap-2.5 rounded-2xl border border-stone-700 bg-black/40 px-4 py-3 text-xs leading-5 text-stone-300"
+        hidden={open !== "privacy"}
+        id={PRIVACY_EXPLANATION_ID}
+        role="group"
+      >
+        <p className="text-sm leading-6 text-stone-200">{CONNECTED_INTRO}</p>
+        <PrivacyLine text={withoutReviewPrefix(notYetImplementedText("virtualGuideCanSee"))} title={PRIVACY_CAN_SEE_TITLE} />
+        <PrivacyLine text={withoutReviewPrefix(notYetImplementedText("shareConversation", CONNECTED_GUIDE_NAME))} title={PRIVACY_SHARE_TITLE} />
+      </div>
+      {/* Reload's description for screen readers in every state. A reason line is always shown; the
+          ordinary help text shows only while "?" is open. */}
+      {reloadDrawn ? (
+        <p className="text-xs leading-5 text-stone-300" hidden={saved.reasonLine === null && open !== "help"} id={RELOAD_HELP_ID}>
+          {saved.reasonLine === null ? RELOAD_HELP_TEXT : RELOAD_REASON_TEXT[saved.reasonLine]}
+        </p>
+      ) : null}
     </header>
   );
 }
 
-type NoticesProps = Readonly<{
+type HeldFocus = Readonly<{ element: HTMLElement; title: boolean }>;
+
+type FocusKeeperProps = Readonly<{
+  heldFocusRef: RefObject<HeldFocus | null>;
+  focusWaitsOnTitleRef: RefObject<boolean>;
+  headingRef: RefObject<HTMLHeadingElement | null>;
+  reloadRef: RefObject<HTMLButtonElement | null>;
+  retryRef: RefObject<HTMLButtonElement | null>;
+  signInRef: RefObject<HTMLAnchorElement | null>;
+  busy: boolean;
+  reasonLineShown: boolean;
+}>;
+
+// Focus rules for the strip (BUILD_PLAN_R2.md section 4.8), run after every render and before the
+// page-open move. It draws nothing and must be drawn after every control it may focus, because a
+// layout effect runs before the refs of later siblings are set. When an answer removes the strip control or title that still
+// held keyboard focus, focus moves to the control the Explorer now needs: Reload saved conversation
+// when enabled, Retry the same request, Sign in, otherwise the title. A title that moved between the
+// strip and the chat panel keeps focus. Retry leaves the screen as soon as it is chosen: focus then
+// waits on the title and moves on when the answer arrives. Every move keeps the page and the
+// transcript where they are.
+function StripFocusKeeper({ heldFocusRef, focusWaitsOnTitleRef, headingRef, reloadRef, retryRef, signInRef, busy, reasonLineShown }: FocusKeeperProps) {
+  // A press anywhere outside the remembered control, also on blank space that takes no focus, means the
+  // Explorer left it on purpose: the memory is dropped, so focus is not taken back later. (A blur alone cannot
+  // tell that apart from the control being removed or disabled, or the window losing focus.)
+  useEffect(() => {
+    const forget = (event: PointerEvent) => {
+      const held = heldFocusRef.current;
+      if (held === null || (event.target instanceof Node && held.element.contains(event.target))) return;
+      heldFocusRef.current = null;
+      focusWaitsOnTitleRef.current = false;
+    };
+    document.addEventListener("pointerdown", forget, true);
+    return () => document.removeEventListener("pointerdown", forget, true);
+  }, [heldFocusRef, focusWaitsOnTitleRef]);
+  useLayoutEffect(() => {
+    const focusOn = (target: ConnectedStripFocusTarget) => {
+      const element = target === "reload" ? reloadRef.current : target === "retry" ? retryRef.current
+        : target === "signIn" ? signInRef.current : headingRef.current;
+      element?.focus({ preventScroll: true });
+    };
+    const reloadEnabled = () => reloadRef.current !== null && !reloadRef.current.disabled;
+    const held = heldFocusRef.current;
+    if (held !== null && !held.element.isConnected) {
+      heldFocusRef.current = null;
+      const active = document.activeElement;
+      // Only when focus was not taken somewhere else in the meantime.
+      if (active === null || active === document.body || active === held.element) {
+        const target = connectedStripFocusTarget({ lost: held.title ? "title" : "control", reloadEnabled: reloadEnabled(),
+          retryShown: retryRef.current !== null, signInShown: signInRef.current !== null });
+        focusOn(target);
+        if (!held.title) focusWaitsOnTitleRef.current = target === "title" && busy;
+      } else if (!held.title) {
+        focusWaitsOnTitleRef.current = false;
+      }
+    }
+    if (focusWaitsOnTitleRef.current && !busy) {
+      focusWaitsOnTitleRef.current = false;
+      if (document.activeElement === headingRef.current) {
+        const target = connectedWaitingFocusTarget({ retryShown: retryRef.current !== null, signInShown: signInRef.current !== null,
+          reloadEnabled: reloadEnabled(), reasonLineShown });
+        if (target !== null) focusOn(target);
+      }
+    }
+  });
+  return null;
+}
+
+type AlertsProps = Readonly<{
   view: ConnectedConversationView;
   actions: ConnectedConversationActions;
   errorRef: RefObject<HTMLDivElement | null>;
-  noticesRef?: RefObject<HTMLDivElement | null>;
+  retryRef: RefObject<HTMLButtonElement | null>;
+  signInRef: RefObject<HTMLAnchorElement | null>;
+  controlFocus: FocusHandlers;
 }>;
 
-// The live status line, the alerts and Reload, exactly as before. The error
+// The waiting announcement and the alerts, exactly as before, under the strip. The error
 // alert can take focus, for when the narrow drawer closes after a refusal.
-function ConversationNotices({ view, actions, errorRef, noticesRef }: NoticesProps) {
+function ConversationAlerts({ view, actions, errorRef, retryRef, signInRef, controlFocus }: AlertsProps) {
   return (
-    <div className="grid gap-3 px-4 pt-3 sm:px-5" ref={noticesRef}>
-      <p aria-atomic="true" aria-live="polite" className="min-h-6 text-sm text-stone-200" role="status">
-        {view.statusText}
-      </p>
+    <div className="px-4 sm:px-5">
       {/* Keep the waiting announcement mounted and outside the busy transcript. */}
       <p aria-atomic="true" className="sr-only" data-waiting-announcement="" role="status">
         {view.awaitingReply ? CONNECTED_WAITING_REPLY_TEXT : ""}
       </p>
       {view.assistance !== null ? (
-        <div className={ALERT_CLASS} role="alert">
+        <div className={joinClasses(ALERT_CLASS, "mt-3")} role="alert">
           <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{view.assistance.body}</p>
           {/* Pause and retry notices already explain what happened to the reply. */}
           {view.assistance.kind === "paused" || view.assistance.kind === "reply_failed" ? null : (
@@ -302,38 +504,34 @@ function ConversationNotices({ view, actions, errorRef, noticesRef }: NoticesPro
         </div>
       ) : null}
       {view.errorMessage !== null ? (
-        <div className={joinClasses(ALERT_CLASS, FOCUS_RING)} ref={errorRef} role="alert" tabIndex={-1}>
+        <div className={joinClasses(ALERT_CLASS, "mt-3", FOCUS_RING)} ref={errorRef} role="alert" tabIndex={-1}>
           <p>{view.errorMessage}</p>
           {view.signInRequired ? (
-            <a className={LINK_CLASS} href="/login/explorer">
+            <a className={LINK_CLASS} href="/login/explorer" ref={signInRef}>
               Sign in
             </a>
           ) : null}
         </div>
       ) : null}
       {view.uncertain ? (
-        <div className={ALERT_CLASS} role="alert">
+        <div className={joinClasses(ALERT_CLASS, "mt-3")} role="alert">
           <p>
             We could not confirm your last change. Retry the same request before making another change. No new message,
             reply or saved change is being claimed.
           </p>
           <div>
-            <button className={PRIMARY_BUTTON} disabled={view.busy} onClick={actions.onRetry} type="button">
+            <button
+              className={PRIMARY_BUTTON}
+              disabled={view.busy}
+              onBlur={controlFocus.onBlur}
+              onClick={actions.onRetry}
+              onFocus={controlFocus.onFocus}
+              ref={retryRef}
+              type="button"
+            >
               Retry the same request
             </button>
           </div>
-        </div>
-      ) : null}
-      {view.reloadAvailable ? (
-        <div>
-          <button
-            className={joinClasses(SECONDARY_BUTTON, "disabled:cursor-not-allowed disabled:opacity-50")}
-            disabled={view.busy}
-            onClick={actions.onReload}
-            type="button"
-          >
-            Reload saved conversation
-          </button>
         </div>
       ) : null}
     </div>
@@ -424,7 +622,9 @@ function SavedTranscript({ state, view, actions, choicesDismissed, onShowTour, o
     // The transcript's own scroll to its end brings the sent words and the
     // waiting row into view inside it; the page itself does not move on a
     // Send (tests/browser/explorerOpenAtNewest.pw.ts, "the page moves once").
-    if (box) box.scrollTop = box.scrollHeight;
+    // A conversation with no saved message and nothing being sent stays at its
+    // top, so the start marker and the welcome are in view.
+    if (box && (count > 0 || view.awaitingReply)) box.scrollTop = box.scrollHeight;
   }, [count, view.awaitingReply]);
 
   return (
@@ -443,6 +643,14 @@ function SavedTranscript({ state, view, actions, choicesDismissed, onShowTour, o
       tabIndex={0}
     >
       <div className="mx-auto grid max-w-3xl gap-3">
+        {/* The true beginning: above the welcome in a new conversation, above the oldest saved
+            message otherwise (seen there after scrolling up). Plain text, not a heading. */}
+        <p
+          className="flex items-center gap-3 text-[11px] leading-4 text-stone-400 before:h-px before:flex-1 before:bg-stone-700 after:h-px after:flex-1 after:bg-stone-700"
+          data-conversation-start=""
+        >
+          {CONVERSATION_START_MARKER}
+        </p>
         {count === 0 ? (
           <>
             {view.ended ? null : <OpeningGreeting />}
@@ -552,7 +760,7 @@ function ConnectedComposer({ view, actions, composerRef, calmPrompt }: ComposerP
   ].filter(Boolean).join(" ") || undefined;
 
   return (
-    <div className="grid gap-3 border-t border-amber-200/15 bg-[#0c0a08]/95 px-3 py-3 sm:px-5" data-composer-bar="">
+    <div className="grid gap-3 rounded-b-[15px] border-t border-amber-200/15 bg-[#12100b] px-3 py-3 sm:px-5" data-composer-bar="">
       {view.sendUnavailable ? (
         <p className={NOTICE_CLASS} id={AVAILABILITY_ID}>
           The {SOLMIND_TERMS.virtualGuide} is unavailable. You can review saved messages and work with your saved Compass and
@@ -924,6 +1132,56 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
     if (shown.alertFocus > 0) errorRef.current?.focus();
   }, [shown.alertFocus]);
   const status = conversationStatus(state, view.ended);
+  // The strip: the order of precedence decides the light, Reload, "?" and the reason line.
+  const saved = connectedSavedStatus({
+    errorCode: view.errorCode,
+    uncertain: view.uncertain,
+    busy: view.busy,
+    awaitingReply: view.awaitingReply,
+    hasState: state !== null,
+    pendingTurn: state?.pendingTurn === true,
+    lastCheckConfirmed: view.lastCheckConfirmed,
+    busySentence: view.busy ? view.statusText : "",
+  });
+  const reloadDrawn = saved.reloadShown && view.reloadAvailable;
+  const helpDrawn = reloadDrawn && saved.helpButtonShown;
+  // Only one of the strip's two explanations is open at a time; its own state, apart from the
+  // "Not connected yet" sentences. When "?" leaves the screen its text is closed, so it is not
+  // open when "?" returns (adjusted during render, as above).
+  const [stripOpen, setStripOpen] = useState<ConnectedStripExplanation>(null);
+  if (stripOpen === "help" && !helpDrawn) setStripOpen(null);
+  const toggleStrip = (chosen: "privacy" | "help") => setStripOpen((open) => nextStripExplanation(open, chosen));
+  // The last strip control or title that took keyboard focus is remembered here; StripFocusKeeper moves
+  // focus when an answer removes it from the screen (focus rules, BUILD_PLAN_R2.md section 4.8).
+  const reloadRef = useRef<HTMLButtonElement>(null);
+  const retryRef = useRef<HTMLButtonElement>(null);
+  const signInRef = useRef<HTMLAnchorElement>(null);
+  const heldFocusRef = useRef<HeldFocus | null>(null);
+  const focusWaitsOnTitleRef = useRef(false);
+  const releaseFocus = (event: FocusEvent<HTMLElement>) => {
+    const element = event.currentTarget;
+    // Drop the memory only when focus really went to another element. A blur with no destination (the control
+    // is leaving the screen or was disabled by a request, or only the window lost focus) keeps it; the keeper
+    // then moves focus only if nothing else holds it.
+    if (!(event.relatedTarget instanceof Element) || !element.isConnected || document.activeElement === element) return;
+    if (heldFocusRef.current?.element === element) {
+      heldFocusRef.current = null;
+      focusWaitsOnTitleRef.current = false;
+    }
+  };
+  const titleFocus: FocusHandlers = {
+    onFocus: (event) => { heldFocusRef.current = { element: event.currentTarget, title: true }; },
+    onBlur: releaseFocus,
+  };
+  const controlFocus: FocusHandlers = {
+    onFocus: (event) => {
+      heldFocusRef.current = { element: event.currentTarget, title: false };
+      focusWaitsOnTitleRef.current = false;
+    },
+    onBlur: releaseFocus,
+  };
+  const reasonLineShown = reloadDrawn && saved.reasonLine !== null;
+  const title = <ConversationTitle focus={titleFocus} headingRef={headingRef} />;
   const toggleCompassView = (scope: SupportScope) =>
     setCompassViews((views) => ({ ...views, [scope]: views[scope] === "full" ? "compact" : "full" }));
   const renderSupportBody = (scope: SupportScope) => (
@@ -960,34 +1218,67 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
             <div className="flex min-h-0 flex-1 items-start gap-5 px-3 pb-6 pt-4 sm:px-6 lg:px-8">
               <div className="flex min-w-0 flex-1 flex-col gap-5">
                 <section aria-labelledby={CONVERSATION_HEADING_ID} className={CARD_CLASS}>
-                  <ConnectedConversationHeader headingRef={headingRef} status={status} />
-                  <ConversationNotices actions={actions} errorRef={errorRef} noticesRef={noticesRef} view={view} />
+                  {/* The strip and the alerts together are "the notices" for the page-open rule above. */}
+                  <div ref={noticesRef}>
+                    <ConversationStrip
+                      actions={actions}
+                      controlFocus={controlFocus}
+                      helpDrawn={helpDrawn}
+                      onToggle={toggleStrip}
+                      open={stripOpen}
+                      reloadDrawn={reloadDrawn}
+                      reloadRef={reloadRef}
+                      saved={saved}
+                      status={status}
+                      title={state === null ? title : null}
+                      view={view}
+                    />
+                    <ConversationAlerts
+                      actions={actions}
+                      controlFocus={controlFocus}
+                      errorRef={errorRef}
+                      retryRef={retryRef}
+                      signInRef={signInRef}
+                      view={view}
+                    />
+                  </div>
                   {state !== null ? (
                     <>
-                      {/* As on the earlier screen, only the saved conversation and
-                          the composer are marked busy; the status line, alerts,
-                          Reload, Retry and End stay outside it. */}
-                      <div aria-busy={view.busy}>
-                        {state.pendingTurn && noticeAtOpen ? <PendingTurnNotice markerRef={pendingAboveRef} /> : null}
-                        <SavedTranscript
-                          actions={{ ...actions, onReplyChoice: chooseReply }}
-                          choicesDismissed={replyPrompt.dismissed}
-                          onShowTour={openTour}
-                          onSomethingElse={showSomethingElse}
-                          state={state}
-                          view={view}
-                        />
-                        {/* Outside the scrolling transcript, beside the composer, so it
-                            stays in view however long the saved history is. While a notice
-                            stands above the conversation it is drawn above the transcript
-                            instead (see below), so both are in view together. */}
-                        {state.pendingTurn && !noticeAtOpen ? <PendingTurnNotice /> : null}
-                        {view.ended ? null : (
-                          <ConnectedComposer actions={actions} calmPrompt={replyPrompt.prompt} composerRef={composerRef} view={view} />
-                        )}
-                        {/* An empty marker at the end of the conversation area: where the page
-                            lands when a saved conversation opens (see conversationEndRef). */}
-                        <div aria-hidden="true" className="scroll-mb-4" ref={conversationEndRef} />
+                      {/* The chat panel: the title band, the saved conversation and the message box in
+                          one bordered, slightly warmer surface (round 4 variants c1 and l3). The band
+                          is outside the scrolling transcript, so the title stays in view. */}
+                      <div className="mx-2 mb-3 mt-3 rounded-2xl border border-amber-300/40 bg-[#12100b]" data-chat-panel="">
+                        <div
+                          className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-t-[15px] border-b border-amber-200/20 bg-[#292412] px-3 py-2 sm:px-5"
+                          data-chat-panel-band=""
+                        >
+                          {title}
+                        </div>
+                        {/* As on the earlier screen, only the saved conversation and
+                            the composer are marked busy; the strip, the title, alerts,
+                            Reload, Retry and End stay outside it. */}
+                        <div aria-busy={view.busy}>
+                          {state.pendingTurn && noticeAtOpen ? <PendingTurnNotice markerRef={pendingAboveRef} /> : null}
+                          <SavedTranscript
+                            actions={{ ...actions, onReplyChoice: chooseReply }}
+                            choicesDismissed={replyPrompt.dismissed}
+                            onShowTour={openTour}
+                            onSomethingElse={showSomethingElse}
+                            state={state}
+                            view={view}
+                          />
+                          {/* Outside the scrolling transcript, beside the composer, so it
+                              stays in view however long the saved history is. While a notice
+                              stands above the conversation it is drawn above the transcript
+                              instead (see below), so both are in view together. */}
+                          {state.pendingTurn && !noticeAtOpen ? <PendingTurnNotice /> : null}
+                          {view.ended ? null : (
+                            <ConnectedComposer actions={actions} calmPrompt={replyPrompt.prompt} composerRef={composerRef} view={view} />
+                          )}
+                          {/* An empty marker at the end of the conversation area: where the page
+                              lands when a saved conversation opens (see conversationEndRef). */}
+                          <div aria-hidden="true" className="scroll-mb-4" ref={conversationEndRef} />
+                        </div>
                       </div>
                       <EndSession actions={actions} state={state} view={view} />
                       {view.ended ? <div aria-hidden="true" className="scroll-mb-4" ref={endedEndRef} /> : null}
@@ -995,6 +1286,18 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
                   ) : (
                     <div className="pb-4" />
                   )}
+                  {/* Last in the card, after the strip, the alerts and the chat panel: its effect runs once
+                      every newly drawn focus target (the title, Reload, Retry, Sign in) has its ref. */}
+                  <StripFocusKeeper
+                    busy={view.busy}
+                    focusWaitsOnTitleRef={focusWaitsOnTitleRef}
+                    headingRef={headingRef}
+                    heldFocusRef={heldFocusRef}
+                    reasonLineShown={reasonLineShown}
+                    reloadRef={reloadRef}
+                    retryRef={retryRef}
+                    signInRef={signInRef}
+                  />
                 </section>
               </div>
               <ConnectedSupportPanel renderBody={renderSupportBody} visible={panelVisible} />

@@ -52,7 +52,8 @@ const TYPED_TARGET_CHANGED = "This offer was not saved because the Waypoint chan
 const QUIET_REST = "No change was made by this offer. Check the Waypoint's current wording and status before asking again.";
 const CHANGED_CONVERSATION = "Your conversation has changed. Reload the saved conversation before making another change.";
 const FAILED_REPLY_BUTTON_NOTE = "The reply did not come through. You can try again.";
-const UP_TO_DATE = "Your saved conversation is up to date.";
+// Compact header (Paul, 2026-11-16): the strip's green words replace the old "up to date" sentence.
+const UP_TO_DATE = "Up to date at last check";
 // Paul's decisions of 2026-11-16 21:52:56 CST (sheet "When an offer no longer matches its Waypoint", revision 3):
 // the reason for a Waypoint that changed after the offer was shown (decision 1), the invitation shown while a message
 // can be sent, and the earlier answer's status line after a Retry (decision 5).
@@ -175,9 +176,14 @@ async function open(page: Page, current: () => ExplorerConversationState) {
   await page.goto("/explorer/conversation");
   await expect(transcript(page)).toBeVisible();
 }
-// No follow-up Send is in flight or was sent: the page shows its settled notice (it is blank while a Send waits).
+// No follow-up Send is in flight or was sent: the strip shows its settled green words (the status region holds
+// the busy sentence while a change is checked and is blank while a Send waits), nothing is marked busy and Reload
+// is enabled again. Every caller has first seen the answer's own result on screen, so the green is not the one
+// from before the answer.
 async function expectSettledWithoutSend(page: Page, sends: readonly unknown[]) {
   await expect(statusLine(page)).toHaveText(UP_TO_DATE);
+  await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
+  await expect(reload(page)).toBeEnabled();
   expect(sends).toHaveLength(0);
 }
 
@@ -626,7 +632,8 @@ test("O11 Retry after a lost yes and a newer same-title offer: the earlier answe
   for (const answer of ["right", "close", "not_it"] as const) await expect(button(newer, "change", answer)).toBeEnabled();
   // The original answer's result is shown (decision 5 of 2026-11-16 21:52:56): the settled status line names the
   // earlier answer and the Waypoint by the title its box showed. No message was sent in the Explorer's name.
-  await expect(statusLine(page)).toHaveText(EARLIER_CHANGE_SAVED);
+  // Compact header: the line stands beside the strip's green words in the one status region.
+  await expect(statusLine(page)).toHaveText(`${UP_TO_DATE} ${EARLIER_CHANGE_SAVED}`);
   expect(sends).toHaveLength(0);
   await expect(transcript(page)).not.toContainText(`That's right: "${TITLE}"`);
   // The Waypoint shows the saved change.
@@ -1056,7 +1063,7 @@ for (const kind of ["revisit", "reached"] as const) {
     await button(box(page, kind), kind, "right").click();
     await retry(page).click();
     await expect(transcript(page).getByRole("listitem")).toHaveCount(4);
-    await expect(statusLine(page)).toHaveText(EARLIER_SAVED[kind]);
+    await expect(statusLine(page)).toHaveText(`${UP_TO_DATE} ${EARLIER_SAVED[kind]}`);
     await expect(box(page, kind)).toContainText(NEWER_TITLE);
     await expect(box(page, kind)).not.toContainText("Saved.");
     expect(sends).toHaveLength(0);
@@ -1090,7 +1097,7 @@ test("O21 a lost yes to a change offer, a Retry that shows the confirmed box, an
   await expect(transcript(page).getByRole("listitem")).toHaveCount(4);
   expect(sends).toHaveLength(1);
   expect(sends[0]).toMatchObject({ kind: "send", body: `That's right: "${TITLE}"` });
-  await expect(statusLine(page)).toHaveText(EARLIER_SAVED.change);
+  await expect(statusLine(page)).toHaveText(`${UP_TO_DATE} ${EARLIER_SAVED.change}`);
   await expect(box(page, "change")).toContainText(NEWER_TITLE);
   await expect(box(page, "change")).not.toContainText("Saved.");
 });

@@ -343,7 +343,8 @@ describe("REV424 waiting indicator command lifetime", () => {
     const held = hold(fetch);
     hooks.actions!.onReload();
     expectWaiting(false);
-    expect(hooks.view).toMatchObject({ busy: true, statusText: "Checking your change..." });
+    // Since the compact header a Reload with a conversation on screen has its own busy sentence (approved wording 11).
+    expect(hooks.view).toMatchObject({ busy: true, statusText: "Checking your saved conversation..." });
     held.resolve(response({ ok: true, state: offered, error: null }));
     await vi.advanceTimersByTimeAsync(0);
     expectWaiting(false);

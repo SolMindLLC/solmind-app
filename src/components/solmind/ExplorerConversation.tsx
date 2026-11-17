@@ -11,6 +11,7 @@ import {
 } from "@/lib/solmind/explorerConversationContract";
 import { EXPLORER_FAILED_REPLY_BUTTON_NOTE, parseExplorerPrivateConversationResponse,
   type ExplorerPrivateConversationResponse, type ExplorerPrivateAssistance } from "@/lib/solmind/explorerPrivateConversationResponse";
+import { RELOAD_CHECKING_TEXT } from "@/lib/solmind/explorerConversationConnectedScreen";
 import { ExplorerConversationConnectedScreen } from "./ExplorerConversationConnectedScreen";
 import type { ExplorerConversationFormationIntent } from "./ExplorerConversationFormation";
 import { COMPASS_SUGGESTION_REPLY_LABELS } from "@/lib/solmind/explorerCompassSuggestionReplies";
@@ -91,12 +92,19 @@ export function ExplorerConversation() {
   const [uncertain, setUncertain] = useState(false);
   const [draft, setDraft] = useState("");
   const [draftError, setDraftError] = useState("");
+  // The earlier answer's status line after a Retry (offers build); the two "up to date" sentences are replaced by
+  // the strip's light (compact header, 2026-11-16).
   const [notice, setNotice] = useState("");
   const [assistance, setAssistance] = useState<ExplorerPrivateAssistance | null>(null);
   const [endReview, setEndReview] = useState<Readonly<{ conversationId: string; revision: number }> | null>(null);
   const [sendSequence, setSendSequence] = useState(0);
   // Display only: the saved offer whose button answer is in flight, for its box's "Saving..." line.
   const [savingOfferId, setSavingOfferId] = useState<string | null>(null);
+  // "Last check confirmed": starts false and is written only inside the accepted-response guards of load and
+  // dispatch below. Nothing else writes it: not the start of a read or a change, not leaving the page, not Retry.
+  const [lastCheckConfirmed, setLastCheckConfirmed] = useState(false);
+  // Display only: the request in flight is a read (screen open or Reload), not a change; it picks the busy sentence.
+  const [reading, setReading] = useState(true);
   const stateRef = useRef<ExplorerConversationState | null>(null);
   const busyRef = useRef(true);
   const pendingRef = useRef<PendingCommand | null>(null);
@@ -118,6 +126,7 @@ export function ExplorerConversation() {
     activeRef.current?.abort();
     activeRef.current = controller;
     busyRef.current = true;
+    setReading(true);
     setSendingMessage(null);
     setSendingFromComposer(false);
     setAssistance(null);
@@ -140,16 +149,18 @@ export function ExplorerConversation() {
         setUncertain(false);
         // A screen-open read carries only the hard-stop pause notice.
         setAssistance(output?.assistance?.kind === "paused" ? output.assistance : null);
-        if (!initial) setNotice("The saved conversation is up to date.");
+        setLastCheckConfirmed(true);
       } else {
         replaceState(null);
         setError(result?.error ?? "unavailable");
+        setLastCheckConfirmed(false);
         if (result?.error === "denied") setDraft("");
       }
     } catch {
       if (!mountedRef.current || generation !== generationRef.current) return;
       replaceState(null);
       setError("unavailable");
+      setLastCheckConfirmed(false);
     } finally {
       clearTimeout(timer);
       if (mountedRef.current && generation === generationRef.current) {
@@ -207,6 +218,7 @@ export function ExplorerConversation() {
     if (pending.command.kind === "send") setSendSequence(sequence => sequence + 1);
     busyRef.current = true;
     setBusy(true);
+    setReading(false);
     setSendingMessage(pending.command.kind === "send" ? pending.command.body : null);
     setSendingFromComposer(pending.intent.kind === "send");
     setSavingOfferId(pending.command.kind === "respond_waypoint_offer" ? pending.command.offerId : null);
@@ -237,6 +249,7 @@ export function ExplorerConversation() {
       setAssistance(served !== null && served.kind === "reply_failed" && pending.intent.kind !== "send"
         ? Object.freeze({ ...served, body: EXPLORER_FAILED_REPLY_BUTTON_NOTE }) : served);
       if (result === null || (!result.ok && result.error === "unavailable")) {
+        setLastCheckConfirmed(false);
         setUncertain(true);
         return;
       }
@@ -244,6 +257,7 @@ export function ExplorerConversation() {
         const previous = stateRef.current;
         if (result.state.revision < pending.command.expectedRevision ||
             (previous !== null && previous.conversationId !== null && previous.conversationId !== result.state.conversationId)) {
+          setLastCheckConfirmed(false);
           setUncertain(true);
           return;
         }
@@ -251,11 +265,14 @@ export function ExplorerConversation() {
           // A confirmed owned ended projection is sufficient, including an
           // already-ended result from another tab. Unknown outcomes stay pending.
           if (result.state.conversationId !== pending.command.conversationId || result.state.sessionStatus !== "ended") {
+            setLastCheckConfirmed(false);
             setUncertain(true);
             return;
           }
           replaceState(result.state);
           setError(null);
+          // The page is leaving: no light is claimed.
+          setLastCheckConfirmed(false);
           setDraft("");
           setEndReview(null);
           pendingRef.current = null;
@@ -270,7 +287,8 @@ export function ExplorerConversation() {
         replaceState(pending.command.kind === "send" || previous === null ? result.state
           : Object.freeze({ ...result.state, providerState: previous.providerState }));
         setError(null);
-        setNotice(output?.assistance === null ? "Your saved conversation is up to date." : "");
+        // Confirmed: the light may turn green only when the answer carried no support notice.
+        setLastCheckConfirmed(output?.assistance === null);
         // Decision 5 of the 21:52:56 sheet, as approved: after a Retry that confirms an earlier button "That's right"
         // was saved, the status line says so whenever that offer's own confirmed box is not shown (a newer offer took
         // its place), naming the Waypoint by the title its box showed. A typed answer is not covered. When the Retry
@@ -317,6 +335,7 @@ export function ExplorerConversation() {
         }
       } else {
         setError(result.error);
+        setLastCheckConfirmed(false);
         if (result.error === "denied" || result.error === "refresh_required") replaceState(null);
         if (result.error === "denied") setDraft("");
         // A Send refused because the Virtual Guide is unavailable records that
@@ -330,7 +349,10 @@ export function ExplorerConversation() {
       }
       pendingRef.current = followUp;
     } catch {
-      if (mountedRef.current && generation === generationRef.current && pendingRef.current === pending) setUncertain(true);
+      if (mountedRef.current && generation === generationRef.current && pendingRef.current === pending) {
+        setLastCheckConfirmed(false);
+        setUncertain(true);
+      }
     } finally {
       clearTimeout(timer);
       if (mountedRef.current && generation === generationRef.current) {
@@ -462,7 +484,12 @@ export function ExplorerConversation() {
         sendingFromComposer,
         sendSequence,
         savingOfferId: busy ? savingOfferId : null,
-        statusText: awaitingReply ? "" : busy ? (state === null ? "Loading your saved conversation..." : "Checking your change...") : notice,
+        // The busy sentence while a request runs; otherwise the earlier answer's line, or nothing.
+        statusText: awaitingReply ? "" : busy
+          ? (state === null ? "Loading your saved conversation..." : reading ? RELOAD_CHECKING_TEXT : "Checking your change...")
+          : notice,
+        errorCode: error,
+        lastCheckConfirmed,
         assistance,
         errorMessage: error !== null && !uncertain ? errorCopy(error) : null,
         signInRequired: error === "denied",

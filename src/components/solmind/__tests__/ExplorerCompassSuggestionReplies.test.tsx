@@ -56,6 +56,8 @@ function view(next: ExplorerConversationState, overrides: Partial<ConnectedConve
     sendingMessage: null,
     sendingFromComposer: false,
     statusText: "",
+    errorCode: null,
+    lastCheckConfirmed: false,
     assistance: null,
     errorMessage: null,
     signInRequired: false,
