@@ -21,12 +21,16 @@ import {
   RELOAD_HELP_BUTTON_NAME,
   RELOAD_HELP_TEXT,
   RELOAD_REASON_TEXT,
+  connectedKeyboardPageMove,
+  connectedKeyboardSpaceGoes,
+  connectedKeyboardSpaceNeeded,
   connectedOpenTargetInView,
   connectedSavedStatus,
   connectedStatusText,
   connectedStripFocusTarget,
   connectedTranscriptHeight,
   connectedTranscriptScrollsToEnd,
+  connectedVisibleArea,
   connectedWaitingFocusTarget,
   nextStripExplanation,
   type ConnectedConversationStatus,
@@ -357,14 +361,17 @@ function ConversationStrip({ view, actions, status, saved, reloadDrawn, helpDraw
             {saved.words !== "" && savedLine !== "" ? " " : null}
             {savedLine === "" ? null : <span>{savedLine}</span>}
           </p>
+          {/* While a request runs Reload stays focusable (aria-disabled, never the native disabled attribute,
+              which makes some browsers drop keyboard focus to the page) and does nothing when used (GPT-6
+              Astra review REV558, finding 1). */}
           {reloadDrawn ? (
             <button
               aria-describedby={RELOAD_HELP_ID}
-              className={joinClasses(STRIP_BUTTON, "disabled:cursor-not-allowed disabled:opacity-50")}
-              disabled={view.busy}
+              aria-disabled={view.busy || undefined}
+              className={joinClasses(STRIP_BUTTON, "aria-disabled:cursor-not-allowed aria-disabled:opacity-50")}
               id={RELOAD_BUTTON_ID}
               onBlur={controlFocus.onBlur}
-              onClick={actions.onReload}
+              onClick={() => { if (!view.busy) actions.onReload(); }}
               onFocus={controlFocus.onFocus}
               ref={reloadRef}
               type="button"
@@ -435,7 +442,7 @@ type FocusKeeperProps = Readonly<{
 function StripFocusKeeper({ heldFocusRef, focusWaitsOnTitleRef, headingRef, reloadRef, retryRef, signInRef, busy, reasonLineShown }: FocusKeeperProps) {
   // A press anywhere outside the remembered control, also on blank space that takes no focus, means the
   // Explorer left it on purpose: the memory is dropped, so focus is not taken back later. (A blur alone cannot
-  // tell that apart from the control being removed or disabled, or the window losing focus.)
+  // tell that apart from the control being removed, or the window losing focus.)
   useEffect(() => {
     const forget = (event: PointerEvent) => {
       const held = heldFocusRef.current;
@@ -452,7 +459,7 @@ function StripFocusKeeper({ heldFocusRef, focusWaitsOnTitleRef, headingRef, relo
         : target === "signIn" ? signInRef.current : headingRef.current;
       element?.focus({ preventScroll: true });
     };
-    const reloadEnabled = () => reloadRef.current !== null && !reloadRef.current.disabled;
+    const reloadEnabled = () => reloadRef.current !== null && reloadRef.current.getAttribute("aria-disabled") !== "true";
     const held = heldFocusRef.current;
     if (held !== null && !held.element.isConnected) {
       heldFocusRef.current = null;
@@ -479,13 +486,50 @@ function StripFocusKeeper({ heldFocusRef, focusWaitsOnTitleRef, headingRef, relo
   return null;
 }
 
+// What the Explorer can really see: the visual viewport (a phone's on-screen keyboard and a pinch zoom shrink
+// only that), otherwise the layout height as before (GPT-6 Astra review REV558, finding 2).
+function visibleArea() {
+  return connectedVisibleArea(window.visualViewport, document.documentElement.clientHeight);
+}
+
+// The message box and Send, only while one of them holds focus, and which one.
+function focusedComposer(): Readonly<{ box: HTMLElement; send: HTMLElement | null; focused: HTMLElement }> | null {
+  const box = document.getElementById(COMPOSER_FIELD_ID);
+  if (!(box instanceof HTMLTextAreaElement)) return null;
+  const send = box.form?.querySelector<HTMLElement>('button[type="submit"]') ?? null;
+  const active = document.activeElement;
+  if (active === box) return { box, send, focused: box };
+  return send !== null && active === send ? { box, send, focused: send } : null;
+}
+
+// Temporary scroll room under the page (GPT-6 Astra review REV574, finding 1). With the keyboard open the
+// page may not be able to scroll far enough to bring the message box and Send above it; the missing distance
+// is then added as padding under the page body, and taken away again when the keyboard closes or becomes
+// smaller (the visible height grows at the same zoom and layout height), or the screen leaves. Nothing is
+// drawn in it.
+type KeyboardSpace = { amount: number; base: number; inline: string };
+function giveKeyboardSpace(space: KeyboardSpace, more: number) {
+  if (space.amount === 0) {
+    space.inline = document.body.style.paddingBottom;
+    const base = Number.parseFloat(window.getComputedStyle(document.body).paddingBottom);
+    space.base = Number.isFinite(base) ? base : 0;
+  }
+  space.amount += more;
+  document.body.style.paddingBottom = `${space.base + space.amount}px`;
+}
+function takeKeyboardSpace(space: KeyboardSpace) {
+  if (space.amount === 0) return;
+  space.amount = 0;
+  document.body.style.paddingBottom = space.inline;
+}
+
 // Step B: writes the transcript's height from the sizing rule. Nothing is requested, stored or sent, and the
 // transcript's scroll position is never written here.
 function fitTranscript(box: HTMLDivElement | null, end: HTMLElement | null) {
   if (box === null || end === null) return;
   const place = box.getBoundingClientRect();
   const height = connectedTranscriptHeight({
-    windowHeight: document.documentElement.clientHeight,
+    windowHeight: visibleArea().height,
     top: place.top + window.scrollY,
     below: end.getBoundingClientRect().bottom - place.bottom,
   });
@@ -511,7 +555,18 @@ type SizerProps = Readonly<{
 // transcript and the message box; an ended conversation's End area; and the earlier siblings of the transcript
 // and of each of its ancestors up to the page body. Observer work is deferred to a frame and unchanged heights
 // are not rewritten; browser tests check settling after the covered layout changes.
+// It also follows the visual viewport (its resize and scroll events), which a phone's on-screen keyboard changes
+// without a window resize: the transcript is sized again and, when the keyboard change left the focused message
+// box or Send outside what is visible, the page moves just far enough to show them. That page move is the
+// fallback for a visible area too small for the smallest transcript; it is the only scrolling done here.
+// When the page cannot scroll that far, temporary scroll room is given under the page for the rest.
 function TranscriptSizer({ transcriptRef, conversationEndRef, endedEndRef, noticesRef, drawn }: SizerProps) {
+  const keyboardSpace = useRef<KeyboardSpace>({ amount: 0, base: 0, inline: "" });
+  // The temporary scroll room leaves with the screen.
+  useEffect(() => {
+    const space = keyboardSpace.current;
+    return () => takeKeyboardSpace(space);
+  }, []);
   useLayoutEffect(() => {
     fitTranscript(transcriptRef.current, endedEndRef.current ?? conversationEndRef.current);
   });
@@ -523,6 +578,42 @@ function TranscriptSizer({ transcriptRef, conversationEndRef, endedEndRef, notic
       frame = requestAnimationFrame(fit);
     };
     window.addEventListener("resize", fit);
+    const visual = window.visualViewport ?? null;
+    let seen = visibleArea();
+    const space = keyboardSpace.current;
+    const visualChanged = () => {
+      const composer = focusedComposer();
+      const focusedBefore = composer?.focused.getBoundingClientRect() ?? null;
+      const now = visibleArea();
+      // The keyboard closed or became smaller: the temporary scroll room goes. What is still needed is given again
+      // below. During a zoom or a layout change it stays: no page move follows those (REV587).
+      if (connectedKeyboardSpaceGoes(seen, now)) takeKeyboardSpace(space);
+      fit();
+      if (composer !== null && focusedBefore !== null) {
+        const measure = () => {
+          const focused = composer.focused.getBoundingClientRect();
+          return connectedKeyboardPageMove({
+            before: seen,
+            now,
+            focusedBefore: { top: focusedBefore.top, bottom: focusedBefore.bottom },
+            focused: { top: focused.top, bottom: focused.bottom },
+            top: composer.box.getBoundingClientRect().top,
+            bottom: (composer.send ?? composer.box).getBoundingClientRect().bottom,
+          });
+        };
+        let move = measure();
+        const root = document.documentElement;
+        const more = connectedKeyboardSpaceNeeded(move, root.scrollHeight - root.clientHeight - window.scrollY);
+        if (more > 0) {
+          giveKeyboardSpace(space, more);
+          move = measure();
+        }
+        if (move !== 0) window.scrollBy({ top: move, behavior: "instant" });
+      }
+      seen = now;
+    };
+    visual?.addEventListener("resize", visualChanged);
+    visual?.addEventListener("scroll", visualChanged);
     const observer = typeof ResizeObserver === "function" ? new ResizeObserver(later) : null;
     if (observer !== null) {
       const box = transcriptRef.current;
@@ -541,6 +632,8 @@ function TranscriptSizer({ transcriptRef, conversationEndRef, endedEndRef, notic
     }
     return () => {
       window.removeEventListener("resize", fit);
+      visual?.removeEventListener("resize", visualChanged);
+      visual?.removeEventListener("scroll", visualChanged);
       cancelAnimationFrame(frame);
       observer?.disconnect();
     };
@@ -1175,7 +1268,8 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
     const end = (view.ended ? endedEndRef.current : null) ?? conversationEndRef.current;
     if (end === null || typeof end.scrollIntoView !== "function") return;
     const place = typeof end.getBoundingClientRect === "function" ? end.getBoundingClientRect() : null;
-    if (place !== null && connectedOpenTargetInView({ top: place.top, bottom: place.bottom, windowHeight: document.documentElement.clientHeight })) return;
+    const area = visibleArea();
+    if (place !== null && connectedOpenTargetInView({ top: place.top, bottom: place.bottom, windowHeight: area.height, windowTop: area.top })) return;
     end.scrollIntoView({ behavior: "instant", block: "end" });
   }, [state, noticeAtOpen, view.ended]);
   const repliesDisabled = view.held || view.sendUnavailable || view.atMessageCapacity;
@@ -1243,7 +1337,7 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
   const releaseFocus = (event: FocusEvent<HTMLElement>) => {
     const element = event.currentTarget;
     // Drop the memory only when focus really went to another element. A blur with no destination (the control
-    // is leaving the screen or was disabled by a request, or only the window lost focus) keeps it; the keeper
+    // is leaving the screen, or only the window lost focus) keeps it; the keeper
     // then moves focus only if nothing else holds it.
     if (!(event.relatedTarget instanceof Element) || !element.isConnected || document.activeElement === element) return;
     if (heldFocusRef.current?.element === element) {

@@ -133,6 +133,8 @@ function facts(html: string): StripFacts {
     expect(textOf(reload[1])).toBe(RELOAD);
     expect(attribute(reload[0], "aria-describedby")).toBe("conversation-reload-help");
     expect(attribute(reload[0], "type")).toBe("button");
+    expect(/\sdisabled=""/.test(reload[0])).toBe(false);
+    expect(attribute(reload[0], "aria-disabled") ?? "true").toBe("true");
   }
   const line = /<p class="text-xs leading-5 text-stone-300"( hidden="")? id="conversation-reload-help">([^<]*)<\/p>/.exec(strip);
   // The description exists exactly when Reload is drawn.
@@ -140,7 +142,8 @@ function facts(html: string): StripFacts {
   return {
     light: /data-saved-light="(\w+)"/.exec(status![1])?.[1] ?? null,
     status: textOf(status![1]),
-    reload: reload ? (/\sdisabled=""/.test(reload[0]) ? "disabled" : "enabled") : null,
+    // Since REV558 finding 1 a working Reload is aria-disabled and never natively disabled (it keeps focus).
+    reload: reload ? (attribute(reload[0], "aria-disabled") === "true" ? "disabled" : "enabled") : null,
     help: strip.includes('id="conversation-reload-help-button"'),
     line: line ? { text: unescapeHtml(line[2]), hidden: line[1] !== undefined } : null,
   };
@@ -543,5 +546,69 @@ describe("compact header: the title, the chat panel and the start marker", () =>
       view({ state: null, errorCode: "unavailable", errorMessage: LOAD_ALERT })]) {
       expect(render(next)).not.toContain(START);
     }
+  });
+});
+
+// GPT-6 Astra review REV558, finding 1: a natively disabled button can drop keyboard focus to the page while
+// Reload works. Reload now stays focusable (aria-disabled) and its handler does nothing while busy.
+describe("REV558 finding 1: Reload keeps keyboard focus while it works", () => {
+  const SCREEN_SOURCE = readFileSync(path.resolve(__dirname, "../ExplorerConversationConnectedScreen.tsx"), "utf8");
+  type ButtonProps = { id?: string; disabled?: boolean; "aria-disabled"?: boolean; onClick?: () => void; children?: unknown };
+  // The Reload button's own props, as the strip builds them for this view.
+  function reloadProps(next: ConnectedConversationView, onReload: () => void): ButtonProps {
+    captured.strip = null; captured.on = true;
+    try {
+      renderToStaticMarkup(createElement(ExplorerConversationConnectedScreen, {
+        actions: { ...actions, onReload }, composerRef: createRef<HTMLTextAreaElement>(), headingRef: createRef<HTMLHeadingElement>(), view: next }));
+    } finally { captured.on = false; }
+    const strip = captured.strip as ReactElement<StripProps> | null;
+    expect(strip).not.toBeNull();
+    const drawn = (strip!.type as (props: StripProps) => ReactElement)(strip!.props);
+    const found: ButtonProps[] = [];
+    const walk = (node: unknown) => {
+      if (Array.isArray(node)) { node.forEach(walk); return; }
+      if (node === null || typeof node !== "object" || !("props" in node)) return;
+      const props = (node as ReactElement<ButtonProps>).props;
+      if (props.id === "conversation-reload-button") found.push(props);
+      walk(props.children);
+    };
+    walk(drawn);
+    expect(found).toHaveLength(1);
+    return found[0];
+  }
+
+  it("while a request runs Reload is aria-disabled, never natively disabled, and using it does nothing", () => {
+    const onReload = vi.fn();
+    const props = reloadProps(view({ busy: true, held: true, statusText: RELOADING }), onReload);
+    expect(props["aria-disabled"]).toBe(true);
+    expect("disabled" in props).toBe(false);
+    props.onClick!();
+    props.onClick!();
+    expect(onReload).not.toHaveBeenCalled();
+    const button = /<button\b[^>]*id="conversation-reload-button"[^>]*>/.exec(render(view({ busy: true, held: true, statusText: RELOADING })))![0];
+    expect(attribute(button, "aria-disabled")).toBe("true");
+    expect(/\sdisabled=""/.test(button)).toBe(false);
+    // It still looks unavailable.
+    expect(attribute(button, "class")).toContain("aria-disabled:cursor-not-allowed aria-disabled:opacity-50");
+  });
+
+  it("when nothing runs Reload carries no aria-disabled and reloads once per use", () => {
+    const onReload = vi.fn();
+    const props = reloadProps(view(), onReload);
+    expect(props["aria-disabled"]).toBeUndefined();
+    expect("disabled" in props).toBe(false);
+    props.onClick!();
+    expect(onReload).toHaveBeenCalledTimes(1);
+    const button = /<button\b[^>]*id="conversation-reload-button"[^>]*>/.exec(render())![0];
+    expect(attribute(button, "aria-disabled")).toBeNull();
+    expect(/\sdisabled=""/.test(button)).toBe(false);
+  });
+
+  it("the focus rules read the same state, and the recovery for controls that disappear is kept", () => {
+    expect(SCREEN_SOURCE).toContain('const reloadEnabled = () => reloadRef.current !== null && reloadRef.current.getAttribute("aria-disabled") !== "true";');
+    expect(SCREEN_SOURCE).not.toContain("reloadRef.current.disabled");
+    expect(SCREEN_SOURCE).not.toContain("disabled={view.busy}\n              id={RELOAD_BUTTON_ID}");
+    expect(SCREEN_SOURCE).toContain("if (held !== null && !held.element.isConnected) {");
+    expect(SCREEN_SOURCE).toContain("focusOn(target);\n        if (!held.title) focusWaitsOnTitleRef.current = target === \"title\" && busy;");
   });
 });

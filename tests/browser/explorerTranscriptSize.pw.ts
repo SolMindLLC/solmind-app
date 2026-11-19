@@ -699,3 +699,290 @@ for (const [width, height] of [[1024, 800], [1023, 800]] as const) {
     expect(problems).toEqual([]);
   });
 }
+
+// GPT-6 Astra review REV558, finding 2: a phone's on-screen keyboard shrinks only the visual viewport. A real
+// keyboard cannot be opened here, so the visual viewport's height is stubbed and its resize event is sent, as a
+// phone does; the layout window keeps its size. (null removes the stub.)
+const setVisibleHeight = (page: Page, height: number | null) => page.evaluate(visible => {
+  const visual = window.visualViewport!;
+  if (visible === null) delete (visual as unknown as { height?: number }).height;
+  else Object.defineProperty(visual, "height", { configurable: true, get: () => visible });
+  visual.dispatchEvent(new Event("resize"));
+}, height);
+type Visible = { height: number; rule: number; boxTop: number; boxBottom: number; sendTop: number; sendBottom: number; scrollY: number; pageRange: number; bodyPadding: string };
+// The transcript against the rule for a visible height, and where the message box and Send are in the window.
+const measureVisible = (page: Page, visible: number): Promise<Visible> => page.evaluate(([smallest, largest, gap, seen]) => {
+  const box = document.querySelector('[role="log"]') as HTMLElement;
+  const ends = document.querySelectorAll("[data-conversation-end]");
+  const end = ends[ends.length - 1];
+  const place = box.getBoundingClientRect();
+  const root = document.documentElement;
+  const available = seen - gap - (place.top + window.scrollY) - (end.getBoundingClientRect().bottom - place.bottom);
+  const field = document.getElementById("conversation-message") as HTMLElement;
+  const send = document.querySelector('[data-composer-bar] button[type="submit"]') as HTMLElement;
+  return {
+    height: place.height, rule: Math.min(largest, Math.max(smallest, Math.round(available))),
+    boxTop: field.getBoundingClientRect().top, boxBottom: field.getBoundingClientRect().bottom, sendTop: send.getBoundingClientRect().top, sendBottom: send.getBoundingClientRect().bottom,
+    scrollY: Math.round(window.scrollY), pageRange: Math.round(root.scrollHeight - root.clientHeight),
+    bodyPadding: document.body.style.paddingBottom,
+  };
+}, [SMALLEST, LARGEST, GAP, visible]);
+
+for (const focused of ["the message box", "Send"] as const) {
+  test(`REV558: when the on-screen keyboard shrinks what is visible, the transcript is sized to it and ${focused}, holding focus, stays above the keyboard`, async ({ page }) => {
+    const problems = await openPage(page, { read: () => success(savedState()) });
+    const open = await expectRule(page, "after open");
+    await composer(page).fill("A synthetic draft for this test.");
+    if (focused === "Send") await sendButton(page).focus(); else await composer(page).focus();
+    await expect(focused === "Send" ? sendButton(page) : composer(page)).toBeFocused();
+    const before = await measureVisible(page, open.windowHeight);
+    // The message box is in view before the keyboard opens.
+    expect(before.boxTop).toBeGreaterThanOrEqual(0);
+    expect(before.boxTop).toBeLessThan(open.windowHeight);
+    const visible = Math.round(open.windowHeight * 0.6);
+    await setVisibleHeight(page, visible);
+    // Sized to the visible height, not to the layout window.
+    await expect.poll(async () => { const now = await measureVisible(page, visible); return Math.abs(now.height - now.rule); }).toBeLessThanOrEqual(1);
+    const shown = await measureVisible(page, visible);
+    test.info().annotations.push({ type: `keyboard open, ${visible} px visible`, description: JSON.stringify({ before, shown }) });
+    expect(shown.height).toBeLessThanOrEqual(before.height);
+    // The two fit in what is visible here, so both are inside it, Send with the gap under it. Reaching the end
+    // of the page is no excuse (REV574 finding 1).
+    expect(shown.sendBottom - shown.boxTop + GAP, JSON.stringify(shown)).toBeLessThanOrEqual(visible);
+    expect(shown.boxTop, JSON.stringify(shown)).toBeGreaterThanOrEqual(-1);
+    expect(shown.sendBottom + GAP, JSON.stringify(shown)).toBeLessThanOrEqual(visible + 1);
+    // On the phone the page really had to move.
+    if (!isDesktop()) expect(before.sendBottom).toBeGreaterThan(visible);
+    // The keyboard closes: the transcript follows the whole window again, no scroll room is left behind and
+    // nothing is lost from view.
+    await setVisibleHeight(page, null);
+    await expectRule(page, "keyboard closed");
+    expect((await measureVisible(page, open.windowHeight)).bodyPadding).toBe("");
+    await expect(composer(page)).toBeInViewport({ ratio: 0.99 });
+    expect(problems).toEqual([]);
+  });
+}
+
+test("REV558: a visible-height change while neither the message box nor Send holds focus sizes the transcript and leaves the page where it is", async ({ page }) => {
+  const problems = await openPage(page, { read: () => success(savedState()) });
+  const open = await expectRule(page, "after open");
+  await title(page).focus();
+  const at = await page.evaluate(() => Math.round(window.scrollY));
+  const visible = Math.round(open.windowHeight * 0.6);
+  await setVisibleHeight(page, visible);
+  await expect.poll(async () => { const now = await measureVisible(page, visible); return Math.abs(now.height - now.rule); }).toBeLessThanOrEqual(1);
+  // Only the browser's own clamp may move the page (a shorter transcript makes the page shorter).
+  const now = await measureVisible(page, visible);
+  expect(now.scrollY).toBe(Math.min(at, now.pageRange));
+  await setVisibleHeight(page, null);
+  await expectRule(page, "restored");
+  expect(problems).toEqual([]);
+});
+
+test("REV558: with the message box focused but scrolled out of view, a visible-height change does not pull the page back", async ({ page }) => {
+  test.skip(isDesktop(), "the narrow project is the phone: its page scrolls far enough");
+  const problems = await openPage(page, { read: () => success(savedState()) });
+  const open = await expectRule(page, "after open");
+  await composer(page).focus();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  const away = await measureVisible(page, open.windowHeight);
+  expect(away.scrollY).toBe(0);
+  // The message box is below the window now.
+  expect(away.boxTop).toBeGreaterThan(open.windowHeight);
+  await setVisibleHeight(page, Math.round(open.windowHeight * 0.6));
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  expect(await page.evaluate(() => Math.round(window.scrollY))).toBe(0);
+  await setVisibleHeight(page, null);
+  expect(problems).toEqual([]);
+});
+
+// GPT-6 Astra review REV574. Everything that stands after the chat panel in the page is hidden, so the page ends
+// right under the message box area and cannot scroll far enough by itself.
+const endThePageUnderTheMessageBox = (page: Page) => page.evaluate(() => {
+  for (let node: Element | null = document.querySelector("[data-composer-bar]"); node !== null && node !== document.body; node = node.parentElement) {
+    for (let after = node.nextElementSibling; after !== null; after = after.nextElementSibling) {
+      // The markers the sizer measures stay.
+      if (after.matches("[data-conversation-end]") || after.querySelector("[data-conversation-end]") !== null) continue;
+      (after as HTMLElement).style.display = "none";
+    }
+  }
+  window.scrollTo(0, document.documentElement.scrollHeight);
+});
+
+for (const focused of ["the message box", "Send"] as const) {
+  test(`REV574: when the page cannot scroll far enough, temporary scroll room brings the message box and Send above the keyboard (${focused} focused), and it is gone when the keyboard closes`, async ({ page }) => {
+    const problems = await openPage(page, { read: () => success(savedState()) });
+    await expectRule(page, "after open");
+    await composer(page).fill("A synthetic draft for this test.");
+    await endThePageUnderTheMessageBox(page);
+    const open = await expectRule(page, "page ended under the message box");
+    if (focused === "Send") await sendButton(page).focus(); else await composer(page).focus();
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    const before = await measureVisible(page, open.windowHeight);
+    // The page is at its end: it cannot scroll further by itself, and both controls are in view.
+    expect(before.pageRange - before.scrollY).toBeLessThanOrEqual(1);
+    expect(before.boxTop).toBeGreaterThanOrEqual(0);
+    expect(before.sendBottom).toBeLessThanOrEqual(open.windowHeight);
+    expect(before.bodyPadding).toBe("");
+    // A keyboard that leaves room for the two together, with 40 px to spare, and covers Send where it is now.
+    const visible = Math.round(before.sendBottom - before.boxTop + GAP + 40);
+    expect(visible).toBeLessThan(before.sendBottom);
+    await setVisibleHeight(page, visible);
+    await expect.poll(async () => (await measureVisible(page, visible)).sendBottom + GAP).toBeLessThanOrEqual(visible + 1);
+    const shown = await measureVisible(page, visible);
+    test.info().annotations.push({ type: `no page scroll range, ${visible} px visible`, description: JSON.stringify({ before, shown }) });
+    // Both are really visible; the page was given room and moved further than it could before.
+    expect(shown.boxTop, JSON.stringify(shown)).toBeGreaterThanOrEqual(-1);
+    expect(shown.sendBottom + GAP, JSON.stringify(shown)).toBeLessThanOrEqual(visible + 1);
+    expect(shown.bodyPadding).toMatch(/^\d+(\.\d+)?px$/);
+    expect(shown.scrollY).toBeGreaterThan(before.pageRange);
+    await expect(focused === "Send" ? sendButton(page) : composer(page)).toBeFocused();
+    // The keyboard becomes smaller: still both visible. It closes: the room is gone.
+    const smaller = visible + 60;
+    await setVisibleHeight(page, smaller);
+    const eased = await measureVisible(page, smaller);
+    expect(eased.boxTop, JSON.stringify(eased)).toBeGreaterThanOrEqual(-1);
+    expect(eased.sendBottom + GAP, JSON.stringify(eased)).toBeLessThanOrEqual(smaller + 1);
+    await setVisibleHeight(page, null);
+    const closed = await measureVisible(page, open.windowHeight);
+    expect(closed.bodyPadding).toBe("");
+    expect(closed.pageRange).toBeLessThanOrEqual(before.pageRange + 1);
+    await expectRule(page, "keyboard closed");
+    expect(problems).toEqual([]);
+  });
+}
+
+for (const focused of ["the message box", "Send"] as const) {
+  test(`REV574: when the message box and Send are taller than what is visible, ${focused}, holding focus, is the one shown`, async ({ page }) => {
+    const problems = await openPage(page, { read: () => success(savedState()) });
+    const open = await expectRule(page, "after open");
+    await composer(page).fill("A synthetic draft for this test.");
+    if (focused === "Send") await sendButton(page).focus(); else await composer(page).focus();
+    const before = await measureVisible(page, open.windowHeight);
+    expect(before.boxTop).toBeGreaterThanOrEqual(0);
+    expect(before.sendBottom).toBeLessThanOrEqual(open.windowHeight);
+    // 60 px less than the two need together.
+    const visible = Math.round(before.sendBottom - before.boxTop + GAP - 60);
+    expect(visible).toBeGreaterThan(Math.round(before.sendBottom - before.sendTop) + GAP);
+    await setVisibleHeight(page, visible);
+    const wanted = async () => {
+      const now = await measureVisible(page, visible);
+      return focused === "Send" ? Math.abs(now.sendBottom + GAP - visible) : Math.abs(now.boxTop);
+    };
+    await expect.poll(wanted).toBeLessThanOrEqual(1);
+    const shown = await measureVisible(page, visible);
+    test.info().annotations.push({ type: `oversized, ${visible} px visible, ${focused} focused`, description: JSON.stringify({ before, shown }) });
+    if (focused === "Send") {
+      // Send is whole and above the keyboard with its gap; the message box's top has left the visible area.
+      expect(shown.sendTop).toBeGreaterThanOrEqual(0);
+      expect(shown.sendBottom + GAP).toBeLessThanOrEqual(visible + 1);
+      expect(shown.boxTop).toBeLessThan(0);
+      await expect(sendButton(page)).toBeFocused();
+    } else {
+      // The message box starts at the top of the visible area; Send is the part that does not fit.
+      expect(Math.abs(shown.boxTop)).toBeLessThanOrEqual(1);
+      expect(shown.sendBottom + GAP).toBeGreaterThan(visible);
+      await expect(composer(page)).toBeFocused();
+    }
+    await setVisibleHeight(page, null);
+    await expectRule(page, "keyboard closed");
+    expect((await measureVisible(page, open.windowHeight)).bodyPadding).toBe("");
+    expect(problems).toEqual([]);
+  });
+}
+
+test("REV574: a focused Send in view is brought above the keyboard even when the message box was above the window before", async ({ page }) => {
+  const problems = await openPage(page, { read: () => success(savedState()) });
+  const open = await expectRule(page, "after open");
+  await composer(page).fill("A synthetic draft for this test.");
+  await sendButton(page).focus();
+  // Scroll until the whole message box has just left the top of the window; Send, below it, is still in view.
+  // (A test-only block under the page gives it the scroll range for that.)
+  await page.evaluate(() => {
+    const room = document.createElement("div");
+    room.style.height = "2000px";
+    document.body.appendChild(room);
+  });
+  const start = await measureVisible(page, open.windowHeight);
+  await page.evaluate(by => window.scrollBy(0, by), Math.round(start.boxBottom + 2));
+  const before = await measureVisible(page, open.windowHeight);
+  test.info().annotations.push({ type: "only Send in view", description: JSON.stringify({ start, before }) });
+  // Asked of the message box, "was it in view before" would say no; asked of Send, yes.
+  expect(before.boxBottom).toBeLessThanOrEqual(0);
+  expect(before.sendTop).toBeGreaterThanOrEqual(10);
+  expect(before.sendBottom).toBeLessThan(open.windowHeight);
+  // A keyboard that covers the last 8 px Send needs (with its gap).
+  const visible = Math.round(before.sendBottom + GAP - 8);
+  await setVisibleHeight(page, visible);
+  await expect.poll(async () => (await measureVisible(page, visible)).sendBottom + GAP, { message: JSON.stringify(before) }).toBeLessThanOrEqual(visible + 1);
+  const shown = await measureVisible(page, visible);
+  expect(shown.sendTop).toBeGreaterThanOrEqual(-1);
+  await expect(sendButton(page)).toBeFocused();
+  await setVisibleHeight(page, null);
+  expect(problems).toEqual([]);
+});
+
+// GPT-6 Astra review REV587. A pinch zoom changes the visual viewport's height and its scale together; both are
+// stubbed and the resize event is sent. (null removes a stub.)
+const setVisibleZoom = (page: Page, height: number | null, scale: number | null) => page.evaluate(([visible, zoom]) => {
+  const visual = window.visualViewport!;
+  if (visible === null) delete (visual as unknown as { height?: number }).height;
+  else Object.defineProperty(visual, "height", { configurable: true, get: () => visible });
+  if (zoom === null) delete (visual as unknown as { scale?: number }).scale;
+  else Object.defineProperty(visual, "scale", { configurable: true, get: () => zoom });
+  visual.dispatchEvent(new Event("resize"));
+}, [height, scale] as const);
+
+test("REV587: with the keyboard open and temporary scroll room in place, pinching in and back out keeps the room and Send visible; closing the keyboard removes it and reopening gives it again", async ({ page }) => {
+  const problems = await openPage(page, { read: () => success(savedState()) });
+  await expectRule(page, "after open");
+  await composer(page).fill("A synthetic draft for this test.");
+  await endThePageUnderTheMessageBox(page);
+  const open = await expectRule(page, "page ended under the message box");
+  await sendButton(page).focus();
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const before = await measureVisible(page, open.windowHeight);
+  expect(before.pageRange - before.scrollY).toBeLessThanOrEqual(1);
+  expect(before.bodyPadding).toBe("");
+  // The keyboard opens: the page has no scroll range left, so room is given and both controls are visible.
+  const visible = Math.round(before.sendBottom - before.boxTop + GAP + 40);
+  expect(visible).toBeLessThan(before.sendBottom);
+  await setVisibleHeight(page, visible);
+  await expect.poll(async () => (await measureVisible(page, visible)).sendBottom + GAP).toBeLessThanOrEqual(visible + 1);
+  const shown = await measureVisible(page, visible);
+  expect(shown.boxTop, JSON.stringify(shown)).toBeGreaterThanOrEqual(-1);
+  expect(shown.bodyPadding).toMatch(/^\d+(\.\d+)?px$/);
+  // Pinch in to twice the size: half the height is visible, the scale changes. The room stays.
+  await setVisibleZoom(page, Math.round(visible / 2), 2);
+  const pinched = await measureVisible(page, visible);
+  expect(pinched.bodyPadding).toBe(shown.bodyPadding);
+  // Pinch back out to the original zoom, the keyboard still open: the room is still there, the page did not
+  // snap back, and Send (which holds focus) and the message box are visible as before.
+  await setVisibleZoom(page, visible, null);
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const back = await measureVisible(page, visible);
+  test.info().annotations.push({ type: "keyboard open, pinch in, pinch out", description: JSON.stringify({ before, shown, pinched, back }) });
+  expect(back.bodyPadding).toBe(shown.bodyPadding);
+  expect(back.scrollY).toBe(shown.scrollY);
+  expect(back.sendTop, JSON.stringify(back)).toBeGreaterThanOrEqual(-1);
+  expect(back.sendBottom + GAP, JSON.stringify(back)).toBeLessThanOrEqual(visible + 1);
+  expect(back.boxTop, JSON.stringify(back)).toBeGreaterThanOrEqual(-1);
+  await expect(sendButton(page)).toBeFocused();
+  // The keyboard closes: the room is gone and the page is as it was.
+  await setVisibleHeight(page, null);
+  const closed = await measureVisible(page, open.windowHeight);
+  expect(closed.bodyPadding).toBe("");
+  expect(closed.pageRange).toBeLessThanOrEqual(before.pageRange + 1);
+  await expectRule(page, "keyboard closed");
+  // It opens again: room is given again and both are visible.
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await setVisibleHeight(page, visible);
+  await expect.poll(async () => (await measureVisible(page, visible)).sendBottom + GAP).toBeLessThanOrEqual(visible + 1);
+  const again = await measureVisible(page, visible);
+  expect(again.boxTop, JSON.stringify(again)).toBeGreaterThanOrEqual(-1);
+  expect(again.bodyPadding).toMatch(/^\d+(\.\d+)?px$/);
+  await setVisibleHeight(page, null);
+  expect((await measureVisible(page, open.windowHeight)).bodyPadding).toBe("");
+  await expectRule(page, "keyboard closed again");
+  expect(problems).toEqual([]);
+});

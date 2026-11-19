@@ -257,8 +257,90 @@ export function connectedTranscriptScrollsToEnd(messageCount: number, awaitingRe
 
 // The once-only page move on open is skipped when its target (the end of the conversation area, with its
 // scroll margin under it) is already inside the window.
-export function connectedOpenTargetInView(input: Readonly<{ top: number; bottom: number; windowHeight: number }>): boolean {
-  return input.top >= 0 && input.bottom + TRANSCRIPT_HEIGHT.gap <= input.windowHeight + 1;
+// "windowTop" is where the visible area starts in window coordinates (zero unless the visual viewport is moved).
+export function connectedOpenTargetInView(input: Readonly<{ top: number; bottom: number; windowHeight: number; windowTop?: number }>): boolean {
+  const windowTop = input.windowTop ?? 0;
+  return input.top >= windowTop && input.bottom + TRANSCRIPT_HEIGHT.gap <= windowTop + input.windowHeight + 1;
+}
+
+// What the Explorer can really see (GPT-6 Astra review REV558, finding 2). On a phone the on-screen keyboard,
+// and a pinch zoom, shrink only the visual viewport: the layout height still describes the larger window. The
+// visual viewport's height and offsetTop are used when the browser has one; otherwise the layout height, as
+// before. "top" is in window coordinates, the same as getBoundingClientRect; "layout" is the layout height.
+export type ConnectedVisibleArea = Readonly<{ top: number; height: number; scale: number; layout: number }>;
+export function connectedVisibleArea(
+  visual: Readonly<{ height: number; offsetTop: number; scale?: number }> | null | undefined,
+  layoutHeight: number,
+): ConnectedVisibleArea {
+  if (visual === null || visual === undefined || !Number.isFinite(visual.height) || visual.height <= 0 ||
+      !Number.isFinite(visual.offsetTop)) {
+    return { top: 0, height: layoutHeight, scale: 1, layout: layoutHeight };
+  }
+  return { top: visual.offsetTop, height: visual.height, scale: typeof visual.scale === "number" && Number.isFinite(visual.scale) ? visual.scale : 1, layout: layoutHeight };
+}
+
+// How far the page must move (positive: down the page) so that the message box and Send, with the 16 px gap
+// under Send, are inside the visible area. "top" and "bottom" are the message box's top and Send's bottom;
+// "focused" is the one of the two that holds focus. When both cannot fit, the focused control is the one
+// shown, with as much of the other as fits (GPT-6 Astra review REV574, finding 2); a focused control that is
+// itself too tall shows its top.
+export function connectedComposerPageMove(input: Readonly<{
+  top: number;
+  bottom: number;
+  focused: Readonly<{ top: number; bottom: number }>;
+  area: ConnectedVisibleArea;
+}>): number {
+  const { top, bottom, focused, area } = input;
+  if (![top, bottom, focused.top, focused.bottom, area.top, area.height].every(Number.isFinite)) return 0;
+  const gap = TRANSCRIPT_HEIGHT.gap;
+  const areaBottom = area.top + area.height;
+  if (bottom + gap - top <= area.height + 1) {
+    // Both fit: the smallest move that shows both.
+    if (bottom + gap > areaBottom + 1) return Math.round(bottom + gap - areaBottom);
+    return top < area.top ? Math.round(top - area.top) : 0;
+  }
+  // Both cannot fit. "least" shows the focused control's bottom with the gap, "most" still shows its top.
+  const least = focused.bottom + gap - areaBottom;
+  const most = focused.top - area.top;
+  if (least > most) return Math.round(most);
+  return Math.round(Math.min(most, Math.max(least, top - area.top)));
+}
+
+// The page move after the visible area changed while the message box or Send holds focus. It is made only
+// when the visible height changed at the same zoom and with the same layout height (the keyboard opened,
+// closed or changed size over the page; a pinch zoom or a pan of the zoomed view is the Explorer's own doing,
+// and a window that was itself resized is handled as before, without a page move) and only when the focused
+// control was in view before the change (an Explorer who scrolled away from it is not pulled back).
+// "focusedBefore" is the focused control measured before the transcript was sized again; "focused", "top"
+// and "bottom" are measured after it.
+export function connectedKeyboardPageMove(input: Readonly<{
+  before: ConnectedVisibleArea;
+  now: ConnectedVisibleArea;
+  focusedBefore: Readonly<{ top: number; bottom: number }>;
+  focused: Readonly<{ top: number; bottom: number }>;
+  top: number;
+  bottom: number;
+}>): number {
+  const { before, now, focusedBefore } = input;
+  if (now.height === before.height || now.scale !== before.scale || now.layout !== before.layout) return 0;
+  const wasInView = focusedBefore.bottom > before.top && focusedBefore.top < before.top + before.height;
+  if (!wasInView) return 0;
+  return connectedComposerPageMove({ top: input.top, bottom: input.bottom, focused: input.focused, area: now });
+}
+
+// The temporary scroll room, in whole pixels, that the page needs under it so that a move down the page can
+// be made in full: "room" is how far the page can still scroll (GPT-6 Astra review REV574, finding 1).
+export function connectedKeyboardSpaceNeeded(move: number, room: number): number {
+  if (!Number.isFinite(move) || !Number.isFinite(room) || move <= Math.max(0, room)) return 0;
+  return Math.ceil(move - Math.max(0, room)) + 1;
+}
+
+// Whether the temporary scroll room goes after a change of the visible area: only when the visible height grew
+// at the same zoom and with the same layout height (the keyboard closed or became smaller), the same condition
+// as the page move. A pinch zoom out also makes the visible height grow, but the keyboard is still open then:
+// the room stays, because no page move would follow to make up for it (GPT-6 Astra review REV587).
+export function connectedKeyboardSpaceGoes(before: ConnectedVisibleArea, now: ConnectedVisibleArea): boolean {
+  return now.height > before.height && now.scale === before.scale && now.layout === before.layout;
 }
 
 export const COMPOSER_LABEL = "Continue the conversation";

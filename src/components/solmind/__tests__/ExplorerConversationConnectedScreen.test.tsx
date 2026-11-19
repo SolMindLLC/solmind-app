@@ -802,8 +802,9 @@ describe("connected Explorer conversation screen", () => {
     const screen = html;
     expect(html).not.toContain(NOT_YET_IMPLEMENTED_PREFIX);
     expect(html).not.toContain("data-preview-");
-    // (The real controls keep their own disabled:cursor-not-allowed state style.)
-    expect(screen.match(/.{0,80}(?:\bsky-|(?<!disabled:)cursor-not-allowed|aria-disabled).{0,40}/g) ?? []).toEqual([]);
+    // (The real controls keep their own disabled:cursor-not-allowed state style; Reload's is the
+    // aria-disabled: state style since REV558 finding 1. No aria-disabled attribute is drawn here.)
+    expect(screen.match(/.{0,80}(?:\bsky-|(?<!disabled:)cursor-not-allowed|aria-disabled(?!:)).{0,40}/g) ?? []).toEqual([]);
     // Since Paul's build-note rule (decision queue 2026-11-03 17:59:20 CST) the only dashed edges here are the
     // blue build-note boxes of the areas not built yet, each carrying its marker.
     const dashed = [...screen.matchAll(/<\w+\b[^>]*\bborder-dashed\b[^>]*>/g)].map(([tag]) => tag);

@@ -682,3 +682,41 @@ test("the chat panel carries the decided colours: the warmer panel, the band and
   await expect(page.locator("[data-chat-panel]").getByLabel("Continue the conversation", { exact: true })).toHaveCount(1);
   await expect(page.locator("[data-chat-panel]").getByRole("heading", { name: "End Session", exact: true })).toHaveCount(0);
 });
+
+// GPT-6 Astra review REV558, finding 1: while Reload works it stays focusable (aria-disabled, never the native
+// disabled attribute, which makes some browsers drop keyboard focus to the page), and using it again does nothing.
+test("Reload chosen by keyboard keeps keyboard focus while it works and afterwards; pressing it again while it works asks nothing", async ({ page }) => {
+  let reads = 0;
+  const problems = await openPage(page, { read: () => { reads += 1; return success(savedState()); }, command: noCommand });
+  await expect(savedStatus(page)).toHaveText(UP_TO_DATE);
+  const readsAtOpen = reads;
+  await reloadButton(page).focus();
+  const held = await holdNextRequest(page, STATE_URL);
+  await page.keyboard.press("Enter");
+  await held.arrived;
+  await expect(savedStatus(page)).toHaveText(RELOAD_CHECKING);
+  // Still the focused element, still in the tab order, and announced as unavailable.
+  await expect(reloadButton(page)).toBeFocused();
+  await expect(reloadButton(page)).toHaveAttribute("aria-disabled", "true");
+  await expect(reloadButton(page)).toBeDisabled();
+  expect(await reloadButton(page).evaluate(button => ({ native: (button as HTMLButtonElement).disabled, active: document.activeElement === button })))
+    .toEqual({ native: false, active: true });
+  // Used again while it works: no second request (it would reach the test's own route at once).
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Space");
+  await reloadButton(page).evaluate(button => (button as HTMLButtonElement).click());
+  await expect(savedStatus(page)).toHaveText(RELOAD_CHECKING);
+  expect(reads).toBe(readsAtOpen);
+  held.release();
+  await expect(savedStatus(page)).toHaveText(UP_TO_DATE);
+  await expect(reloadButton(page)).toBeFocused();
+  await expect(reloadButton(page)).toBeEnabled();
+  expect(await reloadButton(page).evaluate(button => button.hasAttribute("aria-disabled") || (button as HTMLButtonElement).disabled)).toBe(false);
+  expect(reads).toBe(readsAtOpen + 1);
+  // It works again afterwards, by keyboard.
+  await page.keyboard.press("Enter");
+  await expect.poll(() => reads).toBe(readsAtOpen + 2);
+  await expect(savedStatus(page)).toHaveText(UP_TO_DATE);
+  await expect(reloadButton(page)).toBeFocused();
+  expect(problems).toEqual([]);
+});
