@@ -196,9 +196,9 @@ function compass(input: unknown): ExplorerSafetyCompass | undefined {
   try {
     if (input === null || typeof input !== "object" || Array.isArray(input)) return undefined;
     const keys = Reflect.ownKeys(input);
-    if (keys.some(key => typeof key !== "string" || !["attention", "topics", "suggestions", "responses"].includes(key)) ||
+    // The 2026-11-18 demo test saw the model add "current". Like retired suggestions and responses, its value is never interpreted.
+    if (keys.some(key => typeof key !== "string" || !["attention", "topics", "suggestions", "responses", "current"].includes(key)) ||
         !dataObject(input, keys as string[])) return undefined;
-    // Retired values are deliberately not interpreted; optional siblings remain independent.
     const validAttention = input.attention === null ||
       (typeof input.attention === "string" && input.attention.length === 36 && UUID.test(input.attention));
     const topics = parseExplorerSafetyCompassTopics(input.topics);

@@ -22,7 +22,7 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync, lstatSync } from "node:fs";
 import path from "node:path";
 import type { ExplorerPrivateConversationDependencies } from "../virtual-guide/explorerPrivateConversationComposition";
-import { EXPLORER_SAFETY_REPLY_PROTOCOL, explorerSafetyReplyHasConflictingOuterKey, explorerSafetyReplyRepeatsName, parseExplorerSafetyReplyBody } from "../virtual-guide/explorerSafetyReplyContract";
+import { EXPLORER_SAFETY_REPLY_PROTOCOL, explorerSafetyReplyHasConflictingOuterKey, explorerSafetyReplyRepeatsName, parseExplorerSafetyReplyBody, type ExplorerSafetyReplyObservation } from "../virtual-guide/explorerSafetyReplyContract";
 
 export const SOLMIND_DEBUG_TAG = "SOLMIND-DEBUG";
 export const SOLMIND_DEBUG_CONVERSATION_LOG_ENV = "SOLMIND_DEBUG_CONVERSATION_LOG";
@@ -111,11 +111,18 @@ export async function explorerConversationDebugStep<T>(sendId: string, step: str
 const ALLOWED_OUTER_KEYS = Object.freeze(["protocol", "classification", "candidateReply", "compass", "choices", "waypointSuggestion", "waypointResponse",
   "waypointOffer", "waypointOfferResponse"]);
 const REQUIRED_OUTER_KEYS = Object.freeze(["protocol", "classification", "candidateReply"]);
+const KNOWN_COMPASS_KEYS = Object.freeze(["attention", "topics", "suggestions", "responses", "current"]);
 
-// SOLMIND-DEBUG: names the first shape rule a raw Virtual Guide reply breaks, to sit beside the parser's own verdict
-// (parseExplorerSafetyReplyBody stays the authority; see describeExplorerSafetyReply). Key names are cut short.
-export function describeExplorerSafetyReplyShape(rawText: unknown, protocol: string, mode: string = "classification_and_reply"): Readonly<Record<string, unknown>> {
-  if (typeof rawText !== "string") return { rule: "not_text" };
+// SOLMIND-DEBUG: bound key names in the shape record.
+function shortKeyNames(keys: readonly string[]): string[] {
+  return keys.slice(0, 20).map((key) => key.slice(0, KEY_LIMIT));
+}
+
+// SOLMIND-DEBUG: retain the decoded object for comparing proposals alongside the shape check.
+function inspectReplyShape(rawText: unknown, protocol: string, mode: string): {
+  shape: Readonly<Record<string, unknown>>; body?: Record<string, unknown>;
+} {
+  if (typeof rawText !== "string") return { shape: { rule: "not_text" } };
   const trimmed = rawText.trim();
   const fenced = /^\s*```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]*```\s*$/u.exec(rawText);
   let body: unknown;
@@ -126,16 +133,16 @@ export function describeExplorerSafetyReplyShape(rawText: unknown, protocol: str
     let end = parsedText.length;
     while (end > 0 && " \t\n\r".includes(parsedText[end - 1])) end--;
     if (parsedText[end - 1] !== "}") {
-      return { rule: "not_json", startsWithCodeFence: trimmed.startsWith("```"), startsWithBrace: trimmed.startsWith("{") };
+      return { shape: { rule: "not_json", startsWithCodeFence: trimmed.startsWith("```"), startsWithBrace: trimmed.startsWith("{") } };
     }
     parsedText = parsedText.slice(0, end - 1);
     try { body = JSON.parse(parsedText); } catch {
-      return { rule: "not_json", startsWithCodeFence: trimmed.startsWith("```"), startsWithBrace: trimmed.startsWith("{") };
+      return { shape: { rule: "not_json", startsWithCodeFence: trimmed.startsWith("```"), startsWithBrace: trimmed.startsWith("{") } };
     }
     surplusClosingBraceRemoved = true;
   }
   const repair = surplusClosingBraceRemoved ? { surplusClosingBraceRemoved: true } : {};
-  if (body === null || typeof body !== "object" || Array.isArray(body)) return { rule: "not_object", ...repair };
+  if (body === null || typeof body !== "object" || Array.isArray(body)) return { shape: { rule: "not_object", ...repair } };
   let repeatedNameRule: string | null = null;
   try {
     if (explorerSafetyReplyRepeatsName(parsedText)) repeatedNameRule = "repeated_name";
@@ -157,21 +164,53 @@ export function describeExplorerSafetyReplyShape(rawText: unknown, protocol: str
     : record.protocol !== protocol ? "wrong_protocol"
       : explorerSafetyReplyHasConflictingOuterKey(body) ? "conflicting_outer_key" : !classificationValid ? "bad_classification"
       : mode !== "classification_only" && candidateShape !== "content" ? "candidate_" + candidateShape : "shape_ok";
-  const short = (list: readonly string[]) => list.slice(0, 20).map((key) => key.slice(0, KEY_LIMIT));
-  return { rule, codeFence: fenced !== null, outerKeys: short(keys), droppedKeys: short(dropped), missingKeys: missing, candidateShape, ...repair };
+  return { body: record, shape: { rule, codeFence: fenced !== null, outerKeys: shortKeyNames(keys),
+    droppedKeys: shortKeyNames(dropped), missingKeys: missing, candidateShape, ...repair } };
+}
+
+// SOLMIND-DEBUG: name the first shape rule a raw Virtual Guide reply breaks.
+export function describeExplorerSafetyReplyShape(rawText: unknown, protocol: string, mode: string = "classification_and_reply"): Readonly<Record<string, unknown>> {
+  return inspectReplyShape(rawText, protocol, mode).shape;
+}
+
+// SOLMIND-DEBUG: compare supplied and parsed proposals using only key names, counts and presence flags.
+function proposalSummary(body: Record<string, unknown> | undefined, parsed: ExplorerSafetyReplyObservation): Readonly<Record<string, unknown>> {
+  try {
+    if (body === undefined) return {};
+    const rawCompass = body.compass;
+    const compass = rawCompass !== null && typeof rawCompass === "object" && !Array.isArray(rawCompass)
+      ? rawCompass as Record<string, unknown> : undefined;
+    const suppliedKeys = Object.keys(compass ?? {});
+    const compassKeys = suppliedKeys.filter((key) => KNOWN_COMPASS_KEYS.includes(key));
+    return {
+      compassSupplied: rawCompass != null,
+      compassKeys,
+      compassOtherKeys: suppliedKeys.length - compassKeys.length,
+      compassKept: parsed.compass !== undefined,
+      compassTopicsSupplied: Array.isArray(compass?.topics) ? compass.topics.length : 0,
+      compassTopicsKept: parsed.compass?.topics?.length ?? 0,
+      attentionKept: parsed.compass?.attention !== undefined,
+      waypointSuggestionSupplied: body.waypointSuggestion != null,
+      waypointSuggestionKept: parsed.waypointSuggestion !== undefined,
+      waypointResponseSupplied: body.waypointResponse != null,
+      waypointResponseKept: parsed.waypointResponse !== undefined,
+      choicesSupplied: Array.isArray(body.choices) ? body.choices.length : 0,
+      choicesKept: parsed.choices?.length ?? 0,
+    };
+  } catch { return {}; }
 }
 
 // SOLMIND-DEBUG: the parser's own verdict on a raw reply, beside the shape rule: accepted (with the candidate's kind)
 // or the parser's error code.
 export function describeExplorerSafetyReply(rawText: unknown, mode: string): Readonly<Record<string, unknown>> {
-  let parser: Readonly<Record<string, unknown>>;
+  const { shape, body } = inspectReplyShape(rawText, EXPLORER_SAFETY_REPLY_PROTOCOL, mode);
   try {
     const observation = parseExplorerSafetyReplyBody(rawText, mode as Parameters<typeof parseExplorerSafetyReplyBody>[1]);
-    parser = { parser: "accepted", candidateKind: observation.candidate.kind, level: observation.classification.level };
+    return { parser: "accepted", candidateKind: observation.candidate.kind, level: observation.classification.level, ...shape,
+      ...(mode === "classification_and_reply" ? { proposals: proposalSummary(body, observation) } : {}) };
   } catch (error) {
-    parser = { parser: "rejected", parserError: errorCode(error) };
+    return { parser: "rejected", parserError: errorCode(error), ...shape };
   }
-  return { ...parser, ...describeExplorerSafetyReplyShape(rawText, EXPLORER_SAFETY_REPLY_PROTOCOL, mode) };
 }
 
 // SOLMIND-DEBUG: the raw text, cut to a bounded length.

@@ -18,7 +18,8 @@ import { invokeExplorerSafetyReply } from "../virtual-guide/explorerSafetyReplyI
 import type { ExplorerPrivateConversationDependencies } from "../virtual-guide/explorerPrivateConversationComposition";
 
 const PROTOCOL = "explorer-safety-reply.v2";
-const GOOD = JSON.stringify({ protocol: PROTOCOL, classification: { level: 0, minorIndicated: false }, candidateReply: { content: "Hello there." } });
+const goodReply = { protocol: PROTOCOL, classification: { level: 0, minorIndicated: false }, candidateReply: { content: "Hello there." } };
+const GOOD = JSON.stringify(goodReply);
 
 async function logFolder(): Promise<string> {
   const folder = await mkdtemp(join(tmpdir(), "solmind-debug-"));
@@ -233,7 +234,10 @@ describe("debug conversation log (SOLMIND-DEBUG)", () => {
       const described = describeExplorerSafetyReply(raw, "classification_and_reply");
       expect(described).toEqual({ parser: "accepted", candidateKind: "usable", level: 0, rule: "shape_ok",
         codeFence: raw.startsWith("```"), outerKeys: ["protocol", "classification", "candidateReply"],
-        droppedKeys: [], missingKeys: [], candidateShape: "content", surplusClosingBraceRemoved: true });
+        droppedKeys: [], missingKeys: [], candidateShape: "content", surplusClosingBraceRemoved: true,
+        proposals: { compassSupplied: false, compassKeys: [], compassOtherKeys: 0, compassKept: false, compassTopicsSupplied: 0,
+          compassTopicsKept: 0, attentionKept: false, waypointSuggestionSupplied: false, waypointSuggestionKept: false,
+          waypointResponseSupplied: false, waypointResponseKept: false, choicesSupplied: 0, choicesKept: 0 } });
       expect(JSON.stringify(described)).not.toContain("Hello there.");
     }
   });
@@ -265,6 +269,46 @@ describe("debug conversation log (SOLMIND-DEBUG)", () => {
       expect(JSON.stringify(described)).not.toContain("Synthetic unreadable document.");
       expect(JSON.stringify(described)).not.toContain("Hello there.");
     } finally { spy.mockRestore(); }
+  });
+
+  it("DL20 summarizes the kept topic and dropped Waypoint draft without their words or IDs", () => {
+    const pointId = "00000000-0000-4000-8000-000000000001";
+    const draftId = "00000000-0000-4000-8000-000000000002";
+    const topic = { topicId: null, label: "Quiet mornings", supportRefs: ["now"], ready: false };
+    const draft = { title: "Walk", destination: "Park", whyItMatters: "Fresh air" };
+    const choice = { label: "Stay here" };
+    const body = JSON.stringify({ ...goodReply, compass: { attention: pointId, current: null, topics: [topic] },
+      waypointSuggestion: draft, waypointResponse: { draftId, response: "right" }, choices: [choice] });
+    const raw = "```json\n" + body + "}\n```";
+    const { proposals } = describeExplorerSafetyReply(raw, "classification_and_reply");
+    expect(proposals).toEqual({ compassSupplied: true, compassKeys: ["attention", "current", "topics"], compassOtherKeys: 0, compassKept: true,
+      compassTopicsSupplied: 1, compassTopicsKept: 1, attentionKept: true,
+      waypointSuggestionSupplied: true, waypointSuggestionKept: false, waypointResponseSupplied: true,
+      waypointResponseKept: true, choicesSupplied: 1, choicesKept: 1 });
+    const logged = JSON.stringify(proposals);
+    for (const value of [topic.label, ...Object.values(draft), pointId, draftId, choice.label, goodReply.candidateReply.content]) {
+      expect(logged).not.toContain(value);
+    }
+  });
+
+  it("DL21 counts a supplied topic when an unknown Compass key drops it", () => {
+    const compass = { topics: [{ topicId: null, label: "Quiet mornings", supportRefs: ["now"], ready: false }], correction: true };
+    const raw = JSON.stringify({ ...goodReply, compass });
+    expect(describeExplorerSafetyReply(raw, "classification_and_reply").proposals).toMatchObject({
+      compassSupplied: true, compassKeys: ["topics"], compassOtherKeys: 1, compassKept: false, compassTopicsSupplied: 1, compassTopicsKept: 0,
+    });
+    expect(describeExplorerSafetyReply(raw, "classification_only")).not.toHaveProperty("proposals");
+    expect(describeExplorerSafetyReply("not json", "classification_and_reply")).not.toHaveProperty("proposals");
+  });
+
+  it("DL22 counts a Compass key containing conversation text without recording the text", () => {
+    const topic = { topicId: null, label: "Routine", supportRefs: ["now"], ready: false };
+    const raw = JSON.stringify({ ...goodReply, compass: { "Quiet mornings": true, topics: [topic] } });
+    const { proposals } = describeExplorerSafetyReply(raw, "classification_and_reply");
+    expect(proposals).toMatchObject({
+      compassKept: false, compassKeys: ["topics"], compassOtherKeys: 1, compassTopicsSupplied: 1, compassTopicsKept: 0,
+    });
+    expect(JSON.stringify(proposals)).not.toContain("Quiet mornings");
   });
 });
 

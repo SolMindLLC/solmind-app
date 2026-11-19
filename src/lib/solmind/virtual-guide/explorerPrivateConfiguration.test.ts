@@ -160,7 +160,7 @@ describe("private Explorer exact inert configuration candidate", () => {
     const ordinary = explorerSafetyHttpInstructions("classification_and_reply");
     const classification = explorerSafetyHttpInstructions("classification_only");
     expect(sentences).toHaveLength(24);
-    // Preserve the full approved block with only the two REV432 insertions between its sentences.
+    // Both instruction texts include the two REV432 insertions.
     const withAdditions = [
       ...sentences.slice(0, 11),
       "After giving new or changed direct wording or a single direct suggestion, use the reply's one question to ask whether it fits, unless the Explorer has already said it fits or a needed clarifying question must come first; never repeat a fit question the Explorer has already answered. If the same reply also offers a Waypoint, the question names both the wording and the Waypoint, and approval of the wording alone never confirms the Waypoint.",
@@ -168,9 +168,13 @@ describe("private Explorer exact inert configuration candidate", () => {
       "Make the Waypoint offer in the first reply in which all the existing Waypoint requirements are met, even when the Explorer also asks for help with what to say or do; the clarification, unanswered-draft, five-Waypoint, one-question, confirmation and safety rules still apply.",
       ...sentences.slice(16),
     ];
+    const afterAcceptance = "Once the Explorer accepts suggested wording or chooses a step (not a Waypoint or an offer about one), acknowledge it briefly and do not restate the accepted wording again, even in a summary, unless they ask to hear it again or ask for a change. In that same reply, if they ask to turn to another topic or to set this one down, follow that. Otherwise give any help they asked for on this topic, and make the Waypoint offer if the existing Waypoint requirements are met, or, if a Waypoint would fit but any essential detail is missing, ask for one of them instead. If none of these applies, ask whether they want to stay with the topic, set it down for now or turn to something else. Ask that question, here or when no direction emerges, at most once for the same topic.";
+    expect(role).toContain(withAdditions.join(" "));
+    expect(ordinary).toContain([...withAdditions.slice(0, 4), afterAcceptance, ...withAdditions.slice(4)].join(" "));
+    expect(ordinary.split(afterAcceptance)).toHaveLength(2);
+    expect(classification).not.toContain(afterAcceptance);
     expect(role.length).toBeLessThanOrEqual(EXPLORER_SAFE_CONTEXT_LIMITS.roleBehaviorTextCharacters);
     for (const text of [role, ordinary]) {
-      expect(text).toContain(withAdditions.join(" "));
       for (const sentence of sentences) expect(text.split(sentence)).toHaveLength(2);
       for (const removed of [
         "Hold space first: reflect what you hear and ask open, curious questions one at a time; where it helps, name two or three possible meanings for the Explorer to choose from.",

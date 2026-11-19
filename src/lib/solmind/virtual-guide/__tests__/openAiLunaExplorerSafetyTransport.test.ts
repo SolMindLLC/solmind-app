@@ -35,10 +35,11 @@ const RAW = '{"protocol":"explorer-safety-reply.v2","classification":{"level":4,
 function adapter(fetchImpl: typeof fetch) { return createOpenAiLunaExplorerSafetyTransport({ apiKey: "synthetic-never-transmitted-key", fetchImpl }); }
 describe("Dormant injected Explorer same-call HTTP transport", () => {
   it.each([
-    ["classification_only", 6216, "3D98B2B0AF7701A5D6F8125E719FA3DC4A13AEA41BC7CB26FF27D0A92E0DFCC8"],
-    ["classification_and_reply", 22354, "04E84A4BC6F30C2F1C2191434C688AE86598EF01B845E2BC8851527819E25090"],
+    ["classification_only", 6285, "80CCEF32514D0F1FD226334AF1321FD7D31AD6998A6580BF8CDADD035AC9BD51"],
+    ["classification_and_reply", 23192, "DBC3A391D5B3C56482B4CB7A5D170AB7D9647DC22A0CB6CB17C5B51A7231E0A7"],
   ] as const)("Lane 7 pins bounded-selection output instruction bytes and SHA-256 (%s)", (mode, bytes, sha256) => {
     const text = explorerSafetyHttpInstructions(mode);
+    expect(text).not.toContain("a current placed point id");
     expect(Buffer.byteLength(text, "utf8")).toBe(bytes);
     expect(createHash("sha256").update(text, "utf8").digest("hex").toUpperCase()).toBe(sha256);
   });
@@ -80,7 +81,7 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
   it("S4/S5 instructions bound suggestions, shift mentions, one acknowledgment and optional first-reply choices", () => {
     const text = explorerSafetyHttpInstructions("classification_and_reply");
     for (const sentence of [
-      "compass may contain only attention, a current placed point id from compassContext or null, and topics, an array of zero to three objects with exactly topicId (a supplied topic id or null), label (plain text, single-line, 1 to 160 characters), supportRefs (zero to three distinct supplied message references) and ready (boolean). A new topic needs at least one supportRef; an existing label stays unchanged.",
+      "compass may contain only two fields, attention and topics. attention is the id of a placed point from compassContext that the conversation is now about, or null. topics is an array of zero to three objects with exactly topicId (a supplied topic id or null), label (plain text, single-line, 1 to 160 characters), supportRefs (zero to three distinct supplied message references) and ready (boolean). A new topic needs at least one supportRef; an existing label stays unchanged.",
       "choices is an array of one to three objects, each with exactly label, a plain-text single-line label of 1 to 40 characters.",
       "Track a topic in compass.topics only from distinct Explorer responses in this conversation that support it; mere mentions, unrelated answers and disputes do not count. Within the existing support, readiness, preference and safety rules, track every distinct topic the Explorer's responses support, not only the main one, and report up to three of them in compass.topics in each reply as their support grows. Use topicId from compassContext.topics for an existing topic, or null for a new one, and a plain-text label of 1 to 160 characters; keep an existing label unchanged. Supply at most three topics per reply and at most three distinct supportRefs per topic, using only compassContext.messageRefs. Earlier accepted supportCount carries forward; never recount a message. Set ready true only when at least three distinct responses support that topic and you are highly confident it is clear; otherwise use false. Points go straight onto the dial without confirmation; do not send compass.suggestions or compass.responses. Use topics only with an ordinary reply below classification level 2 in an unrestricted conversation. Do not promise that a point or change was saved; the application may drop it. When uncertain what the Explorer means, ask gently and clarify the meaning before acting on it. When supplied state shows a Waypoint is confirmed and the Explorer says \"That's right\", acknowledge it briefly and continue from what matters to them.",
       "Only propose a needle move with an ordinary reply in an unrestricted conversation; the application validates it and may ignore it.",
@@ -129,8 +130,8 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
     expect(classification).toContain('you may offer "Show me around", "I have a question" and "Let\'s begin". Always answer questions about how things work.');
     // Pin the current ordinary text with only Paul's welcome sentence and its separating space removed.
     const earlier = ordinary.replace(" " + sentence, "");
-    expect(Buffer.byteLength(earlier, "utf8")).toBe(22080);
-    expect(createHash("sha256").update(earlier, "utf8").digest("hex").toUpperCase()).toBe("26EFCDFFD80EFD3DF8506E4A729BD17FD69A72F5FD4F29FBCC530C2CC3AC712C");
+    expect(Buffer.byteLength(earlier, "utf8")).toBe(22918);
+    expect(createHash("sha256").update(earlier, "utf8").digest("hex").toUpperCase()).toBe("13773A50A54829A211B3B1C782DEDA7544F2F31E753295543919509FFA09D1FB");
   });
   it("CV teaches Explorer-voice labels and explains the ordinary-only verified choice marker", () => {
     const voice = "Write every choice label as the Explorer's own reply, in their voice, as a complete answer to your question or invitation, never as a question to you or as your own words.";
@@ -149,8 +150,8 @@ describe("Dormant injected Explorer same-call HTTP transport", () => {
       expect({ bytes: Buffer.byteLength(text, "utf8"),
         sha256: createHash("sha256").update(text, "utf8").digest("hex").toUpperCase() })
         .toEqual(mode === "classification_and_reply"
-          ? { bytes: 22354, sha256: "04E84A4BC6F30C2F1C2191434C688AE86598EF01B845E2BC8851527819E25090" }
-          : { bytes: 6216, sha256: "3D98B2B0AF7701A5D6F8125E719FA3DC4A13AEA41BC7CB26FF27D0A92E0DFCC8" });
+          ? { bytes: 23192, sha256: "DBC3A391D5B3C56482B4CB7A5D170AB7D9647DC22A0CB6CB17C5B51A7231E0A7" }
+          : { bytes: 6285, sha256: "80CCEF32514D0F1FD226334AF1321FD7D31AD6998A6580BF8CDADD035AC9BD51" });
     });
   it("automatic instructions retire Compass response authorization", () => {
     const text = explorerSafetyHttpInstructions("classification_and_reply");

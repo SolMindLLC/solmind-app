@@ -4,9 +4,9 @@ import { parseExplorerSafetyReplyBody } from "../explorerSafetyReplyContract";
 
 const topicId = "11111111-1111-5111-8111-111111111111";
 const topic = { topicId: null, label: "Time for myself", supportRefs: ["now"], ready: false };
-function reply(compass: unknown, mode: "classification_and_reply" | "classification_only" = "classification_and_reply") {
+function reply(compass: unknown, mode: "classification_and_reply" | "classification_only" = "classification_and_reply", choices?: unknown) {
   return parseExplorerSafetyReplyBody(JSON.stringify({ protocol: "explorer-safety-reply.v2",
-    classification: { level: 0, minorIndicated: false }, candidateReply: { content: "What would that time make possible?" }, compass }), mode);
+    classification: { level: 0, minorIndicated: false }, candidateReply: { content: "What would that time make possible?" }, compass, choices }), mode);
 }
 describe("automatic Compass optional protocol", () => {
   it("keeps frozen topics and permits an existing topic without new evidence", () => {
@@ -36,6 +36,26 @@ describe("automatic Compass optional protocol", () => {
   it("retired Compass fields authorize no new transition", () => {
     expect(reply({ suggestions: [{ label: "Time for myself" }], responses: [{ pointId: topicId, response: "right" }] }).compass).toBeUndefined();
     expect(reply({ suggestions: { arbitrary: true }, responses: 42, topics: [topic] }).compass).toEqual({ topics: [topic] });
+  });
+  describe("a model-supplied current field", () => {
+    const pointId = "22222222-2222-5222-8222-222222222222";
+    const topics = [{ ...topic, topicId, supportRefs: ["now", "h0", "h1"], ready: true }];
+    it("preserves the ready topic, null attention, both choices and usable prose", () => {
+      const choices = [{ label: "Stay with this" }, { label: "Set it down" }];
+      const result = reply({ attention: null, current: null, topics }, "classification_and_reply", choices);
+      expect(result.compass).toStrictEqual({ attention: null, topics });
+      expect(result.choices).toStrictEqual(choices);
+      expect(result.candidate.kind).toBe("usable");
+    });
+    it.each([
+      [{ current: pointId, topics }, { topics }],
+      [{ current: "anything", attention: pointId }, { attention: pointId }],
+      [{ current: null }, undefined],
+      [{ topics, current: null, correction: true }, undefined],
+      [{ attention: null, current: pointId, topics }, { attention: null, topics }],
+    ])("ignores current while checking the rest of Compass: %j", (input, expected) => {
+      expect(reply(input).compass).toStrictEqual(expected);
+    });
   });
   it("unknown Compass key drops Compass but not valid prose", () => {
     const result = reply({ topics: [topic], correction: true });
