@@ -178,6 +178,50 @@ describe("dormant Explorer view event binding with real controller and fake tran
     f.last.reply.resolve(json(success())); await f.pending; f.attach();
     f.binding.setIdentifier(RAW); await f.binding.send(); same(f.navigations.length, 0); same(f.calls.length, 2);
   });
+  it("pagehide clears both values of the code field and retires a pending verification", async () => {
+    const f = await start("verify");
+    const input = { value: CODE, defaultValue: CODE };
+    const page = new EventTarget();
+    vi.stubGlobal("window", page);
+    const root = { querySelector: (selector: string) => selector.includes("#sign-in-code") ? input : null };
+    cleanup.push(f.binding.bindPageLifecycle(root as unknown as HTMLElement, vi.fn()));
+    page.dispatchEvent(new Event("pagehide"));
+    same([input.value, input.defaultValue], ["", ""]);
+    same(f.binding.read().codeDraft, ""); same(f.binding.read().flow.identifier, "");
+    check(f.last.init.signal?.aborted === true);
+    f.attach(); check(!f.binding.read().ready);
+    f.last.reply.resolve(json(success())); await f.pending;
+    same(f.navigations.length, 0); same(f.departures(), 0);
+  });
+  it("pagehide clears the unsent identifier on the same email input immediately", () => {
+    const f = setup();
+    f.binding.setIdentifier(RAW);
+    const input = { value: RAW, defaultValue: RAW };
+    const page = new EventTarget();
+    vi.stubGlobal("window", page);
+    const root = { querySelector: (selector: string) => selector.includes("#a2email") ? input : null };
+    cleanup.push(f.binding.bindPageLifecycle(root as unknown as HTMLElement, vi.fn()));
+    page.dispatchEvent(new Event("pagehide"));
+    same([input.value, input.defaultValue], ["", ""]);
+    same(f.binding.read().flow.identifier, "");
+    same(f.calls.length, 0);
+  });
+  it("requests an Explorer remount on a persisted pageshow at the original Guide URL", async () => {
+    const explorer = setup();
+    await enterCode(explorer);
+    explorer.binding.setCode(CODE);
+    const page = Object.assign(new EventTarget(), { location: { pathname: "/login/guide", reload: vi.fn() } });
+    vi.stubGlobal("window", page);
+    const remountExplorer = vi.fn();
+    const stop = explorer.binding.bindPageLifecycle(null, remountExplorer);
+    const show = (persisted: boolean) => page.dispatchEvent(Object.assign(new Event("pageshow"), { persisted }));
+    page.dispatchEvent(new Event("pagehide"));
+    show(false); expect(remountExplorer).not.toHaveBeenCalled();
+    show(true); expect(remountExplorer).toHaveBeenCalledTimes(1);
+    expect(page.location.reload).not.toHaveBeenCalled();
+    explorer.attach(); check(!explorer.binding.read().ready);
+    stop(); show(true); expect(remountExplorer).toHaveBeenCalledTimes(1);
+  });
   it("U13 a replacement binding models changed transport configuration without old navigation", async () => {
     const previous = await start("verify"); previous.close();
     const next = setup(8000); next.binding.setIdentifier("replacement"); const p = next.binding.send();

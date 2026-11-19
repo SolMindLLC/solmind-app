@@ -97,7 +97,7 @@ const textInputStyle: CSSProperties = {
   boxSizing: "border-box",
   padding: "0 16px",
   borderRadius: 10,
-  border: `1px solid ${BORDER}`,
+  border: "1px solid #8f836f",
   background: "#0f0c09",
   color: INK,
   fontFamily: SANS,

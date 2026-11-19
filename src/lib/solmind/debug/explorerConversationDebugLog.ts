@@ -19,15 +19,21 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { appendFileSync, lstatSync } from "node:fs";
+import { constants, lstatSync } from "node:fs";
+import { lstat, open, opendir } from "node:fs/promises";
 import path from "node:path";
-import type { ExplorerPrivateConversationDependencies } from "../virtual-guide/explorerPrivateConversationComposition";
+import type { ExplorerPrivateConversationDependencies, ExplorerPrivateSettleParameters } from "../virtual-guide/explorerPrivateConversationComposition";
 import { EXPLORER_SAFETY_REPLY_PROTOCOL, explorerSafetyReplyHasConflictingOuterKey, explorerSafetyReplyRepeatsName, parseExplorerSafetyReplyBody, type ExplorerSafetyReplyObservation } from "../virtual-guide/explorerSafetyReplyContract";
 
 export const SOLMIND_DEBUG_TAG = "SOLMIND-DEBUG";
 export const SOLMIND_DEBUG_CONVERSATION_LOG_ENV = "SOLMIND_DEBUG_CONVERSATION_LOG";
 const RAW_TEXT_LIMIT = 65_536;
 const KEY_LIMIT = 64;
+// SOLMIND-DEBUG: skip records that would exceed 5 MB for the day or 50 MB for all conversation logs.
+// SOLMIND-DEBUG: this local log accepts a hard link added after the handle check and two workers exceeding a cap when both see room for one more record.
+const DAILY_LOG_BYTE_LIMIT = 5_000_000;
+const TOTAL_LOG_BYTE_LIMIT = 50_000_000;
+const PENDING_RECORD_LIMIT = 100;
 
 // SOLMIND-DEBUG: the folder to write to, or null when logging is off.
 function logFolder(): string | null {
@@ -47,20 +53,73 @@ export function explorerConversationDebugLogEnabled(): boolean {
   return logFolder() !== null;
 }
 
-// SOLMIND-DEBUG: appends one JSON line to that day's file (UTC day in the name); never throws. The day's file must be
-// a plain file when it exists.
-export function explorerConversationDebugLog(event: string, fields: Readonly<Record<string, unknown>>): void {
+// SOLMIND-DEBUG: append one JSON line through a checked, single-link file handle for this UTC day.
+async function appendRecord(folder: string, at: string, event: string, fields: Readonly<Record<string, unknown>>): Promise<void> {
+  const dayName = `explorer-conversation-${at.slice(0, 10)}.jsonl`;
+  const file = path.join(folder, dayName);
+  let before;
+  try {
+    before = await lstat(file, { bigint: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") return;
+  }
+  if (before && (!before.isFile() || before.nlink !== BigInt(1) || before.size >= DAILY_LOG_BYTE_LIMIT)) return;
+
+  const line = JSON.stringify({ at, event, ...fields }) + "\n";
+  const lineBytes = Buffer.byteLength(line);
+  const nextSize = Number(before?.size ?? 0) + lineBytes;
+  if (nextSize > DAILY_LOG_BYTE_LIMIT) return;
+  let remainingBytes = TOTAL_LOG_BYTE_LIMIT;
+  for await (const { name } of await opendir(folder)) {
+    if (name === dayName || !name.startsWith("explorer-conversation-") || !name.endsWith(".jsonl")) continue;
+    const entry = await lstat(path.join(folder, name));
+    if (entry.isFile()) remainingBytes -= entry.size;
+    if (nextSize > remainingBytes) return;
+  }
+
+  const create = before ? 0 : constants.O_CREAT | constants.O_EXCL;
+  const flags = constants.O_WRONLY | constants.O_APPEND | create | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
+  const directory = await lstat(folder);
+  if (!directory.isDirectory() || directory.isSymbolicLink()) return;
+  const handle = await open(file, flags);
+  try {
+    const opened = await handle.stat({ bigint: true });
+    if (!opened.isFile() || opened.nlink !== BigInt(1)) return;
+    if (before && (before.dev !== opened.dev || before.ino !== opened.ino)) return;
+    // SOLMIND-DEBUG: Windows lacks O_NOFOLLOW, so verify the day name still refers directly to this file.
+    if (!constants.O_NOFOLLOW) {
+      const named = await lstat(file, { bigint: true });
+      if (!named.isFile() || named.nlink !== BigInt(1) || named.dev !== opened.dev || named.ino !== opened.ino) return;
+    }
+    if (Number(opened.size) + lineBytes > Math.min(DAILY_LOG_BYTE_LIMIT, remainingBytes)) return;
+    await handle.appendFile(line, "utf8");
+  } finally { await handle.close(); }
+}
+
+let pendingWrite = Promise.resolve();
+let pendingRecords = 0;
+
+// SOLMIND-DEBUG: serialize inspections and appends without making Send wait for disk I/O.
+export async function explorerConversationDebugLog(event: string, fields: Readonly<Record<string, unknown>>): Promise<void> {
   if (process.env.NODE_ENV === "production") return;
   try {
     const folder = logFolder();
-    if (folder === null) return;
+    if (folder === null || pendingRecords >= PENDING_RECORD_LIMIT) return;
     const at = new Date().toISOString();
-    const file = path.join(folder, `explorer-conversation-${at.slice(0, 10)}.jsonl`);
-    try {
-      if (!lstatSync(file).isFile()) return;
-    } catch { /* SOLMIND-DEBUG: the day's first record creates the file */ }
-    appendFileSync(file, JSON.stringify({ at, event, ...fields }) + "\n", { encoding: "utf8", flag: "a" });
+    pendingRecords++;
+    pendingWrite = pendingWrite.then(async () => {
+      try { await appendRecord(folder, at, event, fields); }
+      catch { /* SOLMIND-DEBUG: keep later writes running after an inspection or append fails. */ }
+      finally { pendingRecords--; }
+    });
+    await pendingWrite;
   } catch { /* SOLMIND-DEBUG: logging never affects the app */ }
+}
+
+// SOLMIND-DEBUG: let local tests inspect the log once already scheduled callbacks and appends have finished.
+export async function flushExplorerConversationDebugLog(): Promise<void> {
+  await new Promise<void>(resolve => setImmediate(resolve));
+  await pendingWrite;
 }
 
 // SOLMIND-DEBUG: runs a log write after the current call has returned, so it adds no time to the call and cannot
@@ -69,23 +128,40 @@ function later(write: () => void): void {
   try { setImmediate(() => { try { write(); } catch { /* SOLMIND-DEBUG */ } }); } catch { /* SOLMIND-DEBUG */ }
 }
 
-// SOLMIND-DEBUG: a value-free code for a thrown error: the error's name, and its message only when it is a closed code.
+const NOT_LOGGED = "(not logged)";
+const ERROR_NAMES = ["Error", "TypeError", "RangeError", "SyntaxError", "ExplorerSafetyReplyError", "OpenAiLunaExplorerSafetyError"];
+// SOLMIND-DEBUG: closed codes from the safety reply parser, HTTP transport and wrapped Send dependencies.
+const ERROR_CODES = [
+  "explorer_safety_invalid_request", "explorer_safety_invalid_response", "explorer_safety_limit_exceeded", "explorer_safety_invalid_transport",
+  "explorer_safety_http_configuration", "explorer_safety_http_failed", "explorer_safety_http_invalid_response",
+  "explorer_send_deadline", "explorer_private_request_unavailable", "explorer_private_repository_unavailable",
+  "explorer_private_local_dispatch_unavailable", "explorer_private_local_run_unavailable", "explorer_private_local_call_ledger_unavailable",
+  "effective_methodology_source_unavailable", "effective_methodology_context_unavailable",
+];
+// SOLMIND-DEBUG: OUTCOMES and normalized RPC errors from explorerPrivateConversationRepository.
+const ROW_OUTCOMES = ["ok", "exact_replay", "created", "reused", "held", "stale_revision", "paused", "stale_policy",
+  "blocked", "unavailable", "withheld", "operation_conflict", "already_ended", "denied"];
+
+// SOLMIND-DEBUG: filter a single captured value against that field's own list.
+function closed(value: unknown, allowed: readonly string[]): string | null {
+  return typeof value === "string" && allowed.includes(value) ? value : null;
+}
+
+// SOLMIND-DEBUG: keep only known names and closed messages, independently.
 function errorCode(error: unknown): string {
   try {
-    if (error instanceof Error) {
-      const name = /^[A-Za-z]{1,40}$/.test(error.name) ? error.name : "Error";
-      return /^[a-z0-9_]{1,80}$/.test(error.message) ? name + ": " + error.message : name + ": (message not logged)";
-    }
-    return typeof error;
-  } catch { return "unknown"; }
+    if (!(error instanceof Error)) return NOT_LOGGED;
+    const name = closed(error.name, ERROR_NAMES) ?? NOT_LOGGED;
+    const message = closed(error.message, ERROR_CODES) ?? NOT_LOGGED;
+    return name + ": " + message;
+  } catch { return NOT_LOGGED; }
 }
 
 // SOLMIND-DEBUG: the result of a step without its private content: a row's closed outcome when it has one.
 function outcomeOf(value: unknown): string | null {
   try {
     if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-      const outcome = (value as { outcome?: unknown }).outcome;
-      if (typeof outcome === "string" && /^[a-z0-9_]{1,80}$/.test(outcome)) return outcome;
+      return closed((value as { outcome?: unknown }).outcome, ROW_OUTCOMES);
     }
   } catch { /* SOLMIND-DEBUG */ }
   return null;
@@ -218,14 +294,19 @@ export function boundedDebugText(rawText: unknown): string | null {
   return typeof rawText === "string" ? rawText.slice(0, RAW_TEXT_LIMIT) : null;
 }
 
+const SETTLEMENT_STATUSES = ["completed", "failed", "canceled"] satisfies ExplorerPrivateSettleParameters["p_status"][];
+const REPLY_KINDS = ["ordinary", "urgent", "crisis", "restricted", "adult_only", "none"] satisfies ExplorerPrivateSettleParameters["p_reply_kind"][];
+const FAILURE_REASONS = ["deadline", "transport_failed", "invalid_response", "delivery_canceled_before_dispatch",
+  "dispatch_not_admitted", "trusted_render_unavailable"] satisfies NonNullable<ExplorerPrivateSettleParameters["p_failure_reason"]>[];
+
 // SOLMIND-DEBUG: what a settlement keeps, without the reply's words (the raw reply is logged on its own).
 function settlementSummary(value: unknown): Readonly<Record<string, unknown>> {
   try {
     if (value === null || typeof value !== "object") return {};
     const settlement = value as Record<string, unknown>;
-    const closed = (key: string) => typeof settlement[key] === "string" && /^[a-z0-9_]{1,80}$/.test(settlement[key] as string) ? settlement[key] : null;
     const count = (key: string) => Array.isArray(settlement[key]) ? (settlement[key] as unknown[]).length : 0;
-    return { status: closed("p_status"), replyKind: closed("p_reply_kind"), failureReason: closed("p_failure_reason"),
+    return { status: closed(settlement.p_status, SETTLEMENT_STATUSES), replyKind: closed(settlement.p_reply_kind, REPLY_KINDS),
+      failureReason: closed(settlement.p_failure_reason, FAILURE_REASONS),
       modelLevel: typeof settlement.p_model_level === "number" ? settlement.p_model_level : null,
       attentionProposed: settlement.p_attention_item_id != null, choices: count("p_choices"),
       compassTopics: count("p_compass_topics"), // SOLMIND-DEBUG: counts only; never evidence identities or wording.

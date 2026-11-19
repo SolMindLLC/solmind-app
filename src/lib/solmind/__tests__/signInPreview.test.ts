@@ -810,6 +810,22 @@ describe("sign-in preview (approved screens A1, A2, A3, A3A, A4, M1, M2, M3)", (
       }
     });
 
+    it("gives the email, username, password and code fields a visible border", () => {
+      for (const [state, ids] of [
+        [run({ type: "chooseRole", role: SOLMIND_ROLES.EXPLORER }), ["a2email"]],
+        [onPasswordScreen(SOLMIND_ROLES.GUIDE), ["a3user", "a3pass"]],
+        [onPasswordScreen(SOLMIND_ROLES.ADMIN), ["a3user", "a3pass"]],
+        [onScreen(SIGN_IN_SCREENS.enterCode), ["sign-in-code"]],
+        [onScreen(SIGN_IN_SCREENS.pleaseWait), ["sign-in-code"]],
+      ] as const) {
+        const html = render(state);
+        for (const id of ids) {
+          const input = html.match(new RegExp(`<input[^>]*id="${id}"[^>]*>`))?.[0];
+          expect(input, `${state.screen} ${id}`).toContain("border:1px solid #8f836f");
+        }
+      }
+    });
+
     it("gives the inputs the mockups' amber focus outline", () => {
       for (const state of [run({ type: "chooseRole", role: SOLMIND_ROLES.EXPLORER }), onScreen(SIGN_IN_SCREENS.enterCode), onScreen(SIGN_IN_SCREENS.pleaseWait)]) {
         expect(render(state), state.screen).toMatch(/<input[^>]*class="focus:outline-2 focus:outline-offset-2 focus:outline-\[#f0a64a\]"/);

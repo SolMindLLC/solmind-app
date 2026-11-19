@@ -21,6 +21,80 @@ function requestFlowId(postData: string | null): string | null {
 }
 const flowAck = (flowId: string) => JSON.stringify({ acknowledgment: "verification_code_requested", flowId });
 
+function readFieldOnPagehide(input: HTMLInputElement) {
+  window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
+  return [input.value, input.defaultValue];
+}
+
+test("Explorer clears the mounted email on pagehide before sending", async ({ page }) => {
+  await page.goto("/login/explorer");
+  const email = page.getByLabel("Email", { exact: true });
+  await email.fill("history@example.invalid");
+  expect(await email.evaluate(readFieldOnPagehide)).toEqual(["", ""]);
+});
+
+async function mockHistorySends(page: LoginPage) {
+  const flowIds: string[] = [];
+  await page.route("**/login/explorer/send", route => {
+    const flowId = requestFlowId(route.request().postData()) ?? "";
+    flowIds.push(flowId);
+    return route.fulfill({ status: 200, contentType: "application/json", body: flowAck(flowId) });
+  });
+  return flowIds;
+}
+
+test("Explorer clears the code on pagehide and starts fresh on a persisted pageshow", async ({ page }) => {
+  await mockHistorySends(page);
+  await page.goto("/login/explorer");
+  const email = page.getByLabel("Email", { exact: true });
+  await email.fill("history@example.invalid");
+  await page.getByRole("button", { name: "Send my code", exact: true }).click();
+  const code = page.getByLabel("Your code", { exact: true });
+  await code.fill("123456");
+  expect(await code.evaluate(readFieldOnPagehide)).toEqual(["", ""]);
+  await expect(email).toHaveValue("");
+  await expect(email).toBeDisabled();
+
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
+  await expect(email).toBeEnabled();
+  await expect(email).toHaveValue("");
+  await expect(code).toHaveCount(0);
+});
+
+// Chromium's headless shell disables the back/forward cache.
+const cachedBackTest = test.extend({
+  channel: "chromium",
+  launchOptions: { ignoreDefaultArgs: ["--disable-back-forward-cache"] },
+});
+cachedBackTest("Back restores a fresh Explorer sign-in after switching from Guide", async ({ page }) => {
+  const flowIds = await mockHistorySends(page);
+  await page.goto("/login/guide");
+  await expect(page.getByText("Signing in as a Guide", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Choose a different role", exact: true }).click();
+  await page.getByRole("button", { name: /I'm an Explorer/ }).click();
+  const email = page.getByLabel("Email", { exact: true });
+  const send = page.getByRole("button", { name: "Send my code", exact: true });
+  const code = page.getByLabel("Your code", { exact: true });
+  await email.fill("history@example.invalid");
+  await send.click();
+  await code.fill("123456");
+  await page.evaluate(() => window.addEventListener("pageshow", event => {
+    document.documentElement.toggleAttribute("data-persisted", event.persisted);
+  }, { once: true }));
+  await page.goto("about:blank");
+  await page.goBack({ waitUntil: "commit" });
+  await expect(page.locator("html")).toHaveAttribute("data-persisted", "");
+  await expect(page.getByText("Signing in as an Explorer", { exact: true })).toBeVisible();
+  await expect(email).toBeEnabled();
+  await expect(email).toHaveValue("");
+  await expect(code).toHaveCount(0);
+  await email.fill("history@example.invalid");
+  await send.click();
+  await expect(code).toHaveValue("");
+  expect(flowIds).toHaveLength(2);
+  expect(flowIds[1]).not.toBe(flowIds[0]);
+});
+
 test("Explorer connected entry uses fixed requests and fresh destination", async ({ page, baseURL }) => {
   if (!baseURL) throw new Error("missing_test_origin");
   const origin = new URL(baseURL).origin;
@@ -298,8 +372,8 @@ test("M2 opaque refusal and a failed resend keep the same private flow for the n
     expect(shapes, "the verify after the failed resend carries the same private flow").toBe(true);
     await checkMounted(async () => mountedTextIs(page.getByRole("status"), "We couldn\u2019t sign you in with that code. You can try the code from your latest SolMind email, or request a new one."), "mounted_check_32");
     await actMounted(() => resend.click(), "mounted_action_10");
-    // The new-code request settled: its acknowledgment echoed the same flow and the status region is gone.
-    await checkMounted(async () => sends === 3 && (await page.getByRole("status").count()) === 0, "mounted_check_33");
+    // The acknowledgment clears the request message in the existing region.
+    await checkMounted(async () => sends === 3 && await mountedTextIs(page.getByRole("status"), ""), "mounted_check_33");
     await checkMounted(async () => (verify).isEnabled(), "mounted_check_17");
     expect(await inputIs(code, ""), "the new-code request clears the draft again").toBe(true);
     await fillSynthetic(code, SYNTHETIC_CODE);
@@ -338,9 +412,14 @@ test("M3 leaving a held verify invalidates its response and remounts an empty vi
     await actMounted(() => page.getByRole("button", { name: "Send my code", exact: true }).click(), "mounted_action_13");
     const code = page.getByLabel("Your code", { exact: true });
     await fillSynthetic(code, SYNTHETIC_CODE);
+    const status = page.getByRole("status");
+    await expect(status).toBeEmpty();
+    await expect(status).toHaveAttribute("aria-live", "polite");
+    const idleRegion = await status.evaluateHandle(node => node);
     await actMounted(() => page.getByRole("button", { name: "Verify and sign in", exact: true }).click(), "mounted_action_14");
     const oldRoute = await held.received();
     await checkMounted(async () => mountedTextIs(page.getByRole("status"), "Checking your code..."), "mounted_check_20");
+    expect(await status.evaluate((node, idle) => node === idle, idleRegion)).toBe(true);
     await checkMounted(async () => (await (page.locator("form")).getAttribute("aria-busy")) === "true", "mounted_check_21");
     await checkMounted(async () => (code).isDisabled(), "mounted_check_22");
     await checkMounted(async () => (page.getByRole("button", { name: "Verify and sign in", exact: true })).isDisabled(), "mounted_check_23");
@@ -357,7 +436,7 @@ test("M3 leaving a held verify invalidates its response and remounts an empty vi
     expect(await inputIs(page.getByLabel("Email", { exact: true }), ""), "new view has no old identifier").toBe(true);
     await checkMounted(async () => (page.getByRole("heading", { level: 1 })).evaluate(node => node === (node.getRootNode() as Document | ShadowRoot).activeElement && node.ownerDocument.hasFocus()), "mounted_check_28");
     await checkMounted(async () => (page.getByRole("button", { name: "Send my code", exact: true })).isEnabled(), "mounted_check_29");
-    await expect(page.getByRole("status")).toHaveCount(0);
+    await expect(page.getByRole("status")).toBeEmpty();
     expect(sends === 1 && verifies === 1 && shapes && blocked === 0, "no old result navigates or creates another request").toBe(true);
     await checkMounted(async () => (page).url() === `${origin}/login/explorer`, "mounted_check_30");
   } finally { await held.cleanup(page); }

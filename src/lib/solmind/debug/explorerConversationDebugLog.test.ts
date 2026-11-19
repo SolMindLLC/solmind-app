@@ -1,21 +1,26 @@
 // SOLMIND-DEBUG: tests for the debug logging, removed with it before release.
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import * as fs from "node:fs/promises";
+import { link, mkdir, mkdtemp, readdir, readFile, stat, truncate, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import {
   describeExplorerSafetyReply,
   describeExplorerSafetyReplyShape,
   explorerConversationDebugLog,
   explorerConversationDebugLogEnabled,
   explorerConversationDebugStep,
+  flushExplorerConversationDebugLog as flush,
   SOLMIND_DEBUG_CONVERSATION_LOG_ENV,
   withExplorerConversationDebugLog,
 } from "./explorerConversationDebugLog";
 import { EXPLORER_SAFETY_REQUEST_VERSION } from "../virtual-guide/explorerSafetyReplyContract";
 import { invokeExplorerSafetyReply } from "../virtual-guide/explorerSafetyReplyInvocation";
 import type { ExplorerPrivateConversationDependencies } from "../virtual-guide/explorerPrivateConversationComposition";
+
+// SOLMIND-DEBUG: expose the real filesystem operations through exports the tests can spy on.
+vi.mock("node:fs/promises", async (importOriginal) => ({ ...await importOriginal<typeof import("node:fs/promises")>() }));
 
 const PROTOCOL = "explorer-safety-reply.v2";
 const goodReply = { protocol: PROTOCOL, classification: { level: 0, minorIndicated: false }, candidateReply: { content: "Hello there." } };
@@ -26,9 +31,16 @@ async function logFolder(): Promise<string> {
   vi.stubEnv(SOLMIND_DEBUG_CONVERSATION_LOG_ENV, folder);
   return folder;
 }
-// Log writes run after the wrapped call returns (setImmediate); let them finish before reading.
-async function flush(): Promise<void> {
-  for (let i = 0; i < 3; i += 1) await new Promise((resolve) => setImmediate(resolve));
+// SOLMIND-DEBUG: keep the test day fixed across setup, append and inspection.
+function dayFile(folder: string): string {
+  vi.spyOn(Date.prototype, "toISOString").mockReturnValue("2026-11-19T12:00:00.000Z");
+  return join(folder, "explorer-conversation-2026-11-19.jsonl");
+}
+// SOLMIND-DEBUG: size fixtures without allocating their contents in memory.
+async function sizedFile(file: string, bytes: number): Promise<void> {
+  await writeFile(file, "");
+  onTestFinished(() => unlink(file));
+  await truncate(file, bytes);
 }
 async function rows(folder: string): Promise<Record<string, unknown>[]> {
   await flush();
@@ -110,7 +122,7 @@ describe("debug conversation log (SOLMIND-DEBUG)", () => {
     await expect(explorerConversationDebugStep("s1", "ensure", async () => { throw words; })).rejects.toBe(words);
     const all = await rows(folder);
     expect(all[0]).toMatchObject({ event: "send_step", sendId: "s1", step: "prepare", result: "threw", error: "Error: explorer_send_deadline" });
-    expect(all[1]).toMatchObject({ step: "ensure", error: "Error: (message not logged)" });
+    expect(all[1]).toMatchObject({ step: "ensure", error: "Error: (not logged)" });
   });
 
   it("DL06 logs the raw Guide reply with the parser's verdict and the shape rule, and returns the reply unchanged", async () => {
@@ -309,6 +321,151 @@ describe("debug conversation log (SOLMIND-DEBUG)", () => {
       compassKept: false, compassKeys: ["topics"], compassOtherKeys: 1, compassTopicsSupplied: 1, compassTopicsKept: 0,
     });
     expect(JSON.stringify(proposals)).not.toContain("Quiet mornings");
+  });
+
+  it("DL23 SOLMIND-DEBUG filters error names and messages independently", async () => {
+    const folder = await logFolder();
+    const token = new TypeError("ab".repeat(32));
+    const named = new Error("explorer_safety_invalid_transport");
+    named.name = "PrivateName";
+    for (const failure of [token, named]) {
+      await expect(explorerConversationDebugStep("s1", "read", () => Promise.reject(failure))).rejects.toBe(failure);
+    }
+    expect((await rows(folder)).map(row => row.error)).toEqual([
+      "TypeError: (not logged)", "(not logged): explorer_safety_invalid_transport",
+    ]);
+  });
+
+  it("DL24 SOLMIND-DEBUG drops unknown step outcomes", async () => {
+    const folder = await logFolder();
+    const value = { outcome: "ab".repeat(32) };
+    await expect(explorerConversationDebugStep("s1", "read", () => Promise.resolve(value))).resolves.toBe(value);
+    expect(await rows(folder)).toMatchObject([{ outcome: null }]);
+  });
+
+  it("DL25 SOLMIND-DEBUG filters settlement values using each field's own domain", async () => {
+    const folder = await logFolder();
+    const wrapped = withExplorerConversationDebugLog(dependencies(async () => GOOD));
+    await wrapped.repository.settle({ p_status: "ordinary", p_reply_kind: "deadline", p_failure_reason: "failed" } as never);
+    const summary = (await rows(folder)).find(row => row.event === "send_settlement");
+    expect(summary).toMatchObject({ status: null, replyKind: null, failureReason: null });
+  });
+
+  it("DL26 SOLMIND-DEBUG skips appends at the daily byte limit", async () => {
+    const file = dayFile(await logFolder());
+    const limit = 5_000_000;
+    await sizedFile(file, limit);
+    await explorerConversationDebugLog("test", {});
+    expect((await stat(file)).size).toBe(limit);
+  });
+
+  it("DL27 SOLMIND-DEBUG skips a new day when older logs together reach the folder limit", async () => {
+    const folder = await logFolder();
+    const file = dayFile(folder);
+    const halfLimit = 25_000_000;
+    const first = join(folder, "explorer-conversation-2026-11-17.jsonl");
+    const second = join(folder, "explorer-conversation-2026-11-18.jsonl");
+    await sizedFile(first, halfLimit);
+    await sizedFile(second, halfLimit);
+    await explorerConversationDebugLog("test", {});
+    await expect(stat(file)).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await stat(first)).size).toBe(halfLimit);
+    expect((await stat(second)).size).toBe(halfLimit);
+  });
+
+  it("DL28 SOLMIND-DEBUG leaves both names of a hard-linked day file untouched", async () => {
+    const folder = await logFolder();
+    const file = dayFile(folder);
+    const original = join(folder, "original.txt");
+    await writeFile(original, "original contents");
+    await link(original, file);
+    await explorerConversationDebugLog("test", {});
+    expect(await readFile(original, "utf8")).toBe("original contents");
+    expect(await readFile(file, "utf8")).toBe("original contents");
+  });
+
+  it("DL29 SOLMIND-DEBUG admits only the UTF-8 record that fits when appends overlap", async () => {
+    const folder = await logFolder();
+    const file = dayFile(folder);
+    const event = "\u00e9";
+    const line = JSON.stringify({ at: new Date().toISOString(), event }) + "\n";
+    await sizedFile(file, 5_000_000 - Buffer.byteLength(line));
+    await sizedFile(join(folder, "unrelated.jsonl"), 50_000_000);
+    await Promise.all([
+      explorerConversationDebugLog(event + event, {}),
+      explorerConversationDebugLog(event, {}),
+      explorerConversationDebugLog(event, {}),
+    ]);
+    expect((await stat(file)).size).toBe(5_000_000);
+  });
+
+  it("DL30 SOLMIND-DEBUG drops records beyond 100 while the first inspection is stalled", async () => {
+    await logFolder();
+    let failInspection!: (error: Error) => void;
+    const stalled = new Promise<never>((_, reject) => { failInspection = reject; });
+    const inspect = vi.spyOn(fs, "lstat").mockReturnValueOnce(stalled);
+    vi.spyOn(fs, "opendir").mockRejectedValue(new Error("scan failed"));
+    const numbers = Array.from({ length: 200 }, (_, index) => index + 1);
+    const settled: number[] = [];
+    const writes = numbers.map(number => explorerConversationDebugLog("test", { number }).then(() => { settled.push(number); }));
+    try {
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(inspect).toHaveBeenCalledTimes(1);
+      expect([...settled]).toEqual(numbers.slice(100));
+    } finally {
+      failInspection(new Error("inspection failed"));
+      await Promise.all(writes);
+    }
+    expect(inspect).toHaveBeenCalledTimes(100);
+    // SOLMIND-DEBUG: the failed inspection and the 99 rejected scans must release all 100 slots.
+    await Promise.all(numbers.slice(100).map(number => explorerConversationDebugLog("next", { number })));
+    expect(inspect).toHaveBeenCalledTimes(200);
+  });
+
+  it("DL31 SOLMIND-DEBUG skips the open when the checked folder becomes a link during the size scan", async () => {
+    const folder = await logFolder();
+    const moved = folder + "-moved";
+    const file = dayFile(folder);
+    const scan = fs.opendir;
+    vi.spyOn(fs, "opendir").mockImplementationOnce(async (...args) => {
+      await fs.rename(folder, moved);
+      await fs.symlink(moved, folder, "junction");
+      return scan(...args);
+    });
+    await explorerConversationDebugLog("test", {});
+    expect((await fs.lstat(folder)).isSymbolicLink()).toBe(true);
+    try {
+      await expect(stat(file)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally { await unlink(folder); }
+  });
+
+  it("DL32 SOLMIND-DEBUG skips a new day when the folder budget is one byte short of its record", async () => {
+    const folder = await logFolder();
+    const file = dayFile(folder);
+    const event = "\u00e9";
+    const line = JSON.stringify({ at: new Date().toISOString(), event }) + "\n";
+    const older = join(folder, "explorer-conversation-2026-11-18.jsonl");
+    const olderBytes = 50_000_000 - (Buffer.byteLength(line) - 1);
+    await sizedFile(older, olderBytes);
+    await explorerConversationDebugLog(event, {});
+    await expect(stat(file)).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await stat(older)).size).toBe(olderBytes);
+  });
+
+  it.each(["dev", "ino"] as const)("DL33 SOLMIND-DEBUG closes without writing when the opened %s differs", async (field) => {
+    const file = dayFile(await logFolder());
+    await sizedFile(file, 0);
+    const before = await fs.lstat(file, { bigint: true });
+    before[field] += BigInt(1);
+    const handle = await fs.open(file, "a");
+    try {
+      // SOLMIND-DEBUG: only the pre-open identity differs; a later pathname check sees the real file.
+      vi.spyOn(fs, "lstat").mockResolvedValueOnce(before);
+      vi.spyOn(fs, "open").mockResolvedValueOnce(handle);
+      await explorerConversationDebugLog("test", {});
+      expect((await stat(file)).size).toBe(0);
+      expect(handle.fd).toBe(-1);
+    } finally { await handle.close(); }
   });
 });
 

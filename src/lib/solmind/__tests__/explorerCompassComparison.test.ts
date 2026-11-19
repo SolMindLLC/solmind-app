@@ -483,6 +483,17 @@ describe("Explorer conversation, Compass, and Waypoint prototype", () => {
   });
 
   describe("Compass: current attention versus confirmed Priority", () => {
+    it("starts a new conversation with no prior orientation", () => {
+      expect(openEndedConversation().orientationHistory).toEqual([]);
+    });
+
+    it("records the starting point once on the first move in a new conversation", () => {
+      const state = openEndedConversation();
+      const moved = selectCompassPath(state, "timing");
+
+      expect(moved.orientationHistory).toEqual([state.attentionPathId]);
+    });
+
     it("moves only current attention and records the prior orientation", () => {
       const state = initial();
       const moved = selectCompassPath(state, "afterward");

@@ -31,8 +31,7 @@ export function ExplorerConversationTour({ opener, onClose }: Readonly<{
   const [step, setStep] = useState({ index: 0, announce: false });
   const dialogRef = useRef<HTMLDialogElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
-  const backButtonRef = useRef<HTMLButtonElement>(null);
-  const focusBackAfterNext = useRef(false);
+  const topicHeadingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     const dialog = dialogRef.current;
     dialog?.showModal();
@@ -43,19 +42,14 @@ export function ExplorerConversationTour({ opener, onClose }: Readonly<{
     };
   }, [opener]);
   useEffect(() => {
-    if (step.index === EXPLORER_TOUR_STEPS.length - 1 && focusBackAfterNext.current) {
-      backButtonRef.current?.focus();
-      focusBackAfterNext.current = false;
+    if (step.announce) {
+      topicHeadingRef.current?.focus({ preventScroll: true });
+      topicHeadingRef.current?.scrollIntoView({ block: "start" });
     }
-  }, [step.index]);
+  }, [step]);
   const current = EXPLORER_TOUR_STEPS[step.index];
   const showStep = (index: number) => {
     if (index !== step.index) setStep({ index, announce: true });
-  };
-  const nextStep = () => {
-    const nextIndex = step.index + 1;
-    if (nextIndex === EXPLORER_TOUR_STEPS.length - 1) focusBackAfterNext.current = true;
-    showStep(nextIndex);
   };
   return (
     <dialog
@@ -69,14 +63,13 @@ export function ExplorerConversationTour({ opener, onClose }: Readonly<{
         id="conversation-tour-title" ref={headingRef} tabIndex={-1}>{EXPLORER_TOUR_TITLE}</h2>
       <p className="mt-3 text-sm leading-6 text-stone-300">{EXPLORER_TOUR_INTRO}</p>
       <div className="mt-5 grid gap-3" id="conversation-tour-step">
-        <h3 className="font-serif text-xl">{current.title}</h3>
+        <h3 className="font-serif text-xl" key={step.index} ref={topicHeadingRef} tabIndex={-1}>{current.title}</h3>
         <ul className="list-disc space-y-3 pl-5">
           {current.paragraphs.map(text => <li className="text-sm leading-6 [overflow-wrap:anywhere]" key={text}>{text}</li>)}
         </ul>
       </div>
-      {/* Initial focus describes the first step; only navigation updates this region. */}
       <p aria-atomic="true" aria-live="polite" className="sr-only" role="status">
-        {step.announce ? [current.title, ...current.paragraphs].join(" ") : ""}
+        {step.announce ? current.paragraphs.join(" ") : ""}
       </p>
       <nav aria-label={EXPLORER_TOUR_STEPS_LABEL} className="mt-5 flex flex-wrap gap-2">
         {EXPLORER_TOUR_STEPS.map((topic, index) => (
@@ -87,9 +80,9 @@ export function ExplorerConversationTour({ opener, onClose }: Readonly<{
       <p className="mt-5 text-sm leading-6 text-stone-300">{EXPLORER_TOUR_CLOSE_REASON}</p>
       <div className="mt-3 flex flex-wrap gap-2">
         {step.index < EXPLORER_TOUR_STEPS.length - 1
-          ? <button className={PRIMARY_BUTTON} onClick={nextStep} type="button">{EXPLORER_TOUR_NEXT}</button>
+          ? <button className={PRIMARY_BUTTON} onClick={() => showStep(step.index + 1)} type="button">{EXPLORER_TOUR_NEXT}</button>
           : null}
-        <button className={SECONDARY_BUTTON} onClick={onClose} ref={backButtonRef} type="button">{EXPLORER_TOUR_BACK}</button>
+        <button className={SECONDARY_BUTTON} onClick={onClose} type="button">{EXPLORER_TOUR_BACK}</button>
       </div>
     </dialog>
   );

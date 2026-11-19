@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { SignInPreviewView } from "./SignInPreviewParts";
 import { SOLMIND_ROLES } from "@/lib/solmind/roles";
 import { INITIAL_SIGN_IN_PREVIEW_STATE, SIGN_IN_HEADING_ID, SIGN_IN_SCREENS, type SignInNoticeKey } from "@/lib/solmind/signInPreview";
@@ -95,6 +95,26 @@ export function createExplorerSignInViewBinding(options: Omit<ExplorerSignInProp
     invalidateView() {
       clear();
     },
+    bindPageLifecycle(root: HTMLElement | null, remountExplorer: () => void) {
+      const leave = () => {
+        const input = root?.querySelector<HTMLInputElement>("#sign-in-code, #a2email");
+        if (input) {
+          input.value = "";
+          input.defaultValue = "";
+        }
+        retired = true;
+        clear();
+      };
+      const restore = (event: PageTransitionEvent) => {
+        if (event.persisted) remountExplorer();
+      };
+      window.addEventListener("pagehide", leave);
+      window.addEventListener("pageshow", restore);
+      return () => {
+        window.removeEventListener("pagehide", leave);
+        window.removeEventListener("pageshow", restore);
+      };
+    },
     setCallbacks(next: Pick<ExplorerSignInProps, "onNavigate" | "onDepart">) {
       callbacks = { onNavigate: next.onNavigate, onDepart: next.onDepart };
     },
@@ -155,6 +175,11 @@ const noop = () => undefined;
  * The owner supplies outcome copy and navigation; no defaults exist.
  */
 export function ExplorerSignIn(props: ExplorerSignInProps) {
+  const [viewKey, remountExplorer] = useReducer((key: number) => key + 1, 0);
+  return <ExplorerSignInView key={viewKey} {...props} remountExplorer={remountExplorer} />;
+}
+
+function ExplorerSignInView({ remountExplorer, ...props }: ExplorerSignInProps & { remountExplorer: () => void }) {
   const binding = useMemo(() => createExplorerSignInViewBinding({
     fetcher: props.fetcher,
     responseBudgetMilliseconds: props.responseBudgetMilliseconds,
@@ -174,6 +199,7 @@ export function ExplorerSignIn(props: ExplorerSignInProps) {
   const snapshot = useSyncExternalStore(binding.subscribe, binding.read, binding.readServer);
   const [notice, setNotice] = useState<SignInNoticeKey | null>(null);
   const root = useRef<HTMLDivElement>(null);
+  useEffect(() => binding.bindPageLifecycle(root.current, remountExplorer), [binding, remountExplorer]);
   const screen = snapshot.flow.stage === "code" ? SIGN_IN_SCREENS.enterCode : SIGN_IN_SCREENS.explorerEmail;
   const shownScreen = useRef(screen);
   useEffect(() => {

@@ -7,6 +7,7 @@ import LoginPage, { metadata } from "../../../app/login/page";
 import ExplorerLoginPage from "../../../app/login/explorer/page";
 import GuideLoginPage from "../../../app/login/guide/page";
 import AdminLoginPage from "../../../app/login/admin/page";
+import * as explorerLoginJourney from "../../../lib/solmind/explorerLoginJourney";
 import { SOLMIND_ROLES } from "../../../lib/solmind/roles";
 import { PREVIEW_DISCLOSURE } from "../../../lib/solmind/signInPreview";
 
@@ -27,6 +28,11 @@ describe("connected Explorer, Guide and Admin composition without mounted claims
     const html = renderToStaticMarkup(createElement(LoginExperience, { initialExplorer: true }));
     expect(html.includes("Signing in as an Explorer") && html.includes("Send my code")).toBe(true);
     expect(html.includes("Preview controls") || html.includes("Example screen")).toBe(false);
+  });
+  it("L08 keeps the polite Explorer region when there is no status text", () => {
+    vi.spyOn(explorerLoginJourney, "explorerStatusText").mockReturnValue(null);
+    const html = renderToStaticMarkup(createElement(LoginExperience, { initialExplorer: true }));
+    expect(html).toContain('<p role="status" aria-live="polite"></p>');
   });
   it("L06 fixed Guide entry shows password-plus-code without preview controls", () => {
     const html = renderToStaticMarkup(createElement(LoginExperience, { initialGuide: true }));

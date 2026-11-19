@@ -4,6 +4,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { cardState } from "./connectedCardFixture";
 import { CALM_REPLY_PROMPTS } from "../../src/lib/solmind/explorerReplyChoices";
+import { EXPLORER_TOUR_STEPS } from "../../src/lib/solmind/explorerConversationTour";
 
 import {
   EXPLORER_CONVERSATION_VERSION,
@@ -22,6 +23,7 @@ const CHOICES = ["Show me around", "I have a question", "Let's begin"];
 const DRAFT = "Keep this unfinished typed thought exactly.";
 
 test("REV306 Show me around opens a fixed keyboard tour with no request or chat line", async ({ page }) => {
+  await page.setViewportSize({ width: 600, height: 360 });
   const current = savedState();
   const requests: string[] = [];
   await page.route("**/explorer/conversation/commands", route => {
@@ -38,16 +40,18 @@ test("REV306 Show me around opens a fixed keyboard tour with no request or chat 
   const title = dialog.getByRole("heading", { name: "A look around your conversation", exact: true });
   await expect(title).toBeFocused();
   await expect(title).toHaveAttribute("aria-describedby", "conversation-tour-step");
-  await expect(dialog.getByRole("status")).toHaveCount(1);
-  await expect(dialog.getByRole("status")).toHaveAttribute("aria-live", "polite");
-  await expect(dialog.getByRole("status")).toBeEmpty();
+  const status = dialog.getByRole("status");
+  await expect(status).toHaveCount(1);
+  await expect(status).toHaveAttribute("aria-live", "polite");
+  await expect(status).toBeEmpty();
   await expect(dialog.locator("#conversation-tour-step")).toContainText("saved messages");
   await expect(dialog.locator("#conversation-tour-step")).not.toContainText("A Compass point");
   const next = dialog.getByRole("button", { name: "Next step", exact: true });
   await next.focus();
   await page.keyboard.press("Enter");
-  await expect(next).toBeFocused();
-  await expect(dialog.getByRole("heading", { name: "How the Compass works", exact: true })).toBeVisible();
+  const compassHeading = dialog.getByRole("heading", { name: "How the Compass works", exact: true });
+  await expect(compassHeading).toBeFocused();
+  await expect(compassHeading).toBeInViewport({ ratio: 1 });
   const compassParagraphs = [
     "A Compass point names something that may matter to you, so you can keep it in view while the conversation moves.",
     "Points appear by themselves: when a topic has clearly come up a few times, your Virtual Guide adds it to the Compass.",
@@ -57,18 +61,27 @@ test("REV306 Show me around opens a fixed keyboard tour with no request or chat 
     "To turn the conversation to another point, choose it on the dial or in Compact view when the point controls are available.",
   ];
   await expect(dialog.locator("#conversation-tour-step > ul > li")).toHaveText(compassParagraphs);
-  await expect(dialog.getByRole("status")).toHaveText(["How the Compass works", ...compassParagraphs].join(" "));
+  await expect(compassHeading).toHaveAccessibleDescription("");
+  await expect(status).toHaveText(compassParagraphs.join(" "));
   await expect(dialog.locator("#conversation-tour-step")).not.toContainText('Choose "That\'s right" to confirm');
-  await page.keyboard.press("Enter");
-  await expect(dialog.getByRole("button", { name: "Back to the conversation", exact: true })).toBeFocused();
-  await expect(dialog.getByRole("heading", { name: "How Waypoints work", exact: true })).toBeVisible();
-  await expect(dialog.getByRole("status")).toContainText('Choose "That\'s right" to confirm the Waypoint');
+  // An assistive technology can activate Next while DOM focus stays on the heading.
+  const oldHeading = await compassHeading.evaluateHandle(heading => heading);
+  await next.dispatchEvent("click");
+  const waypointHeading = dialog.getByRole("heading", { name: "How Waypoints work", exact: true });
+  await expect(waypointHeading).toBeFocused();
+  expect(await oldHeading.evaluate(heading => heading.isConnected)).toBe(false);
+  await expect(waypointHeading).toBeInViewport({ ratio: 1 });
+  await expect(waypointHeading).toHaveAccessibleDescription("");
+  await expect(status).toHaveText(EXPLORER_TOUR_STEPS[2].paragraphs.join(" "));
   await dialog.getByRole("button", { name: "How Waypoints work", exact: true }).click();
   await expect(dialog.getByRole("button", { name: "How Waypoints work", exact: true })).toBeFocused();
-  await expect(dialog.getByRole("status")).toContainText("why it matters");
+  await expect(status).toHaveText(EXPLORER_TOUR_STEPS[2].paragraphs.join(" "));
   await dialog.getByRole("button", { name: "How the conversation works", exact: true }).click();
-  await expect(dialog.getByRole("button", { name: "How the conversation works", exact: true })).toBeFocused();
-  await expect(dialog.getByRole("status")).toContainText("saved messages");
+  const conversationHeading = dialog.getByRole("heading", { name: "How the conversation works", exact: true });
+  await expect(conversationHeading).toBeFocused();
+  await expect(conversationHeading).toBeInViewport({ ratio: 1 });
+  await expect(conversationHeading).toHaveAccessibleDescription("");
+  await expect(status).toHaveText(EXPLORER_TOUR_STEPS[0].paragraphs.join(" "));
   // Native modal keyboard focus stays within the tour in both directions.
   await dialog.getByRole("button", { name: "Back to the conversation", exact: true }).focus();
   await page.keyboard.press("Tab");

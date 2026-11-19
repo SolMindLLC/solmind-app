@@ -1155,7 +1155,7 @@ function createOpenEndedConversationState(
     priorityPathId: "understand-need",
     priorityConfirmed: false,
     pendingPriorityPathId: null,
-    orientationHistory: freeze(["understand-need"]),
+    orientationHistory: [],
     compassView: "full",
     waypointStatus: "none",
     detailStates: {

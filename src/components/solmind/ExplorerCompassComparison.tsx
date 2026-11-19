@@ -5,7 +5,6 @@ import {
   type KeyboardEvent,
   useEffect,
   useState,
-  useSyncExternalStore,
 } from "react";
 
 import {
@@ -123,22 +122,7 @@ import {
 } from "./ExplorerCompassComparisonParts";
 
 // Viewport detection only chooses between the inline panel and the drawer.
-// It reads nothing else from the browser and stores nothing.
 const WIDE_LAYOUT_QUERY = "(min-width: 64rem)";
-
-function subscribeToLayout(onChange: () => void) {
-  const query = window.matchMedia(WIDE_LAYOUT_QUERY);
-  query.addEventListener("change", onChange);
-  return () => query.removeEventListener("change", onChange);
-}
-
-function getLayoutSnapshot(): SupportLayout {
-  return window.matchMedia(WIDE_LAYOUT_QUERY).matches ? "wide" : "narrow";
-}
-
-function getServerLayoutSnapshot(): SupportLayout {
-  return "wide";
-}
 
 type FocusRequest = Readonly<{
   id: string;
@@ -179,12 +163,27 @@ export function ExplorerCompassComparison() {
   const [state, setState] = useState<ExplorerConversationState>(
     createInitialExplorerConversationState,
   );
-  const layout = useSyncExternalStore(
-    subscribeToLayout,
-    getLayoutSnapshot,
-    getServerLayoutSnapshot,
-  );
   const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
+  const [layout, setLayout] = useState<SupportLayout>("wide");
+  useEffect(() => {
+    const query = window.matchMedia(WIDE_LAYOUT_QUERY);
+
+    function updateLayout() {
+      if (query.matches) {
+        // Check focus before the wide layout removes the drawer.
+        const drawer = document.getElementById(SUPPORT_DRAWER_ID);
+        if (drawer?.hasAttribute("open") && drawer.contains(document.activeElement)) {
+          setFocusRequest(focusOn(PANEL_TOGGLE_ID));
+        }
+        setState(closeSupportDrawer);
+      }
+      setLayout(query.matches ? "wide" : "narrow");
+    }
+
+    query.addEventListener("change", updateLayout);
+    updateLayout();
+    return () => query.removeEventListener("change", updateLayout);
+  }, []);
 
   // Each request is a new object, so this runs once per request. Dialog
   // layout effects in children run first, so a requested focus target wins
@@ -194,23 +193,6 @@ export function ExplorerCompassComparison() {
       performFocusRequest(focusRequest);
     }
   }, [focusRequest]);
-
-  useEffect(() => {
-    const query = window.matchMedia(WIDE_LAYOUT_QUERY);
-
-    function closeDrawerWhenLayoutWidens(event: MediaQueryListEvent) {
-      if (!event.matches) {
-        return;
-      }
-
-      setState((current) => closeSupportDrawer(current));
-      setFocusRequest(focusOn(PANEL_TOGGLE_ID));
-    }
-
-    query.addEventListener("change", closeDrawerWhenLayoutWidens);
-    return () =>
-      query.removeEventListener("change", closeDrawerWhenLayoutWidens);
-  }, []);
 
   const isActive = state.view === "journey" && state.phase === "active";
   const inactiveHint = getInactiveHint(state.phase);

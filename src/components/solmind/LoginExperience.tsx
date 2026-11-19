@@ -24,8 +24,7 @@ function navigateAdminHome(destination: typeof ADMIN_BROWSER_SIGN_IN_HOME) {
   if (destination === ADMIN_BROWSER_SIGN_IN_HOME) window.location.replace(ADMIN_BROWSER_SIGN_IN_HOME);
 }
 function statusView(status: ExplorerSignInStatus) {
-  const message = explorerStatusText(status);
-  return message === null ? null : <p role="status" aria-live="polite">{message}</p>;
+  return <p role="status" aria-live="polite">{explorerStatusText(status)}</p>;
 }
 
 /** The role chooser uses the same approved markup; Explorer, Guide and Admin are connected.
