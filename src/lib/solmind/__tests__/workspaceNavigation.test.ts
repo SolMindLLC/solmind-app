@@ -13,6 +13,9 @@ import {
 } from "../workspaceMenus";
 import { EXPLORER_MENU_LABELS, WORKSPACE_NOT_CONNECTED_LABEL, withoutReviewPrefix } from "../workspaceNavigation";
 
+// The tests that read every source file get 30 seconds: under load LBB-004 took up to 7.9 seconds against Vitest's 5-second default.
+const WHOLE_TREE_TEST_TIMEOUT_MS = 30_000;
+
 const appRoot = path.resolve(__dirname, "..", "..", "..", "..");
 const LEAF_FILE = "src/lib/solmind/workspaceNavigation.ts";
 const MENUS_FILE = "src/lib/solmind/workspaceMenus.ts";
@@ -125,7 +128,7 @@ describe("shared workspace menu definition", () => {
       .map((name) => read(`src/components/solmind/${name}`));
     expect(parts.length).toBeGreaterThan(0);
     for (const source of parts) expect(source).not.toMatch(/workspaceMenus|routeAccess/);
-  });
+  }, WHOLE_TREE_TEST_TIMEOUT_MS);
 });
 
 // Slice 3: the Explorer workspace frame on the other signed-in Explorer pages (decision queue 2026-11-02

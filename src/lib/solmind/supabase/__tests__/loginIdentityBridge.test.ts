@@ -33,6 +33,9 @@ import {
 } from "../loginIdentityBridge";
 import { writeLoginSessionCookies, type SessionCookieResponse } from "../loginCookieWriter";
 
+// The tests that read every source file get 30 seconds: under load LBB-004 took up to 7.9 seconds against Vitest's 5-second default.
+const WHOLE_TREE_TEST_TIMEOUT_MS = 30_000;
+
 const CONSOLE_METHODS = ["log", "info", "warn", "error", "debug", "trace"] as const;
 
 const SUPABASE_URL = "http://127.0.0.1:54321";
@@ -1870,5 +1873,5 @@ describe("loginIdentityBridge - module boundary (dormant, server-only, off every
       "lib/solmind/supabase/passwordRoleSignInDependencies.ts: import ./loginIdentityBridge",
       "lib/solmind/supabase/passwordRoleSignInDependencies.ts: mentions loginIdentityBridge",
     ]);
-  });
+  }, WHOLE_TREE_TEST_TIMEOUT_MS);
 });

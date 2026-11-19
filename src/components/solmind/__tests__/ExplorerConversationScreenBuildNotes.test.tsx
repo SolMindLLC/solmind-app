@@ -27,6 +27,9 @@ import { NotConnectedProvider, NotYetImplementedNote, UnwiredControl, noteId } f
 import { ExplorerConversationScreenShell } from "../ExplorerConversationScreenShell";
 import { WorkspaceFrame } from "../WorkspaceFrame";
 
+// The tests that read every source file get 30 seconds: under load LBB-004 took up to 7.9 seconds against Vitest's 5-second default.
+const WHOLE_TREE_TEST_TIMEOUT_MS = 30_000;
+
 // Build notes on the signed-in screens (Paul's rule, decision queue 2026-11-03 17:59:20, 18:00:59 and 18:03:39
 // CST; build spec .validation/build-notes-20261103): the blue label, the blue box with its X, the violet removal
 // tag and the one page toggle. The real clicks are proved in tests/browser/explorerConversationScreen.pw.ts.
@@ -240,7 +243,7 @@ describe("build notes", () => {
     expect(/^[\x09\x0a\x0d\x20-\x7e]*$/.test(source)).toBe(true);
     // Nothing is saved: no browser storage and no URL state.
     expect(/localStorage|sessionStorage|indexedDB|location\.|history\.|useSearchParams|useRouter/.test(source)).toBe(false);
-  });
+  }, WHOLE_TREE_TEST_TIMEOUT_MS);
 
   it("BN08 every signed-in workspace frame page (Explorer, Guide and Admin) has the toggle and blue labels", () => {
     const frames = [
