@@ -176,6 +176,28 @@ async function open(page: Page, current: () => ExplorerConversationState) {
   await page.goto("/explorer/conversation");
   await expect(transcript(page)).toBeVisible();
 }
+
+test("a reply that opens a Waypoint offer leaves focus free to read and use the offer", async ({ page }) => {
+  const initial = savedState("change", { waypointOffer: null });
+  await open(page, () => initial);
+  await page.route("**/explorer/conversation/commands", route => {
+    const command = commandOf(route);
+    if (command.kind !== "send") throw new Error("expected_send");
+    const next = afterSend(initial, command.body, 3);
+    return fulfill(route, success({ ...next, waypointOffer: offer("change", { suggestionMessageId: message("virtualGuide", 4) }) }));
+  });
+  await composer(page).fill(TYPED_DRAFT);
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  const offerBox = box(page, "change");
+  await expect(offerBox).toBeVisible();
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(composer(page)).not.toBeFocused();
+  const heading = offerBox.getByRole("heading");
+  await heading.evaluate(element => { element.tabIndex = -1; element.focus(); });
+  await page.keyboard.type("a");
+  await expect(heading).toBeFocused();
+  await expect(composer(page)).toHaveValue("");
+});
 // No follow-up Send is in flight or was sent: the strip shows its settled green words (the status region holds
 // the busy sentence while a change is checked and is blank while a Send waits), nothing is marked busy and Reload
 // is enabled again. Every caller has first seen the answer's own result on screen, so the green is not the one
@@ -239,6 +261,8 @@ for (const kind of ["reached", "change", "revisit"] as const) {
     await expect(offerBox).toContainText("Saving...");
     for (const control of await offerBox.getByRole("button").all()) await expect(control).toBeDisabled();
     await expect(offerBox).not.toContainText("Saved.");
+    const privacy = page.getByRole("button", { name: "Privacy and sharing", exact: true });
+    if (kind === "change") await privacy.focus();
     release();
 
     await expect(offerBox).toContainText(SAVED_LINE[kind]);
@@ -252,6 +276,8 @@ for (const kind of ["reached", "change", "revisit"] as const) {
     } else {
       await expect(transcript(page).getByRole("listitem").nth(2)).toContainText(`That's right: "${TITLE}"`);
       await expect(transcript(page).getByRole("listitem").nth(3)).toContainText(GUIDE_REPLY);
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+      await expect(kind === "change" ? privacy : composer(page)).toBeFocused();
       expect(requests).toHaveLength(2);
       // The Saved line stays under the carrying reply after the follow-up.
       await expect(transcript(page).getByRole("listitem").nth(1)).toContainText(SAVED_LINE[kind]);

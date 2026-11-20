@@ -1,11 +1,14 @@
 import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ExplorerConversationConnectedScreen, type ConnectedConversationActions,
   type ConnectedConversationView } from "../ExplorerConversationConnectedScreen";
 import { ExplorerConversationTour } from "../ExplorerConversationTour";
+import { useConversationComposerFocus } from "../useConversationComposerFocus";
 import { cardState } from "../../../../tests/browser/connectedCardFixture";
 
 const hooks = vi.hoisted(() => ({ slots: [] as unknown[], cursor: 0 }));
+vi.mock("../useConversationComposerFocus", () => ({ useConversationComposerFocus: vi.fn() }));
 vi.mock("react", async original => ({
   ...await original<typeof import("react")>(),
   useState: (initial: unknown) => {
@@ -55,6 +58,29 @@ describe("Fixed tour choice interception", () => {
       .props.actions!.onReplyChoice(label);
     return { render, choose, actions, view };
   }
+
+  it.each(["none", "End Session", "tour", "Waypoint offer"])(
+    "passes the open screen dialog to the composer focus hook: %s", dialog => {
+      const f = setup({ endReviewOpen: dialog === "End Session" }, dialog === "Waypoint offer" ? {
+        waypointOffer: {
+          id: "offer", kind: "reached", evidence: "I arrived.", status: "proposed", waypointId: "waypoint",
+          targetBefore: { title: "A walk", destination: "The park", whyItMatters: "Fresh air",
+            arrivalSignal: "See the park", stage: "formed" },
+          suggestionMessageId: cardState().messages.at(-1)!.id, resultWaypointId: null, targetCurrent: true,
+          typedAnswerEligible: true, typedAnswerRefusal: null,
+        },
+      } : {});
+      if (dialog === "tour") f.choose("Show me around");
+      vi.mocked(useConversationComposerFocus).mockClear();
+      const html = renderToStaticMarkup(f.render());
+      expect(html).toContain('role="log"');
+      if (dialog === "Waypoint offer") expect(html).toContain('data-waypoint-offer="reached"');
+      if (dialog === "tour") expect(html).toContain("<dialog");
+      expect(useConversationComposerFocus).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ dialogOpen: dialog !== "none" }),
+      );
+    },
+  );
 
   it("opens locally before Send, preserves its opener and draft, and closes with no request", () => {
     class Element { isConnected = true; focus = vi.fn(); }

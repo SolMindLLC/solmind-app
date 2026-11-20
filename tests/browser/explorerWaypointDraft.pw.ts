@@ -102,10 +102,10 @@ test("S7a a saved Waypoint draft refines after an exact answer retry, confirms i
   await expect(composer).toHaveValue(TYPED_DRAFT);
   await row(REFINED_TITLE).getByRole("button", { name: "That's right", exact: true }).click();
   await expect(row(REFINED_TITLE)).toHaveCount(0);
-  await expect(transcript.getByRole("listitem").nth(5)).toBeFocused();
   await expect.poll(() => sendCount).toBe(2);
   await expect(transcript.getByRole("listitem").nth(6)).toContainText(`That's right: "${REFINED_TITLE}"`);
   await expect(transcript.getByRole("listitem").nth(7)).toContainText("Synthetic acknowledgement: that Waypoint fits.");
+  await expect(composer).toBeFocused();
   await expect(composer).toHaveValue(TYPED_DRAFT);
   if ((page.viewportSize()?.width ?? 0) < 1024) await page.locator("#conversation-preview-drawer-opener").click();
   const panel = page.locator((page.viewportSize()?.width ?? 0) < 1024 ? "#conversation-preview-drawer" : "#conversation-preview-panel");

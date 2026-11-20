@@ -1663,7 +1663,9 @@ export function getCompassLayout(
     return freeze<CompassLayoutItem>({
       path,
       zone,
-      zoneLabel: COMPASS_ZONE_LABELS[zone],
+      zoneLabel: zone === "priority" && !state.priorityConfirmed
+        ? "Upper point"
+        : COMPASS_ZONE_LABELS[zone],
       isPriority: state.priorityConfirmed && path.id === state.priorityPathId,
       isAttention: path.id === state.attentionPathId,
       isPendingPriority: path.id === state.pendingPriorityPathId,
@@ -1673,15 +1675,17 @@ export function getCompassLayout(
 
 export function getCompassDescription(state: ExplorerConversationState): string {
   const layout = getCompassLayout(state);
-  const priority = layout.find((item) => item.isPriority);
+  const upper = layout.find((item) => item.zone === "priority");
+  if (upper && !state.priorityConfirmed) {
+    return `'${upper.path.label}' is at the top of the Compass. No Priority has been confirmed.`;
+  }
   const attention = layout.find((item) => item.isAttention);
   const others = layout
     .filter((item) => !item.isPriority && !item.isAttention)
     .map((item) => `${item.path.label} is a ${item.zoneLabel}.`);
 
   return [
-    !state.priorityConfirmed ? "No Priority has been confirmed." : "",
-    priority ? `${priority.path.label} is your confirmed Priority.` : "",
+    upper ? `${upper.path.label} is your confirmed Priority.` : "",
     attention && !attention.isPriority
       ? `${attention.path.label} holds your current attention, in the ${attention.zoneLabel} area.`
       : "",

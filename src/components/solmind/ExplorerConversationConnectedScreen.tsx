@@ -32,11 +32,13 @@ import {
   connectedTranscriptScrollsToEnd,
   connectedVisibleArea,
   connectedWaitingFocusTarget,
+  connectedWindowResize,
   nextStripExplanation,
   type ConnectedConversationStatus,
   type ConnectedSavedStatus,
   type ConnectedStripExplanation,
   type ConnectedStripFocusTarget,
+  type ConnectedVisibleArea,
 } from "@/lib/solmind/explorerConversationConnectedScreen";
 import {
   CONNECTED_KEY_INSIGHT_HEADING,
@@ -52,6 +54,7 @@ import {
 } from "@/lib/solmind/explorerConversationContract";
 import type { ExplorerPrivateAssistance } from "@/lib/solmind/explorerPrivateConversationResponse";
 import { latestReplyChoices, nextCalmReplyPrompt } from "@/lib/solmind/explorerReplyChoices";
+import { latestVirtualGuideReplyId } from "@/lib/solmind/explorerWaypointOffer";
 import { EXPLORER_TOUR_CHOICE } from "@/lib/solmind/explorerConversationTour";
 import { SPEAKER_LABEL_STYLE, speakerLabelClass } from "@/lib/solmind/explorerSpeakerStyle";
 import { SOLMIND_TERMS } from "@/lib/solmind/terms";
@@ -87,6 +90,8 @@ import {
   noteId,
 } from "./ExplorerConversationScreenNotYetImplemented";
 import { ExplorerConversationScreenShell } from "./ExplorerConversationScreenShell";
+import { focusByApp } from "./conversationAppFocus";
+import { useConversationComposerFocus } from "./useConversationComposerFocus";
 import { SpeakerBadge } from "./ExplorerConversationScreenSpeaker";
 import {
   ConnectedSupportDrawer,
@@ -110,7 +115,7 @@ import {
 // when a change made from it leaves no saved state), which Compass view (Full
 // or Compact) shows in the panel and in the drawer, whether the narrow-screen Menu is open, which
 // "Not connected yet" sentence is shown, which build notes show, and the local
-// reply-choice dismissal and calm prompt (including its last line), which of the
+// reply-choice visibility and calm prompt (including its last line), which of the
 // strip's two explanations is open, which strip control last held keyboard focus, and the
 // Waypoint review/outcome display shared with the narrow drawer. Parts that are not connected yet show
 // a blue "Not connected yet" build-note label and, when activated, one sentence directly
@@ -454,10 +459,11 @@ function StripFocusKeeper({ heldFocusRef, focusWaitsOnTitleRef, headingRef, relo
     return () => document.removeEventListener("pointerdown", forget, true);
   }, [heldFocusRef, focusWaitsOnTitleRef]);
   useLayoutEffect(() => {
+    // Every move here is the app's own, so a reply may still take focus to the message box afterwards.
     const focusOn = (target: ConnectedStripFocusTarget) => {
       const element = target === "reload" ? reloadRef.current : target === "retry" ? retryRef.current
         : target === "signIn" ? signInRef.current : headingRef.current;
-      element?.focus({ preventScroll: true });
+      focusByApp(element, { preventScroll: true });
     };
     const reloadEnabled = () => reloadRef.current !== null && reloadRef.current.getAttribute("aria-disabled") !== "true";
     const held = heldFocusRef.current;
@@ -504,9 +510,8 @@ function focusedComposer(): Readonly<{ box: HTMLElement; send: HTMLElement | nul
 
 // Temporary scroll room under the page (GPT-6 Astra review REV574, finding 1). With the keyboard open the
 // page may not be able to scroll far enough to bring the message box and Send above it; the missing distance
-// is then added as padding under the page body, and taken away again when the keyboard closes or becomes
-// smaller (the visible height grows at the same zoom and layout height), or the screen leaves. Nothing is
-// drawn in it.
+// is then added as padding under the page body. It goes when the keyboard closes or becomes smaller,
+// when the full unzoomed viewport is restored, or when the screen leaves.
 type KeyboardSpace = { amount: number; base: number; inline: string };
 function giveKeyboardSpace(space: KeyboardSpace, more: number) {
   if (space.amount === 0) {
@@ -525,11 +530,11 @@ function takeKeyboardSpace(space: KeyboardSpace) {
 
 // Step B: writes the transcript's height from the sizing rule. Nothing is requested, stored or sent, and the
 // transcript's scroll position is never written here.
-function fitTranscript(box: HTMLDivElement | null, end: HTMLElement | null) {
-  if (box === null || end === null) return;
+function fitTranscript(box: HTMLDivElement | null, end: HTMLElement | null, area: ConnectedVisibleArea | null) {
+  if (box === null || end === null || area === null) return;
   const place = box.getBoundingClientRect();
   const height = connectedTranscriptHeight({
-    windowHeight: visibleArea().height,
+    windowHeight: area.height,
     top: place.top + window.scrollY,
     below: end.getBoundingClientRect().bottom - place.bottom,
   });
@@ -562,33 +567,35 @@ type SizerProps = Readonly<{
 // When the page cannot scroll that far, temporary scroll room is given under the page for the rest.
 function TranscriptSizer({ transcriptRef, conversationEndRef, endedEndRef, noticesRef, drawn }: SizerProps) {
   const keyboardSpace = useRef<KeyboardSpace>({ amount: 0, base: 0, inline: "" });
+  const lastValidArea = useRef<ConnectedVisibleArea | null>(null);
   // The temporary scroll room leaves with the screen.
   useEffect(() => {
     const space = keyboardSpace.current;
     return () => takeKeyboardSpace(space);
   }, []);
   useLayoutEffect(() => {
-    fitTranscript(transcriptRef.current, endedEndRef.current ?? conversationEndRef.current);
+    fitTranscript(transcriptRef.current, endedEndRef.current ?? conversationEndRef.current, visibleArea() ?? lastValidArea.current);
   });
   useEffect(() => {
-    const fit = () => fitTranscript(transcriptRef.current, endedEndRef.current ?? conversationEndRef.current);
+    const fit = (area: ConnectedVisibleArea | null) => fitTranscript(transcriptRef.current, endedEndRef.current ?? conversationEndRef.current, area);
     let frame = 0;
     const later = () => {
       cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(fit);
+      frame = requestAnimationFrame(() => fit(visibleArea() ?? lastValidArea.current));
     };
-    window.addEventListener("resize", fit);
     const visual = window.visualViewport ?? null;
-    let seen = visibleArea();
+    lastValidArea.current = visibleArea() ?? lastValidArea.current;
     const space = keyboardSpace.current;
     const visualChanged = () => {
+      const now = visibleArea();
+      if (now === null) return;
+      const seen = lastValidArea.current ?? now;
+      lastValidArea.current = now;
       const composer = focusedComposer();
       const focusedBefore = composer?.focused.getBoundingClientRect() ?? null;
-      const now = visibleArea();
-      // The keyboard closed or became smaller: the temporary scroll room goes. What is still needed is given again
-      // below. During a zoom or a layout change it stays: no page move follows those (REV587).
+      // Release room for a smaller keyboard or a fully restored viewport. Recalculate any missing room below.
       if (connectedKeyboardSpaceGoes(seen, now)) takeKeyboardSpace(space);
-      fit();
+      fit(now);
       if (composer !== null && focusedBefore !== null) {
         const measure = () => {
           const focused = composer.focused.getBoundingClientRect();
@@ -610,8 +617,16 @@ function TranscriptSizer({ transcriptRef, conversationEndRef, endedEndRef, notic
         }
         if (move !== 0) window.scrollBy({ top: move, behavior: "instant" });
       }
-      seen = now;
     };
+    const windowChanged = () => {
+      const now = visibleArea();
+      if (now === null) return;
+      const { reading, restored } = connectedWindowResize(lastValidArea.current, now);
+      lastValidArea.current = reading;
+      if (restored) takeKeyboardSpace(space);
+      fit(now);
+    };
+    window.addEventListener("resize", windowChanged);
     visual?.addEventListener("resize", visualChanged);
     visual?.addEventListener("scroll", visualChanged);
     const observer = typeof ResizeObserver === "function" ? new ResizeObserver(later) : null;
@@ -631,7 +646,7 @@ function TranscriptSizer({ transcriptRef, conversationEndRef, endedEndRef, notic
       }
     }
     return () => {
-      window.removeEventListener("resize", fit);
+      window.removeEventListener("resize", windowChanged);
       visual?.removeEventListener("resize", visualChanged);
       visual?.removeEventListener("scroll", visualChanged);
       cancelAnimationFrame(frame);
@@ -900,13 +915,20 @@ type ComposerProps = Readonly<{
   view: ConnectedConversationView;
   actions: ConnectedConversationActions;
   composerRef: RefObject<HTMLTextAreaElement | null>;
+  transcriptRef: RefObject<HTMLDivElement | null>;
+  dialogOpen: boolean;
   calmPrompt: string | null;
 }>;
 
 // The real message form, with the designed controls that are not built yet
 // beside Send, each with its sentence directly under it.
-function ConnectedComposer({ view, actions, composerRef, calmPrompt }: ComposerProps) {
+function ConnectedComposer({ view, actions, composerRef, transcriptRef, dialogOpen, calmPrompt }: ComposerProps) {
   const disabled = view.held || view.sendUnavailable || view.atMessageCapacity;
+  useConversationComposerFocus({
+    composerRef, transcriptRef, sendSequence: view.sendSequence, busy: view.busy,
+    replyId: view.state === null ? null : latestVirtualGuideReplyId(view.state),
+    dialogOpen, onDraftChange: actions.onDraftChange,
+  });
   // A tablet with an attached keyboard may report a coarse pointer and behave
   // like a phone; Paul's screen wording sheet says this still needs checking.
   const touchFirst = typeof window !== "undefined" && typeof window.matchMedia === "function" &&
@@ -1032,6 +1054,15 @@ type EndProps = Readonly<{ state: ExplorerConversationState; view: ConnectedConv
 
 // Ending, exactly as before: a review first, then a confirmation.
 function EndSession({ state, view, actions }: EndProps) {
+  const reviewRef = useRef<HTMLDivElement>(null);
+  const openerRef = useRef<HTMLButtonElement>(null);
+  const reviewWasOpen = useRef(false);
+  useLayoutEffect(() => {
+    if (view.endReviewOpen) reviewRef.current?.focus();
+    else if (reviewWasOpen.current) openerRef.current?.focus();
+    reviewWasOpen.current = view.endReviewOpen;
+  }, [view.endReviewOpen]);
+
   if (state.conversationId === null) {
     return (
       <section aria-label="End Session" className="grid gap-3 rounded-b-3xl border-t border-amber-200/10 px-4 py-4 text-sm text-stone-200 sm:px-5">
@@ -1070,13 +1101,14 @@ function EndSession({ state, view, actions }: EndProps) {
           className={joinClasses(SECONDARY_BUTTON, "disabled:cursor-not-allowed disabled:opacity-50")}
           disabled={view.held}
           onClick={actions.onReviewEnd}
+          ref={openerRef}
           type="button"
         >
           End this conversation
         </button>
       </div>
       {view.endReviewOpen ? (
-        <div aria-label="Review End Session" className={ALERT_CLASS} role="group">
+        <div aria-label="Review End Session" className={ALERT_CLASS} ref={reviewRef} role="group" tabIndex={-1}>
           <p>End this saved session and return to Explorer home? This closes this conversation; it does not mean your journey is over.</p>
           <p>
             There are {state.messages.length} saved messages and {(state.route ?? []).length} recorded Route changes. A
@@ -1166,7 +1198,7 @@ type ReplyPromptState = Readonly<{
   messageId: string | null;
   lastPrompt: string | null;
   prompt: string | null;
-  dismissed: boolean;
+  sendPending: boolean;
   sendSequence: number;
 }>;
 
@@ -1198,7 +1230,7 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
     messageId: latestMessageId,
     lastPrompt: null,
     prompt: null,
-    dismissed: false,
+    sendPending: view.awaitingReply,
     sendSequence: view.sendSequence,
   });
   // Clear transient display on a changed saved message or lost eligibility.
@@ -1206,18 +1238,21 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
   const conversationChanged = state !== null && state.conversationId !== replyPrompt.conversationId;
   const messageChanged = state !== null && replyPrompt.messageId !== latestMessageId;
   const sendStarted = replyPrompt.sendSequence !== view.sendSequence;
+  // The saved latest message owns its choices. Hide them only while its Send
+  // is in flight or awaiting an exact retry after an uncertain result.
+  const sendPending = view.awaitingReply || (view.uncertain && (sendStarted || replyPrompt.sendPending));
   const signInClearsPrompt = view.signInRequired &&
-    (replyPrompt.conversationId !== null || replyPrompt.messageId !== null || replyPrompt.lastPrompt !== null || replyPrompt.dismissed);
+    (replyPrompt.conversationId !== null || replyPrompt.messageId !== null || replyPrompt.lastPrompt !== null || replyPrompt.sendPending);
   if (signInClearsPrompt) {
-    setReplyPrompt({ conversationId: null, messageId: null, lastPrompt: null, prompt: null, dismissed: false, sendSequence: view.sendSequence });
+    setReplyPrompt({ conversationId: null, messageId: null, lastPrompt: null, prompt: null, sendPending: false, sendSequence: view.sendSequence });
   } else if (!view.signInRequired && (conversationChanged || messageChanged || sendStarted ||
-      (offeredChoices === null && replyPrompt.prompt !== null))) {
+      sendPending !== replyPrompt.sendPending || (offeredChoices === null && replyPrompt.prompt !== null))) {
     setReplyPrompt({
       conversationId: state === null ? replyPrompt.conversationId : state.conversationId,
       messageId: state === null ? replyPrompt.messageId : latestMessageId,
       lastPrompt: conversationChanged ? null : replyPrompt.lastPrompt,
       prompt: null,
-      dismissed: conversationChanged || messageChanged ? false : sendStarted || replyPrompt.dismissed,
+      sendPending,
       sendSequence: view.sendSequence,
     });
   }
@@ -1269,7 +1304,7 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
     if (end === null || typeof end.scrollIntoView !== "function") return;
     const place = typeof end.getBoundingClientRect === "function" ? end.getBoundingClientRect() : null;
     const area = visibleArea();
-    if (place !== null && connectedOpenTargetInView({ top: place.top, bottom: place.bottom, windowHeight: area.height, windowTop: area.top })) return;
+    if (place !== null && connectedOpenTargetInView({ top: place.top, bottom: place.bottom, windowHeight: area?.height ?? document.documentElement.clientHeight, windowTop: area?.top })) return;
     end.scrollIntoView({ behavior: "instant", block: "end" });
   }, [state, noticeAtOpen, view.ended]);
   const repliesDisabled = view.held || view.sendUnavailable || view.atMessageCapacity;
@@ -1277,7 +1312,7 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
   const openTour = () => setTour({ opener: document.activeElement instanceof HTMLElement ? document.activeElement : null,
     conversationId: state?.conversationId ?? null });
   const chooseReply = (label: string) => {
-    if (offeredChoices === null || replyPrompt.dismissed || !offeredChoices.labels.includes(label)) return;
+    if (offeredChoices === null || sendPending || !offeredChoices.labels.includes(label)) return;
     if (label === EXPLORER_TOUR_CHOICE) {
       openTour();
       return;
@@ -1287,7 +1322,7 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
   };
   if (tour !== null && (state === null || view.ended || tour.conversationId !== state.conversationId)) setTour(null);
   const showSomethingElse = () => {
-    if (offeredChoices === null || repliesDisabled || replyPrompt.dismissed) return;
+    if (offeredChoices === null || repliesDisabled || sendPending) return;
     const prompt = nextCalmReplyPrompt(replyPrompt.lastPrompt);
     setReplyPrompt({ ...replyPrompt, lastPrompt: prompt, prompt });
   };
@@ -1437,7 +1472,7 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
                           {state.pendingTurn && noticeAtOpen ? <PendingTurnNotice markerRef={pendingAboveRef} /> : null}
                           <SavedTranscript
                             actions={{ ...actions, onReplyChoice: chooseReply }}
-                            choicesDismissed={replyPrompt.dismissed}
+                            choicesDismissed={sendPending}
                             onShowTour={openTour}
                             onSomethingElse={showSomethingElse}
                             state={state}
@@ -1450,7 +1485,11 @@ export function ExplorerConversationConnectedScreen({ view, actions, headingRef,
                               instead (see below), so both are in view together. */}
                           {state.pendingTurn && !noticeAtOpen ? <PendingTurnNotice /> : null}
                           {view.ended ? null : (
-                            <ConnectedComposer actions={actions} calmPrompt={replyPrompt.prompt} composerRef={composerRef} view={view} />
+                            <ConnectedComposer
+                              actions={actions} calmPrompt={replyPrompt.prompt} composerRef={composerRef}
+                              dialogOpen={view.endReviewOpen || tour !== null || drawerOpen || state.waypointOffer?.status === "proposed"}
+                              transcriptRef={transcriptRef} view={view}
+                            />
                           )}
                           {/* An empty marker at the end of the conversation area: where the page
                               lands when a saved conversation opens (see conversationEndRef). */}

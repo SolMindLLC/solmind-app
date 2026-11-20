@@ -183,7 +183,7 @@ test("R01 a tapped choice sends exactly its label with the choice marker, keeps 
   await expect(transcript(page).getByRole("listitem").nth(2)).toContainText("I have a question");
   await expect(choices(page)).toHaveCount(0);
   await expect(composer(page)).toHaveValue(DRAFT);
-  await expect(transcript(page).getByRole("listitem").nth(1)).toBeFocused();
+  await expect(composer(page)).toBeFocused();
   await expect(page.locator("[data-reply-choices] [data-build-note]")).toHaveCount(0);
   expect(requests).toHaveLength(1);
 });
@@ -439,7 +439,7 @@ test("R09 a Waypoint Close follow-up sends while the same reply's choices stay h
   expect(requests.filter(command => command.kind === "send")).toHaveLength(1);
 });
 
-test("R10 a failed reload followed by the same saved reply does not resurrect a dismissed offer", async ({ page }) => {
+test("R10 a refused Send restores the choices and reloading the same reply allows a new tap", async ({ page }) => {
   const current = savedState();
   let failedRead = false;
   const requests: ExplorerConversationCommand[] = [];
@@ -459,17 +459,24 @@ test("R10 a failed reload followed by the same saved reply does not resurrect a 
   await expect(page.locator("#conversation-calm-prompt")).toBeVisible();
   await choices(page).getByRole("button", { name: "I have a question", exact: true }).click();
   await expect.poll(() => requests.length).toBe(1);
-  await expect(choices(page)).toHaveCount(0);
+  const choice = choices(page).getByRole("button", { name: "I have a question", exact: true });
+  await expect(choice).toBeDisabled();
+  await expect(choices(page).getByRole("button")).toHaveText([...CHOICES, "Something else"]);
   failedRead = true;
   await page.getByRole("button", { name: "Reload saved conversation", exact: true }).click();
   await expect(transcript(page)).toHaveCount(0);
   failedRead = false;
   await page.getByRole("button", { name: "Reload saved conversation", exact: true }).click();
   await expect(transcript(page).getByRole("listitem")).toHaveCount(2);
-  await expect(choices(page)).toHaveCount(0);
+  await expect(choices(page).getByRole("button")).toHaveText([...CHOICES, "Something else"]);
+  await expect(choice).toBeEnabled();
   await expect(page.locator("#conversation-calm-prompt")).toHaveCount(0);
   await expect(composer(page)).toHaveValue(DRAFT);
   expect(requests).toHaveLength(1);
+  await choice.click();
+  await expect.poll(() => requests.length).toBe(2);
+  expect(requests[1]).toMatchObject({ kind: "send", body: "I have a question", replyChoice: true });
+  expect(requests[1].operationId).not.toBe(requests[0].operationId);
 });
 
 test("R11 an uncertain tapped Send retries its exact flagged bytes and keeps the typed draft", async ({ page }) => {

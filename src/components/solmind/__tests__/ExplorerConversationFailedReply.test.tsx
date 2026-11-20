@@ -48,13 +48,18 @@ const state: ExplorerConversationState = { version: "explorer-conversation.v1", 
 const draft = "My thought stays in the conversation.";
 const cleanups: (() => void)[] = [];
 function render() { hooks.cursor = 0; renderToStaticMarkup(createElement(ExplorerConversation)); }
-function screenMarkup() {
-  // Render the real presentation from the controller's current view, with separate local layout slots.
+function screenMarkup(layoutSlots: unknown[] = []) {
+  // Keep the screen's layout slots separate from its controller and its rendered children.
   const saved = { slots: hooks.slots, cursor: hooks.cursor, effects: hooks.effects };
-  hooks.slots = []; hooks.cursor = 0; hooks.effects = [];
+  hooks.slots = layoutSlots; hooks.cursor = 0; hooks.effects = [];
+  function Screen() {
+    const tree = hooks.screen!({ view: hooks.view!, actions: hooks.actions!,
+      headingRef: createRef<HTMLHeadingElement>(), composerRef: createRef<HTMLTextAreaElement>() });
+    hooks.slots = []; hooks.cursor = 0;
+    return tree;
+  }
   try {
-    return renderToStaticMarkup(createElement(hooks.screen!, { view: hooks.view!, actions: hooks.actions!,
-      headingRef: createRef<HTMLHeadingElement>(), composerRef: createRef<HTMLTextAreaElement>() }));
+    return renderToStaticMarkup(createElement(Screen));
   } finally {
     hooks.slots = saved.slots; hooks.cursor = saved.cursor; hooks.effects = saved.effects;
   }
@@ -161,9 +166,10 @@ describe("REV306 failed-reply controller", () => {
 
 describe("REV424 waiting indicator command lifetime", () => {
   const label = "I have a question";
+  const labels = ["Show me around", label, "Let's begin"];
   const offered: ExplorerConversationState = { ...state, revision: 1, messages: [{
     id: id(3), role: "virtualGuide", body: "A synthetic reply", createdAt: "2026-11-13T10:00:00Z",
-    choices: [{ label }],
+    choices: labels.map(label => ({ label })),
   }] };
   const waypointDraft = { id: id(5), title: "A calm conversation", destination: "Speak without rushing",
     whyItMatters: "We can hear each other", arrivalSignal: "We each finish a thought", suggestionMessageId: id(3) };
@@ -190,6 +196,49 @@ describe("REV424 waiting indicator command lifetime", () => {
       expect(screenMarkup()).not.toContain('data-sending-message=""');
     }
   }
+
+  it.each(["typed", "reply choice"] as const)("restores the same choices after an unsaved %s Send", async kind => {
+    const fetch = await loaded(offered);
+    const held = hold(fetch);
+    const layout: unknown[] = [];
+    function choices() {
+      render();
+      // Apply the screen's render-phase state update before reading its markup.
+      screenMarkup(layout);
+      return screenMarkup(layout).match(/<div aria-label="Suggested replies"[\s\S]*?<\/div>/)?.[0] ?? null;
+    }
+    const original = choices();
+    expect(original).toContain(label);
+    if (kind === "typed") send();
+    else hooks.actions!.onReplyChoice(label);
+    expect(choices()).toBeNull();
+    held.resolve(response({ ok: false, state: null, error: "provider_unavailable" }));
+    await vi.advanceTimersByTimeAsync(0);
+    const restoredButtons = (choices() ?? "").matchAll(/<button\b[^>]*>([\s\S]*?)<\/button>/g);
+    expect(Array.from(restoredButtons, ([, content]) => content.replace(/<[^>]+>/g, "")))
+      .toEqual([...labels, "Something else"].map(renderedText));
+    expect(hooks.view!.sendUnavailable).toBe(true);
+    expect(fetch).toHaveBeenCalledOnce();
+
+    hooks.actions!.onReload();
+    held.resolve(response({ ok: true, state: offered, error: null }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(choices()).toBe(original);
+    expect(fetch.mock.calls.map(([, init]) => init!.method)).toEqual(["POST", "GET"]);
+    hooks.actions!.onReplyChoice(label);
+    const commands = fetch.mock.calls.filter(([, init]) => init!.method === "POST")
+      .map(([, init]) => JSON.parse(init!.body as string));
+    expect(commands).toHaveLength(2);
+    expect(commands[1]).toMatchObject({ kind: "send", body: label, replyChoice: true });
+    expect(commands[1].operationId).not.toBe(commands[0].operationId);
+    const saved = { ...offered, revision: 2, messages: [...offered.messages,
+      { id: id(6), role: "explorer", body: label, createdAt: "2026-11-13T10:00:08Z" }] };
+    held.resolve(response({ ok: true, state: saved, error: null }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(choices()).toBeNull();
+    expect(hooks.view!.state?.messages.at(-1)?.id).toBe(id(6));
+    expect(hooks.view).toMatchObject({ awaitingReply: false, uncertain: false });
+  });
 
   it.each(["typed", "reply choice"] as const)("waits only while the dispatched %s Send is in flight", async kind => {
     const fetch = await loaded(offered);

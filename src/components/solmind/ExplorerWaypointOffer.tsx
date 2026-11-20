@@ -16,6 +16,7 @@ import {
   waypointOfferStageLine,
   waypointOfferTargetChangedNotice,
 } from "@/lib/solmind/explorerWaypointOffer";
+import { focusByApp } from "./conversationAppFocus";
 import { SECONDARY_BUTTON, joinClasses } from "./ExplorerConversationScreenNotYetImplemented";
 
 const TAG_CLASS = "rounded-full border border-dashed border-amber-200/50 px-2.5 py-1 text-xs font-semibold text-amber-100";
@@ -170,7 +171,7 @@ export function ExplorerWaypointOffer({ state, messageId, held, followUpHeld, sa
                   // A confirmed or declined answer can remove this button, so focus goes to the reply. Without
                   // preventScroll the browser would move the page to bring a tall reply into view (step 4 item 9:
                   // the page must not move on a command).
-                  event.currentTarget.closest("li")?.focus({ preventScroll: true });
+                  focusByApp(event.currentTarget.closest("li"), { preventScroll: true });
                 }}
                 type="button"
               >

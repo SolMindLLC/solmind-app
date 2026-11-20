@@ -2,6 +2,7 @@
 // Mocked private-response endpoints prove mounted keyboard behaviour only;
 // they prove no authentication, SQL persistence, provider call or genuine AI reply.
 import { expect, test, type Page } from "@playwright/test";
+import { COMMANDS_URL, holdNextRequest, privacyButton } from "./compactHeaderHelpers";
 
 import {
   EXPLORER_CONVERSATION_VERSION,
@@ -106,3 +107,230 @@ test("the available composer shows the exact approved hint", async ({ page }) =>
   await expect(hint).toHaveText(HINT);
   expect(commands).toEqual([]);
 });
+
+const composer = (page: Page) => page.getByLabel("Continue the conversation", { exact: true });
+const log = (page: Page) => page.getByRole("log", { name: "Conversation transcript", exact: true });
+const focusReply = "A new reply about the next step.";
+const focusMessage = "A message about the next step.";
+function withReply(state: ExplorerConversationState): ExplorerConversationState {
+  return { ...state, revision: state.revision + 2, messages: [...state.messages,
+    message(3, "explorer", focusMessage), message(4, "virtualGuide", focusReply)] };
+}
+
+async function startSend(page: Page, state = savedState()) {
+  await open(page, state, withReply(state));
+  const held = await holdNextRequest(page, COMMANDS_URL);
+  await composer(page).fill(focusMessage);
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await held.arrived;
+  await expect(composer(page)).toBeDisabled();
+  return held;
+}
+
+async function replyShown(page: Page) {
+  // A native modal can hide the background log from the accessibility tree.
+  await expect(page.locator('[role="log"]').getByText(focusReply, { exact: true })).toBeAttached();
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+}
+
+test("the new Guide reply is already in the live log when desktop focus returns to the box", async ({ page }) => {
+  const held = await startSend(page);
+  await composer(page).evaluate((field, reply) => {
+    field.addEventListener("focus", () => {
+      const log = document.querySelector('[role="log"]');
+      field.dataset.replyReady = String(!!log?.textContent?.includes(reply) &&
+        !log.closest('[aria-busy="true"], [aria-live="off"]'));
+    }, { once: true });
+  }, focusReply);
+  held.release();
+  await expect(composer(page)).toBeFocused();
+  await expect(composer(page)).toHaveAttribute("data-reply-ready", "true");
+});
+
+for (const [device, width] of [["phone", 390], ["tablet", 820]] as const) {
+  test.describe(device, () => {
+    test.use({ hasTouch: true, viewport: { width, height: 844 } });
+    test("a reply leaves the message box unfocused", async ({ page }) => {
+      const held = await startSend(page);
+      expect(await page.evaluate(() => matchMedia("(hover: none) and (pointer: coarse)").matches)).toBe(true);
+      held.release();
+      await replyShown(page);
+      await expect(composer(page)).not.toBeFocused();
+    });
+  });
+}
+
+test("a tablet with a fine primary pointer, hover and a touch screen leaves the box unfocused", async ({ page }) => {
+  await page.setViewportSize({ width: 820, height: 844 });
+  await page.addInitScript(() => {
+    const matchMedia = window.matchMedia.bind(window);
+    // Keep the desktop primary pointer and add a touch screen as a second pointer.
+    window.matchMedia = query => matchMedia(query.replace("(any-pointer: coarse)", "(any-pointer: fine)"));
+    Object.defineProperty(navigator, "maxTouchPoints", { value: 5 });
+  });
+  const held = await startSend(page);
+  expect(await page.evaluate(() =>
+    matchMedia("(hover: hover) and (pointer: fine) and (any-pointer: coarse)").matches)).toBe(true);
+  held.release();
+  await replyShown(page);
+  await expect(composer(page)).not.toBeFocused();
+});
+
+test("clicking the conversation heading during Send keeps focus there after the reply", async ({ page }) => {
+  const held = await startSend(page);
+  const heading = page.getByRole("heading", { level: 1, name: "Your conversation", exact: true });
+  await heading.click();
+  await expect(heading).toBeFocused();
+  held.release();
+  await replyShown(page);
+  await expect(heading).toBeFocused();
+});
+
+test("focusing the transcript directly during Send keeps focus there until typing begins", async ({ page }) => {
+  const held = await startSend(page);
+  await log(page).focus();
+  held.release();
+  await replyShown(page);
+  await expect(log(page)).toBeFocused();
+  await page.keyboard.type("a");
+  await expect(composer(page)).toBeFocused();
+  await expect(composer(page)).toHaveValue("a");
+});
+
+test("a control visited since Send wins for that reply even after focus returns to the transcript", async ({ page }) => {
+  const held = await startSend(page);
+  await privacyButton(page).focus();
+  await log(page).focus();
+  held.release();
+  await replyShown(page);
+  await expect(log(page)).toBeFocused();
+
+  const state = withReply(savedState());
+  const secondMessage = "Another message.";
+  const secondReply = "Another Guide reply.";
+  await page.route(COMMANDS_URL, route => route.fulfill({ json: success({ ...state, revision: state.revision + 2,
+    messages: [...state.messages, message(5, "explorer", secondMessage), message(6, "virtualGuide", secondReply)] }) }));
+  await composer(page).fill(secondMessage);
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(log(page)).toContainText(secondReply);
+  await expect(composer(page)).toBeFocused();
+});
+
+test("a reply preserves focus and typing in another field", async ({ page }) => {
+  const held = await startSend(page);
+  const field = await log(page).evaluateHandle(element => element.appendChild(document.createElement("input")));
+  await field.focus();
+  held.release();
+  await replyShown(page);
+  await page.keyboard.type("abc");
+  expect(await field.inputValue()).toBe("abc");
+  await expect(composer(page)).toHaveValue("");
+});
+
+test("the first background or transcript letter enters the box and typing continues there", async ({ page }) => {
+  await open(page, savedState());
+  await page.getByText("Private conversation", { exact: true }).click();
+  expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+  await page.keyboard.type("Ab");
+  await expect(composer(page)).toBeFocused();
+  await expect(composer(page)).toHaveValue("Ab");
+  await log(page).focus();
+  await page.keyboard.type("cd");
+  await expect(composer(page)).toHaveValue("Abcd");
+  await expect(composer(page)).toBeFocused();
+});
+
+test("slash, navigation and modified keys retain their browser defaults on the transcript", async ({ page }) => {
+  await open(page, savedState());
+  await page.evaluate(() => window.addEventListener("keydown", event => {
+    document.body.dataset.keyCancelled = String(event.defaultPrevented);
+  }));
+  for (const key of ["/", "Control+b", "Alt+b", "Meta+b", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
+    "PageUp", "PageDown", "Home", "End", "Space", "Enter", "Escape", "Tab"]) {
+    await log(page).focus();
+    await page.keyboard.press(key);
+    await expect(page.locator("body"), key).toHaveAttribute("data-key-cancelled", "false");
+    await expect(composer(page), key).toHaveValue("");
+    if (key !== "Tab") await expect(log(page), key).toBeFocused();
+  }
+});
+
+test("letters on buttons, links, editable text and other controls stay with the control", async ({ page }) => {
+  await open(page, savedState());
+  await log(page).evaluate(element => {
+    const controls = document.createElement("div");
+    controls.id = "focus-test-controls";
+    controls.innerHTML = '<a href="#next">Next</a><span contenteditable="true"></span><span role="checkbox" tabindex="0"></span>';
+    element.appendChild(controls);
+  });
+  for (const control of [privacyButton(page), ...await page.locator("#focus-test-controls > *").all()]) {
+    await control.focus();
+    await page.keyboard.type("a");
+    await expect(control).toBeFocused();
+    await expect(composer(page)).toHaveValue("");
+  }
+  await expect(page.locator("#focus-test-controls [contenteditable]")).toHaveText("a");
+});
+
+test("the open tour keeps focus and letters when the first reply arrives", async ({ page }) => {
+  const held = await startSend(page, { ...savedState(), messages: [] });
+  await page.getByRole("button", { name: "Show me around", exact: true }).click();
+  const title = page.getByRole("dialog").getByRole("heading", { name: "A look around your conversation" });
+  await expect(title).toBeFocused();
+  held.release();
+  await replyShown(page);
+  await page.keyboard.type("a");
+  await expect(title).toBeFocused();
+  await expect(composer(page)).toHaveValue("");
+});
+
+test("End Session review keeps focus and letters when opened as the Send reply arrives", async ({ page }) => {
+  const held = await startSend(page);
+  const opener = page.getByRole("button", { name: "End this conversation", exact: true });
+  await expect(opener).toBeDisabled();
+  await composer(page).evaluate(field => field.addEventListener("focus", () => {
+    field.dataset.tookFocus = "true";
+  }, { once: true }));
+  // End becomes available with the reply. Open the review before the deferred composer focus runs.
+  await opener.evaluate(element => {
+    const button = element as HTMLButtonElement;
+    const observer = new MutationObserver(() => {
+      if (button.disabled) return;
+      observer.disconnect();
+      button.click();
+    });
+    observer.observe(button, { attributes: true, attributeFilter: ["disabled"] });
+  });
+  held.release();
+  await replyShown(page);
+  const review = page.getByRole("group", { name: "Review End Session", exact: true });
+  await expect(review).toBeFocused();
+  await expect(composer(page)).not.toHaveAttribute("data-took-focus", "true");
+  await page.keyboard.type("a");
+  await expect(review).toBeFocused();
+  await expect(composer(page)).toHaveValue("");
+});
+
+for (const kind of ["dialog", "alertdialog"] as const) {
+  test(`an open ${kind} keeps the reply and printable keys from drawing focus away`, async ({ page }) => {
+    const held = await startSend(page);
+    // Open a nonmodal dialog without moving focus. This isolates the open-dialog
+    // rule from both focus tracking and the browser's native modal focus trap.
+    await page.evaluate(role => {
+      const dialog = role === "dialog" ? document.createElement("dialog") : document.createElement("div");
+      if (dialog instanceof HTMLDialogElement) dialog.open = true;
+      else dialog.setAttribute("role", role);
+      dialog.tabIndex = -1;
+      dialog.textContent = "Open dialog";
+      document.querySelector("main")!.appendChild(dialog);
+    }, kind);
+    held.release();
+    await replyShown(page);
+    await expect(composer(page)).not.toBeFocused();
+    const dialog = page.getByRole(kind).filter({ hasText: "Open dialog" });
+    await dialog.focus();
+    await page.keyboard.type("a");
+    await expect(dialog).toBeFocused();
+    await expect(composer(page)).toHaveValue("");
+  });
+}

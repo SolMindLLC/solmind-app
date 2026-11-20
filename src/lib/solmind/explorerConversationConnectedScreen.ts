@@ -266,17 +266,20 @@ export function connectedOpenTargetInView(input: Readonly<{ top: number; bottom:
 // What the Explorer can really see (GPT-6 Astra review REV558, finding 2). On a phone the on-screen keyboard,
 // and a pinch zoom, shrink only the visual viewport: the layout height still describes the larger window. The
 // visual viewport's height and offsetTop are used when the browser has one; otherwise the layout height, as
-// before. "top" is in window coordinates, the same as getBoundingClientRect; "layout" is the layout height.
+// before. An unusable reading returns null so keyboard handling can keep its last valid measurement.
+// "top" uses the same window coordinates as getBoundingClientRect, and "layout" is the layout height.
 export type ConnectedVisibleArea = Readonly<{ top: number; height: number; scale: number; layout: number }>;
 export function connectedVisibleArea(
   visual: Readonly<{ height: number; offsetTop: number; scale?: number }> | null | undefined,
   layoutHeight: number,
-): ConnectedVisibleArea {
-  if (visual === null || visual === undefined || !Number.isFinite(visual.height) || visual.height <= 0 ||
-      !Number.isFinite(visual.offsetTop)) {
+): ConnectedVisibleArea | null {
+  if (!Number.isFinite(layoutHeight) || layoutHeight <= 0) return null;
+  if (visual === null || visual === undefined) {
     return { top: 0, height: layoutHeight, scale: 1, layout: layoutHeight };
   }
-  return { top: visual.offsetTop, height: visual.height, scale: typeof visual.scale === "number" && Number.isFinite(visual.scale) ? visual.scale : 1, layout: layoutHeight };
+  const { height, offsetTop, scale = 1 } = visual;
+  if (!Number.isFinite(height) || height <= 0 || !Number.isFinite(offsetTop) || !Number.isFinite(scale) || scale <= 0) return null;
+  return { top: offsetTop, height, scale, layout: layoutHeight };
 }
 
 // How far the page must move (positive: down the page) so that the message box and Send, with the 16 px gap
@@ -335,11 +338,21 @@ export function connectedKeyboardSpaceNeeded(move: number, room: number): number
   return Math.ceil(move - Math.max(0, room)) + 1;
 }
 
-// Whether the temporary scroll room goes after a change of the visible area: only when the visible height grew
-// at the same zoom and with the same layout height (the keyboard closed or became smaller), the same condition
-// as the page move. A pinch zoom out also makes the visible height grow, but the keyboard is still open then:
-// the room stays, because no page move would follow to make up for it (GPT-6 Astra review REV587).
+function viewportRestored(now: ConnectedVisibleArea): boolean {
+  return now.scale === 1 && now.top === 0 && Math.abs(now.height - now.layout) <= 1;
+}
+
+// A window resize can arrive before the visual viewport finishes resizing. Keep the last visual
+// reading for the next visual event unless the window already shows a fully restored viewport.
+export function connectedWindowResize(previous: ConnectedVisibleArea | null, now: ConnectedVisibleArea) {
+  const restored = viewportRestored(now);
+  return { reading: restored ? now : previous, restored };
+}
+
+// A full, unzoomed viewport needs no keyboard room, including after a rotation or a return to 1x.
+// Otherwise, release the room only when the visible height grew at the same zoom and layout height.
 export function connectedKeyboardSpaceGoes(before: ConnectedVisibleArea, now: ConnectedVisibleArea): boolean {
+  if (viewportRestored(now)) return true;
   return now.height > before.height && now.scale === before.scale && now.layout === before.layout;
 }
 

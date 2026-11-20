@@ -4,6 +4,7 @@ import {
   COMPASS_SUGGESTION_REPLY_LABELS,
   type CompassSuggestionReply,
 } from "@/lib/solmind/explorerCompassSuggestionReplies";
+import { focusByApp } from "./conversationAppFocus";
 import { SECONDARY_BUTTON, joinClasses } from "./ExplorerConversationScreenNotYetImplemented";
 
 // Shared by Compass and Waypoint suggestions; selection stays with the browser owner.
@@ -25,7 +26,7 @@ export function suggestionReplyButtons({ held, followUpHeld, rightHeld = false, 
           onClick={(event) => {
             onReply(response);
             // Confirmation or rejection can remove this button during its Send; keep the tall reply from moving the page.
-            event.currentTarget.closest("li")?.focus({ preventScroll: true });
+            focusByApp(event.currentTarget.closest("li"), { preventScroll: true });
           }}
           type="button"
         >

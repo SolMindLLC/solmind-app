@@ -47,6 +47,7 @@ import {
   finishKeepingWaypointForming,
   getActivityPlacement,
   getCompactOrientations,
+  getCompassDescription,
   getCompassLayout,
   getJourneyStatusLabel,
   getJourneySummary,
@@ -483,6 +484,26 @@ describe("Explorer conversation, Compass, and Waypoint prototype", () => {
   });
 
   describe("Compass: current attention versus confirmed Priority", () => {
+    it("labels the upper point by position until the Explorer confirms a Priority", () => {
+      const moved = selectCompassPath(openEndedConversation(), "timing");
+      expect(getCompassLayout(moved).find((item) => item.zone === "priority")).toMatchObject({
+        path: { id: "understand-need" },
+        zoneLabel: "Upper point",
+        isPriority: false,
+      });
+      expect(getCompassDescription(moved)).toBe(
+        "'Understand what I need' is at the top of the Compass. No Priority has been confirmed.",
+      );
+
+      const confirmed = confirmPriorityChange(requestPriorityChange(moved));
+      expect(getCompassLayout(confirmed).find((item) => item.zone === "priority")).toMatchObject({
+        path: { id: "timing" },
+        zoneLabel: "Priority",
+        isPriority: true,
+      });
+      expect(getCompassDescription(confirmed)).toContain("Timing the conversation is your confirmed Priority.");
+    });
+
     it("starts a new conversation with no prior orientation", () => {
       expect(openEndedConversation().orientationHistory).toEqual([]);
     });

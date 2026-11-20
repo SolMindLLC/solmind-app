@@ -512,6 +512,10 @@ test("Reload chosen by keyboard and refused for sign-in: focus moves to Sign in"
 
 // Retry leaves the screen as soon as it is chosen. Focus waits on the title while the request runs and moves
 // on when its answer arrives (REV486 finding 6).
+// The message box focus waits two frames after a reply is shown before it moves; a check made earlier would pass
+// before the move.
+const twoFrames = (page: Page) =>
+  page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 const retryCases = [
   { name: "not confirmed again", answer: (route: Route) => malformed(route), target: "retry" },
   { name: "refused for sign-in", answer: (route: Route) => fulfill(route, failure("denied")), target: "signIn" },
@@ -538,13 +542,33 @@ for (const each of retryCases) {
     held.release();
     if (each.target === "title") {
       await expect(savedStatus(page)).toHaveText(UP_TO_DATE);
-      await expect(title(page)).toBeFocused();
+      // No exception for a Retry chosen by keyboard: the reply takes focus to the message box.
+      await twoFrames(page);
+      await expect(composer(page)).toBeFocused();
     } else {
       await expect(focusTarget(page, each.target)).toBeFocused();
     }
     await expect(page.locator("h1")).toHaveCount(1);
   });
 }
+
+test("Retry by pointer, confirmed: focus waits on the title, then the reply takes it to the message box", async ({ page }) => {
+  let commands = 0;
+  await openPage(page, { read: () => success(savedState()), command: route => { commands += 1; return commands === 1 ? malformed(route) : fulfill(route, success(savedState(3))); } });
+  await expect(savedStatus(page)).toHaveText(UP_TO_DATE);
+  await typeAndSend(page);
+  await expect(retryButton(page)).toBeVisible();
+  const held = await holdNextRequest(page, COMMANDS_URL);
+  await retryButton(page).click();
+  await held.arrived;
+  await expect(retryButton(page)).toHaveCount(0);
+  await expect(title(page)).toBeFocused();
+  held.release();
+  await expect(savedStatus(page)).toHaveText(UP_TO_DATE);
+  await twoFrames(page);
+  await expect(composer(page)).toBeFocused();
+  await expect(page.locator("h1")).toHaveCount(1);
+});
 
 test("keyboard order: the title holds focus after the open, Tab goes to the conversation, Shift+Tab reaches the strip's controls", async ({ page }) => {
   await openPage(page, { read: () => success(savedState()), command: noCommand });

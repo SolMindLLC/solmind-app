@@ -728,6 +728,13 @@ describe("connected Explorer conversation screen", () => {
     expect(/<h2[^>]*id="conversation-end-heading"[^>]*>End Session<\/h2>/.test(html)).toBe(true);
   });
 
+  it("makes the open End Session review group programmatically focusable", () => {
+    const html = render(view({ endReviewOpen: true, held: true }));
+    const group = /<div\b[^>]*aria-label="Review End Session"[^>]*>/.exec(html)?.[0] ?? "";
+    expect(attribute(group, "role")).toBe("group");
+    expect(attribute(group, "tabindex")).toBe("-1");
+  });
+
   it("CC14 a loaded conversation with no messages is labelled new", () => {
     const html = render(view({ state: savedState({ conversationId: null, revision: 0, messages: [], sessionStatus: null }) }));
     // Compact header (Paul, 2026-11-16): the small amber line above the title is no longer shown; the status says it.

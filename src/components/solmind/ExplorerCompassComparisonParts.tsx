@@ -1474,8 +1474,8 @@ function CompassDial({
       />
       <line className="stroke-stone-700" x1={150} x2={150} y1={36} y2={220} />
       <line className="stroke-stone-700" x1={58} x2={242} y1={128} y2={128} />
-      <text className="fill-stone-400 text-[9px] tracking-[0.18em]" textAnchor="middle" x={150} y={18}>
-        PRIORITY
+      <text className="fill-stone-400 text-[9px] uppercase tracking-[0.18em]" textAnchor="middle" x={150} y={18}>
+        {items.find((item) => item.zone === "priority")?.zoneLabel}
       </text>
       <text className="fill-stone-400 text-[9px] tracking-[0.12em]" textAnchor="middle" x={24} y={131}>
         DETOUR
@@ -1635,7 +1635,7 @@ function CompassSection({
                       <span className="font-medium">{item.path.label}</span>
                       <span className="text-[11px] text-stone-400">
                         {item.isAttention ? "Current attention" : item.zoneLabel}
-                        {item.isPriority ? ` ${MIDDLE_DOT} Priority` : ""}
+                        {item.isPriority || (item.isAttention && item.zone === "priority") ? ` ${MIDDLE_DOT} ${item.zoneLabel}` : ""}
                       </span>
                     </button>
                   </li>

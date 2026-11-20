@@ -129,7 +129,7 @@ for (const kind of ["waypoint", "choice"] as const) for (const hiddenTop of [32,
     ] };
     await fulfill(waiting.send!, current);
     await expect(savedMessages(page).getByRole("listitem")).toHaveCount(20);
-    await expect(item).toBeFocused();
+    await expect(page.getByLabel("Continue the conversation", { exact: true })).toBeFocused();
     await expect.poll(() => endGap(page)).toBeLessThanOrEqual(2);
     expect(await windowY(page)).toBe(before);
     expect(requests).toHaveLength(kind === "waypoint" ? 2 : 1);

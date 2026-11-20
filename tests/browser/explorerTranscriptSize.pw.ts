@@ -986,3 +986,68 @@ test("REV587: with the keyboard open and temporary scroll room in place, pinchin
   await expectRule(page, "keyboard closed again");
   expect(problems).toEqual([]);
 });
+
+async function openKeyboardWithPadding(page: Page) {
+  const problems = await openPage(page, { read: () => success(savedState()) });
+  await expectRule(page, "after open");
+  await composer(page).fill("A synthetic draft for this test.");
+  await page.evaluate(() => { document.body.style.paddingBottom = "7px"; });
+  await endThePageUnderTheMessageBox(page);
+  const open = await expectRule(page, "page ended under the message box");
+  await sendButton(page).focus();
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const before = await measureVisible(page, open.windowHeight);
+  const visible = Math.round(before.sendBottom - before.boxTop + GAP + 40);
+  await setVisibleHeight(page, visible);
+  const shown = await measureVisible(page, visible);
+  expect(Number.parseFloat(shown.bodyPadding)).toBeGreaterThan(7);
+  expect(shown.sendBottom + GAP).toBeLessThanOrEqual(visible + 1);
+  return { problems, visible, padding: shown.bodyPadding, originalPadding: before.bodyPadding };
+}
+
+test("an invalid reading at 2x keeps the keyboard padding and Send follows the next valid height", async ({ page }) => {
+  const { problems, visible, padding } = await openKeyboardWithPadding(page);
+  await setVisibleZoom(page, visible, 2);
+  const zoomed = await measureVisible(page, visible);
+  const shorter = visible - 24;
+  expect(zoomed.sendBottom).toBeGreaterThan(shorter);
+  expect(zoomed.sendBottom + GAP).toBeLessThanOrEqual(visible + 1);
+
+  await setVisibleHeight(page, 0);
+  expect((await measureVisible(page, visible)).bodyPadding).toBe(padding);
+  await setVisibleHeight(page, shorter);
+  const recovered = await measureVisible(page, shorter);
+  expect(recovered.sendTop).toBeGreaterThanOrEqual(-1);
+  expect(recovered.sendBottom + GAP).toBeLessThanOrEqual(shorter + 1);
+  await expect(sendButton(page)).toBeFocused();
+  expect(problems).toEqual([]);
+});
+
+test("a window resize that restores the full visual viewport returns the original body padding", async ({ page }) => {
+  const { problems, visible, originalPadding } = await openKeyboardWithPadding(page);
+  // The visual height stays the same, so the browser reports only a window resize.
+  await page.evaluate(height => {
+    Object.defineProperty(document.documentElement, "clientHeight", { configurable: true, value: height });
+    window.dispatchEvent(new Event("resize"));
+  }, visible);
+  expect((await measureVisible(page, visible)).bodyPadding).toBe(originalPadding);
+  expect(problems).toEqual([]);
+});
+
+test("a window resize followed by a partially covered visual viewport keeps the keyboard padding", async ({ page }) => {
+  const { problems, padding } = await openKeyboardWithPadding(page);
+  await page.evaluate(() => {
+    Object.defineProperty(document.documentElement, "clientHeight", { configurable: true, value: 420 });
+  });
+  await setVisibleHeight(page, 300);
+  expect((await measureVisible(page, 300)).bodyPadding).toBe(padding);
+
+  await page.evaluate(() => {
+    Object.defineProperty(document.documentElement, "clientHeight", { configurable: true, value: 900 });
+    window.dispatchEvent(new Event("resize"));
+  });
+  expect((await measureVisible(page, 300)).bodyPadding).toBe(padding);
+  await setVisibleHeight(page, 700);
+  expect((await measureVisible(page, 700)).bodyPadding).toBe(padding);
+  expect(problems).toEqual([]);
+});

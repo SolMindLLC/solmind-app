@@ -1,6 +1,7 @@
 import type { ExplorerConversationState } from "@/lib/solmind/explorerConversationContract";
 import { EXPLORER_TOUR_CHOICE } from "@/lib/solmind/explorerConversationTour";
 import { REPLY_CHOICES_GROUP_LABEL, SOMETHING_ELSE_LABEL, latestReplyChoices } from "@/lib/solmind/explorerReplyChoices";
+import { focusByApp } from "./conversationAppFocus";
 import { FOCUS_RING, joinClasses } from "./ExplorerConversationScreenNotYetImplemented";
 import { CHOICE_CLASS, CHOICE_PLAIN, CHOICE_WRAP } from "./ExplorerConversationScreenTranscript";
 
@@ -30,7 +31,7 @@ export function ExplorerReplyChoices({ state, messageId, disabled, onChoose, onS
             }
             onChoose(label);
             // Keep focus on the saved message when Send removes the row, without moving the page to a tall reply.
-            event.currentTarget.closest("li")?.focus({ preventScroll: true });
+            focusByApp(event.currentTarget.closest("li"), { preventScroll: true });
           }}
           type="button"
         >

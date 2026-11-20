@@ -65,6 +65,23 @@ test("E02 deliberate End sends its saved selector once and returns home only aft
   expect(Object.keys(commands[0]).sort()).toEqual(["conversationId", "expectedRevision", "kind", "operationId"]);
 });
 
+test("keyboard focus enters the End Session review and returns to its opener on cancel", async ({ page }) => {
+  await mockCurrent(page, active);
+  await page.goto("/explorer/conversation");
+  const opener = page.getByRole("button", { name: "End this conversation", exact: true });
+  const review = page.getByRole("group", { name: "Review End Session", exact: true });
+  await opener.focus();
+  await page.keyboard.press("Enter");
+  await expect(review).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(review.getByRole("button", { name: "End Session and return home" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(review.getByRole("button", { name: "Keep this session open" })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(review).toHaveCount(0);
+  await expect(opener).toBeFocused();
+});
+
 test("E03 an active-shaped acknowledgement stays uncertain and exact retry can confirm another tab's legacy ending", async ({ page }) => {
   const bodies: string[] = []; await mockCurrent(page, active); await mockHome(page);
   await page.route("**/explorer/conversation/commands", route => {
