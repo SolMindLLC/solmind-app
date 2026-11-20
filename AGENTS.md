@@ -8,6 +8,25 @@ This version has breaking changes - APIs, conventions, and file structure may al
 
 # SolMind App Agent Instructions
 
+## 2026-11-19 - Paul's card 3 answers in the Virtual Guide's instructions
+
+Paul approved the exact words on 2026-11-19 at about 22:37 CST in his quick meeting ("Approve as written"; PRJ01-SPR002
+Validation_Workspaces/Decision_Record_2026-11-19.md, entry "Paul: card 2, group 1 and the card 3 words"; sheet
+.validation/keep-light-20261109/card3-words-20261119/CARD3_WORDS_FOR_PAUL_DRAFT.md), from his card 3 answers of the
+morning meeting. Both instruction texts carry them: the role text in explorerPrivateConfigurationCandidate.ts and the
+ordinary request instructions in openAiLunaExplorerSafetyTransport.ts (the classification-only instructions are
+unchanged). Topics: two related concerns are distinct topics when the Explorer's words show they would want to come
+back to either one on its own (after the rule to track every distinct topic). Waypoint timing: the Waypoint offer may
+also come in the reply that adds the Compass point, once the Explorer has said what they want to change, why it matters
+and what success looks like (this replaces the rule that the point was added in an earlier reply; with the approved
+first-eligible-reply rule the offer is then made in that reply). Success: judged by the Explorer's stated goal (after
+the rule to use only the Explorer's destination, reason and description of success). Known risk, accepted by Paul: a
+Waypoint can appear without its Compass point when the app does not place the point. Role text 17,969 characters (limit
+25,000), SHA-256 A0968F8BD3200D2A188C567561BF1E1BE7DC1FC471C8D05C995578477F990CA1; ordinary request instructions 23,632
+characters, SHA-256 8861D306AA662072D5DB004D3137A6CE2DFF69E6660B9905FBB28430E9B51B1E. The version labels stay
+20261116-of1. explorerCard3AnswerInstructions.test.ts checks each sentence once, between its neighbors, in both texts.
+Change these words only with Paul's approval of the new words.
+
 ## 2026-11-17 - Memory, step 1: the private records (database only)
 
 Paul, 2026-11-17 13:31:58 CST: "You can build memory first, then compass,
